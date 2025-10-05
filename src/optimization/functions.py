@@ -68,14 +68,12 @@ class OptParameters(OptRules):
         mutable=False)
         # Capacidad de pala
         model.g_i    = pyo.Param(model.lhd_set,                   initialize={i: self.mine_system.elhd.get_load_capacity(i)       for i in model.lhd_set}, mutable=False)
-        #Parámetros de infraestructura
-        model.n_chargers = pyo.Param(initialize=self.time_series.get_n_chargers(), mutable=True)
-        model.p_grid = pyo.Param(initialize=self.time_series.get_grid_power(), mutable=True)
+      
         #Parámetros problema de inversión
-        model.p_charger =353
-        model.p_max = 2100
-        model.p_peak = 2100
-        model.charger_cost = 47500
+        model.p_charger = pyo.Param(initialize=self.mine_system.chargers.get_charger_power(), mutable=False)
+        model.p_max = pyo.Param(initialize=self.mine_system.chargers.get_p_max_dist(), mutable=False)
+        model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
+        model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
         #Parametros estaciones de carga
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False)
@@ -156,7 +154,7 @@ class ConstraintRules(OptRules):
 
     def battery_soc(self, model, i, d, t):
         t0 = self.time_series.get_time_intervals()[0]
-        charge = sum(model.P[k,i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i[k,i]) for k in model.stations_set)
+        charge = sum(model.P[k, i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i[k,i]) for k in model.stations_set)
         discharge = sum(
             model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]

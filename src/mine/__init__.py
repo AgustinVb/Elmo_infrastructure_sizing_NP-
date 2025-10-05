@@ -2,6 +2,7 @@ from src.mine.elhd import ELHD
 from src.mine.battery import Battery
 from src.mine.layout import Layout
 from src.mine.stations import Stations
+from src.mine.chargers import Chargers
 
 
 class Mine(object):
@@ -33,6 +34,10 @@ class Mine(object):
 
         #4) Estaciones de carga (si las tienes en otra hoja llamada "Stations")
         self.stations = Stations(model["stations"], "station_name")
+
+        # 5) Chargers: asumimos que la hoja 'chargers' siempre existe
+        # y que tiene una columna 'id' que identifica la fila con valores
+        self.chargers = Chargers(model['chargers'], 'id')
 
     # ------------------------------------------------------------------ #
     # Nodo / Layout
