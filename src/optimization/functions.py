@@ -48,7 +48,6 @@ class OptParameters(OptRules):
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
         #Parámetros económicos
         model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
-        model.costo_diesel = pyo.Param(model.dlhd_set, model.days, model.time_intervals_set, initialize={(i, d, t): self.time_series.get_marginal_cost(self.mine_system.elhd.get_energy_cost(i), d, t) for i in model.dlhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
         model.costo_marginal = pyo.Param(model.elhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.elhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
         #Parámetros LHD
         # Parámetros de viaje por nodo
@@ -67,10 +66,6 @@ class OptParameters(OptRules):
         model.elhd_set,
         initialize={b: float(self.mine_system.elhd.get_e_max(b)) for b in model.elhd_set},
         mutable=False)
-        # Parámetros de estanque diésel
-        model.cmax_i = pyo.Param(model.dlhd_set, initialize={i: self.mine_system.elhd.get_tank_capacity(i)*60/self.mine_system.elhd.get_refueling_time(i) for i in model.dlhd_set}, mutable=False)
-        model.e_min_i= pyo.Param(model.dlhd_set,                  initialize={i: self.mine_system.elhd.get_min_capacity(i)        for i in model.dlhd_set}, mutable=False)
-        model.e_max_i= pyo.Param(model.dlhd_set,                  initialize={i: self.mine_system.elhd.get_tank_capacity(i)       for i in model.dlhd_set}, mutable=False)
         # Capacidad de pala
         model.g_i    = pyo.Param(model.lhd_set,                   initialize={i: self.mine_system.elhd.get_load_capacity(i)       for i in model.lhd_set}, mutable=False)
         #Parámetros de infraestructura
@@ -87,6 +82,8 @@ class OptParameters(OptRules):
         model.distance_to_dn_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_distance_to_discharge_node(k) for k in model.stations_set}, mutable=False)
         model.max_chargers_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers(k) for k in model.stations_set}, mutable=False)
         model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False)
+        model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
+        model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
 
 
 class BoundRules(OptRules):
@@ -159,16 +156,18 @@ class ConstraintRules(OptRules):
 
     def battery_soc(self, model, i, d, t):
         t0 = self.time_series.get_time_intervals()[0]
-        charge = sum(model.P[k,i, d, t] * model.delta_t for k in model.stations_set)
+        charge = sum(model.P[k,i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i[k,i]) for k in model.stations_set)
         discharge = sum(
             model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
         )
+        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i] for k in model.stations_set)
+        
 
         if t == t0:
-            return model.B[i, d, t] == model.B[i, d, 0] + charge - discharge
+            return model.B[i, d, t] == model.B[i, d, 0] + charge - discharge - penalization_charge
         else:
-            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge
+            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
 
 
      # (C8a) Límite inferior de SOC batería

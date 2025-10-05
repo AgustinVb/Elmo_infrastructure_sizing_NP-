@@ -266,4 +266,59 @@ class ELHD(object):
             self.get_engine_efficiency(elhd_name) * self.get_transmission_efficiency(elhd_name)) + (aux_energy + hydraulic_energy)/self.get_transmission_efficiency(elhd_name)) / (1000 * 3600)
 
 
+    def engine_energy_charge_travel(self, distance, elhd_name, tilt):
+        speed = self.get_speed(elhd_name) * (1000/3600)
+        acceleration = self.get_acceleration(elhd_name)
+        t_acc = (speed - 0) / acceleration
+        t_dec = (speed - 0) / acceleration
+        t_constant = (distance - 0.5 * acceleration * (t_acc) ** 2 - 0.5 * acceleration * (t_dec) ** 2)/speed
+        aux_energy = 1000 * self.get_aux_power(elhd_name) * 2*(t_acc + t_constant + t_dec)
 
+        #gravitational_work ida y vuelta a estación de carga sin material
+        g = 9.81
+        acceleration = self.get_acceleration(elhd_name)
+        speed = self.get_speed(elhd_name) * (1000 / 3600)
+        weight_out = self.get_weight(elhd_name) * 1000
+        cte_out = weight_out * g * np.sin(tilt)
+        e_acc_out_term = acceleration * t_acc**2 / 2
+        e_cte_out_term = speed * t_constant
+        gravitational_work = 2*cte_out * (e_acc_out_term + e_cte_out_term) #ida y vuelta a estación de carga sin material
+
+        #delta kinetic energy ida y vuelta a estación de carga sin material
+        delta_kinetic_energy= 2*(0.5 * weight_out * speed ** 2)
+        
+        #rolling resistance loss ida y vuelta a estación de carga sin material
+        g = 9.81
+        cr = 1
+        c1 = 0.000
+        c2 = 0.03
+        const_out = weight_out * g * np.cos(tilt) * cr
+        e_acc_out = (c1 * acceleration**2 * t_acc**3 / 3 + c2 * acceleration * t_acc**2 / 2)
+        e_cte_out = (c1 * speed + c2) * speed * t_constant
+        rolling_resistance_loss = 2*const_out * (e_acc_out + e_cte_out)
+
+
+        wheel_energy = (
+            gravitational_work
+            + self.aerodynamic_loss(elhd_name, t_acc, t_constant, t_acc, t_constant)
+            + delta_kinetic_energy
+            + rolling_resistance_loss
+        )
+        
+        if distance==0:
+            return 0
+        return (wheel_energy / (
+            self.get_engine_efficiency(elhd_name) * self.get_transmission_efficiency(elhd_name)) + (aux_energy)/self.get_transmission_efficiency(elhd_name)) / (1000 * 3600)
+    
+    def time_charge_station(self, distance, elhd_name):
+        #travel time to charge station
+        velocity = self.get_speed(elhd_name) * (1000 / 3600)
+        acceleration = self.get_acceleration(elhd_name)
+        t_acc = (velocity - 0) / acceleration
+        t_dec = (velocity - 0) / acceleration
+        t_constant = (distance - 0.5 * acceleration * (t_acc) ** 2 - 0.5 * acceleration * (t_dec) ** 2) / velocity
+        #Total time in hours
+        t_total = (t_acc + t_constant + t_dec)/3600
+        if distance==0:
+            return 0
+        return t_total
