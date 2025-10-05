@@ -109,7 +109,7 @@ class OptModel(object):
             opt.options['LogToConsole'] = 1
             opt.options['MIPGap']       = gap
             opt.options['LogFile']      = log_file
-            opt.options['Threads']      = 4
+            opt.options['Threads']      = 32
             opt.options['Heuristics']   = 0.8  # 🔥 Subimos heurísticas al 80%
 
         print("Solving opt model")

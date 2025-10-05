@@ -12,6 +12,7 @@ class Timeseries(object):
         self.series = series
         self.days = days
         self.delta_t = delta_t
+        self.scaling_factor_op_cost = 365/(len(self.days))
         # Conservamos el diccionario 'time' de tu código original por compatibilidad
         self.time, self.mapper = dict(hourly=1, daily=24, weekly=168), {}
         self.time_intervals = self.build_mappers()

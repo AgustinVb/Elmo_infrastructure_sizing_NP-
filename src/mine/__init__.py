@@ -1,6 +1,7 @@
 from src.mine.elhd import ELHD
 from src.mine.battery import Battery
 from src.mine.layout import Layout
+from src.mine.stations import Stations
 
 
 class Mine(object):
@@ -29,6 +30,9 @@ class Mine(object):
 
         # 3) Layout de nodos
         self.layout = Layout(model["extraction_nodes"], "node_name")
+
+        #4) Estaciones de carga (si las tienes en otra hoja llamada "Stations")
+        self.stations = Stations(model["stations"], "station_name")
 
     # ------------------------------------------------------------------ #
     # Nodo / Layout
@@ -82,7 +86,10 @@ class Mine(object):
         df = self.battery.data
         seleccion = df[df["operation_mode"] == op_mode]
         return list(seleccion.index)
-
-
-
-
+    
+    # ------------------------------------------------------------------ #
+    # Estaciones de carga
+    # ------------------------------------------------------------------ #
+    def get_system_stations(self):
+        """Devuelve lista de todas las estaciones de carga."""
+        return list(self.stations.get("station_name", None))
