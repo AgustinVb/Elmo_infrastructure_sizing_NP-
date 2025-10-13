@@ -24,7 +24,7 @@ def build_mine(args):
 
     model = Reader(args.data_folder+args.model, start_in=1)
     series = Series(args.data_folder+args.series)
-    time_series = timeseries.Timeseries(series, [1,91,181,271], 0.5)
+    time_series = timeseries.Timeseries(series, [1,91,181], 0.5)
     mine_system = mine.Mine(model)
     time_series.mapper['Trips'] = time_series.get_trips(mine_system)
     return series, mine_system, time_series
@@ -53,4 +53,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

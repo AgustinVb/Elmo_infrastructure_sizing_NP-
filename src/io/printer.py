@@ -219,29 +219,25 @@ class Printer:
         # Luego, independientemente de cómo venga, reordenamos según var_axis_order para anidar el JSON.
         self.var_index_schema: Dict[str, List[str]] = {
             "Z":        ["d", "t", "i"],
-            "Z_charge": ["d", "t", "b"],
+            "Z_charge": ["k","d", "t", "i"],
             "Y":        ["d", "t", "i", "j"],
-            "YS":       ["d", "t", "i", "b", "j"],
-            "X":        ["d", "t", "i", "b"],
-            "W":        ["d", "t", "i", "b", "j"],
-            "P":        ["d", "t", "b"],
-            "B":        ["d", "t", "b"],
-            "C":        ["d", "t", "i"],
-            "E":        ["d", "t", "i"],
-            "Swap":     ["d", "t", "i", "b"],
+            "P":        ["d", "t", "i"],
+            "B":        ["d", "t", "i"],
+            "N_chargers": ["k"],
+            "X":         ["k"],
+            "StartCharge": ["k", "i", "d", "t"],
+            "EndCharge":   ["k", "i", "d", "t"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["d", "t", "i"],
-            "Z_charge": ["d", "t", "b"],
+            "Z_charge": ["k","d", "t", "i"],
             "Y":        ["d", "t", "i", "j"],
-            "YS":       ["d", "t", "i", "b", "j"],
-            "X":        ["d", "t", "i", "b"],
-            "W":        ["d", "t", "i", "b", "j"],
-            "P":        ["d", "t", "b"],
-            "B":        ["d", "t", "b"],
-            "C":        ["d", "t", "i"],
-            "E":        ["d", "t", "i"],
-            "Swap":     ["d", "t", "i", "b"],
+            "P":        ["d", "t", "i"],
+            "B":        ["d", "t", "i"],
+            "N_chargers": ["k"],
+            "X":         ["k"],
+            "StartCharge": ["d", "t", "i", "k"],
+            "EndCharge":   ["d", "t", "i", "k"],
         }
 
         # tolerancia para considerar "casi cero" como cero

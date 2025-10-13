@@ -120,18 +120,15 @@ class BoundRules(OptRules):
         model.Y         = pyo.Var(model.lhd_set, model.nodes_set, model.days, model.time_intervals_set,
                                   bounds=self.Y, domain=pyo.Binary)
         # Potencia de carga de batería b en (d,t)
-        model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set,
-                                  bounds=self.P)
+        model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de batería b al final de (d,t)
-        model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero,
-                                  bounds=self.B)
+        model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
         model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         #Elección estación de carga
         model.X = pyo.Var(model.stations_set, domain=pyo.Binary)
         #Inicio de una carga on-board
-        model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
-
+        model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)    
         # Indica si termina una carga en t
         model.EndCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
 
@@ -159,7 +156,7 @@ class ConstraintRules(OptRules):
             model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
         )
-        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i] for k in model.stations_set)
+        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i]*model.t_ttc_i[k,i] for k in model.stations_set)
         
 
         if t == t0:
@@ -195,7 +192,19 @@ class ConstraintRules(OptRules):
         for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
         )
         return term_de >= target
+    
 
+    def production_max(self, model, d, j):
+        target = model.m_j[j,d]
+        def ntr(node,i):
+            return self.time_series.get_n_trips(node,i)
+
+        # extracción normal de mineral
+        term_de = sum(
+        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * 0.7
+        for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
+        )
+        return term_de <= target *1.3
     # Estaciones de carga
     
     #Cantidad máxima de cargadores
@@ -238,10 +247,8 @@ class ConstraintRules(OptRules):
         model.battery_upper = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
     
-        
-
-
         model.production                         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
+        #model.production_max                     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
 
         #nuevas
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
