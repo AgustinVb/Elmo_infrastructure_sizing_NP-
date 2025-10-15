@@ -108,6 +108,26 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
         return None
     rows = []
 
+    def _find_interval_map(obj):
+        """Recursively search for a dict whose values are scalar (int/float/str). Return it or None."""
+        if not isinstance(obj, dict):
+            return None
+        # if all values are scalars (not dict/list), return this dict
+        all_scalar = True
+        for v in obj.values():
+            if isinstance(v, dict) or isinstance(v, list):
+                all_scalar = False
+                break
+        if all_scalar and obj:
+            return obj
+        # otherwise recurse into dict-valued children
+        for v in obj.values():
+            if isinstance(v, dict):
+                found = _find_interval_map(v)
+                if found is not None:
+                    return found
+        return None
+
     # Caso 1: Estructura con eje 'k' (P.json, etc.)
     if "k" in data:
         for station, k_block in data["k"].items():
@@ -131,61 +151,113 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
 
     # Caso 2: Estructura directa con 'd' (estructura original)
     elif "d" in data:
-        for lhd, t_block in data["d"].items():
-            if not isinstance(t_block, dict):
+        for outer_key, outer_block in data["d"].items():
+            if not isinstance(outer_block, dict):
                 continue
-            if "t" in t_block and isinstance(t_block["t"], dict):
-                for k1, v1 in t_block["t"].items():
-                    # Caso Y-like: node -> i(day) -> j(interval)
-                    if isinstance(v1, dict) and "i" in v1 and isinstance(v1["i"], dict):
-                        for day, j_block in v1["i"].items():
-                            if "j" in j_block:
-                                for interval, val in j_block["j"].items():
-                                    rows.append({
-                                        "lhd": lhd,
-                                        "node": str(k1),
-                                        "day": _numeric_or_str(day),
-                                        "interval": _numeric_or_str(interval),
-                                        "value": float(val),
-                                    })
-                    # Caso B-like: day -> b(interval)
-                    elif isinstance(v1, dict) and "b" in v1:
-                        for interval, val in v1["b"].items():
-                            rows.append({
-                                "lhd": lhd,
-                                "day": _numeric_or_str(k1),
-                                "interval": _numeric_or_str(interval),
-                                "value": float(val),
-                            })
-                    # Caso C/E-like: day -> i(interval)
-                    elif isinstance(v1, dict) and "i" in v1:
-                        for interval, val in v1["i"].items():
-                            rows.append({
-                                "lhd": lhd,
-                                "day": _numeric_or_str(k1),
-                                "interval": _numeric_or_str(interval),
-                                "value": float(val),
-                            })
-                    else:
-                        # Fallback genérico
-                        flat = _flatten_dict(v1)
-                        for path_tup, val in flat:
-                            interval = None
-                            for key in reversed(path_tup):
-                                if isinstance(key, (int, float)):
-                                    interval = key
-                                    break
-                            rows.append({
-                                "lhd": lhd,
-                                "day": _numeric_or_str(k1),
-                                "interval": interval,
-                                "value": float(val) if isinstance(val,(int,float)) else np.nan,
-                            })
+            if "t" in outer_block and isinstance(outer_block["t"], dict):
+                # Detect whether this is a station wrapper (e.g. 'station_1' -> t -> LHDs)
+                t_keys = list(outer_block["t"].keys())
+                station_wrapper = False
+                if isinstance(outer_key, str) and outer_key.lower().startswith("station"):
+                    station_wrapper = True
+                else:
+                    # heuristic: if inner keys look like LHD ids (start with 'LH')
+                    for kk in t_keys[:5]:
+                        try:
+                            if isinstance(kk, str) and kk.upper().startswith("LH"):
+                                station_wrapper = True
+                                break
+                        except Exception:
+                            continue
+
+                if station_wrapper:
+                    station = outer_key
+                    for lhd_key, v1 in outer_block["t"].items():
+                        # here lhd_key is the actual LHD id, station is outer_key
+                        if isinstance(v1, dict) and "i" in v1 and isinstance(v1["i"], dict):
+                            for day, j_block in v1["i"].items():
+                                inner = _find_interval_map(j_block)
+                                if inner:
+                                    for interval, val in inner.items():
+                                        if isinstance(val, dict) or isinstance(val, list):
+                                            continue
+                                        rows.append({
+                                            "lhd": _numeric_or_str(lhd_key),
+                                            "station": station,
+                                            "day": _numeric_or_str(day),
+                                            "interval": _numeric_or_str(interval),
+                                            "value": float(val),
+                                        })
+                        # other patterns under station wrapper (rare) are ignored for now
+                else:
+                    # original assumption: outer_key is LHD
+                    lhd = outer_key
+                    t_block = outer_block
+                    for k1, v1 in t_block["t"].items():
+                        # Caso Y-like: node -> i(day) -> j(interval)
+                        if isinstance(v1, dict) and "i" in v1 and isinstance(v1["i"], dict):
+                            for day, j_block in v1["i"].items():
+                                if isinstance(j_block, dict):
+                                    if "j" in j_block and isinstance(j_block["j"], dict):
+                                        for interval, val in j_block["j"].items():
+                                            rows.append({
+                                                "lhd": lhd,
+                                                "node": str(k1),
+                                                "day": _numeric_or_str(day),
+                                                "interval": _numeric_or_str(interval),
+                                                "value": float(val),
+                                            })
+                                    else:
+                                        inner = _find_interval_map(j_block)
+                                        if inner:
+                                            for interval, val in inner.items():
+                                                if isinstance(val, dict) or isinstance(val, list):
+                                                    continue
+                                                rows.append({
+                                                    "lhd": lhd,
+                                                    "node": str(k1),
+                                                    "day": _numeric_or_str(day),
+                                                    "interval": _numeric_or_str(interval),
+                                                    "value": float(val),
+                                                })
+                        # Caso B-like: day -> b(interval)
+                        elif isinstance(v1, dict) and "b" in v1:
+                            for interval, val in v1["b"].items():
+                                rows.append({
+                                    "lhd": lhd,
+                                    "day": _numeric_or_str(k1),
+                                    "interval": _numeric_or_str(interval),
+                                    "value": float(val),
+                                })
+                        # Caso C/E-like: day -> i(interval)
+                        elif isinstance(v1, dict) and "i" in v1:
+                            for interval, val in v1["i"].items():
+                                rows.append({
+                                    "lhd": lhd,
+                                    "day": _numeric_or_str(k1),
+                                    "interval": _numeric_or_str(interval),
+                                    "value": float(val),
+                                })
+                        else:
+                            # Fallback genérico
+                            flat = _flatten_dict(v1)
+                            for path_tup, val in flat:
+                                interval = None
+                                for key in reversed(path_tup):
+                                    if isinstance(key, (int, float)):
+                                        interval = key
+                                        break
+                                rows.append({
+                                    "lhd": lhd,
+                                    "day": _numeric_or_str(k1),
+                                    "interval": interval,
+                                    "value": float(val) if isinstance(val,(int,float)) else np.nan,
+                                })
 
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    cols = [c for c in ["lhd","node","day","interval","value"] if c in df.columns]
+    cols = [c for c in ["lhd","station","node","day","interval","value"] if c in df.columns]
     return df[cols].sort_values([c for c in cols if c!="value"]).reset_index(drop=True)
 
 
@@ -672,8 +744,16 @@ class JSONPlotter:
                     x_start = idx * delta_t + 0.05
                     x_end   = (idx + 1) * delta_t - 0.05
 
-                    is_traveling = (not Y_filtered.query("interval == @t").empty)
-                    is_charging  = (not P_filtered.query("interval == @t and value > 1").empty) and is_electric
+                    # Safe checks: pandas .query with a name like 'interval' will raise
+                    # UndefinedVariableError if the column doesn't exist. Ensure the
+                    # DataFrames actually have the columns before querying.
+                    is_traveling = False
+                    if not Y_filtered.empty and 'interval' in Y_filtered.columns:
+                        is_traveling = (not Y_filtered.query("interval == @t").empty)
+
+                    is_charging = False
+                    if is_electric and not P_filtered.empty and {'interval', 'value'}.issubset(P_filtered.columns):
+                        is_charging = (not P_filtered.query("interval == @t and value > 1").empty)
 
                     if is_traveling:
                         state = 'Travel'

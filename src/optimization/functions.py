@@ -231,13 +231,17 @@ class ConstraintRules(OptRules):
     def max_power(self, model, k, i, d, t):
         return model.P[k, i, d, t]  <= model.Z_charge[k, i, d, t] * model.p_charger
     
-    #  Sitemas distribución 
+    #  Sistemas distribución 
     def max_installed_capacity(self, model):
         return sum(model.N_chargers[k] for k in model.stations_set) * model.p_charger  <= model.p_max
     
     def peak_power(self, model, d,t):
         return sum(model.P[k, i, d, t] for k in model.stations_set for i in model.elhd_set) <= model.p_peak
-
+    
+    #Condicion inicial estaciones
+    def initial_condition_station(self, model, k):
+        return sum(model.X[k] for k in model.stations_set) == 1
+    
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
         model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
@@ -259,6 +263,9 @@ class ConstraintRules(OptRules):
 
         model.max_installed_capacity             = pyo.Constraint(rule=self.max_installed_capacity)
         model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
+
+        #prueba
+        model.initial_condition_station          = pyo.Constraint(model.stations_set, rule=self.initial_condition_station)
 
 class ObjectiveRules(OptRules):
 
