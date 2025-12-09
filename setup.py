@@ -24,7 +24,8 @@ def build_mine(args):
 
     model = Reader(args.data_folder+args.model, start_in=1)
     series = Series(args.data_folder+args.series)
-    time_series = timeseries.Timeseries(series, [1,91,181,271], 0.5)
+    #time_series = timeseries.Timeseries(series, [1,91,181,271], 0.5)
+    time_series = timeseries.Timeseries(series, [1], 0.5)
     mine_system = mine.Mine(model)
     time_series.mapper['Trips'] = time_series.get_trips(mine_system)
     return series, mine_system, time_series
@@ -45,7 +46,7 @@ def main():
     parser.add_argument('--solver', default='glpk')
 
     series, mine_system, time_series = build_mine(parser.parse_args())
-    gap= 5/100;
+    gap= 1/100;
     solver_name=parser.parse_args().solver
     output_folder=parser.parse_args().output_folder
     opt = OptimizationModel(mine_system, time_series, gap, solver_name, output_folder)

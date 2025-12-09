@@ -68,7 +68,8 @@ class OptParameters(OptRules):
         mutable=False)
         # Capacidad de pala
         model.g_i    = pyo.Param(model.lhd_set,                   initialize={i: self.mine_system.elhd.get_load_capacity(i)       for i in model.lhd_set}, mutable=False)
-      
+        model.filling_factor = pyo.Param(model.lhd_set,        initialize={i: self.mine_system.elhd.get_filling_factor(i)      for i in model.lhd_set}, mutable=False)
+         
         #Parámetros problema de inversión
         model.p_charger = pyo.Param(initialize=self.mine_system.chargers.get_charger_power(), mutable=False)
         model.p_max = pyo.Param(initialize=self.mine_system.chargers.get_p_max_dist(), mutable=False)
@@ -188,7 +189,7 @@ class ConstraintRules(OptRules):
 
         # extracción normal de mineral
         term_de = sum(
-        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * 0.7
+        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
         for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
         )
         return term_de >= target
@@ -201,7 +202,7 @@ class ConstraintRules(OptRules):
 
         # extracción normal de mineral
         term_de = sum(
-        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * 0.7
+        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
         for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
         )
         return term_de <= target *1.3
@@ -231,6 +232,9 @@ class ConstraintRules(OptRules):
     def max_power(self, model, k, i, d, t):
         return model.P[k, i, d, t]  <= model.Z_charge[k, i, d, t] * model.p_charger
     
+    #def max_power_0_75C(self, model, k, i, d, t):
+    #    return model.P[k, i, d, t]  <= model.Z_charge[k, i, d, t] * 353*0.7
+    
     #  Sistemas distribución 
     def max_installed_capacity(self, model):
         return sum(model.N_chargers[k] for k in model.stations_set) * model.p_charger  <= model.p_max
@@ -239,7 +243,7 @@ class ConstraintRules(OptRules):
         return sum(model.P[k, i, d, t] for k in model.stations_set for i in model.elhd_set) <= model.p_peak
     
     #Condicion inicial estaciones
-    def initial_condition_station(self, model, k):
+    def initial_condition_station(self, model):
         return sum(model.X[k] for k in model.stations_set) == 1
     
     def build_all_constraints(self, model):
@@ -263,9 +267,8 @@ class ConstraintRules(OptRules):
 
         model.max_installed_capacity             = pyo.Constraint(rule=self.max_installed_capacity)
         model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
-
         #prueba
-        model.initial_condition_station          = pyo.Constraint(model.stations_set, rule=self.initial_condition_station)
+        model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
 
 class ObjectiveRules(OptRules):
 
