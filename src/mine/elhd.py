@@ -77,6 +77,9 @@ class ELHD(object):
     
     def get_swap_time(self, keys=None):
         return self._get("swap_time", keys)
+    
+    def get_charge_time(self, keys=None):
+        return self._get("charge_time", keys)
 
     def get_technology_type(self, keys=None):
         return self._get("technology_type", keys)

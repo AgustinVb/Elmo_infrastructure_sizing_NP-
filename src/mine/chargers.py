@@ -39,3 +39,9 @@ class Chargers(object):
 
     def get_p_peak_dist(self) -> float:
         return self._row1()['p_peak_dist']
+
+    def get_battery_cost(self, keys=None) -> float:
+        return self._row1()['battery_cost']
+    
+    def get_energy_cost(self, keys=None) -> float:
+        return self._row1()['energy_cost']

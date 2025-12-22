@@ -30,6 +30,7 @@ class OptSets(OptRules):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
         model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
         model.dlhd_set = pyo.Set(initialize=self.mine_system.get_diesel_lhds())
+        model.slhd_set = pyo.Set(initialize=self.mine_system.get_swap_lhds())
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
         model.days = pyo.Set(initialize=self.time_series.days)
@@ -49,6 +50,7 @@ class OptParameters(OptRules):
         #Parámetros económicos
         model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
         model.costo_marginal = pyo.Param(model.elhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.elhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
+        model.costo_electricidad = pyo.Param(model.days, model.time_intervals_set, initialize={(d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.chargers.get_energy_cost(), d, t) for d in model.days for t in model.time_intervals_set}, mutable=True)
         #Parámetros LHD
         # Parámetros de viaje por nodo
         model.d_i    = pyo.Param(model.lhd_set, model.nodes_set, initialize={(i,j): self.time_series.get_n_intervals_trip(j,i)       for i in model.lhd_set for j in model.nodes_set}, mutable=False)
@@ -76,6 +78,7 @@ class OptParameters(OptRules):
         model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
         model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
+        model.battery_cost = pyo.Param(initialize=self.mine_system.chargers.get_battery_cost(), mutable=False)
         #Parametros estaciones de carga
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False)
         model.distance_to_dn_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_distance_to_discharge_node(k) for k in model.stations_set}, mutable=False)
@@ -83,8 +86,9 @@ class OptParameters(OptRules):
         model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False)
         model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
         model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
-
-
+        model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers(k) for k in model.stations_set}, mutable=False)
+        model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
+        #model.t_charge = pyo.Param(initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
@@ -111,19 +115,22 @@ class BoundRules(OptRules):
         return (0, model.bmax_b[b])
 
     def build_all_variables(self, model):
-        # Estado ON/OFF de cada LHD
+        # Variable binaria que indica si el LHD esta inactivo o no
         model.Z         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set,
                                   bounds=self.Z, domain=pyo.Binary)
-        # Indicador de carga eléctrica (por batería) en cada intervalo
+        # Variable binaria que indica si el LHD está cargando
         model.Z_charge  = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set,
                                   bounds=self.Z_charge, domain=pyo.Binary)
+        # Variable binaria que indica si el LHD reliza un swap 
+        model.Z_swap   = pyo.Var(model.stations_set, model.slhd_set, model.days, model.time_intervals_set,
+                                  bounds=self.Z, domain=pyo.Binary)
         # Viaje completo de ida por nodo
         model.Y         = pyo.Var(model.lhd_set, model.nodes_set, model.days, model.time_intervals_set,
                                   bounds=self.Y, domain=pyo.Binary)
         # Potencia de carga de batería b en (d,t)
         model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de batería b al final de (d,t)
-        model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
+        model.B         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
         model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         #Elección estación de carga
@@ -132,21 +139,34 @@ class BoundRules(OptRules):
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)    
         # Indica si termina una carga en t
         model.EndCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
-
+        # Cantidad de baterías en estación
+        model.N_batteries = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
+        # Variable que actualiza el estado de carga de la batería del LHD
+        model.B_s = pyo.Var(model.slhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
+        # Número de baterías cargadas en el intervalo t en la estación k
+        model.S = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        # Número de baterías que comienzan a cargar en a y siguen conectadas en t en la estación k
+        model.Sv = pyo.Var(model.stations_set, model.days, model.time_intervals_set,  model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        # Número de baterías descargadas en el intervalo t en la estación k
+        model.X_dch = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        # Número de baterías que comienzan a cargar al inicio del intervalo t en la estación k
+        model.X_ini = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        # Demanda de baterías en el intervalo t en la estación k
+        model.W = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
 
 from src.optimization.functions import OptRules
 import pyomo.environ as pyo
 
 class ConstraintRules(OptRules):
 
-    # (C1) Estado único de cada LHD: Zi,t + sum_j Yi,j,t == 1 
+    # Estado único de cada LHD: Zi,t + sum_j Yi,j,t == 1 
     def state_unique_elhd(self, model, i, d, t):
         nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
         if not nodes:
             return pyo.Constraint.Skip
         return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for k in model.stations_set) + sum(model.Y[i, j, d, t] for j in nodes) == 1
 
-    # (C5) Estado entre turnos: Zi,t = 1 for t in Tbs
+    # Estado entre turnos: Zi,t = 1 for t in Tbs
     def between_shifts_elhd(self, model, i, d, t):
         return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for k in model.stations_set) == 1
 
@@ -166,22 +186,22 @@ class ConstraintRules(OptRules):
             return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
 
 
-     # (C8a) Límite inferior de SOC batería
+     # Límite inferior de SOC batería
     def battery_lower(self, model, i, d, t):
         return model.B[i, d, t] >= model.bmin_b[i] * model.bmax_b[i]
 
-    # (C8b) Límite superior de SOC batería
+    # Límite superior de SOC batería
     def battery_upper(self, model, i, d, t):
         return model.B[i, d, t] <= model.bmax_b[i]
 
 
-    # (C9) Condición de borde SOC batería
+    # Condición de borde SOC batería
     def battery_boundary(self, model, i, d):
         tf = self.time_series.get_time_intervals()[-1]
         return model.B[i, d, 0] == model.B[i, d, tf]
 
 
-    # (C25) Producción mínima 
+    # Producción mínima 
     def production(self, model, d, j):
         target = model.m_j[j,d]
         def ntr(node,i):
@@ -284,15 +304,27 @@ class ObjectiveRules(OptRules):
 
         return cost_el*model.scaling_factor_op_cost
     
+    def lhd_charge_cost_bs(self, model):
+        # Coste de cargar baterías (electricidad) con tecnonología BS
+        cost_el = sum(
+            model.costo_electricidad[d, t] * model.Sv[k, d, t, a] * model.p_charger * model.delta_t
+            for k in model.stations_set
+            for d in model.days
+            for t in model.time_intervals_set
+            for a in model.time_intervals_set 
+        ) * model.delta_t
+
+        return cost_el*model.scaling_factor_op_cost
+
     def inversion_cost(self, model):
         cost_inv = sum(
-            model.station_cost_k[k] * model.X[k] + model.charger_cost * model.N_chargers[k]
-            for k in model.stations_set
-        )
+            model.station_cost_k[k] * model.X[k] + model.charger_cost * model.N_chargers[k] 
+            + model.battery_cost * model.N_batteries[k]  for k in model.stations_set 
+        ) 
         return cost_inv
     
     def total_cost(self, model):
-        return self.lhd_charge_cost(model) + self.inversion_cost(model)
+        return self.lhd_charge_cost_bs(model) + self.inversion_cost(model)
 
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
@@ -329,3 +361,4 @@ class OutputManager(OptRules):
 
 
 
+ 

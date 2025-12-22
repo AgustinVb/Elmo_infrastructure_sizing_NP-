@@ -33,3 +33,9 @@ class Stations(object):
     
     def get_maneuvering_time(self, keys=None):
         return self.get('man_time', keys)
+    
+    def get_max_batteries(self, keys=None):
+        return self.get('max_batteries', keys)
+    
+    def get_battery_cost(self, keys=None):
+        return self.get('battery_cost', keys)

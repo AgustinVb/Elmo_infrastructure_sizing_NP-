@@ -564,11 +564,6 @@ class JSONPlotter:
             x = np.arange(len(extr.index))
             bar = extr["extracted_tons"] if "extracted_tons" in extr.columns else extr["assignments"]
             ax.bar(x, bar.values, edgecolor="black")
-            print("="*50)
-            print("🔥 KEVIN RACSO - MATERIAL EXTRAIDO 🔥")
-            print("Day:", d, "| Values:", bar.values)
-            print("Total extracted:", sum(bar.values))
-            print("="*50)
             import sys; sys.stdout.flush()  # Force output to appear immediately
 
             if mj:
