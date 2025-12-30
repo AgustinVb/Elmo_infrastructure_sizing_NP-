@@ -185,6 +185,18 @@ class ConstraintRules(OptRules):
         else:
             return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
 
+    def battery_soc_swap(self, model, i, d, t):
+        t0 = self.time_series.get_time_intervals()[0]
+        discharge = sum(
+            model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
+            for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
+        )
+        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i]*model.t_ttc_i[k,i] for k in model.stations_set)
+        
+
+        if t >= t0:
+            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
+
 
      # Límite inferior de SOC batería
     def battery_lower(self, model, i, d, t):
@@ -226,19 +238,30 @@ class ConstraintRules(OptRules):
         for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
         )
         return term_de <= target *1.3
+    
     # Estaciones de carga
     
     #Cantidad máxima de cargadores
     def max_n_chargers(self, model, k):
         return model.N_chargers[k] <= model.max_chargers_k[k] * model.X[k]
     
+    #Cantidad máxima de baterías
+    def max_n_batteries(self, model, k):
+        return model.N_batteries[k] <= model.nk_bat[k] * model.X[k]
+    
     #Existencia de la estación
     def station_existence_constraint(self, model, k, i, d, t):
         return model.Z_charge[k,i, d, t] <= model.X[k]
     
+    def station_existence_constraint_swap(self, model, k, i, d, t):
+        return model.Z_swap[k,i, d, t] <= model.X[k]
+    
     #Limite de cargadores
     def charger_limit(self, model,k, d, t):
         return sum(model.Z_charge[k, i, d, t] for i in model.elhd_set) <= model.N_chargers[k]
+    
+    def charger_limit_swap(self, model,k, d, t, a):
+        return sum(model.Sv[k, d, t, a] for a in model.time_intervals_set) <= model.N_chargers[k]
     
     #Inicio y termino de una carga on-board
     def charge_state(self, model ,k, i, d, t):
