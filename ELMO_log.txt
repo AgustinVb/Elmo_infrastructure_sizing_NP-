@@ -1,80 +1,57 @@
 
-Gurobi 12.0.3 (win64) logging started Mon Dec 22 15:49:58 2025
+Gurobi 12.0.1 (win64) logging started Thu Jan  1 17:46:57 2026
 
 Set parameter LogFile to value "ELMO_log.txt"
 Set parameter Threads to value 32
 Set parameter Heuristics to value 0.8
-Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+Gurobi Optimizer version 12.0.1 build v12.0.1rc0 (win64 - Windows 11.0 (26100.2))
 
-CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
-Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 32 threads
+
+Warning: Thread count (32) is larger than processor count (8)
+         Reduce the value of the Threads parameter to improve performance
+
 
 Non-default parameters:
 MIPGap  0.01
 Heuristics  0.8
 Threads  32
 
-Optimize a model with 33029 rows, 214329 columns and 234396 nonzeros
-Model fingerprint: 0x4eb4bdae
-Variable types: 9264 continuous, 205065 integer (115203 binary)
+Optimize a model with 472231 rows, 288105 columns and 5537151 nonzeros
+Model fingerprint: 0x395fbba8
+Variable types: 4704 continuous, 283401 integer (193539 binary)
 Coefficient statistics:
-  Matrix range     [5e-01, 4e+02]
-  Objective range  [3e+02, 2e+05]
+  Matrix range     [1e+00, 4e+02]
+  Objective range  [5e+02, 2e+05]
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 2e+03]
-Presolve removed 12193 rows and 178179 columns
-Presolve time: 0.51s
-Presolved: 20836 rows, 36150 columns, 123974 nonzeros
-Variable types: 9072 continuous, 27078 integer (27076 binary)
-Deterministic concurrent LP optimizer: primal and dual simplex
-Showing primal log only...
+Presolve removed 405675 rows and 228411 columns
+Presolve time: 1.54s
+Presolved: 66556 rows, 59694 columns, 273561 nonzeros
+Variable types: 4560 continuous, 55134 integer (52072 binary)
+Performing another presolve...
+Presolve removed 48024 rows and 24108 columns
+Presolve time: 1.19s
 
-Concurrent spin time: 0.04s
+Root simplex log...
 
-Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   19473    9.4057586e-03   9.368818e+03   0.000000e+00      5s
+   41336    3.6182589e+04   2.818163e+04   0.000000e+00     10s
+   81150    1.0068939e+06   9.575500e+05   0.000000e+00     15s
 
-Use crossover to convert LP symmetric solution to basic solution...
-
-Root relaxation: objective 1.292116e+05, 12959 iterations, 0.31 seconds (0.53 work units)
+Root relaxation: infeasible, 86344 iterations, 11.11 seconds (10.07 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 129211.611    0 1314          - 129211.611      -     -    2s
-     0     0 147304.000    0 1976          - 147304.000      -     -    8s
-     0     0 147304.000    0 1092          - 147304.000      -     -    9s
-     0     0 147304.000    0 1096          - 147304.000      -     -    9s
-     0     0 147304.000    0 1055          - 147304.000      -     -    9s
-     0     0 147304.000    0  118          - 147304.000      -     -   10s
-     0     0 147304.000    0  236          - 147304.000      -     -   12s
-     0     0 147304.000    0  226          - 147304.000      -     -   12s
-     0     0 147304.000    0   78          - 147304.000      -     -   13s
-     0     0 147304.000    0   80          - 147304.000      -     -   13s
-     0     0 147304.000    0   72          - 147304.000      -     -   13s
-     0     0 147304.000    0   74          - 147304.000      -     -   13s
-     0     0 147304.000    0   47          - 147304.000      -     -   13s
-     0     0 147304.000    0   55          - 147304.000      -     -   13s
-     0     0 147304.000    0   46          - 147304.000      -     -   13s
-     0     0 147304.000    0   59          - 147304.000      -     -   13s
-     0     0 147304.000    0   52          - 147304.000      -     -   13s
-     0     0 147304.000    0   69          - 147304.000      -     -   13s
-     0     0 147304.000    0   36          - 147304.000      -     -   14s
-     0     0 147304.000    0   36          - 147304.000      -     -   14s
-     0     0 147304.000    0   40          - 147304.000      -     -   14s
-     0     0 147304.000    0   29          - 147304.000      -     -   14s
-H    0     0                    147304.00000 147304.000  0.00%     -   22s
-     0     0 147304.000    0   29 147304.000 147304.000  0.00%     -   22s
+     0     0 infeasible    0               - infeasible      -     -   15s
 
-Cutting planes:
-  Gomory: 2
-  Implied bound: 5
-  MIR: 15
-  Flow cover: 33
+Explored 1 nodes (21424 simplex iterations) in 15.42 seconds (13.13 work units)
+Thread count was 32 (of 8 available processors)
 
-Explored 1 nodes (139344 simplex iterations) in 22.44 seconds (34.10 work units)
-Thread count was 32 (of 32 available processors)
+Solution count 0
 
-Solution count 1: 147304 
-
-Optimal solution found (tolerance 1.00e-02)
-Best objective 1.473040000000e+05, best bound 1.473040000000e+05, gap 0.0000%
+Model is infeasible
+Best objective -, best bound -, gap -
