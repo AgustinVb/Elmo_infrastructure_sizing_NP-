@@ -86,7 +86,7 @@ class OptParameters(OptRules):
         model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False)
         model.pk_i   = pyo.Param( model.stations_set, model.slhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.slhd_set}, mutable=False)
         model.t_ttc_i   = pyo.Param( model.stations_set, model.slhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.slhd_set}, mutable=False)
-        model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers(k) for k in model.stations_set}, mutable=False)
+        model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries(k) for k in model.stations_set}, mutable=False)
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
         # Scalar fallback for station-level logic (use first LHD charge time)
@@ -534,15 +534,15 @@ class ConstraintRules(OptRules):
             return model.Z_swap[k, i, d, t] == 0
     
     def build_all_constraints(self, model):
-        model.battery_lower = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
-        model.battery_upper = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
-        model.battery_boundary                  = pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary)
+        model.battery_lower =              pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
+        model.battery_upper =               pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
+        model.battery_boundary =            pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary)
        
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
         model.max_installed_capacity             = pyo.Constraint(rule=self.max_installed_capacity)
         
         #prueba
-        #model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
+        model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
 
         #nuevas
         model.max_n_batteries                   = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
