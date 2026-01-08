@@ -507,7 +507,19 @@ class ConstraintRules(OptRules):
     
     def avaible_batteries_for_swap(self, model, k , d ,t):
         return sum(model.Z_swap[k, i ,d, t] for i in model.slhd_set) <= model.S[k,d,t]
-    
+
+    # Link entre baterías descargadas y baterías que inician carga
+    def x_ini_availability(self, model, k, d, t):
+        return model.X_ini[k, d, t] <= model.X_dch[k, d, t]
+
+    # No se pueden iniciar más cargas simultáneas que cargadores disponibles
+    def x_ini_charger_limit(self, model, k, d, t):
+        return model.X_ini[k, d, t] <= model.N_chargers[k]
+
+    # Si la estación existe (X[k]=1) debe tener al menos 1 cargador
+    def min_n_chargers(self, model, k):
+        return model.N_chargers[k] >= model.X[k]
+
     #pruebsa debug
     def force_zswap_debug(self, model, k, i, d, t):
         """
@@ -574,6 +586,11 @@ class ConstraintRules(OptRules):
         # no estan en el modelo latex
         model.initial_charging_batteries    = pyo.Constraint(model.stations_set, model.days, rule=self.initial_charging_batteries)
         model.avaible_batteries_for_swap    = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.avaible_batteries_for_swap)
+
+        # Restricciones nuevas para enlazar inicios de carga, descargadas y cargadores
+        model.x_ini_availability = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.x_ini_availability)
+        model.x_ini_charger_limit = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.x_ini_charger_limit)
+        model.min_n_chargers = pyo.Constraint(model.stations_set, rule=self.min_n_chargers)
 
         #prueba debug
         #model.force_zswap_debug = pyo.Constraint(model.stations_set, model.slhd_set, model.days, model.time_intervals_set, rule=self.force_zswap_debug)
