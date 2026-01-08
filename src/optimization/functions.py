@@ -90,8 +90,9 @@ class OptParameters(OptRules):
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
         # Scalar fallback for station-level logic (use first LHD charge time)
-        first_elhd = self.mine_system.elhd.elhds[0]
-        model.t_charge_scalar = pyo.Param(initialize=self.mine_system.elhd.get_charge_time(first_elhd), mutable=False)
+        #first_elhd = self.mine_system.elhd.elhds[0]
+        #model.t_charge_scalar = pyo.Param(initialize=self.mine_system.elhd.get_charge_time(first_elhd), mutable=False)
+        model.t_charge_scalar = 2
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
@@ -313,7 +314,9 @@ class ConstraintRules(OptRules):
     def charger_limit(self, model,k, d, t):
         return sum(model.Z_charge[k, i, d, t] for i in model.elhd_set) <= model.N_chargers[k]
     
-    def charger_limit_swap(self, model,k, d, t, a):
+    def charger_limit_swap(self, model, k, d, t):
+        # Para cada estación k, día d y intervalo t, la suma de baterías
+        # conectadas (para todos los inicios a) en t no puede exceder los cargadores
         return sum(model.Sv[k, d, t, a] for a in model.time_intervals_set) <= model.N_chargers[k]
     
     #Inicio y termino de una carga on-board
@@ -460,25 +463,26 @@ class ConstraintRules(OptRules):
         t0 = self.time_series.get_time_intervals()[0]
         Tc = value(model.t_charge_scalar)
 
-        # Condición inicial
+        # Estado inicial
         if t == t0:
-            return model.Sv[k, d, t, a] == 0
-
-        # Paso recursivo
-        if t0 <= t < tf:
             if a == t:
-                # Caso: Batería acaba de entrar al cargador (viene de X_ini)
                 return model.Sv[k, d, t+1, a] == model.X_ini[k, d, t]
-            
-            elif (t - Tc + 1) <= a <= (t - 1):
-                # Caso: Batería sigue cargando (se mantiene)
-                return model.Sv[k, d, t+1, a] == model.Sv[k, d, t, a]
-            
             else:
-                # Caso: Ya terminó o nunca existió
                 return model.Sv[k, d, t+1, a] == 0
-                
+
+        # Dinámica normal
+        if t0 < t < tf:
+            if a <= t - Tc:
+                return model.Sv[k, d, t+1, a] == 0
+            elif t - Tc + 1 <= a <= t - 1:
+                return model.Sv[k, d, t+1, a] == model.Sv[k, d, t, a]
+            elif a == t:
+                return model.Sv[k, d, t+1, a] == model.X_ini[k, d, t]
+            else:
+                return model.Sv[k, d, t+1, a] == 0
+
         return pyo.Constraint.Skip
+
     
     def c_b_charge_batteries(self, model, k, d):
         t0 = self.time_series.get_time_intervals()[0]
@@ -559,7 +563,7 @@ class ConstraintRules(OptRules):
         #nuevas
         model.max_n_batteries                   = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.station_existence_constraint_swap      = pyo.Constraint(model.stations_set, model.slhd_set, model.days, model.time_intervals_set, rule=self.station_existence_constraint_swap)
-        model.charger_limit_swap                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, model.time_intervals_set, rule=self.charger_limit_swap)
+        model.charger_limit_swap                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit_swap)
         model.battery_soc_swap                       = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_soc_swap)
         model.battery_soc_swap_update_1                  = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_soc_swap_update_1)
         model.battery_soc_swap_update_2                  = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_soc_swap_update_2)

@@ -220,8 +220,12 @@ class Timeseries(object):
     def get_shift_day_end(self, shift_name: str) -> int:
         return self.mapper['Shifts'].loc[shift_name, :]['day_end'].iloc[0]
 
+    #def get_time_intervals(self) -> np.ndarray:
+    #    intervals = np.arange(1, 24 / self.delta_t + 1)
+    #    return intervals
+    
     def get_time_intervals(self) -> np.ndarray:
-        intervals = np.arange(1, 24 / self.delta_t + 1)
+        intervals = np.arange(1, int(24 / self.delta_t) + 1, dtype=int)
         return intervals
 
     def get_last_interval(self) -> int:

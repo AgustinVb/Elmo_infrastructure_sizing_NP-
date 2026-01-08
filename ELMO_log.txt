@@ -1,65 +1,57 @@
 
-Gurobi 12.0.1 (win64) logging started Tue Jan  6 23:43:02 2026
+Gurobi 12.0.3 (win64) logging started Thu Jan  8 15:47:46 2026
 
 Set parameter LogFile to value "ELMO_log.txt"
 Set parameter Threads to value 32
 Set parameter Heuristics to value 0.8
-Gurobi Optimizer version 12.0.1 build v12.0.1rc0 (win64 - Windows 11.0 (26100.2))
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
 
-CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
-Thread count: 4 physical cores, 8 logical processors, using up to 32 threads
-
-Warning: Thread count (32) is larger than processor count (8)
-         Reduce the value of the Threads parameter to improve performance
-
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
 
 Non-default parameters:
 MIPGap  0.01
 Heuristics  0.8
 Threads  32
 
-Optimize a model with 39936 rows, 24017 columns and 470077 nonzeros
-Model fingerprint: 0xb14befc9
+Optimize a model with 33168 rows, 24017 columns and 138583 nonzeros
+Model fingerprint: 0xd7e9c358
 Variable types: 392 continuous, 23625 integer (16131 binary)
 Coefficient statistics:
   Matrix range     [1e+00, 4e+02]
   Objective range  [6e+03, 2e+05]
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 2e+03]
-Presolve removed 38511 rows and 21169 columns
-Presolve time: 0.15s
-Presolved: 1425 rows, 2848 columns, 8014 nonzeros
-Variable types: 372 continuous, 2476 integer (2407 binary)
-Found heuristic solution: objective 1145304.0000
+Presolve removed 31812 rows and 21238 columns
+Presolve time: 0.07s
+Presolved: 1356 rows, 2779 columns, 7810 nonzeros
+Variable types: 372 continuous, 2407 integer (2407 binary)
 
-Root relaxation: objective 8.722350e+05, 3777 iterations, 0.05 seconds (0.10 work units)
+Root relaxation: objective 8.722350e+05, 1487 iterations, 0.01 seconds (0.01 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 872235.043    0   34 1145304.00 872235.043  23.8%     -    0s
-     0     0 937304.000    0   39 1145304.00 937304.000  18.2%     -    0s
-     0     0 937304.000    0   40 1145304.00 937304.000  18.2%     -    0s
-     0     0 937304.000    0   40 1145304.00 937304.000  18.2%     -    0s
-     0     0 937304.000    0   40 1145304.00 937304.000  18.2%     -    0s
-     0     0 937304.000    0   28 1145304.00 937304.000  18.2%     -    0s
-     0     0 937304.000    0   29 1145304.00 937304.000  18.2%     -    0s
-     0     0 937304.000    0   29 1145304.00 937304.000  18.2%     -    0s
-     0     2 937304.000    0   29 1145304.00 937304.000  18.2%     -    0s
-  2061   177 infeasible   33      1145304.00 937304.000  18.2%  18.2    5s
-  5495  5325 1066304.00   33   38 1145304.00 1066304.00  6.90%  11.5   10s
- 15902 10817 infeasible  179      1145304.00 1066304.00  6.90%  10.4   15s
+     0     0 872235.043    0   12          - 872235.043      -     -    0s
+     0     0 872235.043    0   27          - 872235.043      -     -    0s
+     0     0 872235.043    0   28          - 872235.043      -     -    0s
+     0     0 872235.043    0   12          - 872235.043      -     -    0s
+     0     0 872235.043    0   15          - 872235.043      -     -    0s
+     0     0 872235.043    0   12          - 872235.043      -     -    0s
+     0     0 872235.043    0   14          - 872235.043      -     -    0s
+     0     0 872235.043    0   14          - 872235.043      -     -    0s
+     0     0 872235.043    0   15          - 872235.043      -     -    0s
+     0     0 872235.043    0   12          - 872235.043      -     -    0s
+     0     0 922235.043    0   13          - 922235.043      -     -    0s
+Model proven infeasible by zero objective heuristic
 
 Cutting planes:
-  Gomory: 11
-  Cover: 1
-  Flow cover: 6
-  Inf proof: 15
+  MIR: 2
 
-Explored 17215 nodes (182510 simplex iterations) in 16.51 seconds (4.95 work units)
-Thread count was 32 (of 8 available processors)
+Explored 1 nodes (5237 simplex iterations) in 2.83 seconds (6.01 work units)
+Thread count was 32 (of 32 available processors)
 
-Solution count 1: 1.1453e+06 
+Solution count 0
 
-Optimal solution found (tolerance 1.00e-02)
-Best objective 1.145304000000e+06, best bound 1.145304000000e+06, gap 0.0000%
+Model is infeasible
+Best objective -, best bound -, gap -
