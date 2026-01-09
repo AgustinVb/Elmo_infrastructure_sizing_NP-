@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--solver', default='glpk')
 
     series, mine_system, time_series = build_mine(parser.parse_args())
-    gap= 1/100;
+    gap= 5/100;
     solver_name=parser.parse_args().solver
     output_folder=parser.parse_args().output_folder
     opt = OptimizationModel(mine_system, time_series, gap, solver_name, output_folder)
