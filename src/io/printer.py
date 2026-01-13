@@ -8,13 +8,7 @@ Salidas:
    - Binarias: se omiten entradas con 0.
 2) Un JSON con TODOS los PARÁMETROS del modelo (parameters.json).
 3) Copia/guarda el LOG de Gurobi (gurobi.log) si existe.
-4) Un TXT (summary.txt) con: tiempo de formulación (si existe), tiempo de resolución,
-   MIP gap (si existe), #variables y #restricciones.
-
-Firma compatible con tu flujo:
-    Printer(opt_model, path, time_series, mine_system)
-y el orquestador:
-    printer.create_all_plots()
+4) Un TXT (summary.txt) con: tiempo, COSTO, PRODUCCIÓN, gap, etc.
 """
 
 import os
@@ -27,7 +21,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 from pyomo.environ import Var, Param, Constraint, value
-from pyomo.opt import TerminationCondition
 # (No usamos pandas)
 
 # ------------------------ utilidades genéricas ------------------------
@@ -60,7 +53,7 @@ def _coerce_json_val(x: Any) -> Any:
     return str(x)
 
 def _insert_nested(d: dict, keys: List[Union[str, int]], value_: Any) -> None:
-    """Inserta value en dict anidado usando la secuencia de keys (todas se guardan como str)."""
+    """Inserta value en dict anidado usando la secuencia de keys."""
     cur = d
     for k in keys[:-1]:
         ks = str(k)
@@ -74,12 +67,6 @@ def _insert_nested(d: dict, keys: List[Union[str, int]], value_: Any) -> None:
 _BRACKET_RE = re.compile(r"^(?P<base>[^\[]+)\[(?P<idx>.*)\]$")
 
 def _split_base_and_indices(var_name: str) -> Tuple[str, List[str]]:
-    """
-    Soporta:
-      base[i,j,k]
-      base[day=1,t=2,i=A]
-    Devuelve (base, [tokens crudos]).
-    """
     m = _BRACKET_RE.match(var_name)
     if not m:
         return var_name, []
@@ -89,14 +76,12 @@ def _split_base_and_indices(var_name: str) -> Tuple[str, List[str]]:
     return base, parts
 
 def _parse_index_token(tok: str) -> Tuple[Optional[str], str]:
-    """'day=183' -> ('day','183'); '42' -> (None,'42'); 'LHD1' -> (None,'LHD1')."""
     if "=" in tok:
         k, v = tok.split("=", 1)
         return k.strip(), v.strip()
     return None, tok.strip()
 
 def _normalize_axis_name(name: str) -> str:
-    """Normaliza alias de ejes: 'day'→'d'; 'interval'/'time'→'t'."""
     kk = str(name).lower()
     if kk in ("day", "d"):
         return "d"
@@ -106,10 +91,6 @@ def _normalize_axis_name(name: str) -> str:
 
 def _reorder_named_pairs(named_pairs: List[Tuple[str, str]],
                          preferred_order: Optional[List[str]] = None) -> List[Tuple[str, str]]:
-    """
-    Reordena pares (k,v) según un orden preferido si se entrega.
-    Si no hay orden preferido, aplica fallback: 'd' primero, 't' segundo, resto igual.
-    """
     def norm(a: str) -> str:
         return _normalize_axis_name(a)
 
@@ -138,17 +119,12 @@ def _infer_pairs_from_tokens(base: str,
                              var_index_schema: Optional[Dict[str, List[str]]] = None,
                              preferred_order: Optional[List[str]] = None
                              ) -> List[Tuple[str, str]]:
-    """
-    Devuelve lista de (nombre_idx, valor_idx) asignando nombres posicionales si faltan
-    y reordenando según preferred_order cuando se provee.
-    """
     parsed = [_parse_index_token(t) for t in tokens]
 
     if all(n is not None for n, _ in parsed):
         named = [(n, v) for (n, v) in parsed]
         return _reorder_named_pairs(named, preferred_order)
 
-    # Alguno sin nombre → asignar por schema si está
     positional_names: List[str] = []
     if var_index_schema and base in var_index_schema:
         positional_names = list(var_index_schema[base])
@@ -167,7 +143,6 @@ def _infer_pairs_from_tokens(base: str,
 # ------------------------ helpers Pyomo ------------------------
 
 def _is_binary_var_component(v: Var) -> bool:
-    """Heurística para saber si un componente Var es binario."""
     try:
         for vd in v.values():
             if vd.is_binary():
@@ -198,12 +173,6 @@ def _count_constraints(model) -> int:
 # ------------------------ Clase principal ------------------------
 
 class Printer:
-    """
-    Reemplazo de Printer con exportación JSON/TXT/LOG y sin gráficos.
-
-    __init__(opt_model, path, time_series, mine_system) se mantiene igual.
-    """
-
     def __init__(self, opt_model, path: str, time_series, mine_system):
         self.opt_model = opt_model
         self.model = opt_model.model
@@ -214,9 +183,6 @@ class Printer:
 
         _ensure_dir(self.path)
 
-        # ---------- SCHEMA POSICIONAL Y ORDEN DE ANIDACIÓN POR VARIABLE ----------
-        # Si el VarName NO viene con nombres (p.ej. Z[i,j,k]), asignamos estos nombres por posición.
-        # Luego, independientemente de cómo venga, reordenamos según var_axis_order para anidar el JSON.
         self.var_index_schema: Dict[str, List[str]] = {
             "Z":        ["d", "t", "i"],
             "Z_charge": ["k","d", "t", "i"],
@@ -240,63 +206,43 @@ class Printer:
             "EndCharge":   ["d", "t", "i", "k"],
         }
 
-        # tolerancia para considerar "casi cero" como cero
         self.float_tol: float = 1e-9
 
     # ----------- (1) VARIABLES → JSON anidados por variable -----------
 
     def _export_single_variable_json(self, var_comp: Var) -> None:
-        """
-        Exporta un componente de variable de Pyomo (Var) a un archivo JSON:
-        anidación según self.var_axis_order[base] si existe.
-        Para binarias → omite entradas con 0.
-        """
         base_name = str(var_comp.name)
         is_binary = _is_binary_var_component(var_comp)
 
         tree: Dict[str, Any] = {}
-
-        # Orden preferido y schema posicional para esta variable (si existen)
         preferred = self.var_axis_order.get(base_name)
         schema = self.var_index_schema
 
         for vd in var_comp.values():
-            # ⚠️ Usar vd.value (puede ser None si el solver no asignó valor)
             x = vd.value
             if x is None:
-                # si no hay valor, simplemente no exportamos esa entrada
                 continue
             try:
                 xv = float(x)
             except Exception:
-                # si por alguna razón no se puede convertir a float, lo omitimos
                 continue
 
-            # Redondeo pequeño a 0 para aligerar JSON
             if abs(xv) < self.float_tol:
                 xv = 0.0
 
-            # Para binarias → omitir 0
             if is_binary and abs(xv) < self.float_tol:
                 continue
 
-            # Nombre completo del VarData, ej: "Y[d,t,i,j]" (o sin nombres explícitos)
             vname = vd.name
             base, tokens = _split_base_and_indices(vname)
+            pairs = _infer_pairs_from_tokens(base, tokens, schema, preferred_order=preferred)
 
-            # Inferir pares (nombre, valor) y reordenar según preferred
-            pairs = _infer_pairs_from_tokens(
-                base, tokens, schema, preferred_order=preferred
-            )
-
-            # Construir path alternando clave->valor para cada par (e.g., d,183,t,42,i,LHD1,...)
             key_path: List[str] = []
             for k, v in pairs:
                 key_path.extend([_normalize_axis_name(k), str(v)])
 
             _insert_nested(tree, key_path, xv)
 
-        # Guardar archivo (si el árbol quedó vacío y era binaria con todo 0, igual se escribe {})
         out_path = os.path.join(self.path, f"{base_name}.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(tree, f, ensure_ascii=False, indent=2)
@@ -309,17 +255,14 @@ class Printer:
     # ----------- (2) PARÁMETROS → parameters.json -----------
 
     def _param_payload(self, p: Param) -> Any:
-        """Convierte un Param (escalar o indexado) a algo JSON-serializable, con anidación si procede."""
-        # Escalar (no indexado)
         if not p.is_indexed():
             try:
                 return _coerce_json_val(value(p))
             except Exception:
                 return _coerce_json_val(None)
 
-        # Indexado → anidar
         tree: Dict[str, Any] = {}
-        preferred = self.var_axis_order.get(str(p.name))  # si quisieras forzar orden en algún Param por nombre
+        preferred = self.var_axis_order.get(str(p.name))
 
         for key, pdata in p.items():
             try:
@@ -328,11 +271,7 @@ class Printer:
                 val = None
             val = _coerce_json_val(val)
 
-            # Normalizar key a tupla
             key_tuple = key if isinstance(key, tuple) else (key,)
-
-            # Construir pares (nombre_idx, valor_idx). Pyomo no trae nombres de ejes para Params,
-            # por lo que mapeamos posicionalmente a _1, _2... salvo que el valor venga como 'day=...'.
             pairs: List[Tuple[str, str]] = []
             for i, v in enumerate(key_tuple):
                 kname = f"_{i+1}"
@@ -343,7 +282,6 @@ class Printer:
                         kname, sval = k, vv
                 pairs.append((kname, sval))
 
-            # Reordenar (si preferred está definido) o fallback d→t
             pairs = _reorder_named_pairs(pairs, preferred_order=preferred)
 
             key_path: List[str] = []
@@ -364,15 +302,7 @@ class Printer:
     # ----------- (3) LOG de Gurobi -----------
 
     def save_gurobi_log(self, filename: str = "gurobi.log") -> None:
-        """
-        Intenta copiar un archivo de log de Gurobi al directorio de salida.
-        - Si solve_model configuró self.opt_model.gurobi_log_path y existe, lo copia.
-        - Si ya existe en self.path, no hace nada.
-        - Busca en cwd como fallback.
-        """
         dst = os.path.join(self.path, filename)
-
-        # 1) Si OptimizationModel almacenó la ruta:
         candidate = getattr(self.opt_model, "gurobi_log_path", None)
         if candidate and os.path.exists(candidate):
             if os.path.abspath(candidate) != os.path.abspath(dst):
@@ -380,96 +310,97 @@ class Printer:
                 shutil.copy2(candidate, dst)
             return
 
-        # 2) Si ya existe en la carpeta de salida, no hacemos nada
         if os.path.exists(dst):
             return
 
-        # 3) Buscar en cwd
         cwd_candidate = os.path.join(os.getcwd(), filename)
         if os.path.exists(cwd_candidate):
             _ensure_dir(os.path.dirname(dst))
             shutil.copy2(cwd_candidate, dst)
             return
 
-        # 4) Intento adicional: archivo anterior que usabas
         legacy = os.path.join(os.getcwd(), "ELMO_log.txt")
         if os.path.exists(legacy):
             shutil.copy2(legacy, dst)
             return
 
-        print(f"⚠️ No se encontró '{filename}'. "
-              f"Asegúrate de configurar SolverFactory('gurobi').options['LogFile'] a esa ruta.")
+        print(f"⚠️ No se encontró '{filename}'.")
 
-    # ----------- (4) SUMMARY TXT -----------
+    # ----------- (4) SUMMARY TXT (MODIFICADO) -----------
 
     def write_summary_txt(self, filename: str = "summary.txt") -> None:
         """
-        Escribe: tiempo de formulación, tiempo de resolución, MIP gap, #vars, #restricciones.
-        Lee atributos si existen en self.opt_model: time_formulation, time_total, mip_gap.
+        Escribe: Costo total, Producción, Tiempos, MIP gap, etc.
         """
         lines: List[str] = []
         now = time.strftime("%Y-%m-%d %H:%M:%S")
         lines.append(f"Generated: {now}")
+        lines.append("-" * 30)
 
-        # tiempos
+        # 1. RESULTADOS PRINCIPALES (Costo y Producción)
+        # Se buscan los atributos en opt_model
+        cost_val = getattr(self.opt_model, "opt_cost_result", None)
+        prod_val = getattr(self.opt_model, "total_production", None)
+
+        if cost_val is not None:
+            lines.append(f"Total Cost (Objective): {float(cost_val):,.2f}")
+        else:
+            lines.append("Total Cost: (not available)")
+
+        if prod_val is not None:
+            lines.append(f"Total Production: {float(prod_val):,.2f}")
+        else:
+            lines.append("Total Production: (not available)")
+
+        lines.append("-" * 30)
+
+        # 2. TIEMPOS
         t_form = getattr(self.opt_model, "time_formulation", None)
         t_solve = getattr(self.opt_model, "time_total", None)
-
-        if t_form is not None:
-            lines.append(f"Formulation time [s]: {float(t_form):.3f}")
-        else:
-            lines.append("Formulation time [s]: (not provided)")
 
         if t_solve is not None:
             lines.append(f"Solve time [s]: {float(t_solve):.3f}")
         else:
             lines.append("Solve time [s]: (not provided)")
+        
+        if t_form is not None:
+            lines.append(f"Formulation time [s]: {float(t_form):.3f}")
 
-        # conteos
+        # 3. ESTADÍSTICAS DEL MODELO
         try:
             nvars = _count_vars(self.model)
-        except Exception:
-            nvars = None
+            lines.append(f"Variables: {int(nvars)}")
+        except:
+            pass
+            
         try:
             ncons = _count_constraints(self.model)
-        except Exception:
-            ncons = None
+            lines.append(f"Constraints: {int(ncons)}")
+        except:
+            pass
 
-        lines.append(f"Variables: {int(nvars) if nvars is not None else '(unknown)'}")
-        lines.append(f"Constraints: {int(ncons) if ncons is not None else '(unknown)'}")
-
-        # MIP gap
+        # 4. MIP GAP
         mip_gap = getattr(self.opt_model, "mip_gap", None)
         if mip_gap is not None:
             try:
                 lines.append(f"MIP Gap: {float(mip_gap):.6f}")
-            except Exception:
-                lines.append("MIP Gap: (unavailable)")
-        else:
-            lines.append("MIP Gap: (n/a)")
+            except:
+                pass
 
         out_path = os.path.join(self.path, filename)
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-    # ----------- ORQUESTADOR (reemplaza create_all_plots) -----------
+    # ----------- ORQUESTADOR -----------
 
     def create_all_plots(self):
-        """
-        Compatibilidad: ejecuta el pipeline de exportación JSON/TXT/LOG (sin gráficos).
-        """
         self.write_variables_jsons()
         self.write_parameters_json()
         self.save_gurobi_log()
         self.write_summary_txt()
-        print(f"✔ JSON de variables y parámetros, log y summary guardados en '{self.path}'.")
+        print(f"✔ JSONs, log y summary guardados en '{self.path}'.")
 
-    # ----------- helpers opcionales -----------
-
-    def run_all(self,
-                write_params: bool = True,
-                log_filename: str = "gurobi.log",
-                summary_filename: str = "summary.txt") -> None:
+    def run_all(self, write_params: bool = True, log_filename: str = "gurobi.log", summary_filename: str = "summary.txt") -> None:
         self.write_variables_jsons()
         if write_params:
             self.write_parameters_json()
