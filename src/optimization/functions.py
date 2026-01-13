@@ -291,6 +291,17 @@ class ObjectiveRules(OptRules):
     
     def total_cost(self, model):
         return self.lhd_charge_cost(model) + self.inversion_cost(model)
+    
+    def production_total(self, model, j):
+        def ntr(node,i):
+            return self.time_series.get_n_trips(node,i)
+
+        # extracción normal de mineral
+        term_de = sum(
+        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
+        for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
+        for d in model.days)
+        return term_de*model.scaling_factor_op_cost
 
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
