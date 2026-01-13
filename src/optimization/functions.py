@@ -160,9 +160,7 @@ class ConstraintRules(OptRules):
         penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i]*model.t_ttc_i[k,i] for k in model.stations_set)
         
 
-        if t == t0:
-            return model.B[i, d, t] == model.B[i, d, 0] + charge - discharge - penalization_charge
-        else:
+        if t >= t0:
             return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
 
 
