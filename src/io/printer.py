@@ -8,8 +8,7 @@ Salidas:
    - Binarias: se omiten entradas con 0.
 2) Un JSON con TODOS los PARÁMETROS del modelo (parameters.json).
 3) Copia/guarda el LOG de Gurobi (gurobi.log) si existe.
-4) Un TXT (summary.txt) con: tiempo de formulación (si existe), tiempo de resolución,
-   MIP gap (si existe), #variables y #restricciones.
+4) Un TXT (summary.txt) con: Costo, Producción, Tiempos, MIP gap, etc.
 
 Firma compatible con tu flujo:
     Printer(opt_model, path, time_series, mine_system)
@@ -27,7 +26,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 from pyomo.environ import Var, Param, Constraint, value
-from pyomo.opt import TerminationCondition
 # (No usamos pandas)
 
 # ------------------------ utilidades genéricas ------------------------
@@ -215,8 +213,6 @@ class Printer:
         _ensure_dir(self.path)
 
         # ---------- SCHEMA POSICIONAL Y ORDEN DE ANIDACIÓN POR VARIABLE ----------
-        # Si el VarName NO viene con nombres (p.ej. Z[i,j,k]), asignamos estos nombres por posición.
-        # Luego, independientemente de cómo venga, reordenamos según var_axis_order para anidar el JSON.
         self.var_index_schema: Dict[str, List[str]] = {
             "Z":        ["d", "t", "i"],
             "Z_charge": ["k","d", "t", "i"],
@@ -247,9 +243,7 @@ class Printer:
 
     def _export_single_variable_json(self, var_comp: Var) -> None:
         """
-        Exporta un componente de variable de Pyomo (Var) a un archivo JSON:
-        anidación según self.var_axis_order[base] si existe.
-        Para binarias → omite entradas con 0.
+        Exporta un componente de variable de Pyomo (Var) a un archivo JSON.
         """
         base_name = str(var_comp.name)
         is_binary = _is_binary_var_component(var_comp)
@@ -261,18 +255,15 @@ class Printer:
         schema = self.var_index_schema
 
         for vd in var_comp.values():
-            # ⚠️ Usar vd.value (puede ser None si el solver no asignó valor)
             x = vd.value
             if x is None:
-                # si no hay valor, simplemente no exportamos esa entrada
                 continue
             try:
                 xv = float(x)
             except Exception:
-                # si por alguna razón no se puede convertir a float, lo omitimos
                 continue
 
-            # Redondeo pequeño a 0 para aligerar JSON
+            # Redondeo pequeño a 0
             if abs(xv) < self.float_tol:
                 xv = 0.0
 
@@ -280,23 +271,19 @@ class Printer:
             if is_binary and abs(xv) < self.float_tol:
                 continue
 
-            # Nombre completo del VarData, ej: "Y[d,t,i,j]" (o sin nombres explícitos)
             vname = vd.name
             base, tokens = _split_base_and_indices(vname)
 
-            # Inferir pares (nombre, valor) y reordenar según preferred
             pairs = _infer_pairs_from_tokens(
                 base, tokens, schema, preferred_order=preferred
             )
 
-            # Construir path alternando clave->valor para cada par (e.g., d,183,t,42,i,LHD1,...)
             key_path: List[str] = []
             for k, v in pairs:
                 key_path.extend([_normalize_axis_name(k), str(v)])
 
             _insert_nested(tree, key_path, xv)
 
-        # Guardar archivo (si el árbol quedó vacío y era binaria con todo 0, igual se escribe {})
         out_path = os.path.join(self.path, f"{base_name}.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(tree, f, ensure_ascii=False, indent=2)
@@ -309,17 +296,14 @@ class Printer:
     # ----------- (2) PARÁMETROS → parameters.json -----------
 
     def _param_payload(self, p: Param) -> Any:
-        """Convierte un Param (escalar o indexado) a algo JSON-serializable, con anidación si procede."""
-        # Escalar (no indexado)
         if not p.is_indexed():
             try:
                 return _coerce_json_val(value(p))
             except Exception:
                 return _coerce_json_val(None)
 
-        # Indexado → anidar
         tree: Dict[str, Any] = {}
-        preferred = self.var_axis_order.get(str(p.name))  # si quisieras forzar orden en algún Param por nombre
+        preferred = self.var_axis_order.get(str(p.name))
 
         for key, pdata in p.items():
             try:
@@ -328,11 +312,8 @@ class Printer:
                 val = None
             val = _coerce_json_val(val)
 
-            # Normalizar key a tupla
             key_tuple = key if isinstance(key, tuple) else (key,)
 
-            # Construir pares (nombre_idx, valor_idx). Pyomo no trae nombres de ejes para Params,
-            # por lo que mapeamos posicionalmente a _1, _2... salvo que el valor venga como 'day=...'.
             pairs: List[Tuple[str, str]] = []
             for i, v in enumerate(key_tuple):
                 kname = f"_{i+1}"
@@ -343,7 +324,6 @@ class Printer:
                         kname, sval = k, vv
                 pairs.append((kname, sval))
 
-            # Reordenar (si preferred está definido) o fallback d→t
             pairs = _reorder_named_pairs(pairs, preferred_order=preferred)
 
             key_path: List[str] = []
@@ -366,9 +346,6 @@ class Printer:
     def save_gurobi_log(self, filename: str = "gurobi.log") -> None:
         """
         Intenta copiar un archivo de log de Gurobi al directorio de salida.
-        - Si solve_model configuró self.opt_model.gurobi_log_path y existe, lo copia.
-        - Si ya existe en self.path, no hace nada.
-        - Busca en cwd como fallback.
         """
         dst = os.path.join(self.path, filename)
 
@@ -397,19 +374,36 @@ class Printer:
             shutil.copy2(legacy, dst)
             return
 
-        print(f"⚠️ No se encontró '{filename}'. "
-              f"Asegúrate de configurar SolverFactory('gurobi').options['LogFile'] a esa ruta.")
+        print(f"⚠️ No se encontró '{filename}'. ")
 
-    # ----------- (4) SUMMARY TXT -----------
+    # ----------- (4) SUMMARY TXT (ACTUALIZADO CON KPIs) -----------
 
     def write_summary_txt(self, filename: str = "summary.txt") -> None:
         """
-        Escribe: tiempo de formulación, tiempo de resolución, MIP gap, #vars, #restricciones.
-        Lee atributos si existen en self.opt_model: time_formulation, time_total, mip_gap.
+        Escribe: COSTO, PRODUCCIÓN, tiempo de resolución, MIP gap, etc.
         """
         lines: List[str] = []
         now = time.strftime("%Y-%m-%d %H:%M:%S")
         lines.append(f"Generated: {now}")
+        lines.append("-" * 35)
+
+        # --- SECCIÓN NUEVA: KPIs principales (Costo y Producción) ---
+        # Leemos los atributos que guardaste en opt_model
+        cost_val = getattr(self.opt_model, "opt_cost_result", None)
+        prod_val = getattr(self.opt_model, "total_production", None)
+
+        if cost_val is not None:
+            lines.append(f"Total Cost (Objective): {float(cost_val):,.2f}")
+        else:
+            lines.append("Total Cost: (not available)")
+
+        if prod_val is not None:
+            lines.append(f"Total Production: {float(prod_val):,.2f}")
+        else:
+            lines.append("Total Production: (not available)")
+        
+        lines.append("-" * 35)
+        # ------------------------------------------------------------
 
         # tiempos
         t_form = getattr(self.opt_model, "time_formulation", None)

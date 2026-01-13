@@ -132,7 +132,8 @@ class OptModel(object):
 
                 # 2. Convertimos la expresión de Pyomo a un número (float)
                 total_prod_val += value(prod_expression)
-            print(f"⛏️  Total production: {total_prod_val:,.2f} Ton")
+                self.total_production = total_prod_val
+            print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
             # -----------------------------------
 
         else:
