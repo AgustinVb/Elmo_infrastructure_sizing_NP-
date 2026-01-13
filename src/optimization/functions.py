@@ -484,6 +484,15 @@ class ObjectiveRules(OptRules):
         ) 
         return cost_inv
     
+    def production_total(self, model, j):
+        def ntr(node,i):
+            return self.time_series.get_n_trips(node,i)
+        term_de = sum(model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
+        for i in model.dlhd_set|model.slhd_set for t in model.time_intervals_set for d in model.days)
+        pen = sum(model.Z_pen[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
+        for i in model.slhd_set|model.slhd_set for t in model.time_intervals_set for d in model.days)
+        return (term_de - pen)*model.scaling_factor_op_cost
+    
     def total_cost(self, model):
         return self.lhd_charge_cost_bs(model) + self.inversion_cost(model)
 

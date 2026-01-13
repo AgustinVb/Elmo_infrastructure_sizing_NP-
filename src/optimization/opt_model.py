@@ -125,6 +125,15 @@ class OptModel(object):
             self.opt_cost_result = value(self.model.obj)
             print(f"✅ Solution time [sec]: {self.time_total:.2f}")
             print("💰 Operation Cost:", self.opt_cost_result)
+            # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
+            total_prod_val = 0
+            for j in self.model.nodes_set:
+                prod_expression = self.objective_rules.production_total(self.model, j)
+
+                # 2. Convertimos la expresión de Pyomo a un número (float)
+                total_prod_val += value(prod_expression)
+            print(f"⛏️  Total production: {total_prod_val:,.2f} Ton")
+            # -----------------------------------
 
         else:
             print(f"⚠️ Termination condition: {self.solution_status}")
