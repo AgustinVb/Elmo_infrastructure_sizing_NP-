@@ -109,8 +109,11 @@ class OptModel(object):
             opt.options['LogToConsole'] = 1
             opt.options['MIPGap']       = gap
             opt.options['LogFile']      = log_file
-            opt.options['Threads']      = 32
-            opt.options['Heuristics']   = 0.8  # 🔥 Subimos heurísticas al 80%
+            opt.options['Threads']      = 24
+            opt.options['Heuristics']   = 0.2
+            opt.options['Presolve']     = 2
+            opt.options['MipFocus']    = 3   # 0 = balance, 1 = feasible solutions, 2 = optimality, 3 = bound improvement
+            opt.options['FlowCoverCuts'] = 2 
 
         print("Solving opt model")
         start_time = time.time()

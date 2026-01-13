@@ -20,6 +20,8 @@ DEFAULT_ENERGY_PRICE_SCALE = 1.0
 
 
 # -------------------- Utils --------------------
+
+
 def _numeric_or_str(x: str):
     try:
         if "." in str(x):
@@ -356,10 +358,22 @@ class Parameters:
         self.pe_i = data.get("pe_i")
         self.pd_i = data.get("pd_i")
 
-
-
 # -------------------- Plotter --------------------
 class JSONPlotter:
+    MONTH_LABELS = {
+            1: "January",
+            2: "February",
+            3: "March",
+            4: "April",
+            5: "May",
+            6: "June",
+            7: "July",
+            8: "August",
+            9: "September",
+            10: "October",
+            11: "November",
+            12: "December",
+        }
     def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE):
         self.json_dir = json_dir
 
@@ -404,10 +418,39 @@ class JSONPlotter:
         if ints and ints[0] == 0 and 1 in ints:
             return list(range(min(ints), max(ints) + 1))
         return ints
+    
+    def _rep_day_label(self, d: int) -> str:
+        """
+        Devuelve 'día Mes' determinando a qué intervalo mensual pertenece d.
+        - Si los días del dataset parecen meses (max(self.days) <= 12), trata d como índice de mes.
+        - Si no, interpreta d como día absoluto y calcula el día-del-año relativo a min(self.days),
+          luego asigna mes usando longitudes reales de meses (no bisiesto).
+        """
+        try:
+            di = int(d)
+        except Exception:
+            return f"Day {d}"
 
-    @staticmethod
-    def _rep_day_label(d: int) -> str:
+        # Caso: el dataset ya usa 1..12 como meses
+        if self.days and max(self.days) <= 12:
+            return self.MONTH_LABELS.get(di, f"Month {di}")
+
+        # No asumimos que min(self.days) == 1 de enero: tomamos min(self.days) como inicio "virtual" del año
+        min_day = min(self.days) if self.days else 1
+        day_of_year = ((di - min_day) % 365) + 1
+
+        month_lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        cum = 0
+        for m, ml in enumerate(month_lengths, start=1):
+            start = cum + 1
+            end = cum + ml
+            if start <= day_of_year <= end:
+                day_of_month = day_of_year - cum
+                month_name = self.MONTH_LABELS.get(m, f"Month{m}")
+                return f"{day_of_month} {month_name}"
+            cum += ml
         return f"Day {d}"
+
 
     def _xtick_hours(self):
         if not self.intervals:
@@ -427,11 +470,16 @@ class JSONPlotter:
             print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
             return
 
+        
         def _season_for_day(d: int) -> str:
-            if 1 <= d <= 90:   return "Winter"
-            if 91 <= d <= 180: return "Spring"
-            if 181 <= d <= 270:return "Summer"
-            return "Autumn"
+            if d in (12, 1, 2):
+                return "Summer"
+            if d in (3, 4, 5):
+                return "Autumn"
+            if d in (6, 7, 8):
+                return "Winter"
+            return "Spring"
+
 
         def _time_labels_every_4h(intervals: list[int]) -> tuple[list[int], list[str]]:
             if not intervals: return [], []
@@ -502,8 +550,14 @@ class JSONPlotter:
 
             # Título (SIN negrita) y más grande
             ax_top.set_axis_off()
-            ax_top.text(0.5, 0.78, f"{season}: Total Charge Power vs Energy Price",
-                        ha="center", va="center", fontsize=32)
+            
+            month = self._rep_day_label(d)
+            ax_top.text(
+                       0.5, 0.78,
+                       f"{month} – Total Charge Power vs Energy Price ({season})",
+                       ha="center", va="center", fontsize=32
+            )
+
 
             # Leyenda: en panel superior con borde gris claro
             h1, l1 = ax1.get_legend_handles_labels()
@@ -537,7 +591,14 @@ class JSONPlotter:
                                     xytext=(0, 8), textcoords="offset points",
                                     ha="center", va="bottom", fontsize=19, color="black")
 
-            fig.savefig(os.path.join(self.plot_dir, f"ChargePower_vs_price_day-{d}.png"), bbox_inches="tight")
+
+            month = self._rep_day_label(d)
+            fig.savefig(
+                       os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
+                       bbox_inches="tight"
+            )
+
+
             plt.close(fig)
 
 
@@ -575,7 +636,14 @@ class JSONPlotter:
             ax.set_title(f"Extraction vs Demand – {self._rep_day_label(d)}")
             if mj: ax.legend(loc="upper left")
             fig.tight_layout()
-            fig.savefig(os.path.join(self.plot_dir, f"Extraction_vs_Demand_day-{d}.png"))
+            
+
+            month = self._rep_day_label(d)
+            fig.savefig(
+                        os.path.join(self.plot_dir, f"Extraction_vs_Demand_{month}.png")
+            )
+    
+
             plt.close(fig)
 
     def plot_lhd_soc_vs_price_and_states(self):
@@ -589,11 +657,15 @@ class JSONPlotter:
 
         delta_t = float(self.delta_t)
 
+        
         def _season_for_day(d: int) -> str:
-            if 1 <= d <= 90:   return "Winter"
-            if 91 <= d <= 180: return "Spring"
-            if 181 <= d <= 270:return "Summer"
-            return "Autumn"
+            if d in (12, 1, 2):
+                return "Summer"
+            if d in (3, 4, 5):
+                return "Autumn"
+            if d in (6, 7, 8):
+                return "Winter"
+            return "Spring"
 
         def _time_ticks_labels_every_4h(intervals: list[int]):
             if not intervals:
@@ -767,8 +839,16 @@ class JSONPlotter:
 
                 # ===== Título y leyendas (tamaños y bordes) =====
                 season = _season_for_day(int(day))
-                ax_title.text(0.5, 0.75, f"LHD {lhd} – {season}",
-                            ha="center", va="center", fontsize=32)
+                
+
+                
+                month = self._rep_day_label(day)
+                ax_title.text(
+                    0.5, 0.75,
+                    f"LHD {lhd} – {month} ({season})",
+                    ha="center", va="center", fontsize=32
+                )
+
 
                 # Leyenda de líneas
                 ax_leg_lines.legend(
@@ -883,9 +963,16 @@ class JSONPlotter:
 
             # Título (estación, sin negrita) y grande
             ax_top.set_axis_off()
-            ax_top.text(0.5, 0.78, f"{season}: Electric Emission Profile",
-                        ha="center", va="center", fontsize=32)
+            
+            month = self._rep_day_label(d)
+            ax_top.text(
+                0.5, 0.78,
+                f"{month} – Electric Emission Profile ({season})",
+                ha="center", va="center", fontsize=32
+            )
+            
 
+          
             # Leyenda debajo del título, sin unidades en el label, con borde gris claro
             handles, labels_ = ax.get_legend_handles_labels()
             leg = ax_top.legend(handles, labels_, loc="center", ncols=1, fontsize=18,
@@ -895,9 +982,13 @@ class JSONPlotter:
             leg.get_frame().set_linewidth(1.2)
             leg.get_frame().set_facecolor("white")
 
-            # Guardar
-            fig.savefig(os.path.join(self.plot_dir, f"EmissionProfiles_day-{d}.png"),
-                        bbox_inches="tight")
+            # Guardar            
+            month = self._rep_day_label(d)
+            fig.savefig(
+                        os.path.join(self.plot_dir, f"EmissionProfiles_{month}.png"),
+                        bbox_inches="tight"
+            )
+
             plt.close(fig)
 
 
