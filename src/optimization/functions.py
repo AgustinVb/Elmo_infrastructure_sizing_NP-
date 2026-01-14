@@ -266,7 +266,7 @@ class ConstraintRules(OptRules):
         model.max_installed_capacity             = pyo.Constraint(rule=self.max_installed_capacity)
         model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
         #prueba
-        model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
+        #model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
 
 class ObjectiveRules(OptRules):
 
