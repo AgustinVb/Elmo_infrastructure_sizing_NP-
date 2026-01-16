@@ -86,65 +86,90 @@ class OptModel(object):
             except Exception as e:
                 print("⚠️ Could not read log file for summary:", e)
 
-    def solve_model(self, gap, solvername):
+    def solve_model(self, gap, solvername, timelimit=172800): 
         log_file = "ELMO_log.txt"
         if os.path.exists(log_file):
             os.remove(log_file)
 
         if solvername == 'glpk':
+ 
             solverpath_folder = 'C:\\glpk\\w64'
             sys.path.append(solverpath_folder)
             opt = SolverFactory('glpk', tee=True)
             opt.options['mipgap'] = gap
-            opt.options['log']    = "log.out"
-            opt.options['cuts']   = ""
-            opt.options['fpump']  = ""
+
 
         elif solvername == 'gurobi':
-            # Branching priorities suffix (opcional)
             self.model.branch_priority = Suffix(direction=Suffix.EXPORT, datatype=Suffix.INT)
-
+            
             opt = SolverFactory('gurobi', solver_io="python")
             opt.options['OutputFlag']   = 1
             opt.options['LogToConsole'] = 1
             opt.options['MIPGap']       = gap
             opt.options['LogFile']      = log_file
             opt.options['Threads']      = 24
-            opt.options['Heuristics']   = 0.2
-            opt.options['Presolve']     = 2
-            opt.options['MipFocus']    = 3   # 0 = balance, 1 = feasible solutions, 2 = optimality, 3 = bound improvement
-            opt.options['FlowCoverCuts'] = 2 
+            opt.options['Heuristics']   = 0.5
+            opt.options['MIPFocus']     = 3      
+            opt.options['Presolve']     = 2      
+            opt.options['FlowCoverCuts'] = 2  
+            opt.options['TimeLimit'] = timelimit 
 
-        print("Solving opt model")
+        print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
         start_time = time.time()
-        result = opt.solve(self.model, tee=True)
+        
+        # --- NUEVO: Bloque de seguridad para interrupción manual ---
+        try:
+            result = opt.solve(self.model, tee=True, load_solutions=True)
+            self.solution_status = result.solver.termination_condition
+            
+        except KeyboardInterrupt:
+            # Esto se activa si presionas "Stop" o Ctrl+C
+            print("\n🛑 ¡Interrupción manual detectada! Intentando recuperar la mejor solución hasta ahora...")
+            self.solution_status = TerminationCondition.maxTimeLimit 
+        except Exception as e:
+            print(f"⚠️ Ocurrió un error inesperado: {e}")
+            self.solution_status = TerminationCondition.error
+
         self.time_total      = time.time() - start_time
-        self.solution_status = result.solver.termination_condition
+        
 
-        if self.solution_status == TerminationCondition.optimal:
-            self.opt_cost_result = value(self.model.obj)
-            print(f"✅ Solution time [sec]: {self.time_total:.2f}")
-            print("💰 Operation Cost:", self.opt_cost_result)
-            # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
-            total_prod_val = 0
-            for j in self.model.nodes_set:
-                prod_expression = self.objective_rules.production_total(self.model, j)
+        condiciones_aceptables = [
+            TerminationCondition.optimal,
+            TerminationCondition.maxTimeLimit, 
+            TerminationCondition.feasible
+        ]
 
-                # 2. Convertimos la expresión de Pyomo a un número (float)
-                total_prod_val += value(prod_expression)
+        if self.solution_status in condiciones_aceptables:
+            
+            if hasattr(self.model, 'obj') and value(self.model.obj) is not None:
+                self.opt_cost_result = value(self.model.obj)
+                print(f"✅ Solution time [sec]: {self.time_total:.2f}")
+                print(f"📊 Status: {self.solution_status}") 
+                print("💰 Operation Cost:", self.opt_cost_result)
+                
+                # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
+                total_prod_val = 0
+                for j in self.model.nodes_set:
+                    prod_expression = self.objective_rules.production_total(self.model, j)
+                    total_prod_val += value(prod_expression)
+                
                 self.total_production = total_prod_val
-            print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
-            # -----------------------------------
+                print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
+                # -----------------------------------
+            else:
+                print("⚠️ Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
+                self.limited_infeasible_log(self.model)
 
         else:
             print(f"⚠️ Termination condition: {self.solution_status}")
-            # Llamar a la función de log limitado
             self.limited_infeasible_log(self.model, timeout=60, log_file="infeasible_log.txt")
 
-        if hasattr(result.solver, 'relative_gap'):
-            self.mip_gap = result.solver.relative_gap
-        else:
+        try:
+            if 'result' in locals() and hasattr(result.solver, 'relative_gap'):
+                self.mip_gap = result.solver.relative_gap
+            else:
+                self.mip_gap = None
+        except:
             self.mip_gap = None
+            
         return 0
-
-
