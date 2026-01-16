@@ -30,21 +30,30 @@ def _looks_like_scenario_dir(d: Path) -> bool:
     return False
 
 def _find_scenario_dirs(root: Path, depth: int) -> List[Path]:
-    # breadth-first hasta cierta profundidad
+    scenarios: List[Path] = []
+    if _looks_like_scenario_dir(root):
+        scenarios.append(root)
+
     level = 0
     current = [root]
-    scenarios: List[Path] = []
-    while current and level <= depth:
+    
+    while current and level < depth: 
         nxt = []
         for base in current:
-            for child in base.iterdir():
-                if child.is_dir():
-                    if _looks_like_scenario_dir(child):
-                        scenarios.append(child)
-                    else:
-                        nxt.append(child)
+            try:
+                for child in base.iterdir():
+                    if child.is_dir():
+                        if _looks_like_scenario_dir(child):
+                            scenarios.append(child)
+                        else:
+                            nxt.append(child)
+            except PermissionError:
+                print(f"⚠️ Permiso denegado en: {base}")
+                continue
+                
         current = nxt
         level += 1
+        
     return scenarios
 
 def main():
