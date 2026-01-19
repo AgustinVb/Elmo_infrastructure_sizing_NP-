@@ -26,6 +26,72 @@ class OptRules(object):
 
 class OptSets(OptRules):
 
+    def _get_pause_definitions(self):
+        """Hardcoded definition of pauses (start time, duration, pause_type).
+
+        Times are interpreted in HH:MM:SS, with the optimization horizon
+        starting at 08:00. Any start time strictly before 08:00 is assumed
+        to belong to the following day (e.g. 02:00, 04:00).
+        """
+        # start, duration, pause_type
+        return [
+            ("10:00:00", "2:30:00", "maintenance"),
+            ("14:00:00", "1:00:00", "meal"),
+            ("16:00:00", "1:30:00", "maintenance"),
+            ("22:00:00", "2:30:00", "maintenance"),
+            ("2:00:00",  "1:00:00", "meal"),
+            ("4:00:00",  "1:30:00", "maintenance"),
+        ]
+
+    def _get_time_intervals_for_pause_type(self, pause_type):
+        """Return sorted list of time-interval indices for a given pause_type.
+
+        The mapping uses self.time_series.delta_t (in hours) and assumes that
+        time interval 0 corresponds to 08:00. Interval t represents the
+        half-open period [t, t+1) in index space, i.e. the t-th delta_t slot
+        after 08:00.
+        """
+        # Base time: 08:00
+        base_minutes = 8 * 60
+        dt_minutes = int(round(self.time_series.delta_t * 60))
+        if dt_minutes <= 0:
+            raise ValueError("delta_t must be positive")
+
+        # Max index in the time horizon
+        max_t = max(self.time_series.time_intervals)
+
+        def _parse_hhmmss(s):
+            parts = s.split(":")
+            h = int(parts[0])
+            m = int(parts[1]) if len(parts) > 1 else 0
+            return 60 * h + m
+
+        indices = set()
+        for start_str, dur_str, ptype in self._get_pause_definitions():
+            if ptype != pause_type:
+                continue
+
+            start_min = _parse_hhmmss(start_str)
+            dur_min = _parse_hhmmss(dur_str)
+
+            # Times before 08:00 are interpreted as next day
+            if start_min < base_minutes:
+                start_min += 24 * 60
+
+            offset = start_min - base_minutes
+            if offset < 0:
+                continue
+
+            # t = 1 corresponds to [08:00, 08:00 + delta_t)
+            start_idx = int(offset // dt_minutes) + 1
+            n_intervals = int(math.ceil(float(dur_min) / dt_minutes))
+
+            for t in range(start_idx, start_idx + n_intervals):
+                if 1 <= t <= max_t:
+                    indices.add(t)
+
+        return sorted(indices)
+
     def build_sets(self, model):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
         model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
@@ -39,6 +105,14 @@ class OptSets(OptRules):
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
         # Tramos de penalización para déficit F (piecewise lineal)
         model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
+
+         # Nuevos subsets de tiempo para pausas de comida y mantenimiento
+        model.time_intervals_meal_set = pyo.Set(
+            initialize=self._get_time_intervals_for_pause_type("meal")
+        )
+        model.time_intervals_maintenance_set = pyo.Set(
+            initialize=self._get_time_intervals_for_pause_type("maintenance")
+        )
 
 
 class OptParameters(OptRules):
@@ -286,6 +360,45 @@ class ConstraintRules(OptRules):
     def initial_condition_station(self, model):
         return sum(model.X[k] for k in model.stations_set) == 1
     
+    # Detenciones 
+
+     # Pausas: MEAL
+    # --------------------------
+    def meal_stop_all(self, model, i, d, t):
+        """En intervalos MEAL todos los LHD deben estar detenidos
+        (estacionados, cargando o swapeando según tecnología)."""
+        if t not in model.time_intervals_meal_set:
+            return pyo.Constraint.Skip
+
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+
+        # Prohibimos viajes: solo Z / Z_charge / Swap quedan posibles
+        return sum(model.Y[i, j, d, t] for j in nodes) == 0
+
+    # --------------------------
+    # Pausas: MAINTENANCE
+    # --------------------------
+    def maint_stop_all(self, model, i, d, t):
+        """En intervalos de mantenimiento TODOS los LHD deben
+        estar estacionados (Z = 1)."""
+        if t not in model.time_intervals_maintenance_set:
+            return pyo.Constraint.Skip
+
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+
+        # Sin viajes → por state_unique_* esto fuerza Z = 1
+        return sum(model.Y[i, j, d, t] for j in nodes) == 0
+
+    def maint_no_charge_elhd(self, model, k, i, d, t):
+        """En mantenimiento los ELHD no pueden estar cargando."""
+        if t not in model.time_intervals_maintenance_set:
+            return pyo.Constraint.Skip
+        return model.Z_charge[k, i, d, t] == 0
+    
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
         model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
@@ -305,16 +418,21 @@ class ConstraintRules(OptRules):
         model.max_installed_capacity             = pyo.Constraint(rule=self.max_installed_capacity)
         model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
         #prueba
-        #model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
+        model.initial_condition_station          = pyo.Constraint(rule=self.initial_condition_station)
         
         #Producción nuevas
-
         model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
         model.daily_extraction_M= pyo.Constraint(model.elhd_set, model.nodes_set, model.days, rule=self.daily_extraction_M)
+        model.max_production    = pyo.Constraint(model.days, model.nodes_set, rule=self.max_production)
 
         # Penalización por tramos para F (piecewise lineal)
         model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
+        
+        #Detenciones 
+        #model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.maintenance_no_charge_elhd = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
 
 class ObjectiveRules(OptRules):
 
