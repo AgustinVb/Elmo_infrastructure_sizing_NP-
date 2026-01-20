@@ -504,9 +504,6 @@ class JSONPlotter:
                             .groupby("interval")["price"].mean()
                             .reindex(self.intervals).ffill().bfill().fillna(0.0))
 
-            incremental_cost = (p_day.values * price_day.values * float(self.delta_t))
-            cumulative_cost = np.cumsum(incremental_cost)
-
             import matplotlib.gridspec as gridspec
             fig = plt.figure(figsize=(14, 8))
             gs = gridspec.GridSpec(2, 1, height_ratios=[0.20, 0.80], hspace=0.08)
@@ -527,9 +524,6 @@ class JSONPlotter:
                     label="Charge Power", drawstyle="steps-post", color="C0")
             ax2.plot(self.intervals, price_day.values, linewidth=3.2, linestyle="--",
                     label="Energy Price", color="red")
-            ax3.plot(self.intervals, cumulative_cost, linewidth=2.8, color="green",
-                    label="Cumulative Cost")
-
             # Límites y márgenes
             ax1.set_ylim(0, 1500)
             ax2.set_ylim(0, 0.30)
@@ -573,24 +567,7 @@ class JSONPlotter:
             leg.get_frame().set_linewidth(1.2)
             leg.get_frame().set_facecolor("white")
 
-            # Anotar costo acumulado cada 4 horas (omitir PRIMER tick; último desplazado)
-            if ticks:
-                ticks_to_annotate = ticks[1:]  # omite primero (siempre 0)
-                for idx_t, tpos in enumerate(ticks_to_annotate):
-                    arr_idx = self.intervals.index(tpos)
-                    val = cumulative_cost[arr_idx]
-                    is_last = (idx_t == len(ticks_to_annotate) - 1)
-                    if is_last:
-                        ax3.annotate(f"${val:,.1f}",
-                                    xy=(tpos, cumulative_cost[arr_idx]),
-                                    xytext=(-14, 8), textcoords="offset points",
-                                    ha="right", va="bottom", fontsize=19, color="black")
-                    else:
-                        ax3.annotate(f"${val:,.1f}",
-                                    xy=(tpos, cumulative_cost[arr_idx]),
-                                    xytext=(0, 8), textcoords="offset points",
-                                    ha="center", va="bottom", fontsize=19, color="black")
-
+        
 
             month = self._rep_day_label(d)
             fig.savefig(
@@ -807,32 +784,81 @@ class JSONPlotter:
                 bottom_band = -12.0
                 y_min, y_max = bottom_band, bottom_band * 0.01
 
-                for idx, t in enumerate(self.intervals):
-                    x_start = idx * delta_t + 0.05
-                    x_end   = (idx + 1) * delta_t - 0.05
 
-                    # Safe checks: pandas .query with a name like 'interval' will raise
-                    # UndefinedVariableError if the column doesn't exist. Ensure the
-                    # DataFrames actually have the columns before querying.
+                                # ===== Barra de estados en banda negativa (CONTINUA) =====
+                colors = {'Travel': 'gold', 'Charging': 'blue', 'Parked': 'gray'}
+                handles_tasks, labels_tasks = [], []
+
+                Y_filtered = (
+                    self.df_Y.query("lhd == @lhd and day == @day and value >= 0.5")
+                    if (self.df_Y is not None and not self.df_Y.empty)
+                    else pd.DataFrame()
+                )
+
+                P_filtered = (
+                    self.df_P.query("lhd == @lhd and day == @day")
+                    if (self.df_P is not None and not self.df_P.empty)
+                    else pd.DataFrame()
+                )
+
+                bottom_band = -12.0
+                y_min, y_max = bottom_band, bottom_band * 0.01
+
+                # ---------- Determinar estado por intervalo ----------
+                states = []
+
+                for t in self.intervals:
                     is_traveling = False
                     if not Y_filtered.empty and 'interval' in Y_filtered.columns:
-                        is_traveling = (not Y_filtered.query("interval == @t").empty)
+                        is_traveling = not Y_filtered.query("interval == @t").empty
 
                     is_charging = False
-                    if is_electric and not P_filtered.empty and {'interval', 'value'}.issubset(P_filtered.columns):
-                        is_charging = (not P_filtered.query("interval == @t and value > 1").empty)
+                    if (
+                        is_electric
+                        and not P_filtered.empty
+                        and {'interval', 'value'}.issubset(P_filtered.columns)
+                    ):
+                        is_charging = not P_filtered.query(
+                            "interval == @t and value > 1"
+                        ).empty
 
                     if is_traveling:
-                        state = 'Travel'
+                        states.append('Travel')
                     elif is_charging:
-                        state = 'Charging'
+                        states.append('Charging')
                     else:
-                        state = 'Parked'
+                        states.append('Parked')
 
-                    h = ax1.fill_between([x_start, x_end], y_min, y_max, color=colors[state],
-                                        label=state if state not in labels_tasks else "")
+                # ---------- Agrupar tramos consecutivos ----------
+                segments = []
+                start_idx = 0
+                current_state = states[0]
+
+                for i in range(1, len(states)):
+                    if states[i] != current_state:
+                        segments.append((start_idx, i, current_state))
+                        start_idx = i
+                        current_state = states[i]
+
+                segments.append((start_idx, len(states), current_state))
+
+                # ---------- Dibujar bloques continuos ----------
+                for start, end, state in segments:
+                    x_start = start * delta_t
+                    x_end = end * delta_t
+
+                    h = ax1.fill_between(
+                        [x_start, x_end],
+                        y_min,
+                        y_max,
+                        color=colors[state],
+                        label=state if state not in labels_tasks else ""
+                    )
+
                     if state not in labels_tasks:
-                        handles_tasks.append(h); labels_tasks.append(state)
+                        handles_tasks.append(h)
+                        labels_tasks.append(state)
+
 
                 # ===== Sin grids =====
                 ax1.grid(False); ax2.grid(False)
