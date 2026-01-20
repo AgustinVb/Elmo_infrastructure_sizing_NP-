@@ -11,6 +11,8 @@ from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.ticker import MultipleLocator
 
 plt.rcParams["figure.dpi"] = 120
 plt.rcParams["savefig.bbox"] = "tight"
@@ -387,6 +389,7 @@ class JSONPlotter:
         self.df_P = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
         self.df_C = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
         self.df_E = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
+        self.df_M = load_generic_variable_df(os.path.join(json_dir, "M.json"), "M")
 
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
@@ -422,9 +425,6 @@ class JSONPlotter:
     def _rep_day_label(self, d: int) -> str:
         """
         Devuelve 'día Mes' determinando a qué intervalo mensual pertenece d.
-        - Si los días del dataset parecen meses (max(self.days) <= 12), trata d como índice de mes.
-        - Si no, interpreta d como día absoluto y calcula el día-del-año relativo a min(self.days),
-          luego asigna mes usando longitudes reales de meses (no bisiesto).
         """
         try:
             di = int(d)
@@ -435,7 +435,7 @@ class JSONPlotter:
         if self.days and max(self.days) <= 12:
             return self.MONTH_LABELS.get(di, f"Month {di}")
 
-        # No asumimos que min(self.days) == 1 de enero: tomamos min(self.days) como inicio "virtual" del año
+        # No asumimos que min(self.days) == 1 de enero
         min_day = min(self.days) if self.days else 1
         day_of_year = ((di - min_day) % 365) + 1
 
@@ -450,7 +450,27 @@ class JSONPlotter:
                 return f"{day_of_month} {month_name}"
             cum += ml
         return f"Day {d}"
-
+    
+    # -------------------- NUEVO MÉTODO DE TIEMPO FIJO --------------------
+    def _get_fixed_time_ticks(self, mode="interval"):
+        """
+        Devuelve ticks y etiquetas FIJAS para: 08:00, 12:00, 16:00, 20:00, 00:00, 04:00, 08:00(+1).
+        mode="hour": devuelve posiciones 0, 4, 8... (para gráficos con eje X en horas)
+        mode="interval": devuelve posiciones 1, 1+step... (para gráficos con eje X en intervalos)
+        """
+        # Horas relativas desde el inicio (0h = 08:00 AM)
+        rel_hours = [0, 4, 8, 12, 16, 20, 24]
+        labels = ["08:00", "12:00", "16:00", "20:00", "00:00", "04:00", "08:00"]
+        
+        if mode == "hour":
+            return rel_hours, labels
+        else:
+            # Convertir horas a índice de intervalo: index = 1 + (horas / delta_t)
+            # Ejemplo: Si delta_t=0.5, hora 4 es intervalo 1 + 8 = 9.
+            dt = float(self.delta_t)
+            ticks = [1 + h / dt for h in rel_hours]
+            return ticks, labels
+    # ---------------------------------------------------------------------
 
     def _xtick_hours(self):
         if not self.intervals:
@@ -462,36 +482,18 @@ class JSONPlotter:
 
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
-
         if self.df_P is None or self.df_P.empty:
             print("⚠️ No hay P.json. Omitiendo 'ChargePower_vs_price'.")
             return
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
             print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
             return
-
         
         def _season_for_day(d: int) -> str:
-            if d in (12, 1, 2):
-                return "Summer"
-            if d in (3, 4, 5):
-                return "Autumn"
-            if d in (6, 7, 8):
-                return "Winter"
+            if d in (12, 1, 2): return "Summer"
+            if d in (3, 4, 5): return "Autumn"
+            if d in (6, 7, 8): return "Winter"
             return "Spring"
-
-
-        def _time_labels_every_4h(intervals: list[int]) -> tuple[list[int], list[str]]:
-            if not intervals: return [], []
-            step = 8  # 4h con Δt=0.5h
-            tick_pos, tick_lbl = [], []
-            for k, t in enumerate(intervals, start=1):
-                if (k - 1) % step == 0:
-                    total_min = 8*60 + (k-1)*30  # arranca 08:00
-                    hh = (total_min // 60) % 24
-                    mm = total_min % 60
-                    tick_pos.append(t); tick_lbl.append(f"{hh:02d}:{mm:02d}")
-            return tick_pos, tick_lbl
 
         for d in self.days:
             season = _season_for_day(int(d))
@@ -504,7 +506,6 @@ class JSONPlotter:
                             .groupby("interval")["price"].mean()
                             .reindex(self.intervals).ffill().bfill().fillna(0.0))
 
-            import matplotlib.gridspec as gridspec
             fig = plt.figure(figsize=(14, 8))
             gs = gridspec.GridSpec(2, 1, height_ratios=[0.20, 0.80], hspace=0.08)
 
@@ -519,15 +520,23 @@ class JSONPlotter:
             ax3.set_ylabel("")
             ax3.set_ylim(0, 600)
 
-            # ----- Curvas (etiquetas sin unidades) -----
+            # ----- Curvas -----
             ax1.plot(self.intervals, p_day.values, linewidth=3.2,
                     label="Charge Power", drawstyle="steps-post", color="C0")
             ax2.plot(self.intervals, price_day.values, linewidth=3.2, linestyle="--",
                     label="Energy Price", color="red")
+            
             # Límites y márgenes
             ax1.set_ylim(0, 1500)
             ax2.set_ylim(0, 0.30)
-            ax1.set_xlim(self.intervals[0], self.intervals[-1])
+            
+            # --- Ticks fijos ---
+            ticks, labels = self._get_fixed_time_ticks(mode="interval")
+            ax1.set_xticks(ticks)
+            ax1.set_xticklabels(labels, fontsize=18)
+            ax1.set_xlim(ticks[0], ticks[-1])
+            # -------------------
+
             ax1.margins(x=0.0)
             for ax in (ax1, ax2, ax3): ax.grid(False)
 
@@ -535,25 +544,17 @@ class JSONPlotter:
             ax1.set_xlabel("Time", fontsize=22)
             ax1.set_ylabel("Charge Power [kW]", fontsize=22)
             ax2.set_ylabel("Energy Price [USD/kWh]", fontsize=22)
-
-            ticks, labels = _time_labels_every_4h(self.intervals)
-            ax1.set_xticks(ticks)
-            ax1.set_xticklabels(labels, fontsize=18)
             ax1.tick_params(axis="y", labelsize=18)
             ax2.tick_params(axis="y", labelsize=18)
 
-            # Título (SIN negrita) y más grande
+            # Título 
             ax_top.set_axis_off()
-            
             month = self._rep_day_label(d)
-            ax_top.text(
-                       0.5, 0.78,
-                       f"{month} – Total Charge Power vs Energy Price ({season})",
-                       ha="center", va="center", fontsize=32
-            )
+            ax_top.text(0.5, 0.78,
+                        f"{month} – Total Charge Power vs Energy Price ({season})",
+                        ha="center", va="center", fontsize=32)
 
-
-            # Leyenda: en panel superior con borde gris claro
+            # Leyenda
             h1, l1 = ax1.get_legend_handles_labels()
             h2, l2 = ax2.get_legend_handles_labels()
             h3, l3 = ax3.get_legend_handles_labels()
@@ -562,23 +563,16 @@ class JSONPlotter:
             leg = ax_top.legend(handles, labels_, loc="center", ncols=3, fontsize=18,
                                 frameon=True, fancybox=False, framealpha=1.0,
                                 bbox_to_anchor=(0.5, 0.18))
-            # borde gris claro
             leg.get_frame().set_edgecolor("#cccccc")
             leg.get_frame().set_linewidth(1.2)
             leg.get_frame().set_facecolor("white")
 
-        
-
             month = self._rep_day_label(d)
             fig.savefig(
-                       os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
-                       bbox_inches="tight"
+                        os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
+                        bbox_inches="tight"
             )
-
-
             plt.close(fig)
-
-
 
     def plot_node_extraction_vs_demand(self):
         if self.df_Y is None or self.df_Y.empty:
@@ -602,8 +596,7 @@ class JSONPlotter:
             x = np.arange(len(extr.index))
             bar = extr["extracted_tons"] if "extracted_tons" in extr.columns else extr["assignments"]
             ax.bar(x, bar.values, edgecolor="black")
-            import sys; sys.stdout.flush()  # Force output to appear immediately
-
+            
             if mj:
                 demand = [mj.get(node, {}).get(d, np.nan) for node in extr.index]
                 ax.plot(x, demand, linestyle="--", linewidth=2, label="Demand")
@@ -614,17 +607,13 @@ class JSONPlotter:
             if mj: ax.legend(loc="upper left")
             fig.tight_layout()
             
-
             month = self._rep_day_label(d)
             fig.savefig(
                         os.path.join(self.plot_dir, f"Extraction_vs_Demand_{month}.png")
             )
-    
-
             plt.close(fig)
 
     def plot_lhd_soc_vs_price_and_states(self):
-
         if (self.df_B is None or self.df_B.empty) and (self.df_E is None or self.df_E.empty):
             print("⚠️ No hay B.json ni E.json. Omitiendo 'SoC_vs_price_and_states'.")
             return
@@ -633,29 +622,11 @@ class JSONPlotter:
             return
 
         delta_t = float(self.delta_t)
-
-        
         def _season_for_day(d: int) -> str:
-            if d in (12, 1, 2):
-                return "Summer"
-            if d in (3, 4, 5):
-                return "Autumn"
-            if d in (6, 7, 8):
-                return "Winter"
+            if d in (12, 1, 2): return "Summer"
+            if d in (3, 4, 5): return "Autumn"
+            if d in (6, 7, 8): return "Winter"
             return "Spring"
-
-        def _time_ticks_labels_every_4h(intervals: list[int]):
-            if not intervals:
-                return [], []
-            step = 8  # 4h con Δt=0.5h
-            tick_pos, tick_lbl = [], []
-            for k, t in enumerate(intervals, start=1):
-                if (k - 1) % step == 0:
-                    total_min = 8*60 + (k-1)*30
-                    hh = (total_min // 60) % 24
-                    mm = total_min % 60
-                    tick_pos.append(t); tick_lbl.append(f"{hh:02d}:{mm:02d}")
-            return tick_pos, tick_lbl
 
         # Detectar LHDs (desde B o E)
         lhds = set()
@@ -665,22 +636,19 @@ class JSONPlotter:
             lhds.update(self.df_E["lhd"].unique().tolist())
         lhds = sorted(lhds)
 
-        import matplotlib.gridspec as gridspec
-        from matplotlib.ticker import MultipleLocator, FormatStrFormatter
-
         for lhd in lhds:
             for day in self.days:
                 dfB_sel = (self.df_B.query("lhd == @lhd and day == @day")
                         if (self.df_B is not None and not self.df_B.empty) else pd.DataFrame())
                 dfE_sel = (self.df_E.query("lhd == @lhd and day == @day")
                         if (self.df_E is not None and not self.df_E.empty) else pd.DataFrame())
-                is_electric = not dfB_sel.empty
+                
                 if dfB_sel.empty and dfE_sel.empty:
                     continue
+                is_electric = not dfB_sel.empty
 
                 # ---- Layout más compacto y equilibrado ----
                 fig = plt.figure(figsize=(14, 8))
-                # Más espacio al gráfico principal; leyendas compactas
                 gs = gridspec.GridSpec(
                     nrows=4, ncols=1,
                     height_ratios=[0.08, 0.11, 0.10, 0.71],  # título, leyenda líneas, leyenda estados, gráfico
@@ -692,9 +660,8 @@ class JSONPlotter:
                 ax1 = fig.add_subplot(gs[3])
                 ax2 = ax1.twinx()
 
-                # ===== Serie principal → normalizar a % =====
+                # ===== Serie principal =====
                 line1 = None
-
                 if is_electric:
                     soc_series = (dfB_sel[["interval", "value"]]
                                 .set_index("interval")["value"]
@@ -702,8 +669,7 @@ class JSONPlotter:
                                 .ffill().bfill().fillna(0.0))
                     soc_ini = float(soc_series.iloc[0]) if len(soc_series) else 0.0
                     y_raw = np.array([soc_ini] + soc_series.tolist(), dtype=float)
-                    max_ref = float(np.nanmax(y_raw)) if y_raw.size else 1.0
-                    max_ref = max(max_ref, 1e-6)
+                    max_ref = max(float(np.nanmax(y_raw)), 1e-6)
                     y_pct = (y_raw / max_ref) * 100.0
                     x_hrs = np.array([0] + [t * delta_t for t in self.intervals], dtype=float)
 
@@ -716,8 +682,7 @@ class JSONPlotter:
                                 .ffill().bfill().fillna(0.0))
                     fuel_ini = float(fuel_series.iloc[0]) if len(fuel_series) else 0.0
                     y_raw = np.array([fuel_ini] + fuel_series.tolist(), dtype=float)
-                    max_ref = float(np.nanmax(y_raw)) if y_raw.size else 1.0
-                    max_ref = max(max_ref, 1e-6)
+                    max_ref = max(float(np.nanmax(y_raw)), 1e-6)
                     y_pct = (y_raw / max_ref) * 100.0
                     x_hrs = np.array([0] + [t * delta_t for t in self.intervals], dtype=float)
 
@@ -726,7 +691,7 @@ class JSONPlotter:
 
                 ax1.set_ylabel(y_label, fontsize=22, labelpad=10)
 
-                # ===== Precio (0..0.30; ticks cada 0.05) =====
+                # ===== Precio =====
                 price_day = (self.params.costo_marginal
                             .query("lhd == @lhd and day == @day")[["interval", "price"]]
                             .set_index("interval")
@@ -741,28 +706,24 @@ class JSONPlotter:
                                 color='red', label='Energy Price')
                 ax2.set_ylabel('Energy Price [USD/kWh]', fontsize=22, labelpad=10)
 
-                # ===== X: 0..24, ticks cada 4h desde 08:00, sin márgenes =====
+                # ===== Ejes X con Ticks Fijos =====
+                ticks, labels = self._get_fixed_time_ticks(mode="hour")
                 ax1.set_xlabel('Time', fontsize=22, labelpad=10)
+                ax1.set_xticks(ticks)
+                ax1.set_xticklabels(labels, fontsize=20)
                 ax1.set_xlim(0, 24)
                 ax1.margins(x=0.0)
-                tick_pos_intervals, tick_lbls = _time_ticks_labels_every_4h(self.intervals)
-                tick_pos_hours = [((self.intervals.index(t) + 1) * delta_t) for t in tick_pos_intervals]
-                ax1.set_xticks(tick_pos_hours)
-                ax1.set_xticklabels(tick_lbls, fontsize=20)
-                # ===== Y izquierdo: 0–100% + pequeño margen superior; ticks cada 20% =====
-                top_pct = 105.0
-                ax1.set_ylim(-12.0, top_pct)
+
+                # ===== Y limits =====
+                ax1.set_ylim(-12.0, 105.0)
                 ax1.yaxis.set_major_locator(MultipleLocator(20.0))
                 ax1.set_yticks([0, 20, 40, 60, 80, 100])
-
-                # <-- Asegura el tamaño de fuente aquí
                 ax1.tick_params(axis='y', labelsize=20, pad=10)
 
-                # ===== Y derecho: 0–0.30, ticks cada 0.05; alinear 0 con eje izquierdo =====
                 ax2.set_ylim(0.0, 0.30)
                 ax2.yaxis.set_major_locator(MultipleLocator(0.05))
-                # Alinear 0: calcular mapeo de 0% (izq) a 0 en der preservando banda negativa
-                Lmin, Lmax = ax1.get_ylim()  # e.g., -12 .. 105
+                # Alineación del cero
+                Lmin, Lmax = ax1.get_ylim()
                 Rmax_fixed = 0.30
                 if Lmax != Lmin:
                     r = (0.0 - Lmin) / (Lmax - Lmin)
@@ -772,55 +733,27 @@ class JSONPlotter:
                 ax2.set_ylim(Rmin_align, Rmax_fixed)
                 ax2.tick_params(axis='y', labelsize=20, pad=10)
 
-                # ===== Barra de estados en banda negativa =====
-                colors = {'Travel': '#FF8C00', 'Charging': 'steelblue', 'Parked': 'gray'}
-                handles_tasks, labels_tasks = [], []
-
+                # ===== Estados =====
                 Y_filtered = (self.df_Y.query("lhd == @lhd and day == @day and value >= 0.5")
                             if (self.df_Y is not None and not self.df_Y.empty) else pd.DataFrame())
                 P_filtered = (self.df_P.query("lhd == @lhd and day == @day")
                             if (self.df_P is not None and not self.df_P.empty) else pd.DataFrame())
 
-                bottom_band = -12.0
-                y_min, y_max = bottom_band, bottom_band * 0.01
-
-
-                                # ===== Barra de estados en banda negativa (CONTINUA) =====
                 colors = {'Travel': 'gold', 'Charging': 'blue', 'Parked': 'gray'}
                 handles_tasks, labels_tasks = [], []
-
-                Y_filtered = (
-                    self.df_Y.query("lhd == @lhd and day == @day and value >= 0.5")
-                    if (self.df_Y is not None and not self.df_Y.empty)
-                    else pd.DataFrame()
-                )
-
-                P_filtered = (
-                    self.df_P.query("lhd == @lhd and day == @day")
-                    if (self.df_P is not None and not self.df_P.empty)
-                    else pd.DataFrame()
-                )
-
                 bottom_band = -12.0
                 y_min, y_max = bottom_band, bottom_band * 0.01
 
-                # ---------- Determinar estado por intervalo ----------
+                # Determinar estados por intervalo
                 states = []
-
                 for t in self.intervals:
                     is_traveling = False
                     if not Y_filtered.empty and 'interval' in Y_filtered.columns:
                         is_traveling = not Y_filtered.query("interval == @t").empty
 
                     is_charging = False
-                    if (
-                        is_electric
-                        and not P_filtered.empty
-                        and {'interval', 'value'}.issubset(P_filtered.columns)
-                    ):
-                        is_charging = not P_filtered.query(
-                            "interval == @t and value > 1"
-                        ).empty
+                    if is_electric and not P_filtered.empty and {'interval', 'value'}.issubset(P_filtered.columns):
+                        is_charging = not P_filtered.query("interval == @t and value > 1").empty
 
                     if is_traveling:
                         states.append('Travel')
@@ -829,45 +762,34 @@ class JSONPlotter:
                     else:
                         states.append('Parked')
 
-                # ---------- Agrupar tramos consecutivos ----------
-                segments = []
-                start_idx = 0
-                current_state = states[0]
+                # Dibujar bloques continuos
+                if states:
+                    segments = []
+                    start_idx = 0
+                    current_state = states[0]
+                    for i in range(1, len(states)):
+                        if states[i] != current_state:
+                            segments.append((start_idx, i, current_state))
+                            start_idx = i
+                            current_state = states[i]
+                    segments.append((start_idx, len(states), current_state))
 
-                for i in range(1, len(states)):
-                    if states[i] != current_state:
-                        segments.append((start_idx, i, current_state))
-                        start_idx = i
-                        current_state = states[i]
+                    for start, end, state in segments:
+                        x_start = start * delta_t
+                        x_end = end * delta_t
+                        h = ax1.fill_between(
+                            [x_start, x_end], y_min, y_max,
+                            color=colors[state],
+                            label=state if state not in labels_tasks else ""
+                        )
+                        if state not in labels_tasks:
+                            handles_tasks.append(h)
+                            labels_tasks.append(state)
 
-                segments.append((start_idx, len(states), current_state))
-
-                # ---------- Dibujar bloques continuos ----------
-                for start, end, state in segments:
-                    x_start = start * delta_t
-                    x_end = end * delta_t
-
-                    h = ax1.fill_between(
-                        [x_start, x_end],
-                        y_min,
-                        y_max,
-                        color=colors[state],
-                        label=state if state not in labels_tasks else ""
-                    )
-
-                    if state not in labels_tasks:
-                        handles_tasks.append(h)
-                        labels_tasks.append(state)
-
-
-                # ===== Sin grids =====
                 ax1.grid(False); ax2.grid(False)
 
-                # ===== Título y leyendas (tamaños y bordes) =====
+                # Título y Leyendas
                 season = _season_for_day(int(day))
-                
-
-                
                 month = self._rep_day_label(day)
                 ax_title.text(
                     0.5, 0.75,
@@ -875,8 +797,6 @@ class JSONPlotter:
                     ha="center", va="center", fontsize=32
                 )
 
-
-                # Leyenda de líneas
                 ax_leg_lines.legend(
                     [line1, line2],
                     [line1.get_label(), 'Energy Price'],
@@ -889,7 +809,6 @@ class JSONPlotter:
                     leg1.get_frame().set_linewidth(1.2)
                     leg1.get_frame().set_facecolor("white")
 
-                # Leyenda de estados (título con mismo tamaño que labels)
                 if handles_tasks:
                     ax_leg_states.legend(
                         handles_tasks, labels_tasks,
@@ -902,54 +821,30 @@ class JSONPlotter:
                         leg2.get_frame().set_edgecolor("#cccccc")
                         leg2.get_frame().set_linewidth(1.2)
                         leg2.get_frame().set_facecolor("white")
-                        # subir font size del título al mismo tamaño que los labels
                         leg2.set_title('Task States')
                         leg2.get_title().set_fontsize(18)
 
-                # ===== Guardar =====
-                fig_path = os.path.join(self.plot_dir, f'SoC_vs_price_LHD-{lhd}_day-{day}.png')
-                fig.savefig(fig_path, dpi=150, bbox_inches='tight')
+                fig.savefig(os.path.join(self.plot_dir, f'SoC_vs_price_LHD-{lhd}_day-{day}.png'), dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
 
-
-
     def plot_emissions_profiles_for_optimized_day(self):
-
         # Verificación de datos
         have_elec = (self.params.emissions_electric is not None and
-                    not self.params.emissions_electric.empty)
+                     not self.params.emissions_electric.empty)
         if not have_elec:
             print("ℹ️ No hay perfiles de emisiones eléctricas. Omitiendo 'Emission Profile'.")
             return
 
-        # Helpers locales (mismos criterios que el gráfico anterior)
         def _season_for_day(d: int) -> str:
             if 1 <= d <= 90:   return "Winter"
             if 91 <= d <= 180: return "Spring"
             if 181 <= d <= 270:return "Summer"
             return "Autumn"
 
-        def _time_labels_every_4h(intervals: list[int]) -> tuple[list[int], list[str]]:
-            if not intervals:
-                return [], []
-            step = 8  # 4h con Δt=0.5h
-            tick_pos, tick_lbl = [], []
-            for k, t in enumerate(intervals, start=1):
-                if (k - 1) % step == 0:
-                    total_min = 8*60 + (k-1)*30  # arranca 08:00
-                    hh = (total_min // 60) % 24
-                    mm = total_min % 60
-                    tick_pos.append(t)
-                    tick_lbl.append(f"{hh:02d}:{mm:02d}")
-            return tick_pos, tick_lbl
-
-        import matplotlib.gridspec as gridspec
-
         for d in self.days:
             season = _season_for_day(int(d))
 
-            # Serie por día (electric only)
             e_day = (self.params.emissions_electric
                     .query("day == @d")[["interval", "emission_rate"]]
                     .set_index("interval")
@@ -957,49 +852,42 @@ class JSONPlotter:
                     .ffill().bfill().fillna(0.0))
 
             if e_day.isna().all() or (e_day == 0).all():
-                # Si no hay datos útiles ese día, seguimos
                 continue
 
-            # Layout con espacio exclusivo para título + leyenda
             fig = plt.figure(figsize=(14, 8))
             gs = gridspec.GridSpec(2, 1, height_ratios=[0.20, 0.80], hspace=0.08)
             ax_top = fig.add_subplot(gs[0])   # título + leyenda
             ax = fig.add_subplot(gs[1])       # gráfico principal
 
-            # Curva principal (eléctrica)
             ax.plot(self.intervals, e_day.values, linewidth=3.0,
                     label="Electric Emissions", color="C2")
 
-            # Estilo de ejes
-            ax.set_ylim(0.0, 0.5)                       # Y fijo
-            ax.set_xlim(self.intervals[0], self.intervals[-1])
-            ax.margins(x=0.0)                           # sin espacios en blanco laterales
-            ax.grid(False)                               # sin grids
+            ax.set_ylim(0.0, 0.5)
+            
+            # --- Ticks fijos ---
+            ticks, labels = self._get_fixed_time_ticks(mode="interval")
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels)
+            ax.set_xlim(ticks[0], ticks[-1])
+            # -------------------
 
-            # Etiquetas y fuentes (mismo set que el gráfico anterior)
+            ax.margins(x=0.0)
+            ax.grid(False)
+
             ax.set_xlabel("Time", fontsize=22, labelpad=10)
             ax.set_ylabel("Emission Rate [kgCO2/kWh]", fontsize=22, labelpad=10)
 
-            # Ticks y pads
-            ticks, labels = _time_labels_every_4h(self.intervals)
-            ax.set_xticks(ticks)
-            ax.set_xticklabels(labels)
             ax.tick_params(axis="x", labelsize=20, pad=8)
             ax.tick_params(axis="y", labelsize=20, pad=20)
 
-            # Título (estación, sin negrita) y grande
             ax_top.set_axis_off()
-            
             month = self._rep_day_label(d)
             ax_top.text(
                 0.5, 0.78,
                 f"{month} – Electric Emission Profile ({season})",
                 ha="center", va="center", fontsize=32
             )
-            
-
           
-            # Leyenda debajo del título, sin unidades en el label, con borde gris claro
             handles, labels_ = ax.get_legend_handles_labels()
             leg = ax_top.legend(handles, labels_, loc="center", ncols=1, fontsize=18,
                                 frameon=True, fancybox=False, framealpha=1.0,
@@ -1008,15 +896,12 @@ class JSONPlotter:
             leg.get_frame().set_linewidth(1.2)
             leg.get_frame().set_facecolor("white")
 
-            # Guardar            
             month = self._rep_day_label(d)
             fig.savefig(
                         os.path.join(self.plot_dir, f"EmissionProfiles_{month}.png"),
                         bbox_inches="tight"
             )
-
             plt.close(fig)
-
 
 
     def plot_lhd_costs_bars(self):
