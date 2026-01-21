@@ -157,14 +157,17 @@ class OptParameters(OptRules):
         model.distance_to_dn_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_distance_to_discharge_node(k) for k in model.stations_set}, mutable=False)
         model.max_chargers_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers(k) for k in model.stations_set}, mutable=False)
         model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False)
-        model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
-        model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
-        
+        #model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
+        #model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
+        model.pk_i   = 0
+        model.t_ttc_i  = 0
+
          # ---- Penalización por tramos para F (déficit) ----
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000.0, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
+        #model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000.0, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.1, 2: 0.01, 3: 0.001, 4: 0.0001, 5: 0.00001},mutable=True)
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5.0, 2: 5.0, 3: 40.0, 4: 50.0, 5: 1e18},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
@@ -259,6 +262,20 @@ class ConstraintRules(OptRules):
 
         if t >= t0:
             return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
+        
+    def battery_soc_2(self, model, i, d, t):
+        t0 = self.time_series.get_time_intervals()[0]
+        charge = sum(model.P[k, i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i) for k in model.stations_set)
+        discharge = sum(
+            model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
+            for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
+        )
+        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i*model.t_ttc_i for k in model.stations_set)
+        
+
+        if t >= t0:
+            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
+        
 
 
      # (C8a) Límite inferior de SOC batería
@@ -285,7 +302,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de + model.F[j, d] >= target
+        return term_de - model.F[j, d] == target
 
     def max_production(self, model, d, j):
         target = model.m_j[j, d]
@@ -296,7 +313,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de <= target*2.5
+        return term_de <= target*1.1
 
 
     def daily_extraction_M(self, model, i, j, d):
@@ -403,7 +420,7 @@ class ConstraintRules(OptRules):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
         model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
 
-        model.battery_soc                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_soc)
+        model.battery_soc_2                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_soc_2)
         model.battery_lower = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
         model.battery_upper = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
@@ -423,7 +440,6 @@ class ConstraintRules(OptRules):
         #Producción nuevas
         model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
         model.daily_extraction_M= pyo.Constraint(model.elhd_set, model.nodes_set, model.days, rule=self.daily_extraction_M)
-        model.max_production    = pyo.Constraint(model.days, model.nodes_set, rule=self.max_production)
 
         # Penalización por tramos para F (piecewise lineal)
         model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
