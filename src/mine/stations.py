@@ -39,3 +39,6 @@ class Stations(object):
     
     def get_battery_cost(self, keys=None):
         return self.get('battery_cost', keys)
+    
+    def get_p_max_ssee(self, keys=None):
+        return self.get('p_max_ssee', keys)

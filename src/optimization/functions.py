@@ -26,6 +26,73 @@ class OptRules(object):
 
 class OptSets(OptRules):
 
+    def _get_pause_definitions(self):
+        """Hardcoded definition of pauses (start time, duration, pause_type).
+
+        Times are interpreted in HH:MM:SS, with the optimization horizon
+        starting at 08:00. Any start time strictly before 08:00 is assumed
+        to belong to the following day (e.g. 02:00, 04:00).
+        """
+        # start, duration, pause_type
+        return [
+            ("10:00:00", "2:30:00", "maintenance"),
+            ("14:00:00", "1:00:00", "meal"),
+            ("16:00:00", "1:30:00", "maintenance"),
+            ("22:00:00", "2:30:00", "maintenance"),
+            ("2:00:00",  "1:00:00", "meal"),
+            ("4:00:00",  "1:30:00", "maintenance"),
+        ]
+
+    def _get_time_intervals_for_pause_type(self, pause_type):
+        """Return sorted list of time-interval indices for a given pause_type.
+
+        The mapping uses self.time_series.delta_t (in hours) and assumes that
+        time interval 0 corresponds to 08:00. Interval t represents the
+        half-open period [t, t+1) in index space, i.e. the t-th delta_t slot
+        after 08:00.
+        """
+        # Base time: 08:00
+        base_minutes = 8 * 60
+        dt_minutes = int(round(self.time_series.delta_t * 60))
+        if dt_minutes <= 0:
+            raise ValueError("delta_t must be positive")
+
+        # Max index in the time horizon
+        max_t = max(self.time_series.time_intervals)
+
+        def _parse_hhmmss(s):
+            parts = s.split(":")
+            h = int(parts[0])
+            m = int(parts[1]) if len(parts) > 1 else 0
+            return 60 * h + m
+
+        indices = set()
+        for start_str, dur_str, ptype in self._get_pause_definitions():
+            if ptype != pause_type:
+                continue
+
+            start_min = _parse_hhmmss(start_str)
+            dur_min = _parse_hhmmss(dur_str)
+
+            # Times before 08:00 are interpreted as next day
+            if start_min < base_minutes:
+                start_min += 24 * 60
+
+            offset = start_min - base_minutes
+            if offset < 0:
+                continue
+
+            # t = 1 corresponds to [08:00, 08:00 + delta_t)
+            start_idx = int(offset // dt_minutes) + 1
+            n_intervals = int(math.ceil(float(dur_min) / dt_minutes))
+
+            for t in range(start_idx, start_idx + n_intervals):
+                if 1 <= t <= max_t:
+                    indices.add(t)
+
+        return sorted(indices)
+
+
     def build_sets(self, model):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
         model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
@@ -38,7 +105,13 @@ class OptSets(OptRules):
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
-
+         # Nuevos subsets de tiempo para pausas de comida y mantenimiento
+        model.time_intervals_meal_set = pyo.Set(
+            initialize=self._get_time_intervals_for_pause_type("meal")
+        )
+        model.time_intervals_maintenance_set = pyo.Set(
+            initialize=self._get_time_intervals_for_pause_type("maintenance")
+        )
 
 class OptParameters(OptRules):
 
@@ -74,7 +147,7 @@ class OptParameters(OptRules):
          
         #Parámetros problema de inversión
         model.p_charger = pyo.Param(initialize=self.mine_system.chargers.get_charger_power(), mutable=False)
-        model.p_max = pyo.Param(initialize=self.mine_system.chargers.get_p_max_dist(), mutable=False)
+        model.p_max_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_p_max_ssee(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
         model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
@@ -92,7 +165,7 @@ class OptParameters(OptRules):
         # Scalar fallback for station-level logic (use first LHD charge time)
         #first_elhd = self.mine_system.elhd.elhds[0]
         #model.t_charge_scalar = pyo.Param(initialize=self.mine_system.elhd.get_charge_time(first_elhd), mutable=False)
-        model.t_charge = 2
+        model.t_charge = 8
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
@@ -236,7 +309,6 @@ class ConstraintRules(OptRules):
     def battery_upper(self, model, i, d, t):
         return model.B[i, d, t] <= model.bmax_b[i]
 
-
     # Condición de borde SOC batería
     def battery_boundary(self, model, i, d):
         tf = self.time_series.get_time_intervals()[-1]
@@ -337,8 +409,8 @@ class ConstraintRules(OptRules):
     #    return model.P[k, i, d, t]  <= model.Z_charge[k, i, d, t] * 353*0.7
     
     #  Sistemas distribución 
-    def max_installed_capacity(self, model):
-        return sum(model.N_chargers[k] for k in model.stations_set) * model.p_charger  <= model.p_max
+    def max_installed_capacity_swap(self, model, k, d, t):
+        return sum(model.Sv[k, d, t, a]*model.p_charger for a in model.time_intervals_set)  <= model.p_max_k[k]
     
     def peak_power(self, model, d, t):
         return sum(model.P[k, i, d, t] for k in model.stations_set for i in model.elhd_set) <= model.p_peak
@@ -420,6 +492,45 @@ class ConstraintRules(OptRules):
     def initial_condition_chargers(self, model, k):
         k0 = list(model.stations_set)[0]
         return model.N_chargers[k0] == 1
+    
+     # Detenciones 
+
+     # Pausas: MEAL
+    # --------------------------
+    def meal_stop_all(self, model, i, d, t):
+        """En intervalos MEAL todos los LHD deben estar detenidos
+        (estacionados, cargando o swapeando según tecnología)."""
+        if t not in model.time_intervals_meal_set:
+            return pyo.Constraint.Skip
+
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+
+        # Prohibimos viajes: solo Z / Z_charge / Swap quedan posibles
+        return sum(model.Y[i, j, d, t] for j in nodes) == 0
+
+    # --------------------------
+    # Pausas: MAINTENANCE
+    # --------------------------
+    def maint_stop_all(self, model, i, d, t):
+        """En intervalos de mantenimiento TODOS los LHD deben
+        estar estacionados (Z = 1)."""
+        if t not in model.time_intervals_maintenance_set:
+            return pyo.Constraint.Skip
+
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+
+        # Sin viajes → por state_unique_* esto fuerza Z = 1
+        return sum(model.Y[i, j, d, t] for j in nodes) == 0
+
+    def maint_no_charge_elhd(self, model, i, d, t):
+        """En mantenimiento los ELHD no pueden estar cargando."""
+        if t not in model.time_intervals_maintenance_set:
+            return pyo.Constraint.Skip
+        return model.Z[i, d, t] == 0
 
     
     def build_all_constraints(self, model):
@@ -428,7 +539,7 @@ class ConstraintRules(OptRules):
         #model.battery_boundary =            pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary)
        
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
-        model.max_installed_capacity             = pyo.Constraint(rule=self.max_installed_capacity)
+        model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity_swap)
         
         #nuevas
         model.max_n_batteries                   = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
@@ -463,7 +574,12 @@ class ConstraintRules(OptRules):
         model.initial_condition_station_swap = pyo.Constraint(rule=self.initial_condition_station_swap)
         #model.initial_condition_chargers = pyo.Constraint(model.stations_set, rule=self.initial_condition_chargers)
         #model.initial_condition_station = pyo.Constraint(rule=self.initial_condition_station)
+        
 
+          #Detenciones 
+        model.meal_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        model.maintenance_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        model.maintenance_no_charge_elhd = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
         # Coste de cargar baterías (electricidad) con tecnonología BS
