@@ -289,7 +289,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de + model.F[j, d] >= target
+        return term_de  >= target
 
     def max_production(self, model, d, j):
         target = model.m_j[j, d]
@@ -300,7 +300,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de <= target*1.1
+        return term_de + model.F[j, d] <= target*2
 
 
     def daily_extraction_M(self, model, i, j, d):
@@ -483,9 +483,9 @@ class ConstraintRules(OptRules):
         #model.macroblock_station_assignment = pyo.Constraint(model.stations_set, model.elhd_set, rule=self.macroblock_station_assignment)
         
         #Detenciones 
-        #model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
-        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        #model.maintenance_no_charge_elhd = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
+        model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        model.maintenance_no_charge_elhd = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
 
 class ObjectiveRules(OptRules):
 
