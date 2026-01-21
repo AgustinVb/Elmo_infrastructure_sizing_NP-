@@ -34,8 +34,5 @@ class Chargers(object):
     def get_num_connectors(self) -> int:
         return self._row1()['num_connectors']
 
-    def get_p_max_dist(self) -> float:
-        return self._row1()['p_max_dist']
-
     def get_p_peak_dist(self) -> float:
         return self._row1()['p_peak_dist']
