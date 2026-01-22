@@ -454,8 +454,8 @@ class ConstraintRules(OptRules):
         model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
 
         model.battery_soc                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_soc)
-        model.battery_lower = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
-        model.battery_upper = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
+        model.battery_lower =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
+        model.battery_upper =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
 
         #nuevas
@@ -483,9 +483,9 @@ class ConstraintRules(OptRules):
         #model.macroblock_station_assignment = pyo.Constraint(model.stations_set, model.elhd_set, rule=self.macroblock_station_assignment)
         
         #Detenciones 
-        model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
-        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        model.maintenance_no_charge_elhd = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
+        #model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.maintenance_no_charge_elhd = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
 
 class ObjectiveRules(OptRules):
 
