@@ -322,7 +322,7 @@ class Timeseries(object):
                 distance_outbound, distance_return, tilt, elhd, self.delta_t
             )
             if travel_dur_hours <= self.delta_t:
-                n_trips = np.floor(self.delta_t / travel_dur_hours)
+                n_trips =  int(np.rint(self.delta_t / travel_dur_hours))
             else:
                 n_trips = 1
 
