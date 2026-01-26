@@ -463,10 +463,10 @@ class ConstraintRules(OptRules):
         model.station_existence_constraint       = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.station_existence_constraint)
         model.charger_limit                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.charge_state                       = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.charge_state)
-        model.max_power                          = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.max_power)
+        #model.max_power                          = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.max_power)
 
-        model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
-        model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
+        #model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
+        #model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
         
         #Producción nuevas
         model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
@@ -520,6 +520,10 @@ class ObjectiveRules(OptRules):
     def total_cost(self, model):
         return self.lhd_charge_cost(model) + self.inversion_cost(model)+ self.F_penalty_cost(model)
     
+    def op_cost_total(self, model):
+        # Coste operativo total (sin inversión)
+        return (self.lhd_charge_cost(model) + self.F_penalty_cost(model))/model.scaling_factor_op_cost
+    
     def production_total(self, model, j):
         def ntr(node,i):
             return self.time_series.get_n_trips(node,i)
@@ -532,7 +536,7 @@ class ObjectiveRules(OptRules):
         return term_de*model.scaling_factor_op_cost
 
     def build_objective(self, model):
-        model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
+        model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)
 
 class OutputManager(OptRules):
 

@@ -1,5 +1,5 @@
 
-Gurobi 12.0.0 (win64) logging started Thu Jan 22 11:25:33 2026
+Gurobi 12.0.0 (win64) logging started Mon Jan 26 17:41:08 2026
 
 Set parameter LogFile to value "ELMO_log.txt"
 Set parameter Threads to value 24
@@ -22,59 +22,39 @@ FlowCoverCuts  2
 Presolve  2
 Threads  24
 
-Optimize a model with 21337 rows, 640238 columns and 1385858 nonzeros
-Model fingerprint: 0xa2d11150
+Optimize a model with 18817 rows, 640238 columns and 1377218 nonzeros
+Model fingerprint: 0x9c2fc4d0
 Variable types: 9516 continuous, 630722 integer (630721 binary)
 Coefficient statistics:
-  Matrix range     [1e-01, 4e+02]
-  Objective range  [5e+00, 4e+06]
+  Matrix range     [1e-01, 6e+01]
+  Objective range  [1e-02, 1e+04]
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 1e+18]
 Warning: Model contains large rhs
          Consider reformulating model or setting NumericFocus parameter
          to avoid numerical issues.
-Presolve removed 10260 rows and 586260 columns
+Found heuristic solution: objective 1329.3594817
+Presolve removed 12421 rows and 586622 columns
 Presolve time: 0.07s
-Presolved: 11077 rows, 53978 columns, 159614 nonzeros
-Variable types: 4320 continuous, 49658 integer (49657 binary)
-Found heuristic solution: objective 978103.97685
+Presolved: 6396 rows, 53616 columns, 146112 nonzeros
+Variable types: 3960 continuous, 49656 integer (49656 binary)
 Performing another presolve...
-Presolve removed 2484 rows and 4632 columns
-Presolve time: 0.57s
-Root relaxation presolve removed 2160 rows and 2160 columns
-Root relaxation presolved: 6433 rows, 47186 columns, 146210 nonzeros
+Presolve removed 6069 rows and 49564 columns
+Presolve time: 0.32s
+Root relaxation presolved: 327 rows, 4052 columns, 11704 nonzeros
 
-Deterministic concurrent LP optimizer: primal and dual simplex
-Showing primal log only...
 
-Concurrent spin time: 0.13s (can be avoided by choosing Method=3)
-
-Solved with dual simplex
-
-Use crossover to convert LP symmetric solution to basic solution...
-
-Root relaxation: objective 4.386315e+05, 7457 iterations, 0.52 seconds (1.15 work units)
-Total elapsed time = 5.69s (DegenMoves)
+Root relaxation: cutoff, 295 iterations, 0.01 seconds (0.02 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 438631.503    0 2351 978103.977 438631.503  55.2%     -    7s
-     0     0 699022.373    0  419 978103.977 699022.373  28.5%     -    7s
-H    0     0                    741956.82703 699022.373  5.79%     -    7s
-H    0     0                    741583.97685 699022.373  5.74%     -    7s
+     0     0     cutoff    0      1329.35948 1329.35948  0.00%     -    0s
 
-Cutting planes:
-  Implied bound: 5
-  MIR: 45
-  Mixing: 46
-  Flow cover: 87
-  Relax-and-lift: 17
-
-Explored 1 nodes (46397 simplex iterations) in 8.43 seconds (27.09 work units)
+Explored 1 nodes (295 simplex iterations) in 0.58 seconds (1.00 work units)
 Thread count was 24 (of 32 available processors)
 
-Solution count 3: 741584 741957 978104 
+Solution count 2: 1329.36 1329.36 
 
 Optimal solution found (tolerance 1.70e-02)
-Best objective 7.415839768528e+05, best bound 7.415839768528e+05, gap 0.0000%
+Best objective 1.329359481674e+03, best bound 1.329359481674e+03, gap 0.0000%
