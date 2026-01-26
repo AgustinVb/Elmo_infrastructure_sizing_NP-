@@ -463,10 +463,10 @@ class ConstraintRules(OptRules):
         model.station_existence_constraint       = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.station_existence_constraint)
         model.charger_limit                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.charge_state                       = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.charge_state)
-        #model.max_power                          = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.max_power)
+        model.max_power                          = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.max_power)
 
-        #model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
-        #model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
+        model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
+        model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
         
         #Producción nuevas
         model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)

@@ -541,7 +541,7 @@ class JSONPlotter:
                     label="Energy Price", color="red")
             
             # Límites y márgenes
-            ax1.set_ylim(0, 2000)
+            ax1.set_ylim(0, 4000)
             ax2.set_ylim(0.094, 0.106)
             
             # --- Ticks fijos ---

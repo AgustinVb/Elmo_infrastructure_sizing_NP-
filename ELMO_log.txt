@@ -1,5 +1,5 @@
 
-Gurobi 12.0.0 (win64) logging started Mon Jan 26 17:41:08 2026
+Gurobi 12.0.0 (win64) logging started Mon Jan 26 19:53:24 2026
 
 Set parameter LogFile to value "ELMO_log.txt"
 Set parameter Threads to value 24
@@ -22,39 +22,45 @@ FlowCoverCuts  2
 Presolve  2
 Threads  24
 
-Optimize a model with 18817 rows, 640238 columns and 1377218 nonzeros
-Model fingerprint: 0x9c2fc4d0
+Optimize a model with 21337 rows, 640238 columns and 1385858 nonzeros
+Model fingerprint: 0x9b17f8f3
 Variable types: 9516 continuous, 630722 integer (630721 binary)
 Coefficient statistics:
-  Matrix range     [1e-01, 6e+01]
+  Matrix range     [1e-01, 4e+02]
   Objective range  [1e-02, 1e+04]
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 1e+18]
 Warning: Model contains large rhs
          Consider reformulating model or setting NumericFocus parameter
          to avoid numerical issues.
-Found heuristic solution: objective 1329.3594817
-Presolve removed 12421 rows and 586622 columns
-Presolve time: 0.07s
-Presolved: 6396 rows, 53616 columns, 146112 nonzeros
-Variable types: 3960 continuous, 49656 integer (49656 binary)
+Presolve removed 12241 rows and 586262 columns
+Presolve time: 0.06s
+Presolved: 9096 rows, 53976 columns, 157272 nonzeros
+Variable types: 4320 continuous, 49656 integer (49656 binary)
 Performing another presolve...
-Presolve removed 6069 rows and 49564 columns
-Presolve time: 0.32s
-Root relaxation presolved: 327 rows, 4052 columns, 11704 nonzeros
+Presolve removed 2664 rows and 4632 columns
+Presolve time: 0.29s
+Root relaxation presolve removed 2310 rows and 2130 columns
+Root relaxation presolved: 4122 rows, 47214 columns, 139428 nonzeros
 
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing primal log only...
 
-Root relaxation: cutoff, 295 iterations, 0.01 seconds (0.02 work units)
+Concurrent spin time: 0.02s
+
+Solved with primal simplex
+
+Root relaxation: objective 1.329359e+03, 5724 iterations, 0.18 seconds (0.24 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0     cutoff    0      1329.35948 1329.35948  0.00%     -    0s
+*    0     0               0    1329.3594817 1329.35948  0.00%     -    1s
 
-Explored 1 nodes (295 simplex iterations) in 0.58 seconds (1.00 work units)
+Explored 1 nodes (9657 simplex iterations) in 1.32 seconds (2.29 work units)
 Thread count was 24 (of 32 available processors)
 
-Solution count 2: 1329.36 1329.36 
+Solution count 1: 1329.36 
 
 Optimal solution found (tolerance 1.70e-02)
 Best objective 1.329359481674e+03, best bound 1.329359481674e+03, gap 0.0000%
