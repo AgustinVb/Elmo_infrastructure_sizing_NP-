@@ -25,73 +25,86 @@ class OptRules(object):
         print(object_name, end - start)
 
 class OptSets(OptRules):
-
+    
+    
     def _get_pause_definitions(self):
-        """Hardcoded definition of pauses (start time, duration, pause_type).
+        """Hardcoded pauses as (start_time, end_time, pause_type) in HH:MM.
 
-        Times are interpreted in HH:MM:SS, with the optimization horizon
-        starting at 08:00. Any start time strictly before 08:00 is assumed
-        to belong to the following day (e.g. 02:00, 04:00).
+        The optimization horizon starts at 08:00.
+        Times strictly before 08:00 are interpreted as next day (e.g., 04:00).
+        If end_time is earlier than start_time, the pause crosses midnight (e.g., 22:00 -> 00:30).
         """
-        # start, duration, pause_type
         return [
-            ("10:00:00", "2:30:00", "maintenance"),
-            ("14:00:00", "1:00:00", "meal"),
-            ("16:00:00", "1:30:00", "maintenance"),
-            ("22:00:00", "2:30:00", "maintenance"),
-            ("2:00:00",  "1:00:00", "meal"),
-            ("4:00:00",  "1:30:00", "maintenance"),
+            # Mantenciones (las que me dijiste)
+            ("10:04", "12:26", "maintenance"),
+            ("16:04", "17:26", "maintenance"),
+            ("22:04", "00:26", "maintenance"),
+            ("04:04", "05:26", "maintenance"),
+
+            ("14:04", "14:56", "meal"),
+            ("02:04", "02:56", "meal"),
         ]
 
-    def _get_time_intervals_for_pause_type(self, pause_type):
-        """Return sorted list of time-interval indices for a given pause_type.
 
-        The mapping uses self.time_series.delta_t (in hours) and assumes that
-        time interval 0 corresponds to 08:00. Interval t represents the
-        half-open period [t, t+1) in index space, i.e. the t-th delta_t slot
-        after 08:00.
+
+    def _get_time_intervals_for_pause_type(self, pause_type):
         """
-        # Base time: 08:00
-        base_minutes = 8 * 60
+        Return sorted list of time-interval indices for a given pause_type.
+
+        Assumes:
+        - t=1 corresponds to [DAY_START, DAY_START + delta_t)
+        - self.time_series.delta_t is in hours
+        - pause definitions are (start_hhmm, end_hhmm, pause_type)
+        """
+        # Ajusta esto a tu inicio real del horizonte (09:00 según tu comentario)
+        base_minutes = 9 * 60
+
         dt_minutes = int(round(self.time_series.delta_t * 60))
         if dt_minutes <= 0:
             raise ValueError("delta_t must be positive")
+        if 1440 % dt_minutes != 0:
+            raise ValueError("delta_t must divide 1440 minutes exactly")
 
-        # Max index in the time horizon
-        max_t = max(self.time_series.time_intervals)
+        max_t = int(max(self.time_series.time_intervals))
 
-        def _parse_hhmmss(s):
-            parts = s.split(":")
+        def _parse_hhmm(s: str) -> int:
+            parts = s.strip().split(":")
             h = int(parts[0])
             m = int(parts[1]) if len(parts) > 1 else 0
             return 60 * h + m
 
         indices = set()
-        for start_str, dur_str, ptype in self._get_pause_definitions():
+
+        for start_str, end_str, ptype in self._get_pause_definitions():
             if ptype != pause_type:
                 continue
 
-            start_min = _parse_hhmmss(start_str)
-            dur_min = _parse_hhmmss(dur_str)
+            start_min = _parse_hhmm(start_str)
+            end_min   = _parse_hhmm(end_str)
 
-            # Times before 08:00 are interpreted as next day
+            # Interpretar horas < base como "día siguiente" dentro del ciclo 24h del horizonte
             if start_min < base_minutes:
                 start_min += 24 * 60
+            if end_min < base_minutes:
+                end_min += 24 * 60
 
-            offset = start_min - base_minutes
-            if offset < 0:
-                continue
+            # Si el fin quedó antes (o igual) que el inicio => cruza medianoche
+            if end_min <= start_min:
+                end_min += 24 * 60
 
-            # t = 1 corresponds to [08:00, 08:00 + delta_t)
-            start_idx = int(offset // dt_minutes) + 1
-            n_intervals = int(math.ceil(float(dur_min) / dt_minutes))
+            # Ventana en minutos desde el inicio del horizonte
+            a = start_min - base_minutes
+            b = end_min - base_minutes
 
-            for t in range(start_idx, start_idx + n_intervals):
-                if 1 <= t <= max_t:
+            # Marcar intervalos t que se SOLAPAN con [a,b)
+            for t in range(1, max_t + 1):
+                s = (t - 1) * dt_minutes
+                e = t * dt_minutes
+                if max(s, a) < min(e, b):
                     indices.add(t)
 
         return sorted(indices)
-
+    
     def build_sets(self, model):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
         model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
@@ -106,7 +119,7 @@ class OptSets(OptRules):
         # Tramos de penalización para déficit F (piecewise lineal)
         model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
 
-         # Nuevos subsets de tiempo para pausas de comida y mantenimiento
+            # Nuevos subsets de tiempo para pausas de comida y mantenimiento
         model.time_intervals_meal_set = pyo.Set(
             initialize=self._get_time_intervals_for_pause_type("meal")
         )
@@ -289,7 +302,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de  >= target
+        return term_de + model.F[j, d] >= target
 
     def max_production(self, model, d, j):
         target = model.m_j[j, d]
@@ -432,22 +445,10 @@ class ConstraintRules(OptRules):
     # --------------------------
     def maint_stop_all(self, model, i, d, t):
         """En intervalos de mantenimiento TODOS los LHD deben
-        estar estacionados (Z = 1)."""
+        estar estacionados (Z = 1). En mantenimiento los ELHD no pueden estar cargando."""
         if t not in model.time_intervals_maintenance_set:
             return pyo.Constraint.Skip
-
-        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
-        if not nodes:
-            return pyo.Constraint.Skip
-
-        # Sin viajes → por state_unique_* esto fuerza Z = 1
-        return sum(model.Y[i, j, d, t] for j in nodes) == 0
-
-    def maint_no_charge_elhd(self, model, k, i, d, t):
-        """En mantenimiento los ELHD no pueden estar cargando."""
-        if t not in model.time_intervals_maintenance_set:
-            return pyo.Constraint.Skip
-        return model.Z_charge[k, i, d, t] == 0
+        return model.Z[i, d, t] == 1
     
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
@@ -483,9 +484,8 @@ class ConstraintRules(OptRules):
         #model.macroblock_station_assignment = pyo.Constraint(model.stations_set, model.elhd_set, rule=self.macroblock_station_assignment)
         
         #Detenciones 
-        #model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
-        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        #model.maintenance_no_charge_elhd = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_no_charge_elhd)
+        model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
 
 class ObjectiveRules(OptRules):
 
