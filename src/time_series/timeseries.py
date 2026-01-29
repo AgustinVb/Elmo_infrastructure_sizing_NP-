@@ -220,12 +220,8 @@ class Timeseries(object):
     def get_shift_day_end(self, shift_name: str) -> int:
         return self.mapper['Shifts'].loc[shift_name, :]['day_end'].iloc[0]
 
-    #def get_time_intervals(self) -> np.ndarray:
-    #    intervals = np.arange(1, 24 / self.delta_t + 1)
-    #    return intervals
-    
     def get_time_intervals(self) -> np.ndarray:
-        intervals = np.arange(1, int(24 / self.delta_t) + 1, dtype=int)
+        intervals = np.arange(1, 24 / self.delta_t + 1)
         return intervals
 
     def get_last_interval(self) -> int:
@@ -322,7 +318,7 @@ class Timeseries(object):
                 distance_outbound, distance_return, tilt, elhd, self.delta_t
             )
             if travel_dur_hours <= self.delta_t:
-                n_trips =  int(np.rint(self.delta_t / travel_dur_hours))
+                n_trips = int(np.rint(self.delta_t / travel_dur_hours))
             else:
                 n_trips = 1
 
@@ -435,6 +431,3 @@ class Timeseries(object):
     def get_grid_power(self) -> float:
         """Devuelve el parámetro Pmine según Misc → 'Pmine'."""
         return self.mapper['Misc']['Pmine']
-
-
-
