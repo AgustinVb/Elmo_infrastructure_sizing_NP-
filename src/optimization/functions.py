@@ -121,12 +121,11 @@ class OptSets(OptRules):
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
          # Nuevos subsets de tiempo para pausas de comida y mantenimiento
-        model.time_intervals_meal_set = pyo.Set(
-            initialize=self._get_time_intervals_for_pause_type("meal")
-        )
-        model.time_intervals_maintenance_set = pyo.Set(
-            initialize=self._get_time_intervals_for_pause_type("maintenance")
-        )
+        model.time_intervals_meal_set = pyo.Set(initialize=self._get_time_intervals_for_pause_type("meal"))
+        model.time_intervals_maintenance_set = pyo.Set(initialize=self._get_time_intervals_for_pause_type("maintenance"))
+        # Tramos de penalización para déficit F (piecewise lineal)
+        model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
+
 
 class OptParameters(OptRules):
 
@@ -177,10 +176,26 @@ class OptParameters(OptRules):
         model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries(k) for k in model.stations_set}, mutable=False)
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         #model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
-        # Scalar fallback for station-level logic (use first LHD charge time)
-        #first_elhd = self.mine_system.elhd.elhds[0]
-        #model.t_charge_scalar = pyo.Param(initialize=self.mine_system.elhd.get_charge_time(first_elhd), mutable=False)
         model.t_charge = 8
+
+        # ---- Penalización por tramos para F (déficit) ----
+        # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
+        # Costo unitario por tramo: Voll / divisor
+        # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
+        model.F_penalty_div = pyo.Param(
+            model.F_SEG,
+            initialize={1: 1000.0, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},
+            mutable=True
+        )
+
+        # Capacidad (longitud) de cada tramo
+        model.F_penalty_cap = pyo.Param(
+            model.F_SEG,
+            initialize={1: 5.0, 2: 5.0, 3: 40.0, 4: 50.0, 5: 1e18},
+            mutable=True
+        )
+
+        model.Voll = pyo.Param(initialize=1000, mutable=True)
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
@@ -249,6 +264,24 @@ class BoundRules(OptRules):
         # Demanda de baterías en el intervalo t en la estación k
         model.W = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
 
+        model.M = pyo.Var(
+            model.slhd_set,
+            model.nodes_set,
+            model.days,
+            domain=pyo.NonNegativeReals
+        )
+
+        model.F = pyo.Var(
+            model.nodes_set, model.days,
+            domain=pyo.NonNegativeReals
+        )
+
+
+        # Descomposición de F en tramos para costo piecewise lineal
+        model.F_seg = pyo.Var(
+            model.nodes_set, model.days, model.F_SEG,
+            domain=pyo.NonNegativeReals
+        )
 from src.optimization.functions import OptRules
 import pyomo.environ as pyo
 
@@ -334,28 +367,17 @@ class ConstraintRules(OptRules):
         return model.B_s[i, d, 0] == model.B[i, d, 0]
     
     # Producción mínima 
-    def production(self, model, d, j):
-        target = model.m_j[j,d]
-        def ntr(node,i):
-            return self.time_series.get_n_trips(node,i)
 
-        # extracción normal de mineral
-        term_de = sum(
-        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-        for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
-        )
-        return term_de >= target
-    
     def production_swap(self, model, d, j):
         target = model.m_j[j,d]
         def ntr(node,i):
             return self.time_series.get_n_trips(node,i)
 
         term_de = sum(model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-        for i in model.dlhd_set|model.slhd_set for t in model.time_intervals_set)
+        for i in model.slhd_set for t in model.time_intervals_set)
         pen = sum(model.Z_pen[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
-        for i in model.slhd_set|model.slhd_set for t in model.time_intervals_set)
-        return term_de - pen >= target
+        for i in model.slhd_set for t in model.time_intervals_set)
+        return term_de - pen + model.F[j, d] >= target
     
     def aux_zpen_1(self, model, i, j, d, t):
         return sum(model.Z_swap[k, i ,d, t] for k in model.stations_set) - model.Y[i, j ,d, t] - 1 <= model.Z_pen[i, j ,d, t]
@@ -367,17 +389,29 @@ class ConstraintRules(OptRules):
         return model.Z_pen[i, j ,d, t] <= model.Y[i, j ,d, t]    
  
 
-    def production_max(self, model, d, j):
-        target = model.m_j[j,d]
-        def ntr(node,i):
-            return self.time_series.get_n_trips(node,i)
-
-        # extracción normal de mineral
-        term_de = sum(
-        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-        for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
+    def daily_extraction_M(self, model, i, j, d):
+        """
+        M[i,d] = extracción total del equipo i en el día d.
+        Misma unidad que el término de producción (g_i * n_trips * f_i).
+        """
+        term = sum(
+            model.Y[i2, j2, d2, t2] * model.g_i[i2]
+            * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
+            for (i2, j2, d2, t2) in model.Y
+            if i2 == i and d2 == d and j2 == j
         )
-        return term_de <= target *1.3
+        return model.M[i, j, d] == term
+    
+    # --------------------------
+    # Penalización por tramos (piecewise) para F
+    # --------------------------
+    def F_piecewise_balance(self, model, j, d):
+        # Sumatoria de tramos debe reconstruir F
+        return sum(model.F_seg[j, d, s] for s in model.F_SEG) == model.F[j, d]
+
+    def F_piecewise_caps(self, model, j, d, s):
+        # Cada tramo tiene una "longitud" máxima
+        return model.F_seg[j, d, s] <= model.F_penalty_cap[s]
     
     # Estaciones de carga
     
@@ -573,6 +607,10 @@ class ConstraintRules(OptRules):
         model.aux_zpen_1                         = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set, rule=self.aux_zpen_1)
         model.aux_zpen_2                         = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set, rule=self.aux_zpen_2)
         model.aux_zpen_3                         = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set, rule=self.aux_zpen_3)
+        model.daily_extraction                   = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, rule=self.daily_extraction_M)
+        # Penalización por tramos para F (piecewise lineal)
+        model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
+        model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         # no estan en el modelo latex
         model.initial_charging_batteries    = pyo.Constraint(model.stations_set, model.days, rule=self.initial_charging_batteries)
@@ -597,8 +635,13 @@ class ObjectiveRules(OptRules):
             for t in model.time_intervals_set
             for a in model.time_intervals_set 
         ) 
-
-        return cost_el*model.scaling_factor_op_cost
+        F_penalty = sum(
+            model.F_seg[j, d, s] * (model.Voll / model.F_penalty_div[s])
+            for j in model.nodes_set
+            for d in model.days
+            for s in model.F_SEG
+        )
+        return (cost_el + F_penalty) * model.scaling_factor_op_cost
 
     def inversion_cost(self, model):
         cost_inv = sum(
@@ -624,7 +667,13 @@ class ObjectiveRules(OptRules):
             for t in model.time_intervals_set
             for a in model.time_intervals_set 
         ) 
-        return cost_el
+        F_penalty = sum(
+            model.F_seg[j, d, s] * (model.Voll / model.F_penalty_div[s])
+            for j in model.nodes_set
+            for d in model.days
+            for s in model.F_SEG
+        )
+        return cost_el + F_penalty
     
     def total_cost(self, model):
         return self.lhd_charge_cost_bs(model) + self.inversion_cost(model)
