@@ -940,14 +940,99 @@ class JSONPlotter:
             fig.tight_layout()
             fig.savefig(os.path.join(self.plot_dir, "LHD_total_costs.png"))
             plt.close(fig)
+    def plot_material_extraction_by_point(self):
+        """
+        Genera un gráfico de barras AZULES mostrando el material total extraído (Variable M)
+        por cada punto de extracción (nodo j) y compara con la demanda (m_j).
+        """
+        if self.df_M is None or self.df_M.empty:
+            print("⚠️ No hay datos en M.json. Omitiendo 'Material Extraction by Point'.")
+            return
+
+        # Intentar detectar la columna del nodo ('node' o 'j')
+        node_col = 'node' if 'node' in self.df_M.columns else 'j'
+        if node_col not in self.df_M.columns:
+            # Si no encuentra ninguna, intenta usar la segunda columna
+            cols = self.df_M.columns
+            if len(cols) > 1:
+                node_col = cols[1]
+            else:
+                return
+
+        mj = self.params.m_j or {}
+
+        for d in self.days:
+            # Filtrar datos del día
+            df_day = self.df_M.query("day == @d")
+            if df_day.empty:
+                continue
+
+            # Agrupar por punto de extracción (nodo) y sumar toneladas
+            extr = (df_day.groupby(node_col)["value"]
+                    .sum()
+                    .rename("extracted_tons")
+                    .to_frame()
+                    .sort_index())
+
+            if extr.empty:
+                continue
+
+            # --- Graficar ---
+            fig, ax = plt.subplots(figsize=(max(10, 0.5 * len(extr)), 6))
+            x = np.arange(len(extr.index))
+
+            # Barras de material extraído (COLOR AZUL)
+            ax.bar(x, extr["extracted_tons"].values, 
+                   color='#1f77b4', edgecolor="black", alpha=0.85, width=0.6, 
+                   label="Material Extracted (M)")
+
+            # Línea de Demanda (m_j)
+            if mj:
+                demand_values = []
+                # Buscar la demanda correspondiente a cada nodo en el eje X
+                for node in extr.index:
+                    # Intentar buscar como string (lo más común en JSON keys) o como el tipo original
+                    val = mj.get(str(node), {}).get(d, np.nan)
+                    if pd.isna(val):
+                        val = mj.get(node, {}).get(d, np.nan)
+                    demand_values.append(val)
+                
+                # Graficar demanda solo si hay datos válidos
+                if any(not pd.isna(v) for v in demand_values):
+                    ax.plot(x, demand_values, color='red', marker='D', linestyle='--', 
+                            linewidth=2, markersize=6, label="Demand Target (m_j)")
+
+            # Formato de ejes
+            ax.set_xticks(x)
+            ax.set_xticklabels(extr.index, rotation=45, ha='right', fontsize=11)
+            
+            ax.set_ylabel("Total Material [t]", fontsize=13)
+            ax.set_xlabel("Extraction Point (j)", fontsize=13)
+            
+            month_label = self._rep_day_label(d)
+            ax.set_title(f"Material Extraction vs Demand (M) — {month_label}", fontsize=16, pad=15)
+            
+            ax.grid(axis='y', linestyle=':', alpha=0.6)
+            ax.legend(loc="upper right", fontsize=11, frameon=True).get_frame().set_edgecolor("#cccccc")
+
+            fig.tight_layout()
+
+            # Guardar archivo
+            filename = f"Material_Extraction_M_Blue_{month_label.replace(' ', '_')}.png"
+            save_path = os.path.join(self.plot_dir, filename)
+            fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
 
     def create_all_plots(self):
         self.plot_charge_power_vs_price()
-        self.plot_node_extraction_vs_demand()
+        #self.plot_node_extraction_vs_demand()
         self.plot_lhd_costs_bars()
         self.plot_lhd_soc_vs_price_and_states()
         self.plot_emissions_profiles_for_optimized_day()
+        self.plot_material_extraction_by_point()
         print(f"✔ Plots guardados en '{self.plot_dir}'.")
+
+
 
 
 # -------------------- CLI --------------------
