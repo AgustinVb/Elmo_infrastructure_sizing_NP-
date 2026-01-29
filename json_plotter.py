@@ -106,6 +106,7 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
       - d -> lhd -> t -> day -> i -> interval : value   (p.ej. C.json, E.json)
       - d -> lhd -> t -> node -> i -> day -> j -> interval : value (tipo Y)
       - k -> station -> d -> lhd -> t -> day -> i -> interval : value (p.ej. P.json con eje k)
+      - Especial M.json: _1 -> LHD -> _2 -> CXXXX -> _3 -> day : value
     """
     data = _load_json(path)
     if not data:
@@ -132,8 +133,27 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                     return found
         return None
 
+    # -------------------------------------------------------------------------
+    # Caso especial: M.json tipo _1 -> LHD -> _2 -> CXXXX -> _3 -> day
+    # -------------------------------------------------------------------------
+    if any(str(k).startswith("_") for k in data.keys()):
+        for k1, v1 in data.items():            # _1
+            for lhd, v2 in v1.items():         # LH518B_1
+                for k2, v3 in v2.items():     # _2
+                    for j, v4 in v3.items():  # C0044, C0045... nodo j
+                        for k3, val_dict in v4.items():  # _3
+                            for day, val in val_dict.items():
+                                rows.append({
+                                    "lhd": lhd,
+                                    "j": j,
+                                    "day": int(day),
+                                    "value": float(val)
+                                })
+
+    # -------------------------------------------------------------------------
     # Caso 1: Estructura con eje 'k' (P.json, etc.)
-    if "k" in data:
+    # -------------------------------------------------------------------------
+    elif "k" in data:
         for station, k_block in data["k"].items():
             if not isinstance(k_block, dict) or "d" not in k_block:
                 continue
@@ -143,17 +163,19 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                     continue
                 if "t" in t_block and isinstance(t_block["t"], dict):
                     for k1, v1 in t_block["t"].items():
-                        # Caso similar a C/E: day -> i(interval)
                         if isinstance(v1, dict) and "i" in v1:
                             for interval, val in v1["i"].items():
                                 rows.append({
                                     "lhd": lhd,
+                                    "station": station,
                                     "day": _numeric_or_str(k1),
                                     "interval": _numeric_or_str(interval),
                                     "value": float(val),
                                 })
 
+    # -------------------------------------------------------------------------
     # Caso 2: Estructura directa con 'd' (estructura original)
+    # -------------------------------------------------------------------------
     elif "d" in data:
         for outer_key, outer_block in data["d"].items():
             if not isinstance(outer_block, dict):
@@ -165,7 +187,6 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                 if isinstance(outer_key, str) and outer_key.lower().startswith("station"):
                     station_wrapper = True
                 else:
-                    # heuristic: if inner keys look like LHD ids (start with 'LH')
                     for kk in t_keys[:5]:
                         try:
                             if isinstance(kk, str) and kk.upper().startswith("LH"):
@@ -177,7 +198,6 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                 if station_wrapper:
                     station = outer_key
                     for lhd_key, v1 in outer_block["t"].items():
-                        # here lhd_key is the actual LHD id, station is outer_key
                         if isinstance(v1, dict) and "i" in v1 and isinstance(v1["i"], dict):
                             for day, j_block in v1["i"].items():
                                 inner = _find_interval_map(j_block)
@@ -192,13 +212,10 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                                             "interval": _numeric_or_str(interval),
                                             "value": float(val),
                                         })
-                        # other patterns under station wrapper (rare) are ignored for now
                 else:
-                    # original assumption: outer_key is LHD
                     lhd = outer_key
                     t_block = outer_block
                     for k1, v1 in t_block["t"].items():
-                        # Caso Y-like: node -> i(day) -> j(interval)
                         if isinstance(v1, dict) and "i" in v1 and isinstance(v1["i"], dict):
                             for day, j_block in v1["i"].items():
                                 if isinstance(j_block, dict):
@@ -224,7 +241,6 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                                                     "interval": _numeric_or_str(interval),
                                                     "value": float(val),
                                                 })
-                        # Caso B-like: day -> b(interval)
                         elif isinstance(v1, dict) and "b" in v1:
                             for interval, val in v1["b"].items():
                                 rows.append({
@@ -233,7 +249,6 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                                     "interval": _numeric_or_str(interval),
                                     "value": float(val),
                                 })
-                        # Caso C/E-like: day -> i(interval)
                         elif isinstance(v1, dict) and "i" in v1:
                             for interval, val in v1["i"].items():
                                 rows.append({
@@ -243,7 +258,6 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                                     "value": float(val),
                                 })
                         else:
-                            # Fallback genérico
                             flat = _flatten_dict(v1)
                             for path_tup, val in flat:
                                 interval = None
@@ -261,7 +275,7 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    cols = [c for c in ["lhd","station","node","day","interval","value"] if c in df.columns]
+    cols = [c for c in ["lhd","station","node","j","day","interval","value"] if c in df.columns]
     return df[cols].sort_values([c for c in cols if c!="value"]).reset_index(drop=True)
 
 
@@ -454,13 +468,13 @@ class JSONPlotter:
     # -------------------- NUEVO MÉTODO DE TIEMPO FIJO --------------------
     def _get_fixed_time_ticks(self, mode="interval"):
         """
-        Devuelve ticks y etiquetas FIJAS para: 08:00, 12:00, 16:00, 20:00, 00:00, 04:00, 08:00(+1).
+        Devuelve ticks y etiquetas FIJAS para: 09:00, 13:00, 17:00, 21:00, 01:00, 05:00, 09:00(+1).
         mode="hour": devuelve posiciones 0, 4, 8... (para gráficos con eje X en horas)
         mode="interval": devuelve posiciones 1, 1+step... (para gráficos con eje X en intervalos)
         """
         # Horas relativas desde el inicio (0h = 08:00 AM)
         rel_hours = [0, 4, 8, 12, 16, 20, 24]
-        labels = ["08:00", "12:00", "16:00", "20:00", "00:00", "04:00", "08:00"]
+        labels = ["09:00", "13:00", "17:00", "21:00", "01:00", "05:00", "09:00"]
         
         if mode == "hour":
             return rel_hours, labels
@@ -527,8 +541,8 @@ class JSONPlotter:
                     label="Energy Price", color="red")
             
             # Límites y márgenes
-            ax1.set_ylim(0, 1500)
-            ax2.set_ylim(0, 0.30)
+            ax1.set_ylim(0, 4000)
+            ax2.set_ylim(0.094, 0.106)
             
             # --- Ticks fijos ---
             ticks, labels = self._get_fixed_time_ticks(mode="interval")
@@ -574,44 +588,71 @@ class JSONPlotter:
             )
             plt.close(fig)
 
+    
     def plot_node_extraction_vs_demand(self):
-        if self.df_Y is None or self.df_Y.empty:
-            print("⚠️ No hay Y.json. Omitiendo 'Extraction vs Demand'.")
-            return
-        mj = self.params.m_j or {}
+            # Dentro de plot_node_extraction_vs_demand, justo después de cargar el DataFrame M
+            df = load_generic_variable_df(self.json_dir, "M")
+            if df.empty:
+                print("⚠️ No hay M.json o está vacío. Omitiendo 'Extraction vs Demand'.")
+                return
 
-        for d in self.days:
-            y_day = self.df_Y.query("day == @d")
-            if y_day.empty:
-                continue
-            extr = (y_day.groupby("node")["value"].sum().rename("assignments").to_frame())
-            if mj:
-                tons = []
-                for node, cnt in extr["assignments"].items():
-                    base = mj.get(node, {}).get(d, np.nan)
-                    tons.append(np.nan if pd.isna(base) else cnt * base)
-                extr["extracted_tons"] = tons
-
-            fig, ax = plt.subplots(figsize=(max(8, 0.35*len(extr)), 5))
-            x = np.arange(len(extr.index))
-            bar = extr["extracted_tons"] if "extracted_tons" in extr.columns else extr["assignments"]
-            ax.bar(x, bar.values, edgecolor="black")
+            # Creamos una columna unificada que siempre exista
+            df['node_plot'] = df['node'] if 'node' in df.columns else df.get('j')
             
-            if mj:
-                demand = [mj.get(node, {}).get(d, np.nan) for node in extr.index]
-                ax.plot(x, demand, linestyle="--", linewidth=2, label="Demand")
+            mj = self.params.m_j or {}
 
-            ax.set_xticks(x); ax.set_xticklabels(extr.index, rotation=90)
-            ax.set_ylabel("Tons" if "extracted_tons" in extr.columns else "Assignments")
-            ax.set_title(f"Extraction vs Demand – {self._rep_day_label(d)}")
-            if mj: ax.legend(loc="upper left")
-            fig.tight_layout()
-            
-            month = self._rep_day_label(d)
-            fig.savefig(
-                        os.path.join(self.plot_dir, f"Extraction_vs_Demand_{month}.png")
-            )
-            plt.close(fig)
+            for d in self.days:
+                df_day = self.df_M.query("day == @d")
+                if df_day.empty:
+                    continue
+
+                # Extracción total por nodo j (sumando equipos i)
+                extr = (
+                    df_day
+                    .groupby("node")["value"]
+                    .sum()
+                    .rename("extracted_tons")
+                    .to_frame()
+               )
+
+                fig, ax = plt.subplots(figsize=(max(8, 0.35 * len(extr)), 5))
+                x = np.arange(len(extr.index))
+
+                ax.bar(
+                    x,
+                    extr["extracted_tons"].values,
+                    edgecolor="black",
+                    label="Extraction"
+                )
+                # Demanda desde m_j[j, d]
+                if mj:
+                    demand = [mj.get(node if node in mj else str(node), {}).get(d, np.nan) 
+                               for node, d in zip(extr['node_plot'], extr['day'])]
+                    ax.plot(
+                        x,
+                        demand,
+                        linestyle="--",
+                        linewidth=2.5,
+                        color="red",
+                        label="Demand"
+                    )
+
+                ax.set_xticks(x)
+                ax.set_xticklabels(extr.index, rotation=90)
+                ax.set_ylabel("Extracted tons")
+                ax.set_title(f"Extraction vs Demand – {self._rep_day_label(d)}")
+
+                if mj:
+                    ax.legend(loc="upper left")
+
+                fig.tight_layout()
+
+                month = self._rep_day_label(d)
+                fig.savefig(
+                    os.path.join(self.plot_dir, f"Extraction_vs_Demand_{month}.png")
+                )
+                plt.close(fig)
+
 
     def plot_lhd_soc_vs_price_and_states(self):
         if (self.df_B is None or self.df_B.empty) and (self.df_E is None or self.df_E.empty):
@@ -940,6 +981,7 @@ class JSONPlotter:
             fig.tight_layout()
             fig.savefig(os.path.join(self.plot_dir, "LHD_total_costs.png"))
             plt.close(fig)
+
     def plot_material_extraction_by_point(self):
         """
         Genera un gráfico de barras AZULES mostrando el material total extraído (Variable M)
@@ -1031,8 +1073,6 @@ class JSONPlotter:
         self.plot_emissions_profiles_for_optimized_day()
         self.plot_material_extraction_by_point()
         print(f"✔ Plots guardados en '{self.plot_dir}'.")
-
-
 
 
 # -------------------- CLI --------------------
