@@ -176,7 +176,7 @@ class OptParameters(OptRules):
         model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries(k) for k in model.stations_set}, mutable=False)
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         #model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
-        model.t_charge = 15
+        model.t_charge = 8
 
         # ---- Penalización por tramos para F (déficit) ----
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
