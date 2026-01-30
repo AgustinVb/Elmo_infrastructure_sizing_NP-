@@ -12,7 +12,7 @@ class OptRules(object):
         self.time_series = time_series
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
-        self.time_series.get_battery_assignment(mine_system.get_system_lhds())
+
 
     def create_pyo_object(self, object_type, model, object_name, sets, rule, domain=pyo.Reals):
         start = time.time()
@@ -44,7 +44,6 @@ class OptSets(OptRules):
             ("14:04", "14:56", "meal"),
             ("02:04", "02:56", "meal"),
         ]
-
 
 
     def _get_time_intervals_for_pause_type(self, pause_type):
@@ -349,9 +348,7 @@ class ConstraintRules(OptRules):
         # Cada tramo tiene una "longitud" máxima
         return model.F_seg[j, d, s] <= model.F_penalty_cap[s]
 
-
     # Estaciones de carga
-    
     #Cantidad máxima de cargadores
     def max_n_chargers(self, model, k):
         return model.N_chargers[k] <= model.max_chargers_k[k] * model.X[k]
@@ -487,12 +484,6 @@ class ConstraintRules(OptRules):
         model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
-        # Asignación estación por macrobloque
-        #model.stations_assignment = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.stations_assignment)
-        #model.one_station_per_lhd = pyo.Constraint(model.elhd_set, rule=self.one_station_per_lhd)
-        #model.assignation_station_only_existing = pyo.Constraint(model.stations_set, model.elhd_set, rule=self.assignation_station_only_existing)
-        #model.macroblock_station_assignment = pyo.Constraint(model.stations_set, model.elhd_set, rule=self.macroblock_station_assignment)
-        
         #Detenciones 
         model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
