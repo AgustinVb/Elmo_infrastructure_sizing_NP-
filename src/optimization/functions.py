@@ -211,15 +211,25 @@ class BoundRules(OptRules):
         return (0, None)
 
     def build_all_variables(self, model):
+         # Y(i,j,d,t) solo si j ∈ Nodes_assigned_at_interval(d,t,i)
+        def _init_Y_INDEX(m):
+            for d in m.days:
+                for t in m.time_intervals_set:
+                    for i in m.lhd_set:
+                        node_list = self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
+                        for j in node_list:
+                            yield (i, j, d, t)
+        # Sets de índices (solo contienen tuplas válidas)
+        model.Y_INDEX  = pyo.Set(dimen=4, initialize=_init_Y_INDEX)
+
+        # Viaje completo de ida por nodo — SOLO en tuplas válidas
+        model.Y = pyo.Var(model.Y_INDEX, domain=pyo.Binary)
         # Estado ON/OFF de cada LHD
         model.Z         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set,
                                   bounds=self.Z, domain=pyo.Binary)
         # Indicador de carga eléctrica (por batería) en cada intervalo
         model.Z_charge  = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set,
                                   bounds=self.Z_charge, domain=pyo.Binary)
-        # Viaje completo de ida por nodo
-        model.Y         = pyo.Var(model.lhd_set, model.nodes_set, model.days, model.time_intervals_set,
-                                  bounds=self.Y, domain=pyo.Binary)
         # Potencia de carga de batería b en (d,t)
         model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de batería b al final de (d,t)
@@ -313,7 +323,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de + model.F[j, d] <= target*2
+        return term_de  <= target*2.5
 
 
     def daily_extraction_M(self, model, i, j, d):
@@ -524,16 +534,16 @@ class ObjectiveRules(OptRules):
         # Coste operativo total (sin inversión)
         return (self.lhd_charge_cost(model) + self.F_penalty_cost(model))/model.scaling_factor_op_cost
     
-    def production_total(self, model, j):
-        def ntr(node,i):
-            return self.time_series.get_n_trips(node,i)
+    #def production_total(self, model, j):
+    #    def ntr(node,i):
+    #        return self.time_series.get_n_trips(node,i)
 
         # extracción normal de mineral
-        term_de = sum(
-        model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-        for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
-        for d in model.days)
-        return term_de*model.scaling_factor_op_cost
+    #    term_de = sum(
+    #    model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
+    #    for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
+    #    for d in model.days)
+    #    return term_de*model.scaling_factor_op_cost
 
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)

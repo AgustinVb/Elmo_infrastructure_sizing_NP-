@@ -148,13 +148,13 @@ class OptModel(object):
                 print("💰 Operation Cost:", self.opt_cost_result)
                 
                 # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
-                total_prod_val = 0
-                for j in self.model.nodes_set:
-                    prod_expression = self.objective_rules.production_total(self.model, j)
-                    total_prod_val += value(prod_expression)
+                #total_prod_val = 0
+                #for j in self.model.nodes_set:
+                #    prod_expression = self.objective_rules.production_total(self.model, j)
+                #    total_prod_val += value(prod_expression)
                 
-                self.total_production = total_prod_val
-                print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
+                #self.total_production = total_prod_val
+                #print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
                 # -----------------------------------
             else:
                 print("⚠️ Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
