@@ -222,6 +222,18 @@ class BoundRules(OptRules):
         return (0, model.bmax_b[b])
 
     def build_all_variables(self, model):
+        # Y(i,j,d,t) solo si j ∈ Nodes_assigned_at_interval(d,t,i)
+        def _init_Y_INDEX(m):
+            for d in m.days:
+                for t in m.time_intervals_set:
+                    for i in m.lhd_set:
+                        node_list = self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
+                        for j in node_list:
+                            yield (i, j, d, t)
+        # Sets de índices (solo contienen tuplas válidas)
+        model.Y_INDEX  = pyo.Set(dimen=4, initialize=_init_Y_INDEX)
+        #Viaje completo de LHD i al nodo j en (d,t)
+        model.Y = pyo.Var(model.Y_INDEX, bounds=self.Y, domain=pyo.Binary)
         # Variable binaria que indica si el LHD esta inactivo o no
         model.Z         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set,
                                   bounds=self.Z, domain=pyo.Binary)
@@ -234,9 +246,6 @@ class BoundRules(OptRules):
         # Variable binaria que indica si hay penalidad en la producción por swap
         model.Z_pen   = pyo.Var(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set,
                                 domain=pyo.Binary)
-        # Viaje completo de ida por nodo
-        model.Y         = pyo.Var(model.lhd_set, model.nodes_set, model.days, model.time_intervals_set,
-                                  bounds=self.Y, domain=pyo.Binary)
         # Potencia de carga de batería b en (d,t)
         model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de batería b al final de (d,t)
