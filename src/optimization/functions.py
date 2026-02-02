@@ -537,7 +537,7 @@ class ObjectiveRules(OptRules):
     #    return term_de*model.scaling_factor_op_cost
 
     def build_objective(self, model):
-        model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)
+        model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
 
 class OutputManager(OptRules):
 
