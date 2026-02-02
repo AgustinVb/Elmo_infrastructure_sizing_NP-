@@ -176,7 +176,7 @@ class OptParameters(OptRules):
         model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries(k) for k in model.stations_set}, mutable=False)
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         #model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
-        model.t_charge = 8
+        model.t_charge = 9
 
         # ---- Penalización por tramos para F (déficit) ----
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
@@ -232,6 +232,8 @@ class BoundRules(OptRules):
                             yield (i, j, d, t)
         # Sets de índices (solo contienen tuplas válidas)
         model.Y_INDEX  = pyo.Set(dimen=4, initialize=_init_Y_INDEX)
+        # Variable binaria que indica si hay penalidad en la producción por swap
+        model.Z_pen = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
         #Viaje completo de LHD i al nodo j en (d,t)
         model.Y = pyo.Var(model.Y_INDEX, bounds=self.Y, domain=pyo.Binary)
         # Variable binaria que indica si el LHD esta inactivo o no
@@ -243,9 +245,6 @@ class BoundRules(OptRules):
         # Variable binaria que indica si el LHD reliza un swap 
         model.Z_swap   = pyo.Var(model.stations_set, model.slhd_set, model.days, model.time_intervals_set,
                              domain=pyo.Binary)
-        # Variable binaria que indica si hay penalidad en la producción por swap
-        model.Z_pen   = pyo.Var(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set,
-                                domain=pyo.Binary)
         # Potencia de carga de batería b en (d,t)
         model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de batería b al final de (d,t)
@@ -376,16 +375,17 @@ class ConstraintRules(OptRules):
         return model.B_s[i, d, 0] == model.B[i, d, 0]
     
     # Producción mínima 
-
     def production_swap(self, model, d, j):
         target = model.m_j[j,d]
         def ntr(node,i):
             return self.time_series.get_n_trips(node,i)
 
-        term_de = sum(model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-        for i in model.slhd_set for t in model.time_intervals_set)
-        pen = sum(model.Z_pen[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
-        for i in model.slhd_set for t in model.time_intervals_set)
+        term_de = sum(model.Y[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i]
+                  for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
+    
+        pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
+                  for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
+    
         return term_de - pen + model.F[j, d] >= target
     
     def production_max(self, model, d, j):
@@ -624,9 +624,9 @@ class ConstraintRules(OptRules):
         model.max_swaps                   = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.max_swaps)
         
         model.production_swap                         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
-        model.aux_zpen_1                         = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set, rule=self.aux_zpen_1)
-        model.aux_zpen_2                         = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set, rule=self.aux_zpen_2)
-        model.aux_zpen_3                         = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, model.time_intervals_set, rule=self.aux_zpen_3)
+        model.aux_zpen_1                         = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
+        model.aux_zpen_2                         = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
+        model.aux_zpen_3                         = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
         model.daily_extraction                   = pyo.Constraint(model.slhd_set, model.nodes_set, model.days, rule=self.daily_extraction_M)
         # Penalización por tramos para F (piecewise lineal)
         model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
