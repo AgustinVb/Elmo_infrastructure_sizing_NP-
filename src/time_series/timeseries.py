@@ -20,14 +20,15 @@ class Timeseries(object):
         self._mc_scaled_cache = {}
 
     def build_mappers(self):
-        self.mapper['Emissions']       = self.sample_emissions(self.series['Emissions'])
+        #self.mapper['Emissions']       = self.sample_emissions(self.series['Emissions'])
         self.mapper['MarginalCost']    = self.sample_marginal_cost(self.series['MarginalCost'])
         self.mapper['ExtractionGoal']  = self.sample_extraction_goal(self.series['ExtractionGoal'])
         self.mapper['Shifts']          = self.sample_shifts(self.series['Shifts'])
         self.mapper['Time_Intervals']  = self.get_time_intervals()
         self.mapper['NodeAssignment']  = self.sample_node_assignment(self.series['NodeAssignment'])
-        self.mapper['BatteryAssignment'] = self.sample_battery_assignment(self.series['BatteryAssignment'])
-        self.mapper['Misc'] = self.sample_misc(self.series['Misc'])
+        self.mapper['StationAssignment']  = self.sample_station_assignment(self.series['StationAssignment'])
+        #self.mapper['BatteryAssignment'] = self.sample_battery_assignment(self.series['BatteryAssignment'])
+        #self.mapper['Misc'] = self.sample_misc(self.series['Misc'])
         return self.mapper['Time_Intervals']
     
     def _hours_of_day(self, day: int):
@@ -99,6 +100,16 @@ class Timeseries(object):
                 else:
                     out[k] = v
             return out
+    
+    def sample_station_assignment(self, station_assignment: pd.DataFrame) -> pd.DataFrame:
+        """
+        Toma la hoja 'StationAssignment' con las columnas
+          ['id', 'elh_name', 'station_name'].
+
+        """
+        sa = station_assignment[['elh_name', 'station_name']].copy()
+        sa.columns = ['elhd', 'station']
+        return sa
 
     def sample_node_assignment(self, node_assignment: pd.DataFrame) -> pd.DataFrame:
         """
@@ -226,6 +237,34 @@ class Timeseries(object):
 
     def get_last_interval(self) -> int:
         return self.time_intervals[len(self.time_intervals) - 1]
+    
+    def get_station_assignment_to_elhd(self, elhd_name: str) -> list:
+        sa = self.mapper['StationAssignment']
+        sa_elhd = sa[sa["elhd"] == elhd_name]
+        return list(sa_elhd['station'])
+
+    def get_station_assignment(self, elhds: list) -> int:
+        """Puebla `self.mapper['Stations_per_elhd']` con asignación estática.
+        Para cada elhd almacena la lista de estaciones asociadas.
+        """
+        station_per_elhd = {}
+        for elhd in elhds:
+            station_per_elhd[elhd] = self.get_station_assignment_to_elhd(elhd)
+        self.mapper['Stations_per_elhd'] = station_per_elhd
+        return 0
+       
+    def get_elhd_at_station(self, stations: list) -> int:
+        """Invierte `Stations_per_elhd` → `elhd_per_station[(station)] = [elhds]`"""
+        elhd_per_station = {}
+        for st in stations:
+            elhd_per_station[st] = []
+        for elhd, station_list in self.mapper.get('Stations_per_elhd', {}).items():
+            for st in station_list:
+                if st not in elhd_per_station:
+                    elhd_per_station[st] = []
+                elhd_per_station[st].append(elhd)
+        self.mapper['elhd_per_station'] = elhd_per_station
+        return 0
 
     def get_nodes_assigned_to_elhd(self, day: int, interval: int, elhd_name: str) -> list:
         if interval != -1:
@@ -424,13 +463,13 @@ class Timeseries(object):
         df.index = df.reset_index().index + 1
         return df.iloc[:, 0].to_dict()
 
-    def get_n_chargers(self) -> int:
-        """Devuelve el número de cargadores según Misc → 'chargers'."""
-        return self.mapper['Misc']['chargers']
+    #def get_n_chargers(self) -> int:
+    #    """Devuelve el número de cargadores según Misc → 'chargers'."""
+    #    return self.mapper['Misc']['chargers']
 
-    def get_grid_power(self) -> float:
-        """Devuelve el parámetro Pmine según Misc → 'Pmine'."""
-        return self.mapper['Misc']['Pmine']
+    #def get_grid_power(self) -> float:
+    #    """Devuelve el parámetro Pmine según Misc → 'Pmine'."""
+    #    return self.mapper['Misc']['Pmine']
 
 
 

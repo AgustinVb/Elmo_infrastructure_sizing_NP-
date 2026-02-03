@@ -12,6 +12,9 @@ class OptRules(object):
         self.time_series = time_series
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
+        self.time_series.get_station_assignment(mine_system.get_system_lhds())
+        self.time_series.get_elhd_at_station(mine_system.get_system_stations())
+
 
 
     def create_pyo_object(self, object_type, model, object_name, sets, rule, domain=pyo.Reals):
@@ -210,6 +213,19 @@ class BoundRules(OptRules):
         return (0, None)
 
     def build_all_variables(self, model):
+          # Índice esparso para carga: solo (station, elhd) válidas según StationAssignment
+        def _init_ZCHARGE_INDEX(m):
+            for elhd in m.elhd_set:
+                station_list = self.time_series.mapper['Stations_per_elhd'].get(elhd, [])
+                for k in station_list:
+                    yield (k, elhd)
+        model.ZCHARGE_INDEX = pyo.Set(dimen=2, initialize=_init_ZCHARGE_INDEX)   
+        def _ZCHARGE_DAYS_TIME(m):
+            for (k, i) in m.ZCHARGE_INDEX:
+                for d in m.days:
+                    for t in m.time_intervals_set:
+                        yield (k, i, d, t)
+        model.ZCHARGE_DAYS_TIME_INDEX = pyo.Set(dimen=4, initialize=_ZCHARGE_DAYS_TIME)
          # Y(i,j,d,t) solo si j ∈ Nodes_assigned_at_interval(d,t,i)
         def _init_Y_INDEX(m):
             for d in m.days:
@@ -227,10 +243,10 @@ class BoundRules(OptRules):
         model.Z         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set,
                                   bounds=self.Z, domain=pyo.Binary)
         # Indicador de carga eléctrica (por batería) en cada intervalo
-        model.Z_charge  = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set,
+        model.Z_charge  = pyo.Var(model.ZCHARGE_INDEX, model.days, model.time_intervals_set,
                                   bounds=self.Z_charge, domain=pyo.Binary)
         # Potencia de carga de batería b en (d,t)
-        model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
+        model.P         = pyo.Var(model.ZCHARGE_INDEX, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de batería b al final de (d,t)
         model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
@@ -266,20 +282,26 @@ class ConstraintRules(OptRules):
         nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
         if not nodes:
             return pyo.Constraint.Skip
-        return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for k in model.stations_set) + sum(model.Y[i, j, d, t] for j in nodes) == 1
+        # Suma Z_charge solo sobre estaciones válidas para este elhd
+        z_charge_sum = sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
+        return model.Z[i, d, t] + z_charge_sum + sum(model.Y[i, j, d, t] for j in nodes) == 1
 
     # (C5) Estado entre turnos: Zi,t = 1 for t in Tbs
     def between_shifts_elhd(self, model, i, d, t):
-        return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for k in model.stations_set) == 1
+        # Suma Z_charge solo sobre estaciones válidas para este elhd
+        z_charge_sum = sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
+        return model.Z[i, d, t] + z_charge_sum == 1
 
     def battery_soc(self, model, i, d, t):
         t0 = self.time_series.get_time_intervals()[0]
-        charge = sum(model.P[k, i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i[k,i]) for k in model.stations_set)
+        # Suma P solo sobre estaciones válidas para este elhd
+        charge = sum(model.P[k, i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i[k,i]) for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
         discharge = sum(
             model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
         )
-        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i]*model.t_ttc_i[k,i] for k in model.stations_set)
+        # Suma StartCharge solo sobre estaciones válidas para este elhd
+        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i]*model.t_ttc_i[k,i] for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
         
 
         if t == t0:
@@ -359,7 +381,8 @@ class ConstraintRules(OptRules):
     
     #Limite de cargadores
     def charger_limit(self, model,k, d, t):
-        return sum(model.Z_charge[k, i, d, t] for i in model.elhd_set) <= model.N_chargers[k]
+        # Suma Z_charge solo sobre elhds válidos para esta estación
+        return sum(model.Z_charge[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_chargers[k]
     
     #Inicio y termino de una carga on-board
     def charge_state(self, model ,k, i, d, t):
@@ -421,10 +444,12 @@ class ConstraintRules(OptRules):
     
     #  Sistemas distribución 
     def max_installed_capacity(self, model, k, d, t):
-        return sum(model.P[k, i, d, t] for i in model.elhd_set)   <= model.p_max_k[k]
+        # Suma P solo sobre elhds válidos para esta estación
+        return sum(model.P[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.p_max_k[k]
 
     def peak_power(self, model, d,t):
-        return sum(model.P[k, i, d, t] for k in model.stations_set for i in model.elhd_set) <= model.p_peak
+        # Suma P solo sobre tuplas válidas en ZCHARGE_INDEX
+        return sum(model.P[k, i, d, t] for (k, i) in model.ZCHARGE_INDEX) <= model.p_peak
     
     #Condicion inicial estaciones
     def initial_condition_station(self, model):
@@ -468,10 +493,10 @@ class ConstraintRules(OptRules):
 
         #nuevas
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
-        model.station_existence_constraint       = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.station_existence_constraint)
-        model.charger_limit                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
-        model.charge_state                       = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.charge_state)
-        model.max_power                          = pyo.Constraint(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, rule=self.max_power)
+        model.station_existence_constraint       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.station_existence_constraint)
+        model.charger_limit                      = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
+        model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
+        model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
@@ -494,8 +519,7 @@ class ObjectiveRules(OptRules):
         # Coste de cargar baterías (electricidad)
         cost_el = sum(
             model.P[k, i, d, t] * model.costo_marginal[i, d, t] 
-            for k in model.stations_set
-            for i in model.elhd_set
+            for (k, i) in model.ZCHARGE_INDEX
             for d in model.days
             for t in model.time_intervals_set
         ) * model.delta_t

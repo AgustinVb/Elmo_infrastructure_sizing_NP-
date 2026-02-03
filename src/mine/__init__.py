@@ -27,7 +27,7 @@ class Mine(object):
         self.elhd = ELHD(model["LHD"], "name")
 
         # 2) Baterías (si las tienes en otra hoja llamada “Batteries”)
-        self.battery = Battery(model["Batteries"], "name")
+        #self.battery = Battery(model["Batteries"], "name")
 
         # 3) Layout de nodos
         self.layout = Layout(model["extraction_nodes"], "node_name")

@@ -60,12 +60,15 @@ class Series(Reader):
 
     """
 
-    def __init__(self, location, extra='simple'):
+    def __init__(self, location, extra='simple', save_sheets=['MarginalCost', 'ExtractionGoal', 'Shifts', 'NodeAssignment', 'StationAssignment']):
         """
         :param location: path where main files are located
+        :param save_sheets: list of sheet names to save as .npy. If None, saves all sheets.
+                           Example: ['MarginalCost', 'Emissions']
 
         """
-        self.init = dict(MarginalCost=3,Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=5)
+        self.init = dict(MarginalCost=3,Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=5, StationAssignment=3)
+        self.save_sheets = save_sheets  # None = guardar todos, o lista de nombres
         self.conf, self.parser = 'series.ini', ConfigParser()
         self.dirname = dirname(location)
         self.meta_name = self.get_meta_name(location)
@@ -109,7 +112,9 @@ class Series(Reader):
             init = self.init.get(sheet)
             subset = self.container[sheet].iloc[:, :init]
             subset.to_excel(writer, sheet, index=False)
-            self.store_series(sheet)
+            # Guardar como .npy solo si está en save_sheets o si save_sheets es None
+            if self.save_sheets is None or sheet in self.save_sheets:
+                self.store_series(sheet)
 
     def store_series(self, sheet):
         """
@@ -160,10 +165,19 @@ class Series(Reader):
         :return: a tuple with defined location and status
         """
         candidate = self.build_candidate(location, extra)
-        if self.check_same_file(location) and exists(candidate):
+        # Verificar que el archivo simplificado existe Y todos los .npy existen
+        if self.check_same_file(location) and exists(candidate) and self._all_npy_exist():
             return candidate, False
         self.update_state(str(getmtime(location)))
         return location, True
+
+    def _all_npy_exist(self):
+        """ Verifica que todos los archivos .npy esperados existen """
+        for sheet in self.init.keys():
+            npy_path = join(self.dirname, f'{sheet}.npy')
+            if not exists(npy_path):
+                return False
+        return True
 
     def check_same_file(self, location):
         self.parser.read(join(self.dirname, self.conf))
