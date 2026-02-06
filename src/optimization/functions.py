@@ -594,6 +594,13 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z[i, d, t] == 1
 
+    def no_swap_outside_allowed_times(self, model, k, i, d, t):
+        """Fuerza Z_swap a 0 fuera de intervalos meal y between_shifts."""
+        if t in model.time_intervals_meal_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip  # Permitir swap en estos intervalos
+        else:
+            return model.Z_swap[k, i, d, t] == 0  # Forzar a 0 fuera
+
     
     def build_all_constraints(self, model):
         model.battery_lower =              pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -636,6 +643,9 @@ class ConstraintRules(OptRules):
         model.initial_charging_batteries    = pyo.Constraint(model.stations_set, model.days, rule=self.initial_charging_batteries)
         model.avaible_batteries_for_swap    = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.avaible_batteries_for_swap)
         model.initial_batteries_discharged = pyo.Constraint(model.stations_set, model.days, rule=self.initial_batteries_discharged)
+        
+        # Restricción: swap solo en meal y between_shifts
+        model.no_swap_outside = pyo.Constraint(model.stations_set, model.slhd_set, model.days, model.time_intervals_set, rule=self.no_swap_outside_allowed_times)
         #condiciones iniciales
         model.initial_condition_station_swap = pyo.Constraint(rule=self.initial_condition_station_swap)
         #model.initial_condition_chargers = pyo.Constraint(model.stations_set, rule=self.initial_condition_chargers)
