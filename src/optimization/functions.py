@@ -547,6 +547,21 @@ class ConstraintRules(OptRules):
         return pyo.Constraint.Skip
 
     # No estan en el modelo en latex 
+    def CI_S(self, model, k, d, t):
+        t0 = self.time_series.get_time_intervals()[0]
+        tf = self.time_series.get_time_intervals()[-1]
+        return model.S[k, d, t0] == model.S[k, d, tf]
+    
+    def CI_X_dch(self, model, k, d, t):
+        t0 = self.time_series.get_time_intervals()[0]
+        tf = self.time_series.get_time_intervals()[-1]
+        return model.X_dch[k, d, t0] == model.X_dch[k, d, tf]
+    
+    def CB_general(self, model, k, d, t):
+        t0 = self.time_series.get_time_intervals()[0]
+        return model.S[k, d, t0] + model.X_dch[k, d, t0] == model.N_batteries[k]
+
+
     def initial_charging_batteries(self, model, k , d):
         t0 = self.time_series.get_time_intervals()[0]
         return model.X_ini[k,d,t0] == 0
@@ -627,9 +642,12 @@ class ConstraintRules(OptRules):
         model.inventory_charged_batteries   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.inventory_charged_batteries_rule)
         model.charging_duration              = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, model.time_intervals_set, rule=self.charging_duration_rule)
         model.total_swaps                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.total_swaps)
-        model.batteries_inventory = pyo.Constraint(model.days, model.time_intervals_set, rule=self.batteries_inventory)
+        #model.batteries_inventory = pyo.Constraint(model.days, model.time_intervals_set, rule=self.batteries_inventory)
         model.max_swaps                   = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.max_swaps)
-        
+        model.CI_S = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.CI_S)
+        model.CI_X_dch = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.CI_X_dch)
+        model.CB_general = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.CB_general)
+
         model.production_swap                         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
         model.aux_zpen_1                         = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         model.aux_zpen_2                         = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
@@ -640,14 +658,14 @@ class ConstraintRules(OptRules):
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         # no estan en el modelo latex
-        model.initial_charging_batteries    = pyo.Constraint(model.stations_set, model.days, rule=self.initial_charging_batteries)
+        #model.initial_charging_batteries    = pyo.Constraint(model.stations_set, model.days, rule=self.initial_charging_batteries)
         model.avaible_batteries_for_swap    = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.avaible_batteries_for_swap)
-        model.initial_batteries_discharged = pyo.Constraint(model.stations_set, model.days, rule=self.initial_batteries_discharged)
+        #model.initial_batteries_discharged = pyo.Constraint(model.stations_set, model.days, rule=self.initial_batteries_discharged)
         
         # Restricción: swap solo en meal y between_shifts
-        model.no_swap_outside = pyo.Constraint(model.stations_set, model.slhd_set, model.days, model.time_intervals_set, rule=self.no_swap_outside_allowed_times)
+        #model.no_swap_outside = pyo.Constraint(model.stations_set, model.slhd_set, model.days, model.time_intervals_set, rule=self.no_swap_outside_allowed_times)
         #condiciones iniciales
-        model.initial_condition_station_swap = pyo.Constraint(rule=self.initial_condition_station_swap)
+        #model.initial_condition_station_swap = pyo.Constraint(rule=self.initial_condition_station_swap)
         #model.initial_condition_chargers = pyo.Constraint(model.stations_set, rule=self.initial_condition_chargers)
         #model.initial_condition_station = pyo.Constraint(rule=self.initial_condition_station)
         
