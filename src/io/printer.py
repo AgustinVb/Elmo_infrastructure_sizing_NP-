@@ -263,12 +263,21 @@ class Printer:
             except Exception:
                 continue
 
-            # Redondeo pequeño a 0
-            if abs(xv) < self.float_tol:
-                xv = 0.0
+            # Si la variable es entera/binaria, redondear al entero más cercano
+            try:
+                if vd.is_integer() or vd.is_binary():
+                    xv = int(round(xv))
+                else:
+                    # Redondeo pequeño a 0 para continuas
+                    if abs(xv) < self.float_tol:
+                        xv = 0.0
+            except Exception:
+                # fallback: aplicar tolerancia sólo
+                if abs(xv) < self.float_tol:
+                    xv = 0.0
 
             # Para binarias → omitir 0
-            if is_binary and abs(xv) < self.float_tol:
+            if is_binary and abs(float(xv)) < self.float_tol:
                 continue
 
             vname = vd.name

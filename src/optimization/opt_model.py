@@ -10,8 +10,6 @@ from pyomo.core.base import Suffix
 from pyomo.opt import TerminationCondition
 from pyomo.util.infeasible import log_infeasible_constraints
 
-from gurobipy import GRB, read as grb_read
-
 from src.optimization.functions import (
     OptSets,
     OptParameters,
@@ -23,16 +21,6 @@ from src.optimization.functions import (
 
 
 class OptModel(object):
-
-    def __init__(self, mine_system, time_series, output_folder):
-        self.output_folder   = output_folder
-        self.set_builder      = OptSets(mine_system, time_series)
-        self.param_rules      = OptParameters(mine_system, time_series)
-        self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series)
-        self.objective_rules  = ObjectiveRules(mine_system, time_series)
-        self.output_manager   = OutputManager(mine_system, time_series)
-        self.model            = self.build_model()
 
     def build_model(self):
         model = pyo.ConcreteModel()
@@ -86,6 +74,18 @@ class OptModel(object):
             except Exception as e:
                 print("⚠️ Could not read log file for summary:", e)
 
+    def __init__(self, mine_system, time_series, output_folder):
+        self.output_folder   = output_folder
+        self.time_series     = time_series
+        self.mine_system     = mine_system
+        self.set_builder      = OptSets(mine_system, time_series)
+        self.param_rules      = OptParameters(mine_system, time_series)
+        self.bound_rules      = BoundRules(mine_system, time_series)
+        self.constraint_rules = ConstraintRules(mine_system, time_series)
+        self.objective_rules  = ObjectiveRules(mine_system, time_series)
+        self.output_manager   = OutputManager(mine_system, time_series)
+        self.model            = self.build_model()
+
     def solve_model(self, gap, solvername, timelimit=172800): 
         log_file = "ELMO_log.txt"
         if os.path.exists(log_file):
@@ -100,8 +100,6 @@ class OptModel(object):
 
 
         elif solvername == 'gurobi':
-            self.model.branch_priority = Suffix(direction=Suffix.EXPORT, datatype=Suffix.INT)
-            
             opt = SolverFactory('gurobi', solver_io="python")
             opt.options['OutputFlag']   = 1
             opt.options['LogToConsole'] = 1
@@ -111,65 +109,13 @@ class OptModel(object):
             opt.options['Heuristics']   = 0.5
             opt.options['MIPFocus']     = 3      
             opt.options['Presolve']     = 2      
-            opt.options['FlowCoverCuts'] = 2  
-            opt.options['TimeLimit'] = timelimit 
-
-        print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
-        start_time = time.time()
-        
-        # --- NUEVO: Bloque de seguridad para interrupción manual ---
-        try:
-            result = opt.solve(self.model, tee=True, load_solutions=True)
-            self.solution_status = result.solver.termination_condition
-            
-        except KeyboardInterrupt:
-            # Esto se activa si presionas "Stop" o Ctrl+C
-            print("\n🛑 ¡Interrupción manual detectada! Intentando recuperar la mejor solución hasta ahora...")
-            self.solution_status = TerminationCondition.maxTimeLimit 
-        except Exception as e:
-            print(f"⚠️ Ocurrió un error inesperado: {e}")
-            self.solution_status = TerminationCondition.error
-
-        self.time_total      = time.time() - start_time
-        
-
-        condiciones_aceptables = [
-            TerminationCondition.optimal,
-            TerminationCondition.maxTimeLimit, 
-            TerminationCondition.feasible
-        ]
-
-        if self.solution_status in condiciones_aceptables:
-            
-            if hasattr(self.model, 'obj') and value(self.model.obj) is not None:
-                self.opt_cost_result = value(self.model.obj)
-                print(f"✅ Solution time [sec]: {self.time_total:.2f}")
-                print(f"📊 Status: {self.solution_status}") 
-                print("💰 Operation Cost:", self.opt_cost_result)
-                
-                # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
-                total_prod_val = 0
-                for j in self.model.nodes_set:
-                    prod_expression = self.objective_rules.production_total(self.model, j)
-                    total_prod_val += value(prod_expression)
-                
-                self.total_production = total_prod_val
-                print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
-                # -----------------------------------
-            else:
-                print("⚠️ Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
-                self.limited_infeasible_log(self.model)
-
-        else:
-            print(f"⚠️ Termination condition: {self.solution_status}")
-            self.limited_infeasible_log(self.model, timeout=60, log_file="infeasible_log.txt")
-
-        try:
-            if 'result' in locals() and hasattr(result.solver, 'relative_gap'):
-                self.mip_gap = result.solver.relative_gap
-            else:
-                self.mip_gap = None
-        except:
-            self.mip_gap = None
-            
-        return 0
+            opt.options['FlowCoverCuts'] = 2
+            try:
+                result = opt.solve(self.model, tee=True, load_solutions=True)
+                self.solution_status = result.solver.termination_condition
+            except KeyboardInterrupt:
+                print("\n🛑 ¡Interrupción manual detectada! Intentando recuperar la mejor solución hasta ahora...")
+                self.solution_status = TerminationCondition.maxTimeLimit 
+            except Exception as e:
+                print(f"⚠️ Ocurrió un error inesperado: {e}")
+                self.solution_status = TerminationCondition.error
