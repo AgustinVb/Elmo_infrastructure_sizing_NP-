@@ -333,7 +333,210 @@ def main() -> None:
         print("No se pudo calcular nada: no encontré JSON utilizables (o todos estaban vacíos).")
     
     # ---- Cost
+    try:
+        costs = calculate_total_costs(root)
+        if costs:
+            rows = [
+                ["Costo energía carga (USD)", f"{costs['energy_cost']:.2f}"],
+                ["Costo inversión (USD)", f"{costs['investment_cost']:.2f}"],
+                ["Costo penalidad (USD)", f"{costs['penalty_cost']:.2f}"],
+                ["COSTO TOTAL (USD)", f"{costs['total_cost']:.2f}"],
+            ]
+            print(make_table("COSTOS", ["Concepto", "Valor"], rows))
+            print()
+    except Exception as ex:
+        print(make_table("COSTOS", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+        print()
 
+
+# -----------------------------
+# Módulo de cálculo de costos
+# -----------------------------
+def calculate_lhd_charge_cost(root: Path) -> float:
+    """
+    Calcula el costo de carga de los LHD eléctricos.
+    Usa P.json (potencia de carga) y parameters.json (costos marginales y delta_t).
+    """
+    p_path = find_json_in_folder(root, "P.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+    
+    if not p_path or not params_path:
+        raise ValueError("No se encontraron P.json o parameters.json")
+    
+    if is_effectively_empty_json(p_path) or is_effectively_empty_json(params_path):
+        raise ValueError("P.json o parameters.json están vacíos")
+    
+    p_data = load_json(p_path)
+    params_data = load_json(params_path)
+    
+    delta_t = params_data.get("delta_t", 0.5)
+    costo_marginal = params_data.get("costo_marginal", {})
+    scaling_factor = params_data.get("scaling_factor_op_cost", 1.0)
+    
+    total_cost = 0.0
+    
+    # Iterar sobre las estaciones en P.json
+    if "d" in p_data and isinstance(p_data["d"], dict):
+        for station_id, station_data in p_data["d"].items():
+            if "t" in station_data and isinstance(station_data["t"], dict):
+                for lhd_id, lhd_data in station_data["t"].items():
+                    if "i" in lhd_data and isinstance(lhd_data["i"], dict):
+                        for day_key, day_data in lhd_data["i"].items():
+                            if isinstance(day_data, dict):
+                                for time_key, time_data in day_data.items():
+                                    if isinstance(time_data, dict):
+                                        for t_str, power in time_data.items():
+                                            try:
+                                                # Obtener costo marginal correspondiente
+                                                cost = 1.0  # valor por defecto
+                                                if "_1" in costo_marginal:
+                                                    cm_lhd = costo_marginal["_1"].get(lhd_id, {})
+                                                    if "_2" in cm_lhd:
+                                                        cm_day = cm_lhd["_2"].get(day_key, {})
+                                                        if "_3" in cm_day:
+                                                            cost = cm_day["_3"].get(t_str, 1.0)
+                                                
+                                                total_cost += float(power) * float(cost) * delta_t
+                                            except (ValueError, TypeError):
+                                                continue
+    
+    return total_cost * scaling_factor
+
+
+def calculate_investment_cost(root: Path) -> float:
+    """
+    Calcula el costo de inversión en estaciones y cargadores.
+    Usa X.json (estaciones instaladas), N_chargers.json (número de cargadores)
+    y parameters.json (costos).
+    """
+    x_path = find_json_in_folder(root, "X.json")
+    n_chargers_path = find_json_in_folder(root, "N_chargers.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+    
+    if not params_path:
+        raise ValueError("No se encontró parameters.json")
+    
+    if is_effectively_empty_json(params_path):
+        raise ValueError("parameters.json está vacío")
+    
+    params_data = load_json(params_path)
+    
+    total_cost = 0.0
+    
+    # Costo de estaciones
+    if x_path and not is_effectively_empty_json(x_path):
+        x_data = load_json(x_path)
+        station_costs = params_data.get("station_cost_k", {})
+        
+        # X.json tiene estructura {"k": {"station_1": 1, ...}}
+        if "k" in x_data and isinstance(x_data["k"], dict):
+            for station_id, value in x_data["k"].items():
+                try:
+                    if float(value) > 0.5:  # estación instalada
+                        # Buscar costo de la estación
+                        if "_1" in station_costs:
+                            cost = station_costs["_1"].get(station_id, 0.0)
+                            total_cost += float(cost)
+                except (ValueError, TypeError):
+                    continue
+    
+    # Costo de cargadores
+    if n_chargers_path and not is_effectively_empty_json(n_chargers_path):
+        n_chargers_data = load_json(n_chargers_path)
+        charger_cost = params_data.get("charger_cost", 0.0)
+        
+        # N_chargers.json tiene estructura {"k": {"station_1": 2, ...}}
+        if "k" in n_chargers_data and isinstance(n_chargers_data["k"], dict):
+            for station_id, value in n_chargers_data["k"].items():
+                try:
+                    n_chargers = float(value)
+                    total_cost += n_chargers * float(charger_cost)
+                except (ValueError, TypeError):
+                    continue
+    
+    return total_cost
+
+
+def calculate_penalty_cost(root: Path) -> float:
+    """
+    Calcula el costo de penalidad por déficit de producción.
+    Basado en la función F_penalty_cost de functions.py.
+    F_penalty_cost = sum(F_seg[j, d, s] * (Voll / F_penalty_div[s]))
+    """
+    params_path = find_json_in_folder(root, "parameters.json")
+    f_seg_path = find_json_in_folder(root, "F_seg.json")
+    
+    if not params_path or is_effectively_empty_json(params_path):
+        return 0.0
+    
+    if not f_seg_path or is_effectively_empty_json(f_seg_path):
+        return 0.0
+    
+    params_data = load_json(params_path)
+    f_seg_data = load_json(f_seg_path)
+    
+    voll = float(params_data.get("Voll", 0.0))
+    f_penalty_div = params_data.get("F_penalty_div", {})
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+    
+    total_penalty = 0.0
+    
+    # F_seg.json tiene estructura: {"_1": {"nodo": {"_2": {"día": {"_3": {"segmento": valor}}}}}}
+    if "_1" in f_seg_data and isinstance(f_seg_data["_1"], dict):
+        for node_id, node_data in f_seg_data["_1"].items():
+            if "_2" in node_data and isinstance(node_data["_2"], dict):
+                for day_id, day_data in node_data["_2"].items():
+                    if "_3" in day_data and isinstance(day_data["_3"], dict):
+                        for seg_id, seg_value in day_data["_3"].items():
+                            try:
+                                # Obtener divisor de penalidad para este segmento
+                                if "_1" in f_penalty_div:
+                                    divisor = float(f_penalty_div["_1"].get(seg_id, 1.0))
+                                else:
+                                    divisor = 1.0
+                                
+                                penalty = float(seg_value) * (voll / divisor)
+                                total_penalty += penalty
+                            except (ValueError, TypeError, ZeroDivisionError):
+                                continue
+    
+    return total_penalty * scaling_factor
+
+
+def calculate_total_costs(root: Path) -> Dict[str, float]:
+    """
+    Calcula todos los costos del sistema:
+    - Costo de energía (lhd_charge_cost)
+    - Costo de inversión (inversion_cost)
+    - Costo de penalidad (F_penalty_cost)
+    - Costo total
+    """
+    try:
+        energy_cost = calculate_lhd_charge_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de energía: {ex}")
+        energy_cost = 0.0
+    
+    try:
+        investment_cost = calculate_investment_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de inversión: {ex}")
+        investment_cost = 0.0
+    
+    try:
+        penalty_cost = calculate_penalty_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de penalidad: {ex}")
+        penalty_cost = 0.0
+    
+    total_cost = investment_cost + energy_cost + penalty_cost
+    
+    return {
+        "energy_cost": energy_cost,
+        "investment_cost": investment_cost,
+        "penalty_cost": penalty_cost,
+        "total_cost": total_cost,
+    }
 
 
 if __name__ == "__main__":
