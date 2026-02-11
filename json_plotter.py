@@ -542,7 +542,7 @@ class JSONPlotter:
             
             # Límites y márgenes
             ax1.set_ylim(0, 4000)
-            ax2.set_ylim(0.094, 0.106)
+            ax2.set_ylim(0.001, 0.206)
             
             # --- Ticks fijos ---
             ticks, labels = self._get_fixed_time_ticks(mode="interval")
