@@ -227,14 +227,28 @@ class Printer:
             except Exception:
                 continue
 
+            # Rounding policy:
+            # - Values with abs < tol -> 0.0
+            # - Skip near-zero binary variables
+            # - If a component is declared integer or binary, round to nearest int
+            #   (continuous/reals keep their decimal part).
+            vname = vd.name
+            base, tokens = _split_base_and_indices(vname)
+
             if abs(xv) < self.float_tol:
                 xv = 0.0
 
             if is_binary and abs(xv) < self.float_tol:
                 continue
 
-            vname = vd.name
-            base, tokens = _split_base_and_indices(vname)
+            # Integer rounding for integer/binary components
+            try:
+                if (vd.is_integer() or vd.is_binary()):
+                    xv = int(round(xv))
+            except Exception:
+                # if is_integer/is_binary not available, keep current xv
+                pass
+
             pairs = _infer_pairs_from_tokens(base, tokens, schema, preferred_order=preferred)
 
             key_path: List[str] = []

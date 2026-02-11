@@ -288,29 +288,6 @@ def main() -> None:
 
     printed_any = False
 
-    # ---- E
-    if e_path and not is_effectively_empty_json(e_path):
-        try:
-            lph, s = mean_consumption_lph(e_path, delta_minutes=args.delta_minutes, eps=args.eps)
-            rows = [
-                ["Promedio consumo (solo descensos)", f"{lph:.6f} L/h"],
-                ["Litros consumidos (solo descensos)", f"{s['total_drop_liters']:.6f} L"],
-                ["Pasos con descenso", str(int(s["n_drop_steps"]))],
-                ["Pares totales evaluados", str(int(s["n_pairs_total"]))],
-                ["Vehículos usados", str(int(s["n_vehicles_used"]))],
-                ["Series (vehículo-día)", str(int(s["n_series"]))],
-                ["Delta t usado", f"{s['delta_minutes']:.3f} min"],
-            ]
-            print(make_table("E (DIÉSEL)", ["Métrica", "Valor"], rows))
-            print()
-            printed_any = True
-        except Exception as ex:
-            print(make_table("E (DIÉSEL)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
-            print()
-    else:
-        print(make_table("E (DIÉSEL)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacío/no usable."]]))
-        print()
-
     # ---- B
     if b_path and not is_effectively_empty_json(b_path):
         try:
@@ -354,6 +331,9 @@ def main() -> None:
 
     if not printed_any:
         print("No se pudo calcular nada: no encontré JSON utilizables (o todos estaban vacíos).")
+    
+    # ---- Cost
+
 
 
 if __name__ == "__main__":
