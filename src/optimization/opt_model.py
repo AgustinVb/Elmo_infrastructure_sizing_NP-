@@ -2,7 +2,10 @@ import os
 import sys
 import time
 import threading
+import signal
+import atexit
 from contextlib import redirect_stdout
+from pathlib import Path
 
 import pyomo.environ as pyo
 from pyomo.environ import SolverFactory, value
@@ -33,6 +36,11 @@ class OptModel(object):
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        
+        # No guardar archivos del modelo formulado
+        # self.save_formulated_model()
+
+
 
     def build_model(self):
         model = pyo.ConcreteModel()
@@ -117,18 +125,42 @@ class OptModel(object):
         print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
         start_time = time.time()
         
-        # --- NUEVO: Bloque de seguridad para interrupción manual ---
+        # --- Manejador para forzar escritura de log al interrumpir ---
+        def flush_and_exit(signum, frame):
+            print("\n🛑 ¡Interrupción manual detectada! Forzando escritura de log...")
+            # Forzar flush de archivos abiertos
+            sys.stdout.flush()
+            sys.stderr.flush()
+            # Dar tiempo a Gurobi para escribir el log
+            time.sleep(0.5)
+            raise KeyboardInterrupt()
+        
+        # Registrar el manejador
+        old_sigint_handler = signal.signal(signal.SIGINT, flush_and_exit)
+        
+        # --- Bloque de seguridad para interrupción manual ---
         try:
             result = opt.solve(self.model, tee=True, load_solutions=True)
             self.solution_status = result.solver.termination_condition
             
         except KeyboardInterrupt:
             # Esto se activa si presionas "Stop" o Ctrl+C
-            print("\n🛑 ¡Interrupción manual detectada! Intentando recuperar la mejor solución hasta ahora...")
-            self.solution_status = TerminationCondition.maxTimeLimit 
+            print("\nIntentando recuperar la mejor solución hasta ahora...")
+            self.solution_status = TerminationCondition.maxTimeLimit
+            # Forzar escritura del log file
+            if os.path.exists(log_file):
+                try:
+                    with open(log_file, 'a') as f:
+                        f.write(f"\n--- Ejecución interrumpida por usuario ---\n")
+                    print(f"✅ Log guardado exitosamente en {log_file}")
+                except Exception as e:
+                    print(f"⚠️ Error al escribir log: {e}")
         except Exception as e:
             print(f"⚠️ Ocurrió un error inesperado: {e}")
             self.solution_status = TerminationCondition.error
+        finally:
+            # Restaurar el manejador anterior
+            signal.signal(signal.SIGINT, old_sigint_handler)
 
         self.time_total      = time.time() - start_time
         
