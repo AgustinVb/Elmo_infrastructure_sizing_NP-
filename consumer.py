@@ -354,63 +354,68 @@ def main() -> None:
 # -----------------------------
 def calculate_lhd_charge_cost(root: Path) -> float:
     """
-    Calcula el costo de carga de los LHD eléctricos.
-    Usa P.json (potencia de carga) y parameters.json (costos marginales y delta_t).
+    Calcula el costo de carga de los LHD eléctricos con battery swap.
+    Usa Sv.json (baterías conectadas) y parameters.json (costo electricidad, p_charger, delta_t).
+    Fórmula: sum(costo_electricidad[d,t] * Sv[k,d,t,a] * p_charger * delta_t)
     """
-    p_path = find_json_in_folder(root, "P.json")
+    sv_path = find_json_in_folder(root, "Sv.json")
     params_path = find_json_in_folder(root, "parameters.json")
     
-    if not p_path or not params_path:
-        raise ValueError("No se encontraron P.json o parameters.json")
+    if not sv_path or not params_path:
+        raise ValueError("No se encontraron Sv.json o parameters.json")
     
-    if is_effectively_empty_json(p_path) or is_effectively_empty_json(params_path):
-        raise ValueError("P.json o parameters.json están vacíos")
+    if is_effectively_empty_json(sv_path) or is_effectively_empty_json(params_path):
+        raise ValueError("Sv.json o parameters.json están vacíos")
     
-    p_data = load_json(p_path)
+    sv_data = load_json(sv_path)
     params_data = load_json(params_path)
     
     delta_t = params_data.get("delta_t", 0.5)
-    costo_marginal = params_data.get("costo_marginal", {})
+    p_charger = params_data.get("p_charger", 353.0)  # potencia del cargador
+    costo_electricidad = params_data.get("costo_electricidad", {})
     scaling_factor = params_data.get("scaling_factor_op_cost", 1.0)
     
     total_cost = 0.0
     
-    # Iterar sobre las estaciones en P.json
-    if "d" in p_data and isinstance(p_data["d"], dict):
-        for station_id, station_data in p_data["d"].items():
-            if "t" in station_data and isinstance(station_data["t"], dict):
-                for lhd_id, lhd_data in station_data["t"].items():
-                    if "i" in lhd_data and isinstance(lhd_data["i"], dict):
-                        for day_key, day_data in lhd_data["i"].items():
-                            if isinstance(day_data, dict):
-                                for time_key, time_data in day_data.items():
-                                    if isinstance(time_data, dict):
-                                        for t_str, power in time_data.items():
-                                            try:
-                                                # Obtener costo marginal correspondiente
-                                                cost = 1.0  # valor por defecto
-                                                if "_1" in costo_marginal:
-                                                    cm_lhd = costo_marginal["_1"].get(lhd_id, {})
-                                                    if "_2" in cm_lhd:
-                                                        cm_day = cm_lhd["_2"].get(day_key, {})
-                                                        if "_3" in cm_day:
-                                                            cost = cm_day["_3"].get(t_str, 1.0)
-                                                
-                                                total_cost += float(power) * float(cost) * delta_t
-                                            except (ValueError, TypeError):
-                                                continue
+    # Estructura: Sv[k,d,t,a] = _1[station]._2[day]._3[time_t]._4[time_a]
+    # costo_electricidad[d,t] = _1[day]._2[time_t]
+    if "_1" in sv_data and isinstance(sv_data["_1"], dict):
+        for station_id, station_data in sv_data["_1"].items():
+            if "_2" in station_data and isinstance(station_data["_2"], dict):
+                for day_id, day_data in station_data["_2"].items():
+                    if "_3" in day_data and isinstance(day_data["_3"], dict):
+                        for time_t, time_t_data in day_data["_3"].items():
+                            # Obtener costo electricidad para este día y tiempo
+                            cost_elec = 0.1  # valor por defecto
+                            try:
+                                if "_1" in costo_electricidad and day_id in costo_electricidad["_1"]:
+                                    day_costs = costo_electricidad["_1"][day_id]
+                                    if "_2" in day_costs and time_t in day_costs["_2"]:
+                                        cost_elec = float(day_costs["_2"][time_t])
+                            except (KeyError, ValueError, TypeError):
+                                pass
+                            
+                            # Sumar sobre todos los tiempos de inicio 'a'
+                            if "_4" in time_t_data and isinstance(time_t_data["_4"], dict):
+                                for time_a, num_batteries in time_t_data["_4"].items():
+                                    try:
+                                        # Costo = costo_elec[d,t] * Sv[k,d,t,a] * p_charger * delta_t
+                                        total_cost += cost_elec * float(num_batteries) * p_charger * delta_t
+                                    except (ValueError, TypeError):
+                                        continue
     
     return total_cost * scaling_factor
 
 
 def calculate_investment_cost(root: Path) -> float:
     """
-    Calcula el costo de inversión en estaciones y cargadores.
-    Usa X.json (estaciones instaladas), N_chargers.json (número de cargadores)
-    y parameters.json (costos).
+    Calcula el costo de inversión en estaciones, cargadores y baterias.
+    Usa X.json (estaciones instaladas), N_chargers.json (número de cargadores),
+    N_batteries.json (número de baterías) y parameters.json (costos).
     """
     x_path = find_json_in_folder(root, "X.json")
     n_chargers_path = find_json_in_folder(root, "N_chargers.json")
+    n_batteries_path = find_json_in_folder(root, "N_batteries.json")
     params_path = find_json_in_folder(root, "parameters.json")
     
     if not params_path:
@@ -428,9 +433,15 @@ def calculate_investment_cost(root: Path) -> float:
         x_data = load_json(x_path)
         station_costs = params_data.get("station_cost_k", {})
         
-        # X.json tiene estructura {"k": {"station_1": 1, ...}}
+        # X.json puede tener estructura {"k": {...}} o {"_1": {...}}
+        station_dict = None
         if "k" in x_data and isinstance(x_data["k"], dict):
-            for station_id, value in x_data["k"].items():
+            station_dict = x_data["k"]
+        elif "_1" in x_data and isinstance(x_data["_1"], dict):
+            station_dict = x_data["_1"]
+        
+        if station_dict:
+            for station_id, value in station_dict.items():
                 try:
                     if float(value) > 0.5:  # estación instalada
                         # Buscar costo de la estación
@@ -445,16 +456,42 @@ def calculate_investment_cost(root: Path) -> float:
         n_chargers_data = load_json(n_chargers_path)
         charger_cost = params_data.get("charger_cost", 0.0)
         
-        # N_chargers.json tiene estructura {"k": {"station_1": 2, ...}}
+        # N_chargers.json puede tener estructura {"k": {...}} o {"_1": {...}}
+        station_dict = None
         if "k" in n_chargers_data and isinstance(n_chargers_data["k"], dict):
-            for station_id, value in n_chargers_data["k"].items():
+            station_dict = n_chargers_data["k"]
+        elif "_1" in n_chargers_data and isinstance(n_chargers_data["_1"], dict):
+            station_dict = n_chargers_data["_1"]
+        
+        if station_dict:
+            for station_id, value in station_dict.items():
                 try:
                     n_chargers = float(value)
                     total_cost += n_chargers * float(charger_cost)
                 except (ValueError, TypeError):
                     continue
     
-    return total_cost
+    # Costo de baterías
+    if n_batteries_path and not is_effectively_empty_json(n_batteries_path):
+        n_batteries_data = load_json(n_batteries_path)
+        battery_cost = params_data.get("battery_cost", 0.0)
+        
+        # N_batteries.json puede tener estructura {"k": {...}} o {"_1": {...}}
+        station_dict = None
+        if "k" in n_batteries_data and isinstance(n_batteries_data["k"], dict):
+            station_dict = n_batteries_data["k"]
+        elif "_1" in n_batteries_data and isinstance(n_batteries_data["_1"], dict):
+            station_dict = n_batteries_data["_1"]
+        
+        if station_dict:
+            for station_id, value in station_dict.items():
+                try:
+                    n_batteries = float(value)
+                    total_cost += n_batteries * float(battery_cost)
+                except (ValueError, TypeError):
+                    continue
+    
+    return total_cost   
 
 
 def calculate_penalty_cost(root: Path) -> float:
