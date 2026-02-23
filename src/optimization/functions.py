@@ -450,6 +450,18 @@ class ConstraintRules(OptRules):
     #def max_n_batteries(self, model, k):
     #    return model.N_batteries[k] == 2 * model.X[k]
     
+    #Fijar infraestructura (número de cargadores)
+    def fix_n_chargers(self, model, k):
+        return model.N_chargers[k] == 1
+    
+    #Fijar infraestructura (número de baterías)
+    def fix_n_batteries(self, model, k):
+        return model.N_batteries[k] == 1
+    
+    #Fijar todas las estaciones activas
+    def fix_stations(self, model, k):
+        return model.X[k] == 1
+    
     #Existencia de la estación
     def station_existence_constraint(self, model, k, i, d, t):
         return model.Z_charge[k,i, d, t] <= model.X[k]
@@ -640,6 +652,12 @@ class ConstraintRules(OptRules):
         
         #nuevas
         model.max_n_batteries                   = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
+        
+        # Fijar infraestructura
+        model.fix_stations                      = pyo.Constraint(model.stations_set, rule=self.fix_stations)
+        model.fix_n_chargers                    = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        model.fix_n_batteries                   = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        
         model.station_existence_constraint_swap      = pyo.Constraint(model.ZSWAP_DAYS_TIME, rule=self.station_existence_constraint_swap)
         model.charger_limit_swap                   = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit_swap)
         model.battery_soc_swap                       = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_soc_swap)

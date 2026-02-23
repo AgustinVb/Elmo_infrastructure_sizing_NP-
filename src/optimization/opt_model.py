@@ -87,7 +87,11 @@ class OptModel(object):
         self.model            = self.build_model()
 
     def solve_model(self, gap, solvername, timelimit=172800): 
-        log_file = "ELMO_log.txt"
+        # Log file now in output folder to avoid conflicts
+        # Normalize output_folder path to avoid double backslashes
+        output_folder_normalized = os.path.normpath(self.output_folder)
+        os.makedirs(output_folder_normalized, exist_ok=True)
+        log_file = os.path.join(output_folder_normalized, "ELMO_log.txt")
         if os.path.exists(log_file):
             os.remove(log_file)
 
@@ -104,6 +108,7 @@ class OptModel(object):
             opt.options['OutputFlag']   = 1
             opt.options['LogToConsole'] = 1
             opt.options['MIPGap']       = gap
+            opt.options['TimeLimit']    = timelimit
             opt.options['LogFile']      = log_file
             opt.options['Threads']      = 24
             opt.options['Heuristics']   = 0.5
