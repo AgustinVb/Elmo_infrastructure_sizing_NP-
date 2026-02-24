@@ -503,14 +503,9 @@ class JSONPlotter:
             print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
             return
         
-        def _season_for_day(d: int) -> str:
-            if d in (12, 1, 2): return "Summer"
-            if d in (3, 4, 5): return "Autumn"
-            if d in (6, 7, 8): return "Winter"
-            return "Spring"
+       
 
         for d in self.days:
-            season = _season_for_day(int(d))
 
             p_day = (self.df_P.query("day == @d")[["interval", "value"]]
                         .groupby("interval")["value"].sum()
@@ -565,7 +560,7 @@ class JSONPlotter:
             ax_top.set_axis_off()
             month = self._rep_day_label(d)
             ax_top.text(0.5, 0.78,
-                        f"{month} – Total Charge Power vs Energy Price ({season})",
+                        f"{month} – Total Charge Power vs Energy Price)",
                         ha="center", va="center", fontsize=32)
 
             # Leyenda
@@ -663,11 +658,6 @@ class JSONPlotter:
             return
 
         delta_t = float(self.delta_t)
-        def _season_for_day(d: int) -> str:
-            if d in (12, 1, 2): return "Summer"
-            if d in (3, 4, 5): return "Autumn"
-            if d in (6, 7, 8): return "Winter"
-            return "Spring"
 
         # Detectar LHDs (desde B o E)
         lhds = set()
@@ -830,11 +820,10 @@ class JSONPlotter:
                 ax1.grid(False); ax2.grid(False)
 
                 # Título y Leyendas
-                season = _season_for_day(int(day))
                 month = self._rep_day_label(day)
                 ax_title.text(
                     0.5, 0.75,
-                    f"LHD {lhd} – {month} ({season})",
+                    f"LHD {lhd} – {month}",
                     ha="center", va="center", fontsize=32
                 )
 
@@ -877,14 +866,9 @@ class JSONPlotter:
             print("ℹ️ No hay perfiles de emisiones eléctricas. Omitiendo 'Emission Profile'.")
             return
 
-        def _season_for_day(d: int) -> str:
-            if 1 <= d <= 90:   return "Winter"
-            if 91 <= d <= 180: return "Spring"
-            if 181 <= d <= 270:return "Summer"
-            return "Autumn"
+       
 
         for d in self.days:
-            season = _season_for_day(int(d))
 
             e_day = (self.params.emissions_electric
                     .query("day == @d")[["interval", "emission_rate"]]
@@ -925,7 +909,7 @@ class JSONPlotter:
             month = self._rep_day_label(d)
             ax_top.text(
                 0.5, 0.78,
-                f"{month} – Electric Emission Profile ({season})",
+                f"{month} – Electric Emission Profile",
                 ha="center", va="center", fontsize=32
             )
           
