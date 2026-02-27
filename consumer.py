@@ -117,6 +117,22 @@ def iter_day_series_key(vehicle_node: Any, series_key: str) -> Iterator[Dict[str
     if not isinstance(vehicle_node, dict):
         return
 
+    # Formato nuevo (printer actual): d -> <day> -> t -> {time:value}
+    dnode = vehicle_node.get("d")
+    if isinstance(dnode, dict):
+        for _, day_node in dnode.items():
+            if not isinstance(day_node, dict):
+                continue
+            tnode = day_node.get("t")
+            if isinstance(tnode, dict):
+                yield tnode
+                continue
+            # Compatibilidad por si viene con clave explícita de serie
+            maybe_series = day_node.get(series_key)
+            if isinstance(maybe_series, dict):
+                yield maybe_series
+        return
+
     tnode = vehicle_node.get("t")
     if isinstance(tnode, dict):
         for _, day_node in tnode.items():
@@ -148,7 +164,12 @@ def mean_drop_rate_per_hour_fixed_dt(
     if not isinstance(data, dict):
         raise ValueError("JSON inesperado: la raíz no es un objeto/dict.")
 
-    vehicles = data["d"] if ("d" in data and isinstance(data["d"], dict)) else data
+    if "d" in data and isinstance(data["d"], dict):
+        vehicles = data["d"]
+    elif "i" in data and isinstance(data["i"], dict):
+        vehicles = data["i"]
+    else:
+        vehicles = data
     if not isinstance(vehicles, dict) or len(vehicles) == 0:
         raise ValueError("No pude detectar series por vehículo (dict vacío o formato no soportado).")
 

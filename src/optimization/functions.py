@@ -177,7 +177,7 @@ class OptParameters(OptRules):
         model.nk_bat = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries(k) for k in model.stations_set}, mutable=False)
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         #model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
-        model.t_charge = 8
+        model.t_charge = 6
 
         # ---- Penalización por tramos para F (déficit) ----
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
@@ -327,7 +327,7 @@ class ConstraintRules(OptRules):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         penalization_charge = sum(model.Z_swap[k, i, d, t] * model.pk_i[k,i] for k in valid_k_list) * model.t_swap[i]
         
-        if t > t0:
+        if t >= t0:
             return model.B[i, d, t] ==  model.B_s[i, d, t-1] - discharge - penalization_charge
         
         else:
@@ -646,6 +646,7 @@ class ConstraintRules(OptRules):
         model.battery_lower =              pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
         model.battery_upper =               pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary =            pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary)
+        model.battery_boundary_swap =       pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary_swap)
        
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity_swap)
