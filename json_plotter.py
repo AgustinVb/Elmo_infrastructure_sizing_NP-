@@ -12,7 +12,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MultipleLocator, FixedLocator, FuncFormatter
+from matplotlib.patches import Patch
 import matplotlib.patheffects as path_effects
 
 plt.rcParams["figure.dpi"] = 120
@@ -413,6 +414,7 @@ class JSONPlotter:
         # Dominio
         self.days = self._detect_days()
         self.intervals = self._detect_intervals()
+        self.special_intervals = self._load_special_intervals()
 
     def _detect_days(self) -> List[int]:
         sources = []
@@ -504,6 +506,72 @@ class JSONPlotter:
         labels = [f"{(start_hour + h) % 24:02d}:00" for h in ticks]
         return ticks, labels
 
+    def _build_intervals_from_clock_windows(self, windows: List[Tuple[str, str]], start_hour: int = 9) -> List[int]:
+        if not self.intervals:
+            return []
+
+        dt_minutes = int(round(float(self.delta_t) * 60.0))
+        if dt_minutes <= 0:
+            return []
+
+        max_t = int(max(self.intervals))
+        base_minutes = start_hour * 60
+
+        def _parse_hhmm(s: str) -> int:
+            hh, mm = s.strip().split(":")
+            return int(hh) * 60 + int(mm)
+
+        out = set()
+        for start_str, end_str in windows:
+            start_min = _parse_hhmm(start_str)
+            end_min = _parse_hhmm(end_str)
+
+            if start_min < base_minutes:
+                start_min += 24 * 60
+            if end_min < base_minutes:
+                end_min += 24 * 60
+            if end_min <= start_min:
+                end_min += 24 * 60
+
+            a = start_min - base_minutes
+            b = end_min - base_minutes
+
+            for t in range(1, max_t + 1):
+                s = int(round((t - 1) * dt_minutes))
+                e = int(round(t * dt_minutes))
+                if max(s, a) < min(e, b):
+                    out.add(t)
+
+        allowed = set(int(v) for v in self.intervals)
+        return sorted(v for v in out if v in allowed)
+
+    def _load_special_intervals(self) -> Dict[str, List[int]]:
+        sets_path = os.path.join(self.json_dir, "sets.json")
+        sets_data = _load_json(sets_path)
+        if sets_data:
+            return {
+                "between_shifts": sorted(int(v) for v in sets_data.get("time_intervals_between_shifts_set", [])),
+                "meal": sorted(int(v) for v in sets_data.get("time_intervals_meal_set", [])),
+                "maintenance": sorted(int(v) for v in sets_data.get("time_intervals_maintenance_set", [])),
+            }
+
+        return {
+            "between_shifts": self._build_intervals_from_clock_windows([
+                ("19:00", "21:00"),
+                ("07:00", "09:00"),
+            ], start_hour=9),
+            "meal": self._build_intervals_from_clock_windows([
+                ("14:04", "14:56"),
+                ("02:04", "02:56"),
+            ], start_hour=9),
+            "maintenance": self._build_intervals_from_clock_windows([
+                ("10:04", "12:26"),
+                ("16:04", "17:26"),
+                ("22:04", "00:26"),
+                ("04:04", "05:26"),
+            ], start_hour=9),
+        }
+
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
         if self.df_P is None or self.df_P.empty:
@@ -512,11 +580,10 @@ class JSONPlotter:
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
             print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
             return
-        
-      
-        for d in self.days:
-        
+        start_hour = 9
+        delta_t = float(self.delta_t)
 
+        for d in self.days:
             p_day = (self.df_P.query("day == @d")[["interval", "value"]]
                         .groupby("interval")["value"].sum()
                         .reindex(self.intervals).fillna(0.0))
@@ -525,71 +592,94 @@ class JSONPlotter:
                             .groupby("interval")["price"].mean()
                             .reindex(self.intervals).ffill().bfill().fillna(0.0))
 
-            fig = plt.figure(figsize=(14, 8))
-            gs = gridspec.GridSpec(2, 1, height_ratios=[0.20, 0.80], hspace=0.08)
+            if p_day.empty or price_day.empty:
+                continue
 
-            ax_top = fig.add_subplot(gs[0])   # espacio título + leyenda
-            ax1 = fig.add_subplot(gs[1])      # gráfico principal
+            first_interval = float(min(self.intervals))
+            times = (np.array(self.intervals, dtype=float) - first_interval) * delta_t
+            times_step = np.append(times, times[-1] + delta_t) + start_hour
+            pcharge_step = np.append(p_day.to_numpy(dtype=float), p_day.iloc[-1])
+            price_step = np.append(price_day.to_numpy(dtype=float), price_day.iloc[-1])
+
+            fig, ax1 = plt.subplots(figsize=(9, 5.6))
+
+            first_i = int(min(self.intervals))
+
+            pause_specs = [
+                ("between_shifts", "#A9A9A9", 0.35, "Between Shifts"),
+                ("meal", "#E5E5E5", 0.45, "Meal"),
+                ("maintenance", "#FFF0F0", 0.60, "Maintenance"),
+            ]
+
+            pause_handles = []
+            for key, color, alpha, label in pause_specs:
+                vals = sorted(set(int(v) for v in self.special_intervals.get(key, []) if int(v) in set(self.intervals)))
+                if not vals:
+                    continue
+
+                groups = []
+                start = vals[0]
+                prev = vals[0]
+                for curr in vals[1:]:
+                    if curr == prev + 1:
+                        prev = curr
+                        continue
+                    groups.append((start, prev))
+                    start = curr
+                    prev = curr
+                groups.append((start, prev))
+
+                for gs, ge in groups:
+                    x0 = start_hour + (gs - first_i) * delta_t
+                    x1 = start_hour + (ge + 1 - first_i) * delta_t
+                    ax1.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
+
+                pause_handles.append(Patch(facecolor=color, alpha=alpha, edgecolor="none", label=label))
+
+            ax1.step(times_step, pcharge_step, where="post", label="Charge Power", color="#0000FF", linewidth=1.6)
+            ax1.set_ylabel("Charge Power [kW]", color="black")
+            ax1.set_xlabel("Hour")
+            ax1.tick_params(axis="y", labelcolor="black")
+            ax1.set_xlim(times_step[0] - 0.2, times_step[-1] + 0.1)
+
+            end = np.ceil(times_step[-1])
+            xticks = np.arange(start_hour, end + 1, 4)
+            ax1.xaxis.set_major_locator(FixedLocator(xticks))
+
+            def hour_formatter(x, pos):
+                h = int(np.floor(x)) % 24
+                m = int(round((x - np.floor(x)) * 60)) % 60
+                return f"{h:02d}:{m:02d}"
+
+            ax1.xaxis.set_major_formatter(FuncFormatter(hour_formatter))
+            ax1.xaxis.set_minor_locator(MultipleLocator(1))
+
             ax2 = ax1.twinx()
-            ax3 = ax1.twinx()
+            ax2.step(times_step, price_step, where="post", label="Energy Price", color="#FF0000", linewidth=2.5)
+            ax2.set_ylabel("Energy Price [USD/kWh]", color="black")
+            ax2.tick_params(axis="y", labelcolor="black")
 
-            # Eje “invisible” del costo acumulado
-            ax3.spines["right"].set_visible(False)
-            ax3.yaxis.set_ticks([])
-            ax3.set_ylabel("")
-            ax3.set_ylim(0, 600)
+            ax1.set_ylim(0, max(2500.0, float(np.nanmax(pcharge_step)) * 1.05 if len(pcharge_step) else 2500.0))
+            ax2.set_ylim(0, max(0.3, float(np.nanmax(price_step)) * 1.05 if len(price_step) else 0.3))
 
-            # ----- Curvas -----
-            ax1.plot(self.intervals, p_day.values, linewidth=3.2,
-                    label="Charge Power", drawstyle="steps-post", color="C0")
-            ax2.plot(self.intervals, price_day.values, linewidth=3.2, linestyle="--",
-                    label="Energy Price", color="red")
-            
-            # Límites y márgenes
-            ax1.set_ylim(0, 4000)
-            ax2.set_ylim(0.001, 0.206)
-            
-            # --- Ticks fijos ---
-            ticks, labels = self._get_fixed_time_ticks(mode="interval")
-            ax1.set_xticks(ticks)
-            ax1.set_xticklabels(labels, fontsize=18)
-            ax1.set_xlim(ticks[0], ticks[-1])
-            # -------------------
-
-            ax1.margins(x=0.0)
-            for ax in (ax1, ax2, ax3): ax.grid(False)
-
-            # Etiquetas y tamaños de fuente
-            ax1.set_xlabel("Time", fontsize=22)
-            ax1.set_ylabel("Charge Power [kW]", fontsize=22)
-            ax2.set_ylabel("Energy Price [USD/kWh]", fontsize=22)
-            ax1.tick_params(axis="y", labelsize=18)
-            ax2.tick_params(axis="y", labelsize=18)
-
-            # Título 
-            ax_top.set_axis_off()
             month = self._rep_day_label(d)
-            ax_top.text(0.5, 0.78,
-                        f"{month} – Total Charge Power vs Energy Price",
-                        ha="center", va="center", fontsize=32)
+            ax1.set_title(f"{month} – Total Charge Power vs Energy Price")
 
-            # Leyenda
             h1, l1 = ax1.get_legend_handles_labels()
             h2, l2 = ax2.get_legend_handles_labels()
-            h3, l3 = ax3.get_legend_handles_labels()
-            handles = h1 + h2 + h3
-            labels_ = l1 + l2 + l3
-            leg = ax_top.legend(handles, labels_, loc="center", ncols=3, fontsize=18,
-                                frameon=True, fancybox=False, framealpha=1.0,
-                                bbox_to_anchor=(0.5, 0.18))
+            leg = ax1.legend(h1 + h2 + pause_handles, l1 + l2 + [h.get_label() for h in pause_handles],
+                             loc="upper center", ncols=5,
+                             frameon=True, fancybox=False, framealpha=1.0)
             leg.get_frame().set_edgecolor("#cccccc")
             leg.get_frame().set_linewidth(1.2)
             leg.get_frame().set_facecolor("white")
 
-            month = self._rep_day_label(d)
+            ax1.grid(False)
+            ax2.grid(False)
+            fig.tight_layout()
             fig.savefig(
-                        os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
-                        bbox_inches="tight"
+                os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
+                bbox_inches="tight"
             )
             plt.close(fig)
 
