@@ -237,6 +237,115 @@ def mean_consumption_kwhph(b_json_path: Path, delta_minutes: float, eps: float =
     )
 
 
+def total_rise_energy_from_b(b_json_path: Path, eps: float = 1e-9) -> Tuple[float, Dict[str, float]]:
+    """
+    Suma los ascensos de energía en B (kWh) considerando pasos consecutivos.
+    Si B sube entre t y t+1, aporta (B[t+1]-B[t]).
+    """
+    data = load_json(b_json_path)
+    if not isinstance(data, dict):
+        raise ValueError("B.json inesperado: la raíz no es un objeto/dict.")
+
+    if "d" in data and isinstance(data["d"], dict):
+        vehicles = data["d"]
+    elif "i" in data and isinstance(data["i"], dict):
+        vehicles = data["i"]
+    else:
+        vehicles = data
+
+    if not isinstance(vehicles, dict) or len(vehicles) == 0:
+        raise ValueError("No pude detectar series por vehículo en B.json")
+
+    total_rise = 0.0
+    n_rise_steps = 0
+    n_pairs_total = 0
+    n_series = 0
+    n_vehicles_used = 0
+
+    for _, vnode in vehicles.items():
+        had_series = False
+
+        # En el formato actual de B.json, iter_day_series_key devuelve day_node['t']
+        # (independiente de series_key), así que recorrer dos claves duplicaría series.
+        for series_map in iter_day_series_key(vnode, "i"):
+            had_series = True
+            n_series += 1
+            series = parse_timeseries(series_map)
+            if len(series) < 2:
+                continue
+
+            for (_, v0), (_, v1) in zip(series, series[1:]):
+                n_pairs_total += 1
+                rise = v1 - v0
+                if rise > eps:
+                    total_rise += rise
+                    n_rise_steps += 1
+
+        if had_series:
+            n_vehicles_used += 1
+
+    stats = {
+        "total_rise_kwh": total_rise,
+        "n_rise_steps": float(n_rise_steps),
+        "n_pairs_total": float(n_pairs_total),
+        "n_vehicles_used": float(n_vehicles_used),
+        "n_series": float(n_series),
+    }
+    return total_rise, stats
+
+
+def calculate_charged_energy_from_sv(root: Path) -> Tuple[float, Dict[str, float]]:
+    """
+    Calcula energía cargada desde outputs con:
+      sum(Sv[k,d,t,a] * p_charger * delta_t)
+    usando Sv.json + parameters.json.
+    """
+    sv_path = find_json_in_folder(root, "Sv.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not sv_path or not params_path:
+        raise ValueError("No se encontraron Sv.json o parameters.json")
+    if is_effectively_empty_json(sv_path) or is_effectively_empty_json(params_path):
+        raise ValueError("Sv.json o parameters.json están vacíos/no usables")
+
+    sv_data = load_json(sv_path)
+    params_data = load_json(params_path)
+
+    p_charger = float(params_data.get("p_charger", 0.0))
+    delta_t = float(params_data.get("delta_t", 0.0))
+
+    def _sum_numbers(obj: Any) -> Tuple[float, int]:
+        s = 0.0
+        n = 0
+        if isinstance(obj, dict):
+            for v in obj.values():
+                ss, nn = _sum_numbers(v)
+                s += ss
+                n += nn
+        elif isinstance(obj, list):
+            for v in obj:
+                ss, nn = _sum_numbers(v)
+                s += ss
+                n += nn
+        else:
+            try:
+                s += float(obj)
+                n += 1
+            except Exception:
+                pass
+        return s, n
+
+    sv_sum, n_terms = _sum_numbers(sv_data)
+    charged_energy_kwh = sv_sum * p_charger * delta_t
+    meta = {
+        "sv_sum": sv_sum,
+        "p_charger": p_charger,
+        "delta_t": delta_t,
+        "n_terms": float(n_terms),
+    }
+    return charged_energy_kwh, meta
+
+
 # -----------------------------
 # M: extracción total (sumar números)
 # -----------------------------
@@ -313,9 +422,24 @@ def main() -> None:
     if b_path and not is_effectively_empty_json(b_path):
         try:
             kwhph, s = mean_consumption_kwhph(b_path, delta_minutes=args.delta_minutes, eps=args.eps)
+
+            # Energía cargada desde Sv (fórmula del modelo)
+            charged_energy_kwh = None
+            charged_meta: Dict[str, float] = {}
+            try:
+                charged_energy_kwh, charged_meta = calculate_charged_energy_from_sv(root)
+            except Exception:
+                charged_energy_kwh = None
+
+            # Ascensos de B
+            rise_b_kwh, rise_stats = total_rise_energy_from_b(b_path, eps=args.eps)
+
             rows = [
                 ["Promedio consumo (solo descensos)", f"{kwhph:.6f} kWh/h"],
                 ["Energía consumida (solo descensos)", f"{s['total_drop_kwh']:.6f} kWh"],
+                ["Energía cargada (Sv*p_charger*delta_t)", f"{charged_energy_kwh:.6f} kWh" if charged_energy_kwh is not None else "N/D"],
+                ["Energía por ascensos de B", f"{rise_b_kwh:.6f} kWh"],
+                ["Pasos con ascenso (B)", str(int(rise_stats["n_rise_steps"]))],
                 ["Pasos con descenso", str(int(s["n_drop_steps"]))],
                 ["Pares totales evaluados", str(int(s["n_pairs_total"]))],
                 ["Vehículos usados", str(int(s["n_vehicles_used"]))],
