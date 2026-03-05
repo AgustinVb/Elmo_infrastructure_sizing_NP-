@@ -522,6 +522,22 @@ class ConstraintRules(OptRules):
         t0 = self.time_series.get_time_intervals()[0]
         return model.S[k, d, t0] + model.X_dch[k, d, t0] == model.N_batteries[k]
 
+    def all_batteries_charged_start(self, model, k, d):
+        t0 = self.time_series.get_time_intervals()[0]
+        return model.S[k, d, t0] == model.N_batteries[k]
+
+    def all_batteries_charged_end(self, model, k, d):
+        tf = self.time_series.get_time_intervals()[-1]
+        return model.S[k, d, tf] == model.N_batteries[k]
+
+    def no_discharged_batteries_start(self, model, k, d):
+        t0 = self.time_series.get_time_intervals()[0]
+        return model.X_dch[k, d, t0] == 0
+
+    def no_discharged_batteries_end(self, model, k, d):
+        tf = self.time_series.get_time_intervals()[-1]
+        return model.X_dch[k, d, tf] == 0
+
     # ==========================================================
     # 6) Pausas operacionales
     # ==========================================================
@@ -664,12 +680,6 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             model.time_intervals_set,
             rule=self.charging_duration_rule,
-        )
-        model.CI_S = pyo.Constraint(
-            model.stations_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.CI_S,
         )
         model.CI_X_dch = pyo.Constraint(
             model.stations_set,

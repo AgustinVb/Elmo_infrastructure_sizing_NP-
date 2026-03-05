@@ -346,6 +346,34 @@ class Printer:
         payload: Dict[str, Any] = {}
         for p in self.model.component_objects(Param, active=True):
             payload[str(p.name)] = self._param_payload(p)
+
+        def _export_set_values(*candidate_names: str) -> List[Any]:
+            for name in candidate_names:
+                if not hasattr(self.model, name):
+                    continue
+                try:
+                    vals = [_coerce_json_val(v) for v in getattr(self.model, name)]
+                    # ordenar numéricamente si aplica
+                    try:
+                        vals = sorted(vals, key=lambda x: float(x))
+                    except Exception:
+                        pass
+                    return vals
+                except Exception:
+                    continue
+            return []
+
+        # Exportar sets de pausas para trazado en json_plotter
+        payload["time_intervals_between_shifts_set"] = _export_set_values("time_intervals_between_shifts_set")
+        payload["time_intervals_mid_shift_meal_set"] = _export_set_values(
+            "time_intervals_mid_shift_meal_set",
+            "time_intervals_meal_set",
+        )
+        payload["time_intevals_maintenance_set"] = _export_set_values(
+            "time_intevals_maintenance_set",
+            "time_intervals_maintenance_set",
+        )
+
         out_path = os.path.join(self.path, filename)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)

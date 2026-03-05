@@ -237,6 +237,119 @@ def mean_consumption_kwhph(b_json_path: Path, delta_minutes: float, eps: float =
     )
 
 
+def consumed_energy_swap_travel(root: Path, eps: float = 1e-9) -> Tuple[float, Dict[str, float]]:
+    """
+    Consumo eléctrico usando la ecuación del modelo en swap:
+
+        B[i,d,t] = B_s[i,d,t-1] - consumo_intervalo(i,d,t)
+
+    => consumo_intervalo(i,d,t) = B_s[i,d,t-1] - B[i,d,t]
+
+    Esta métrica sí cuenta correctamente intervalos con swap/viaje.
+    """
+    b_path = find_json_in_folder(root, "B.json")
+    bs_path = find_json_in_folder(root, "B_s.json")
+    if not b_path or not bs_path:
+        raise ValueError("No se encontraron B.json o B_s.json")
+    if is_effectively_empty_json(b_path) or is_effectively_empty_json(bs_path):
+        raise ValueError("B.json o B_s.json están vacíos/no usables")
+
+    b_data = load_json(b_path)
+    bs_data = load_json(bs_path)
+
+    def _extract_series_map(data: Any) -> Dict[str, Dict[int, Dict[int, float]]]:
+        out: Dict[str, Dict[int, Dict[int, float]]] = {}
+        if isinstance(data, dict):
+            root_i = data.get("i", {})
+            if not isinstance(root_i, dict) or not root_i:
+                root_i = data.get("_1", {})
+            if not isinstance(root_i, dict) or not root_i:
+                root_i = data.get("d", {})
+        else:
+            root_i = {}
+        if not isinstance(root_i, dict):
+            return out
+
+        for lhd, lhd_node in root_i.items():
+            if not isinstance(lhd_node, dict):
+                continue
+            d_node = lhd_node.get("d", {})
+            if not isinstance(d_node, dict) or not d_node:
+                d_node = lhd_node.get("_2", {})
+            if not isinstance(d_node, dict) or not d_node:
+                d_node = lhd_node.get("t", {})
+            if not isinstance(d_node, dict):
+                continue
+
+            day_map: Dict[int, Dict[int, float]] = {}
+            for day_k, day_node in d_node.items():
+                try:
+                    day = int(float(day_k))
+                except Exception:
+                    continue
+
+                t_node = day_node.get("t", {}) if isinstance(day_node, dict) else {}
+                if not isinstance(t_node, dict) or not t_node:
+                    t_node = day_node.get("_3", {}) if isinstance(day_node, dict) else {}
+                if not isinstance(t_node, dict) or not t_node:
+                    t_node = day_node.get("i", {}) if isinstance(day_node, dict) else {}
+                if not isinstance(t_node, dict):
+                    continue
+
+                ser: Dict[int, float] = {}
+                for tk, tv in t_node.items():
+                    try:
+                        ser[int(float(tk))] = float(tv)
+                    except Exception:
+                        continue
+                day_map[day] = ser
+
+            out[lhd] = day_map
+
+        return out
+
+    b_map = _extract_series_map(b_data)
+    bs_map = _extract_series_map(bs_data)
+
+    total_consumed = 0.0
+    n_intervals = 0
+    n_negative_clipped = 0
+    n_missing_pairs = 0
+
+    for lhd, day_map in b_map.items():
+        bs_day_map = bs_map.get(lhd, {})
+        for day, b_ser in day_map.items():
+            bs_ser = bs_day_map.get(day, {})
+            if not b_ser or not bs_ser:
+                continue
+
+            for t in sorted(b_ser.keys()):
+                if t <= 0:
+                    continue
+                b_t = b_ser.get(t)
+                bs_prev = bs_ser.get(t - 1)
+                if b_t is None or bs_prev is None:
+                    n_missing_pairs += 1
+                    continue
+
+                cons = float(bs_prev) - float(b_t)
+                if cons < -eps:
+                    n_negative_clipped += 1
+                total_consumed += max(0.0, cons)
+                n_intervals += 1
+
+    if n_intervals == 0:
+        raise ValueError("No se pudieron construir intervalos válidos con B_s(t-1) y B(t)")
+
+    meta = {
+        "total_consumed_kwh": total_consumed,
+        "n_intervals": float(n_intervals),
+        "n_missing_pairs": float(n_missing_pairs),
+        "n_negative_clipped": float(n_negative_clipped),
+    }
+    return total_consumed, meta
+
+
 def total_rise_energy_from_b(b_json_path: Path, eps: float = 1e-9) -> Tuple[float, Dict[str, float]]:
     """
     Suma los ascensos de energía en B (kWh) considerando pasos consecutivos.
@@ -294,6 +407,119 @@ def total_rise_energy_from_b(b_json_path: Path, eps: float = 1e-9) -> Tuple[floa
     return total_rise, stats
 
 
+def calculate_b_frontier_delta(b_json_path: Path) -> Tuple[float, Dict[str, float]]:
+    """
+    ΔE_frontera_B = sum_i,d (B_i,d,tf - B_i,d,t0)
+    usando primer y último valor temporal disponible por serie vehículo-día.
+    """
+    data = load_json(b_json_path)
+    vehicles = data.get("i", {}) if isinstance(data, dict) else {}
+    if not isinstance(vehicles, dict):
+        raise ValueError("Formato de B.json no soportado para frontera")
+
+    total_init = 0.0
+    total_final = 0.0
+    n_series = 0
+
+    for _, vnode in vehicles.items():
+        for series_map in iter_day_series_key(vnode, "i"):
+            series = parse_timeseries(series_map)
+            if len(series) < 1:
+                continue
+            total_init += float(series[0][1])
+            total_final += float(series[-1][1])
+            n_series += 1
+
+    delta = total_final - total_init
+    meta = {
+        "b_initial_kwh": total_init,
+        "b_final_kwh": total_final,
+        "n_series": float(n_series),
+    }
+    return delta, meta
+
+
+def calculate_station_inventory_delta(root: Path) -> Tuple[float, Dict[str, float]]:
+    """
+    Δinventario_estación en conteo de baterías:
+      sum_k,d [(S_k,d,tf + X_dch_k,d,tf) - (S_k,d,t0 + X_dch_k,d,t0)]
+    """
+    s_path = find_json_in_folder(root, "S.json")
+    x_dch_path = find_json_in_folder(root, "X_dch.json")
+
+    if not s_path or not x_dch_path:
+        raise ValueError("No se encontraron S.json o X_dch.json")
+    if is_effectively_empty_json(s_path) or is_effectively_empty_json(x_dch_path):
+        raise ValueError("S.json o X_dch.json vacíos/no usables")
+
+    s_data = load_json(s_path)
+    x_data = load_json(x_dch_path)
+
+    def _to_series_map(obj: Any) -> Dict[Tuple[str, int], Dict[int, float]]:
+        out: Dict[Tuple[str, int], Dict[int, float]] = {}
+        s1 = obj.get("_1", {}) if isinstance(obj, dict) else {}
+        if not isinstance(s1, dict):
+            return out
+        for station, s_node in s1.items():
+            d_node = s_node.get("_2", {}) if isinstance(s_node, dict) else {}
+            if not isinstance(d_node, dict):
+                continue
+            for day_k, day_node in d_node.items():
+                try:
+                    day = int(float(day_k))
+                except Exception:
+                    continue
+                t_node = day_node.get("_3", {}) if isinstance(day_node, dict) else {}
+                if not isinstance(t_node, dict):
+                    continue
+                ser: Dict[int, float] = {}
+                for tk, tv in t_node.items():
+                    try:
+                        ser[int(float(tk))] = float(tv)
+                    except Exception:
+                        continue
+                out[(station, day)] = ser
+        return out
+
+    s_map = _to_series_map(s_data)
+    x_map = _to_series_map(x_data)
+
+    keys = sorted(set(s_map.keys()) | set(x_map.keys()))
+    init_total = 0.0
+    final_total = 0.0
+    n_station_days = 0
+
+    for key in keys:
+        s_ser = s_map.get(key, {})
+        x_ser = x_map.get(key, {})
+        if not s_ser and not x_ser:
+            continue
+
+        t_candidates = sorted(set(s_ser.keys()) | set(x_ser.keys()))
+        if not t_candidates:
+            continue
+
+        t0 = t_candidates[0]
+        tf = t_candidates[-1]
+
+        s0 = float(s_ser.get(t0, 0.0))
+        sf = float(s_ser.get(tf, 0.0))
+        x0 = float(x_ser.get(t0, 0.0))
+        xf = float(x_ser.get(tf, 0.0))
+
+        init_total += (s0 + x0)
+        final_total += (sf + xf)
+        n_station_days += 1
+
+    delta = final_total - init_total
+    meta = {
+        "inventory_initial": init_total,
+        "inventory_final": final_total,
+        "n_station_days": float(n_station_days),
+    }
+    return delta, meta
+
+
 def calculate_charged_energy_from_sv(root: Path) -> Tuple[float, Dict[str, float]]:
     """
     Calcula energía cargada desde outputs con:
@@ -344,6 +570,177 @@ def calculate_charged_energy_from_sv(root: Path) -> Tuple[float, Dict[str, float
         "n_terms": float(n_terms),
     }
     return charged_energy_kwh, meta
+
+
+def calculate_real_charged_energy_from_swaps(
+    root: Path,
+    charge_intervals: int = 6,
+    soc_base: float = 0.20,
+    eps: float = 1e-9,
+) -> Tuple[float, Dict[str, float], List[Dict[str, Any]]]:
+    """
+        Energía cargada real por evento de swap hasta 100%:
+
+            E_real_evento = bmax_i - B_llegada
+
+        equivalente a:
+            E_real_evento = bmax_i * (1 - SOC_llegada)
+
+        Además retorna el detalle por evento (estación, LHD, día, t, SOC llegada, energía).
+    """
+    z_path = find_json_in_folder(root, "Z_swap.json")
+    b_path = find_json_in_folder(root, "B.json")
+    sv_path = find_json_in_folder(root, "Sv.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not z_path or not b_path or not sv_path or not params_path:
+        raise ValueError("No se encontraron Z_swap.json, B.json, Sv.json o parameters.json")
+    if (
+        is_effectively_empty_json(z_path)
+        or is_effectively_empty_json(b_path)
+        or is_effectively_empty_json(sv_path)
+        or is_effectively_empty_json(params_path)
+    ):
+        raise ValueError("Z_swap.json, B.json, Sv.json o parameters.json están vacíos/no usables")
+
+    z_data = load_json(z_path)
+    b_data = load_json(b_path)
+    params_data = load_json(params_path)
+
+    # Referencia análoga a la función objetivo: sum(Sv * p_charger * delta_t)
+    sv_energy_total, _ = calculate_charged_energy_from_sv(root)
+
+    p_charger = float(params_data.get("p_charger", 0.0))
+    delta_t = float(params_data.get("delta_t", 0.0))
+    bmax_raw = params_data.get("bmax_b", {}).get("_1", {})
+
+    # Mapa B[i][d][t] -> nivel de energía (kWh)
+    b_map: Dict[str, Dict[int, Dict[int, float]]] = {}
+    vehicles = b_data.get("i", {}) if isinstance(b_data, dict) else {}
+    if isinstance(vehicles, dict):
+        for lhd, lhd_node in vehicles.items():
+            dnode = lhd_node.get("d", {}) if isinstance(lhd_node, dict) else {}
+            if not isinstance(dnode, dict):
+                continue
+            day_map: Dict[int, Dict[int, float]] = {}
+            for day_k, day_node in dnode.items():
+                try:
+                    day = int(float(day_k))
+                except Exception:
+                    continue
+                tnode = day_node.get("t", {}) if isinstance(day_node, dict) else {}
+                if not isinstance(tnode, dict):
+                    continue
+                series: Dict[int, float] = {}
+                for tk, tv in tnode.items():
+                    try:
+                        series[int(float(tk))] = float(tv)
+                    except Exception:
+                        continue
+                day_map[day] = series
+            b_map[lhd] = day_map
+
+    total_real = 0.0
+    n_events = 0
+    n_events_with_discount = 0
+    n_events_missing_b = 0
+    n_events_missing_bmax = 0
+    event_details: List[Dict[str, Any]] = []
+
+    # Estructura esperada: _1[k]._2[i]._3[d]._4[t] = 0/1
+    k_node = z_data.get("_1", {}) if isinstance(z_data, dict) else {}
+    if not isinstance(k_node, dict):
+        k_node = {}
+
+    for station, st_data in k_node.items():
+        i_node = st_data.get("_2", {}) if isinstance(st_data, dict) else {}
+        if not isinstance(i_node, dict):
+            continue
+        for lhd, lhd_data in i_node.items():
+            d_node = lhd_data.get("_3", {}) if isinstance(lhd_data, dict) else {}
+            if not isinstance(d_node, dict):
+                continue
+
+            bmax_i_raw = bmax_raw.get(lhd)
+            try:
+                bmax_i = float(bmax_i_raw)
+            except Exception:
+                bmax_i = None
+
+            for day_k, day_data in d_node.items():
+                try:
+                    day = int(float(day_k))
+                except Exception:
+                    continue
+
+                t_node = day_data.get("_4", {}) if isinstance(day_data, dict) else {}
+                if not isinstance(t_node, dict):
+                    continue
+
+                series = b_map.get(lhd, {}).get(day, {})
+
+                for tk, val in t_node.items():
+                    try:
+                        zval = float(val)
+                    except Exception:
+                        continue
+                    if zval <= 0.5 + eps:
+                        continue
+
+                    n_events += 1
+
+                    if bmax_i is None or bmax_i <= 0:
+                        n_events_missing_bmax += 1
+                        continue
+
+                    try:
+                        t = int(float(tk))
+                    except Exception:
+                        continue
+
+                    b_prev = series.get(t - 1)
+                    if b_prev is None:
+                        b_prev = series.get(t)
+                    if b_prev is None:
+                        n_events_missing_b += 1
+                        continue
+
+                    soc_arrival = b_prev / bmax_i
+                    event_real = max(0.0, bmax_i - b_prev)
+                    if event_real > eps:
+                        n_events_with_discount += 1
+                    total_real += event_real
+
+                    event_details.append(
+                        {
+                            "station": station,
+                            "lhd": lhd,
+                            "day": day,
+                            "t": t,
+                            "soc_arrival": soc_arrival,
+                            "bmax_kwh": bmax_i,
+                            "b_arrival_kwh": b_prev,
+                            "real_event_kwh": event_real,
+                        }
+                    )
+
+    event_details.sort(key=lambda r: (r["day"], r["t"], r["lhd"], r["station"]))
+
+    meta = {
+        "events": float(n_events),
+        "events_with_discount": float(n_events_with_discount),
+        "events_missing_b": float(n_events_missing_b),
+        "events_missing_bmax": float(n_events_missing_bmax),
+        "base_energy_per_event_kwh": float(charge_intervals) * p_charger * delta_t,
+        "base_energy_total_kwh": float(charge_intervals) * p_charger * delta_t * n_events,
+        "sv_energy_total_kwh": sv_energy_total,
+        "gap_vs_sv_kwh": sv_energy_total - total_real,
+        "soc_base": soc_base,
+        "charge_intervals": float(charge_intervals),
+        "p_charger": p_charger,
+        "delta_t": delta_t,
+    }
+    return total_real, meta, event_details
 
 
 # -----------------------------
@@ -422,6 +819,7 @@ def main() -> None:
     if b_path and not is_effectively_empty_json(b_path):
         try:
             kwhph, s = mean_consumption_kwhph(b_path, delta_minutes=args.delta_minutes, eps=args.eps)
+            consumed_swap_kwh, consumed_swap_meta = consumed_energy_swap_travel(root, eps=args.eps)
 
             # Energía cargada desde Sv (fórmula del modelo)
             charged_energy_kwh = None
@@ -434,12 +832,43 @@ def main() -> None:
             # Ascensos de B
             rise_b_kwh, rise_stats = total_rise_energy_from_b(b_path, eps=args.eps)
 
+            # Energía cargada real por swap (base 20->100% en 6 intervalos - ajuste SOC llegada)
+            real_swap_energy_kwh = None
+            real_swap_meta: Dict[str, float] = {}
+            real_swap_details: List[Dict[str, Any]] = []
+            try:
+                real_swap_energy_kwh, real_swap_meta, real_swap_details = calculate_real_charged_energy_from_swaps(
+                    root,
+                    charge_intervals=6,
+                    soc_base=0.20,
+                    eps=args.eps,
+                )
+            except Exception:
+                real_swap_energy_kwh = None
+
             rows = [
                 ["Promedio consumo (solo descensos)", f"{kwhph:.6f} kWh/h"],
-                ["Energía consumida (solo descensos)", f"{s['total_drop_kwh']:.6f} kWh"],
+                ["Energía consumida (B_s(t-1)-B(t), swap+viaje)", f"{consumed_swap_kwh:.6f} kWh"],
                 ["Energía cargada (Sv*p_charger*delta_t)", f"{charged_energy_kwh:.6f} kWh" if charged_energy_kwh is not None else "N/D"],
+                [
+                    "Energía real cargada (sumatoria por batería swap)",
+                    f"{real_swap_energy_kwh:.6f} kWh" if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "Brecha vs energía Sv (Sv - real)",
+                    f"{real_swap_meta.get('gap_vs_sv_kwh', 0.0):.6f} kWh" if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "Eventos swap considerados",
+                    str(int(real_swap_meta.get("events", 0.0))) if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "Referencia energía Sv (función objetivo)",
+                    f"{real_swap_meta.get('sv_energy_total_kwh', 0.0):.6f} kWh" if real_swap_energy_kwh is not None else "N/D",
+                ],
                 ["Energía por ascensos de B", f"{rise_b_kwh:.6f} kWh"],
                 ["Pasos con ascenso (B)", str(int(rise_stats["n_rise_steps"]))],
+                ["Intervalos consumo válidos (B_s,B)", str(int(consumed_swap_meta.get("n_intervals", 0.0)))],
                 ["Pasos con descenso", str(int(s["n_drop_steps"]))],
                 ["Pares totales evaluados", str(int(s["n_pairs_total"]))],
                 ["Vehículos usados", str(int(s["n_vehicles_used"]))],
@@ -448,6 +877,43 @@ def main() -> None:
             ]
             print(make_table("B (ELÉCTRICO)", ["Métrica", "Valor"], rows))
             print()
+
+            if real_swap_details:
+                det_headers = ["Estación", "LHD", "Día", "t", "SOC llegada (%)", "B llegada (kWh)", "Energía real (kWh)"]
+                det_rows: List[List[Any]] = []
+                for ev in real_swap_details:
+                    det_rows.append([
+                        ev["station"],
+                        ev["lhd"],
+                        int(ev["day"]),
+                        int(ev["t"]),
+                        f"{100.0 * float(ev['soc_arrival']):.2f}",
+                        f"{float(ev['b_arrival_kwh']):.6f}",
+                        f"{float(ev['real_event_kwh']):.6f}",
+                    ])
+                print(make_table("DETALLE SWAP: ENERGÍA REAL POR BATERÍA", det_headers, det_rows))
+                print()
+
+            # Balance energético simple
+            try:
+                b_frontier_delta, b_frontier_meta = calculate_b_frontier_delta(b_path)
+                inv_delta, inv_meta = calculate_station_inventory_delta(root)
+                residual_sv = (charged_energy_kwh if charged_energy_kwh is not None else 0.0) - consumed_swap_kwh - b_frontier_delta
+                residual_real = (real_swap_energy_kwh if real_swap_energy_kwh is not None else 0.0) - consumed_swap_kwh - b_frontier_delta
+
+                bal_rows = [
+                    ["energia cargada modelo", f"{(charged_energy_kwh if charged_energy_kwh is not None else 0.0):.6f} kWh"],
+                    ["E_cargada_real", f"{(real_swap_energy_kwh if real_swap_energy_kwh is not None else 0.0):.6f} kWh"],
+                    ["E_consumida", f"{consumed_swap_kwh:.6f} kWh"],
+                    ["Series B usadas", str(int(b_frontier_meta.get("n_series", 0.0)))],
+                    ["Station-day usados", str(int(inv_meta.get("n_station_days", 0.0)))],
+                ]
+                print(make_table("BALANCE ENERGÉTICO", ["Término", "Valor"], bal_rows))
+                print()
+            except Exception as ex:
+                print(make_table("BALANCE ENERGÉTICO", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+                print()
+
             printed_any = True
         except Exception as ex:
             print(make_table("B (ELÉCTRICO)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))

@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import MultipleLocator
 import matplotlib.patheffects as path_effects
+import matplotlib.patches as mpatches
+from matplotlib.ticker import FixedLocator, FuncFormatter
 
 plt.rcParams["figure.dpi"] = 120
 plt.rcParams["savefig.bbox"] = "tight"
@@ -347,6 +349,9 @@ class Parameters:
 
         self.pe_i = None
         self.pd_i = None
+        self.between_shifts: List[int] = []
+        self.meals: List[int] = []
+        self.maintenance: List[int] = []
 
         self._load()
 
@@ -421,6 +426,36 @@ class Parameters:
         # (opcional) guarda pe_i / pd_i si los usas en otros reportes
         self.pe_i = data.get("pe_i")
         self.pd_i = data.get("pd_i")
+
+        def _as_interval_list(raw: Any) -> List[int]:
+            vals: List[int] = []
+            if raw is None:
+                return vals
+
+            if isinstance(raw, list):
+                iterable = raw
+            elif isinstance(raw, dict):
+                if "_1" in raw and isinstance(raw.get("_1"), dict):
+                    iterable = list(raw.get("_1", {}).keys())
+                else:
+                    iterable = list(raw.keys())
+            else:
+                return vals
+
+            for x in iterable:
+                try:
+                    vals.append(int(float(x)))
+                except Exception:
+                    continue
+            return sorted(set(vals))
+
+        self.between_shifts = _as_interval_list(data.get("time_intervals_between_shifts_set", []))
+        self.meals = _as_interval_list(
+            data.get("time_intervals_mid_shift_meal_set", data.get("time_intervals_meal_set", []))
+        )
+        self.maintenance = _as_interval_list(
+            data.get("time_intevals_maintenance_set", data.get("time_intervals_maintenance_set", []))
+        )
 
 # -------------------- Plotter --------------------
 class JSONPlotter:
@@ -555,92 +590,7 @@ class JSONPlotter:
 
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
-        if self.df_P is None or self.df_P.empty:
-            print("⚠️ No hay P.json. Omitiendo 'ChargePower_vs_price'.")
-            return
-        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
-            print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
-            return
-        
-      
-        for d in self.days:
-        
-
-            p_day = (self.df_P.query("day == @d")[["interval", "value"]]
-                        .groupby("interval")["value"].sum()
-                        .reindex(self.intervals).fillna(0.0))
-
-            price_day = (self.params.costo_marginal.query("day == @d")
-                            .groupby("interval")["price"].mean()
-                            .reindex(self.intervals).ffill().bfill().fillna(0.0))
-
-            fig = plt.figure(figsize=(14, 8))
-            gs = gridspec.GridSpec(2, 1, height_ratios=[0.20, 0.80], hspace=0.08)
-
-            ax_top = fig.add_subplot(gs[0])   # espacio título + leyenda
-            ax1 = fig.add_subplot(gs[1])      # gráfico principal
-            ax2 = ax1.twinx()
-            ax3 = ax1.twinx()
-
-            # Eje “invisible” del costo acumulado
-            ax3.spines["right"].set_visible(False)
-            ax3.yaxis.set_ticks([])
-            ax3.set_ylabel("")
-            ax3.set_ylim(0, 600)
-
-            # ----- Curvas -----
-            ax1.plot(self.intervals, p_day.values, linewidth=3.2,
-                    label="Charge Power", drawstyle="steps-post", color="C0")
-            ax2.plot(self.intervals, price_day.values, linewidth=3.2, linestyle="--",
-                    label="Energy Price", color="red")
-            
-            # Límites y márgenes
-            ax1.set_ylim(0, 4000)
-            ax2.set_ylim(0.001, 0.206)
-            
-            # --- Ticks fijos ---
-            ticks, labels = self._get_fixed_time_ticks(mode="interval")
-            ax1.set_xticks(ticks)
-            ax1.set_xticklabels(labels, fontsize=18)
-            ax1.set_xlim(ticks[0], ticks[-1])
-            # -------------------
-
-            ax1.margins(x=0.0)
-            for ax in (ax1, ax2, ax3): ax.grid(False)
-
-            # Etiquetas y tamaños de fuente
-            ax1.set_xlabel("Time", fontsize=22)
-            ax1.set_ylabel("Charge Power [kW]", fontsize=22)
-            ax2.set_ylabel("Energy Price [USD/kWh]", fontsize=22)
-            ax1.tick_params(axis="y", labelsize=18)
-            ax2.tick_params(axis="y", labelsize=18)
-
-            # Título 
-            ax_top.set_axis_off()
-            month = self._rep_day_label(d)
-            ax_top.text(0.5, 0.78,
-                        f"{month} – Total Charge Power vs Energy Price",
-                        ha="center", va="center", fontsize=32)
-
-            # Leyenda
-            h1, l1 = ax1.get_legend_handles_labels()
-            h2, l2 = ax2.get_legend_handles_labels()
-            h3, l3 = ax3.get_legend_handles_labels()
-            handles = h1 + h2 + h3
-            labels_ = l1 + l2 + l3
-            leg = ax_top.legend(handles, labels_, loc="center", ncols=3, fontsize=18,
-                                frameon=True, fancybox=False, framealpha=1.0,
-                                bbox_to_anchor=(0.5, 0.18))
-            leg.get_frame().set_edgecolor("#cccccc")
-            leg.get_frame().set_linewidth(1.2)
-            leg.get_frame().set_facecolor("white")
-
-            month = self._rep_day_label(d)
-            fig.savefig(
-                        os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
-                        bbox_inches="tight"
-            )
-            plt.close(fig)
+        pass
 
     
     def plot_node_extraction_vs_demand(self):
