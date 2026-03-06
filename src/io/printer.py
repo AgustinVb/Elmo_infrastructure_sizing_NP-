@@ -309,6 +309,29 @@ class Printer:
         payload: Dict[str, Any] = {}
         for p in self.model.component_objects(Param, active=True):
             payload[str(p.name)] = self._param_payload(p)
+
+        def _set_to_sorted_int_list(set_name: str) -> List[int]:
+            comp = getattr(self.model, set_name, None)
+            if comp is None:
+                return []
+            try:
+                vals = [int(v) for v in list(comp)]
+            except Exception:
+                vals = []
+            return sorted(vals)
+
+        payload["time_intervals_between_shifts_set"] = _set_to_sorted_int_list("time_intervals_between_shifts_set")
+
+        meal_vals = _set_to_sorted_int_list("time_intervals_mid_shift_meal_set")
+        if not meal_vals:
+            meal_vals = _set_to_sorted_int_list("time_intervals_meal_set")
+        payload["time_intervals_mid_shift_meal_set"] = meal_vals
+
+        maint_vals = _set_to_sorted_int_list("time_intevals_maintenance_set")
+        if not maint_vals:
+            maint_vals = _set_to_sorted_int_list("time_intervals_maintenance_set")
+        payload["time_intevals_maintenance_set"] = maint_vals
+
         out_path = os.path.join(self.path, filename)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)

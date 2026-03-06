@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import MultipleLocator, FixedLocator, FuncFormatter
 from matplotlib.patches import Patch
+import matplotlib.patches as mpatches
 import matplotlib.patheffects as path_effects
 
 plt.rcParams["figure.dpi"] = 120
@@ -301,6 +302,9 @@ class Parameters:
 
         self.pe_i = None
         self.pd_i = None
+        self.between_shifts = []
+        self.meals = []
+        self.maintenance = []
 
         self._load()
 
@@ -375,6 +379,15 @@ class Parameters:
         # (opcional) guarda pe_i / pd_i si los usas en otros reportes
         self.pe_i = data.get("pe_i")
         self.pd_i = data.get("pd_i")
+
+        # -------- intervalos especiales para visualización --------
+        self.between_shifts = sorted(int(v) for v in data.get("time_intervals_between_shifts_set", []))
+
+        meal_raw = data.get("time_intervals_mid_shift_meal_set", data.get("time_intervals_meal_set", []))
+        self.meals = sorted(int(v) for v in meal_raw)
+
+        maint_raw = data.get("time_intevals_maintenance_set", data.get("time_intervals_maintenance_set", []))
+        self.maintenance = sorted(int(v) for v in maint_raw)
 
 # -------------------- Plotter --------------------
 class JSONPlotter:
@@ -580,8 +593,15 @@ class JSONPlotter:
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
             print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
             return
-        start_hour = 9
-        delta_t = float(self.delta_t)
+
+        title_fs = 22
+        axis_label_fs = 16
+        tick_fs = 14
+        legend_fs = 14
+
+        # Asumiendo que el día empieza a las 9:00 AM, tal como en tu imagen
+        start_hour = 9.0
+        dt = float(self.delta_t)
 
         for d in self.days:
             p_day = (self.df_P.query("day == @d")[["interval", "value"]]
@@ -592,31 +612,22 @@ class JSONPlotter:
                             .groupby("interval")["price"].mean()
                             .reindex(self.intervals).ffill().bfill().fillna(0.0))
 
-            if p_day.empty or price_day.empty:
-                continue
+            # Transformar intervalos a arreglo de horas relativas (ej. 0 a 24)
+            times = np.array([(t - 1) * dt for t in self.intervals])
+            pcharge = p_day.values
+            marginal = price_day.values
 
-            first_interval = float(min(self.intervals))
-            times = (np.array(self.intervals, dtype=float) - first_interval) * delta_t
-            times_step = np.append(times, times[-1] + delta_t) + start_hour
-            pcharge_step = np.append(p_day.to_numpy(dtype=float), p_day.iloc[-1])
-            price_step = np.append(price_day.to_numpy(dtype=float), price_day.iloc[-1])
+            # Extender arreglos para que el último escalón cubra el último intervalo correctamente
+            times_step = np.append(times, times[-1] + dt) + start_hour
+            pcharge_step = np.append(pcharge, pcharge[-1])
+            marginal_step = np.append(marginal, marginal[-1])
 
             fig, ax1 = plt.subplots(figsize=(9, 5.6))
 
-            first_i = int(min(self.intervals))
-
-            pause_specs = [
-                ("between_shifts", "#A9A9A9", 0.35, "Between Shifts"),
-                ("meal", "#E5E5E5", 0.45, "Meal"),
-                ("maintenance", "#FFF0F0", 0.60, "Maintenance"),
-            ]
-
-            pause_handles = []
-            for key, color, alpha, label in pause_specs:
-                vals = sorted(set(int(v) for v in self.special_intervals.get(key, []) if int(v) in set(self.intervals)))
+            def _group_consecutive(vals):
+                vals = sorted(set(int(v) for v in vals if int(v) in set(self.intervals)))
                 if not vals:
-                    continue
-
+                    return []
                 groups = []
                 start = vals[0]
                 prev = vals[0]
@@ -628,19 +639,34 @@ class JSONPlotter:
                     start = curr
                     prev = curr
                 groups.append((start, prev))
+                return groups
 
-                for gs, ge in groups:
-                    x0 = start_hour + (gs - first_i) * delta_t
-                    x1 = start_hour + (ge + 1 - first_i) * delta_t
+            # Franjas de fondo usando intervalos exportados en parameters.json
+            between_shifts_intervals = self.params.between_shifts if self.params.between_shifts else self.special_intervals.get("between_shifts", [])
+            meal_intervals = self.params.meals if self.params.meals else self.special_intervals.get("meal", [])
+            maintenance_intervals = self.params.maintenance if self.params.maintenance else self.special_intervals.get("maintenance", [])
+
+            shade_specs = [
+                (between_shifts_intervals, 'darkgray', 0.7),
+                (meal_intervals, 'lightgray', 0.4),
+                (maintenance_intervals, '#ffe6e6', 0.8),
+            ]
+            for intervals_list, color, alpha in shade_specs:
+                for gs, ge in _group_consecutive(intervals_list):
+                    x0 = start_hour + (gs - 1) * dt
+                    x1 = start_hour + ge * dt
                     ax1.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
 
-                pause_handles.append(Patch(facecolor=color, alpha=alpha, edgecolor="none", label=label))
+            # Curvas tipo escalón (step)
+            ax1.step(times_step, pcharge_step, where='post', label='Charge Power', color='blue', linewidth=1.5)
 
-            ax1.step(times_step, pcharge_step, where="post", label="Charge Power", color="#0000FF", linewidth=1.6)
-            ax1.set_ylabel("Charge Power [kW]", color="black")
-            ax1.set_xlabel("Hour")
-            ax1.tick_params(axis="y", labelcolor="black")
-            ax1.set_xlim(times_step[0] - 0.2, times_step[-1] + 0.1)
+            # Formato Eje Y primario (Potencia)
+            ax1.set_ylabel('Charge Power [kW]', color='black', fontsize=axis_label_fs)
+            ax1.set_xlabel('Hour', fontsize=axis_label_fs)
+            ax1.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
+            ax1.set_ylim(0, 2500)
+            ax1.set_xlim(times_step[0], times_step[-1])
+            ax1.grid(False) # Sin grilla, como en la imagen
 
             end = np.ceil(times_step[-1])
             xticks = np.arange(start_hour, end + 1, 4)
@@ -653,33 +679,42 @@ class JSONPlotter:
 
             ax1.xaxis.set_major_formatter(FuncFormatter(hour_formatter))
             ax1.xaxis.set_minor_locator(MultipleLocator(1))
+            ax1.tick_params(axis='x', labelsize=tick_fs)
 
+            # Formato Eje Y secundario (Precio)
             ax2 = ax1.twinx()
-            ax2.step(times_step, price_step, where="post", label="Energy Price", color="#FF0000", linewidth=2.5)
-            ax2.set_ylabel("Energy Price [USD/kWh]", color="black")
-            ax2.tick_params(axis="y", labelcolor="black")
-
-            ax1.set_ylim(0, max(2500.0, float(np.nanmax(pcharge_step)) * 1.05 if len(pcharge_step) else 2500.0))
-            ax2.set_ylim(0, max(0.3, float(np.nanmax(price_step)) * 1.05 if len(price_step) else 0.3))
-
-            month = self._rep_day_label(d)
-            ax1.set_title(f"{month} – Total Charge Power vs Energy Price")
-
-            h1, l1 = ax1.get_legend_handles_labels()
-            h2, l2 = ax2.get_legend_handles_labels()
-            leg = ax1.legend(h1 + h2 + pause_handles, l1 + l2 + [h.get_label() for h in pause_handles],
-                             loc="upper center", ncols=5,
-                             frameon=True, fancybox=False, framealpha=1.0)
-            leg.get_frame().set_edgecolor("#cccccc")
-            leg.get_frame().set_linewidth(1.2)
-            leg.get_frame().set_facecolor("white")
-
-            ax1.grid(False)
+            ax2.step(times_step, marginal_step, where='post', label='Energy Price', color='red', linewidth=1.5)
+            ax2.set_ylabel('Energy Price [USD/kWh]', color='black', fontsize=axis_label_fs)
+            ax2.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
+            ax2.set_ylim(0.0, 0.30)
             ax2.grid(False)
-            fig.tight_layout()
+
+            patch_shifts = mpatches.Patch(color='darkgray', alpha=0.7, label='Between Shifts')
+            patch_meal = mpatches.Patch(color='lightgray', alpha=0.4, label='Meal')
+            patch_maint = mpatches.Patch(color='#ffe6e6', alpha=0.8, label='Maintenance')
+
+            line1 = plt.Line2D([0], [0], color='blue', label='Charge Power')
+            line2 = plt.Line2D([0], [0], color='red', label='Energy Price')
+
+            handles = [line1, line2, patch_shifts, patch_meal, patch_maint]
+
+            # Título dinámico con el mes
+            month = self._rep_day_label(d)
+            fig.suptitle(f"{month} - Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
+
+            # Leyenda superior
+            fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
+                       ncol=3, fontsize=legend_fs, frameon=True)
+
+            plt.tight_layout()
+
+            # Ajustar espacio superior para que quepa la leyenda
+            fig.subplots_adjust(top=0.82)
+
+            # Guardar gráfico
             fig.savefig(
                 os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
-                bbox_inches="tight"
+                bbox_inches="tight", dpi=120
             )
             plt.close(fig)
 
