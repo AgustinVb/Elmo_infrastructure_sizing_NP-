@@ -697,7 +697,7 @@ class JSONPlotter:
                     "Fuel": "#4169E1",
                     "Energy Price": "#3366CC",
                     "Charging": "#3366CC",
-                    "Battery swapping": "#3366CC",
+                    "Battery Swap": "#3366CC",
                     "Inactive": "#B0B0B0",
                     "In-Transit": "#F0BF57",
                 }
@@ -783,7 +783,7 @@ class JSONPlotter:
                         is_charging = not P_filtered.query("interval == @t and value > 1").empty
 
                     if is_swapping:
-                        states.append("Battery swapping")
+                        states.append("Battery Swap")
                     elif is_traveling:
                         states.append("In-Transit")
                     elif is_charging:
@@ -816,7 +816,7 @@ class JSONPlotter:
                         )
 
                 row1_names = [soc_name, "Energy Price"]
-                row2_names = ["Battery swapping", "Inactive", "In-Transit"]
+                row2_names = ["Battery Swap", "Inactive", "In-Transit"]
                 row1_handles = [
                     plt.Line2D([0], [0], color=palette[name], lw=4, label=name)
                     for name in row1_names
@@ -828,28 +828,30 @@ class JSONPlotter:
 
                 legend1 = ax_main.legend(
                     handles=row1_handles,
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, 1.38),
+                    loc="upper left",
+                    bbox_to_anchor=(0.15, 1.27),
                     ncols=len(row1_handles),
                     frameon=True,
-                    fontsize=14,
-                    framealpha=0.85,
+                    fontsize=16,
+                    title_fontsize=17,
+                    framealpha=0.6,
                 )
                 legend2 = ax_main.legend(
                     handles=row2_handles,
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, 1.23),
+                    loc="upper right",
+                    bbox_to_anchor=(0.9, 1.35),
                     ncols=len(row2_handles),
                     frameon=True,
-                    fontsize=12,
+                    fontsize=16,
                     title="Task States",
-                    framealpha=0.85,
+                    title_fontsize=17,
+                    framealpha=0.6,
                 )
                 ax_main.add_artist(legend1)
                 legend_ax.set_xlim(0, 24)
 
-                ax_main.set_ylabel(y_label, fontsize=18, color=soc_color)
-                ax_price.set_ylabel("Energy Price [USD/kWh]", fontsize=18, color=palette["Energy Price"])
+                ax_main.set_ylabel(y_label, fontsize=17, color=soc_color)
+                ax_price.set_ylabel("Energy Price [USD/kWh]", fontsize=17, color=palette["Energy Price"])
                 ax_main.set_ylim(-5, 105)
                 ax_main.yaxis.set_major_locator(MultipleLocator(20.0))
                 ax_main.set_yticks([0, 20, 40, 60, 80, 100])
@@ -865,12 +867,13 @@ class JSONPlotter:
                 ax_task.set_xlim(0, 24)
                 ax_price.set_xlim(0, 24)
 
-                ax_task.set_xlabel("Time", fontsize=16)
+                ax_task.set_xlabel("Time", fontsize=18)
                 ax_task.set_yticks([])
-                ax_task.set_ylabel("Tasks", fontsize=14)
+                ax_task.set_ylabel("Tasks", fontsize=18)
 
-                ax_main.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=14)
-                ax_price.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=14)
+                ax_main.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=16)
+                ax_price.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=16)
+                ax_task.tick_params(axis="x", labelsize=15.5)
                 ax_main.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False, labeltop=False)
                 ax_price.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False, labeltop=False)
                 ax_main.grid(False)
@@ -880,7 +883,7 @@ class JSONPlotter:
                 ax_task.grid(False)
 
                 month = self._rep_day_label(day)
-                fig.suptitle(f"LHD {lhd} {month}", y=0.96, fontsize=14)
+                fig.suptitle(f"LHD {lhd} {month}", y=0.96, fontsize=18)
 
                 fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
