@@ -480,6 +480,38 @@ class JSONPlotter:
                 return f"{day_of_month} {month_name}"
             cum += ml
         return f"Day {d}"
+
+    def _season_label(self, d: int) -> str:
+        """
+        Devuelve estación del año para el día d (hemisferio sur):
+        Summer, Autumn, Winter, Spring.
+        """
+        try:
+            di = int(d)
+        except Exception:
+            return ""
+
+        if self.days and max(self.days) <= 12:
+            month = di
+        else:
+            min_day = min(self.days) if self.days else 1
+            day_of_year = ((di - min_day) % 365) + 1
+            month_lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            cum = 0
+            month = 1
+            for m, ml in enumerate(month_lengths, start=1):
+                if day_of_year <= cum + ml:
+                    month = m
+                    break
+                cum += ml
+
+        if month in (12, 1, 2):
+            return "Summer"
+        if month in (3, 4, 5):
+            return "Autumn"
+        if month in (6, 7, 8):
+            return "Winter"
+        return "Spring"
     
     # -------------------- NUEVO MÉTODO DE TIEMPO FIJO --------------------
     def _get_fixed_time_ticks(self, mode="interval"):
@@ -940,28 +972,30 @@ class JSONPlotter:
 
                 legend1 = ax_main.legend(
                     handles=row1_handles,
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, 1.38),
+                    loc="upper left",
+                    bbox_to_anchor=(0.15, 1.27),
                     ncols=len(row1_handles),
                     frameon=True,
-                    fontsize=14,
-                    framealpha=0.85,
+                    fontsize=16,
+                    title_fontsize=17,
+                    framealpha=0.6,
                 )
                 legend2 = ax_main.legend(
                     handles=row2_handles,
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, 1.23),
+                    loc="upper right",
+                    bbox_to_anchor=(0.9, 1.35),
                     ncols=len(row2_handles),
                     frameon=True,
-                    fontsize=12,
+                    fontsize=16,
                     title="Task States",
-                    framealpha=0.85,
+                    title_fontsize=17,
+                    framealpha=0.6,
                 )
                 ax_main.add_artist(legend1)
                 legend_ax.set_xlim(0, 24)
 
-                ax_main.set_ylabel(y_label, fontsize=18, color=soc_color)
-                ax_price.set_ylabel("Energy Price [USD/kWh]", fontsize=18, color=palette["Energy Price"])
+                ax_main.set_ylabel(y_label, fontsize=17, color=soc_color)
+                ax_price.set_ylabel("Energy Price [USD/kWh]", fontsize=17, color=palette["Energy Price"])
                 ax_main.set_ylim(-5, 105)
                 ax_main.yaxis.set_major_locator(MultipleLocator(20.0))
                 ax_main.set_yticks([0, 20, 40, 60, 80, 100])
@@ -977,12 +1011,13 @@ class JSONPlotter:
                 ax_task.set_xlim(0, 24)
                 ax_price.set_xlim(0, 24)
 
-                ax_task.set_xlabel("Time", fontsize=16)
+                ax_task.set_xlabel("Time", fontsize=18)
                 ax_task.set_yticks([])
-                ax_task.set_ylabel("Tasks", fontsize=14)
+                ax_task.set_ylabel("Tasks", fontsize=18)
 
-                ax_main.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=14)
-                ax_price.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=14)
+                ax_main.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=16)
+                ax_price.tick_params(labelbottom=False, bottom=False, axis="y", labelsize=16)
+                ax_task.tick_params(axis="x", labelsize=15.5)
                 ax_main.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False, labeltop=False)
                 ax_price.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False, labeltop=False)
                 ax_main.grid(False)
@@ -992,7 +1027,9 @@ class JSONPlotter:
                 ax_task.grid(False)
 
                 month = self._rep_day_label(day)
-                fig.suptitle(f"LHD {lhd} {month}", y=0.96, fontsize=14)
+                season = self._season_label(day)
+                season_txt = f" ({season})" if season else ""
+                fig.suptitle(f"LHD {lhd} {month}{season_txt}", y=0.96, fontsize=18)
 
                 fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
