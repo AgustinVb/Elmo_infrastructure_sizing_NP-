@@ -574,9 +574,9 @@ def calculate_charged_energy_from_sv(root: Path) -> Tuple[float, Dict[str, float
 
 def calculate_real_charged_energy_from_swaps(
     root: Path,
-    charge_intervals: int = 6,
-    soc_base: float = 0.20,
-    eps: float = 1e-9,
+    charge_intervals: Optional[int] = None,
+    soc_base: Optional[float] = None,
+    eps: Optional[float] = None,
 ) -> Tuple[float, Dict[str, float], List[Dict[str, Any]]]:
     """
         Energía cargada real por evento de swap hasta 100%:
@@ -607,11 +607,55 @@ def calculate_real_charged_energy_from_swaps(
     b_data = load_json(b_path)
     params_data = load_json(params_path)
 
+    if eps is None:
+        try:
+            eps = float(params_data.get("eps", 1e-9))
+        except Exception:
+            eps = 1e-9
+
+    delta_t = float(params_data.get("delta_t", 0.0))
+
+    if charge_intervals is None:
+        t_charge_raw = params_data.get("t_charge")
+        resolved_intervals: Optional[int] = None
+        try:
+            if t_charge_raw is not None:
+                resolved_intervals = int(round(float(t_charge_raw)))
+        except Exception:
+            resolved_intervals = None
+
+        if resolved_intervals is None and delta_t > 0:
+            t_swap_raw = params_data.get("t_swap", {}).get("_1", {})
+            if isinstance(t_swap_raw, dict) and t_swap_raw:
+                vals = []
+                for v in t_swap_raw.values():
+                    try:
+                        vals.append(float(v))
+                    except Exception:
+                        continue
+                if vals:
+                    resolved_intervals = int(round(sum(vals) / len(vals) / delta_t))
+
+        charge_intervals = resolved_intervals if (resolved_intervals is not None and resolved_intervals > 0) else 6
+
+    if soc_base is None:
+        bmin_raw = params_data.get("bmin_b", {}).get("_1", {})
+        resolved_soc: Optional[float] = None
+        if isinstance(bmin_raw, dict) and bmin_raw:
+            vals = []
+            for v in bmin_raw.values():
+                try:
+                    vals.append(float(v))
+                except Exception:
+                    continue
+            if vals:
+                resolved_soc = min(vals)
+        soc_base = resolved_soc if resolved_soc is not None else 0.20
+
     # Referencia análoga a la función objetivo: sum(Sv * p_charger * delta_t)
     sv_energy_total, _ = calculate_charged_energy_from_sv(root)
 
     p_charger = float(params_data.get("p_charger", 0.0))
-    delta_t = float(params_data.get("delta_t", 0.0))
     bmax_raw = params_data.get("bmax_b", {}).get("_1", {})
 
     # Mapa B[i][d][t] -> nivel de energía (kWh)
@@ -839,8 +883,6 @@ def main() -> None:
             try:
                 real_swap_energy_kwh, real_swap_meta, real_swap_details = calculate_real_charged_energy_from_swaps(
                     root,
-                    charge_intervals=6,
-                    soc_base=0.20,
                     eps=args.eps,
                 )
             except Exception:
@@ -949,6 +991,7 @@ def main() -> None:
         if costs:
             rows = [
                 ["Costo energía carga (USD)", f"{costs['energy_cost']:.2f}"],
+                ["Costo energía carga real (USD)", f"{costs.get('real_energy_cost', 0.0):.2f}"],
                 ["Costo inversión (USD)", f"{costs['investment_cost']:.2f}"],
                 ["Costo penalidad (USD)", f"{costs['penalty_cost']:.2f}"],
                 ["COSTO TOTAL (USD)", f"{costs['total_cost']:.2f}"],
@@ -981,10 +1024,10 @@ def calculate_lhd_charge_cost(root: Path) -> float:
     sv_data = load_json(sv_path)
     params_data = load_json(params_path)
     
-    delta_t = params_data.get("delta_t", 0.5)
-    p_charger = params_data.get("p_charger", 353.0)  # potencia del cargador
+    delta_t = params_data.get("delta_t")
+    p_charger = params_data.get("p_charger")  # potencia del cargador
     costo_electricidad = params_data.get("costo_electricidad", {})
-    scaling_factor = params_data.get("scaling_factor_op_cost", 1.0)
+    scaling_factor = params_data.get("scaling_factor_op_cost")
     
     total_cost = 0.0
     
@@ -1123,9 +1166,9 @@ def calculate_penalty_cost(root: Path) -> float:
     params_data = load_json(params_path)
     f_seg_data = load_json(f_seg_path)
     
-    voll = float(params_data.get("Voll", 0.0))
+    voll = float(params_data.get("Voll"))
     f_penalty_div = params_data.get("F_penalty_div", {})
-    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost"))
     
     total_penalty = 0.0
     
@@ -1164,6 +1207,53 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     except Exception as ex:
         print(f"Advertencia al calcular costo de energía: {ex}")
         energy_cost = 0.0
+
+    # Costo de energía "real":
+    # - Si costo es fijo: E_real * costo_fijo * scaling_factor_op_cost
+    # - Si costo es variable: energy_cost - (delta_E * costo_min * scaling_factor_op_cost)
+    #   asumiendo que el delta de energía se habría cargado al menor costo.
+    real_energy_cost = 0.0
+    try:
+        real_swap_energy_kwh, real_swap_meta, _ = calculate_real_charged_energy_from_swaps(root)
+        sv_energy_total_kwh = float(real_swap_meta.get("sv_energy_total_kwh", 0.0))
+
+        params_path = find_json_in_folder(root, "parameters.json")
+        if not params_path or is_effectively_empty_json(params_path):
+            raise ValueError("No se encontró parameters.json para costo fijo")
+
+        params_data = load_json(params_path)
+        scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+
+        costo_electricidad = params_data.get("costo_electricidad", {})
+        fixed_candidates: List[float] = []
+        if isinstance(costo_electricidad, dict) and isinstance(costo_electricidad.get("_1"), dict):
+            for day_data in costo_electricidad["_1"].values():
+                if not isinstance(day_data, dict):
+                    continue
+                t_map = day_data.get("_2", {})
+                if not isinstance(t_map, dict):
+                    continue
+                for v in t_map.values():
+                    try:
+                        fixed_candidates.append(float(v))
+                    except Exception:
+                        continue
+
+        if not fixed_candidates:
+            raise ValueError("No hay valores en costo_electricidad para costo fijo")
+
+        c_min = min(fixed_candidates)
+        c_max = max(fixed_candidates)
+        is_fixed_cost = abs(c_max - c_min) <= 1e-12
+
+        if is_fixed_cost:
+            real_energy_cost = float(real_swap_energy_kwh) * c_min * scaling_factor
+        else:
+            delta_energy_kwh = sv_energy_total_kwh - float(real_swap_energy_kwh)
+            real_energy_cost = max(0.0, float(energy_cost) - delta_energy_kwh * c_min * scaling_factor)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de energía real: {ex}")
+        real_energy_cost = 0.0
     
     try:
         investment_cost = calculate_investment_cost(root)
@@ -1181,6 +1271,7 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     
     return {
         "energy_cost": energy_cost,
+        "real_energy_cost": real_energy_cost,
         "investment_cost": investment_cost,
         "penalty_cost": penalty_cost,
         "total_cost": total_cost,

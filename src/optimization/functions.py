@@ -289,12 +289,14 @@ class ConstraintRules(OptRules):
 
     def state_unique_elhd_swap(self, model, i, d, t):
         nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not nodes:
             return pyo.Constraint.Skip
-        return model.Z[i, d, t] + sum(model.Y[i, j, d, t] for j in nodes) == 1
+        return model.Z[i, d, t] + sum(model.Y[i, j, d, t] for j in nodes) + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
 
     def between_shifts_elhd_swap(self, model, i, d, t):
-        return model.Z[i, d, t]  == 1
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
+        return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
 
     # ==========================================================
     # 2) Energía y SOC de batería (swap)
@@ -365,12 +367,12 @@ class ConstraintRules(OptRules):
 
         term_de = sum(model.Y[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i]
                   for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
-    
+
         pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
                   for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
-    
+
         return term_de - pen + model.F[j, d] >= target
-    
+
     def aux_zpen_1(self, model, i, j, d, t):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
@@ -384,9 +386,8 @@ class ConstraintRules(OptRules):
         return model.Z_pen[i, j ,d, t] <= sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) - model.Y[i, j ,d, t] + 1
 
     def aux_zpen_3(self, model, i, j , d, t):
-        return model.Z_pen[i, j ,d, t] <= model.Y[i, j ,d, t]    
- 
-
+        return model.Z_pen[i, j ,d, t] <= model.Y[i, j ,d, t]
+    
     def daily_extraction_M(self, model, i, j, d):
         """
         M[i,d] = extracción total del equipo i en el día d.
