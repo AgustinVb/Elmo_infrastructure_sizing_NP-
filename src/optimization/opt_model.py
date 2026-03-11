@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import threading
+import json
 from contextlib import redirect_stdout
 
 import pyomo.environ as pyo
@@ -21,6 +22,76 @@ from src.optimization.functions import (
 
 
 class OptModel(object):
+
+    def _load_y_warmstart(self, y_init_path):
+        if not y_init_path:
+            return
+
+        if not os.path.exists(y_init_path):
+            print(f"⚠️ Warm start Y no encontrado: {y_init_path}")
+            return
+
+        try:
+            with open(y_init_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"⚠️ No se pudo leer warm start Y: {e}")
+            return
+
+        d_root = data.get("d", {}) if isinstance(data, dict) else {}
+        if not isinstance(d_root, dict):
+            print("⚠️ Warm start Y con formato no soportado (falta raíz 'd').")
+            return
+
+        loaded = 0
+        skipped = 0
+
+        for lhd, lhd_block in d_root.items():
+            if not isinstance(lhd_block, dict):
+                continue
+            t_nodes = lhd_block.get("t", {})
+            if not isinstance(t_nodes, dict):
+                continue
+
+            for node, node_block in t_nodes.items():
+                if not isinstance(node_block, dict):
+                    continue
+                day_map = node_block.get("i", {})
+                if not isinstance(day_map, dict):
+                    continue
+
+                for day_key, day_block in day_map.items():
+                    if not isinstance(day_block, dict):
+                        continue
+                    interval_map = day_block.get("j", {})
+                    if not isinstance(interval_map, dict):
+                        continue
+
+                    try:
+                        day = int(float(day_key))
+                    except Exception:
+                        skipped += 1
+                        continue
+
+                    for interval_key, val in interval_map.items():
+                        try:
+                            t = int(float(interval_key))
+                            v = float(val)
+                        except Exception:
+                            skipped += 1
+                            continue
+
+                        if v < 0.5:
+                            continue
+
+                        idx = (lhd, str(node), day, t)
+                        if idx in self.model.Y:
+                            self.model.Y[idx].value = 1.0
+                            loaded += 1
+                        else:
+                            skipped += 1
+
+        print(f"✔ Warm start Y cargado desde '{y_init_path}': {loaded} valores, {skipped} omitidos")
 
     def build_model(self):
         model = pyo.ConcreteModel()
@@ -74,7 +145,7 @@ class OptModel(object):
             except Exception as e:
                 print("⚠️ Could not read log file for summary:", e)
 
-    def __init__(self, mine_system, time_series, output_folder):
+    def __init__(self, mine_system, time_series, output_folder, y_init_path=None):
         self.output_folder   = output_folder
         self.time_series     = time_series
         self.mine_system     = mine_system
@@ -85,6 +156,7 @@ class OptModel(object):
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        self._load_y_warmstart(y_init_path)
 
     def solve_model(self, gap, solvername, timelimit=172800): 
         # Log file now in output folder to avoid conflicts
@@ -116,7 +188,7 @@ class OptModel(object):
             opt.options['Presolve']     = 2      
             opt.options['FlowCoverCuts'] = 2
             try:
-                result = opt.solve(self.model, tee=True, load_solutions=True)
+                result = opt.solve(self.model, tee=True, load_solutions=True, warmstart=True)
                 self.solution_status = result.solver.termination_condition
             except KeyboardInterrupt:
                 print("\n🛑 ¡Interrupción manual detectada! Intentando recuperar la mejor solución hasta ahora...")

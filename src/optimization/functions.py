@@ -372,18 +372,21 @@ class ConstraintRules(OptRules):
         return term_de - pen + model.F[j, d] >= target
     
     def aux_zpen_1(self, model, i, j, d, t):
+        # Z_pen >= Z_swap + Y - 1  →  fuerza Z_pen=1 cuando Y=1 y Σ Z_swap=1
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        return sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) - model.Y[i, j ,d, t] - 1 <= model.Z_pen[i, j ,d, t]
+        return sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) + model.Y[i, j ,d, t] - 1 <= model.Z_pen[i, j ,d, t]
 
     def aux_zpen_2(self, model, i, j, d, t):
+        # Z_pen <= Σ Z_swap  →  Z_pen=0 cuando no hay swap
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        return model.Z_pen[i, j ,d, t] <= sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) - model.Y[i, j ,d, t] + 1
+        return model.Z_pen[i, j ,d, t] <= sum(model.Z_swap[k, i ,d, t] for k in valid_k_list)
 
     def aux_zpen_3(self, model, i, j , d, t):
+        # Z_pen <= Y  →  Z_pen=0 cuando no hay viaje
         return model.Z_pen[i, j ,d, t] <= model.Y[i, j ,d, t]    
  
 
