@@ -392,16 +392,24 @@ class ConstraintRules(OptRules):
 
     def daily_extraction_M(self, model, i, j, d):
         """
-        M[i,d] = extracción total del equipo i en el día d.
+        M[i,j,d] = extracción total del equipo i al nodo j en el día d,
+        descontando la producción perdida por swaps simultáneos (Z_pen).
         Misma unidad que el término de producción (g_i * n_trips * f_i).
         """
         term = sum(
             model.Y[i2, j2, d2, t2] * model.g_i[i2]
             * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y
+            for (i2, j2, d2, t2) in model.Y_INDEX
             if i2 == i and d2 == d and j2 == j
         )
-        return model.M[i, j, d] == term
+        pen = sum(
+            model.Z_pen[i2, j2, d2, t2] * model.g_i[i2]
+            * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
+            * (model.t_swap[i2] / model.delta_t)
+            for (i2, j2, d2, t2) in model.Y_INDEX
+            if i2 == i and d2 == d and j2 == j
+        )
+        return model.M[i, j, d] == term - pen
 
     # --------------------------
     # Penalización por tramos (piecewise) para F
@@ -525,21 +533,6 @@ class ConstraintRules(OptRules):
         t0 = self.time_series.get_time_intervals()[0]
         return model.S[k, d, t0] + model.X_dch[k, d, t0] == model.N_batteries[k]
 
-    def all_batteries_charged_start(self, model, k, d):
-        t0 = self.time_series.get_time_intervals()[0]
-        return model.S[k, d, t0] == model.N_batteries[k]
-
-    def all_batteries_charged_end(self, model, k, d):
-        tf = self.time_series.get_time_intervals()[-1]
-        return model.S[k, d, tf] == model.N_batteries[k]
-
-    def no_discharged_batteries_start(self, model, k, d):
-        t0 = self.time_series.get_time_intervals()[0]
-        return model.X_dch[k, d, t0] == 0
-
-    def no_discharged_batteries_end(self, model, k, d):
-        tf = self.time_series.get_time_intervals()[-1]
-        return model.X_dch[k, d, tf] == 0
 
     # ==========================================================
     # 6) Pausas operacionales
