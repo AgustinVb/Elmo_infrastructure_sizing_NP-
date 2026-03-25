@@ -20,6 +20,7 @@ from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+import pyomo.environ as pyo
 from pyomo.environ import Var, Param, Constraint, value
 # (No usamos pandas)
 
@@ -305,32 +306,34 @@ class Printer:
 
         return tree
 
+    def _set_payload(self, s) -> Any:
+        try:
+            dimen = s.dimen
+        except Exception:
+            dimen = None
+
+        values = list(s)
+        if not values:
+            return []
+
+        if dimen in (None, 1):
+            return [_coerce_json_val(v) for v in values]
+
+        tree: Dict[str, Any] = {}
+        for key in values:
+            key_tuple = key if isinstance(key, tuple) else (key,)
+            key_path: List[str] = []
+            for i, v in enumerate(key_tuple):
+                key_path.extend([f"_{i+1}", str(v)])
+            _insert_nested(tree, key_path, True)
+        return tree
+
     def write_parameters_json(self, filename: str = "parameters.json") -> None:
         payload: Dict[str, Any] = {}
         for p in self.model.component_objects(Param, active=True):
             payload[str(p.name)] = self._param_payload(p)
-
-        def _set_to_sorted_int_list(set_name: str) -> List[int]:
-            comp = getattr(self.model, set_name, None)
-            if comp is None:
-                return []
-            try:
-                vals = [int(v) for v in list(comp)]
-            except Exception:
-                vals = []
-            return sorted(vals)
-
-        payload["time_intervals_between_shifts_set"] = _set_to_sorted_int_list("time_intervals_between_shifts_set")
-
-        meal_vals = _set_to_sorted_int_list("time_intervals_mid_shift_meal_set")
-        if not meal_vals:
-            meal_vals = _set_to_sorted_int_list("time_intervals_meal_set")
-        payload["time_intervals_mid_shift_meal_set"] = meal_vals
-
-        maint_vals = _set_to_sorted_int_list("time_intevals_maintenance_set")
-        if not maint_vals:
-            maint_vals = _set_to_sorted_int_list("time_intervals_maintenance_set")
-        payload["time_intevals_maintenance_set"] = maint_vals
+        for s in self.model.component_objects(pyo.Set, active=True):
+            payload[str(s.name)] = self._set_payload(s)
 
         out_path = os.path.join(self.path, filename)
         with open(out_path, "w", encoding="utf-8") as f:

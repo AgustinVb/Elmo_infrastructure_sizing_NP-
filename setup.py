@@ -45,12 +45,21 @@ def main():
     parser.add_argument('--series', default='time_series.xlsx')
     parser.add_argument('--output_folder', default='output/')
     parser.add_argument('--solver', default='glpk')
+    parser.add_argument('--warm_start_folder', default=None)
 
-    series, mine_system, time_series = build_mine(parser.parse_args())
+    args = parser.parse_args()
+    series, mine_system, time_series = build_mine(args)
     gap= 1/100;
-    solver_name=parser.parse_args().solver
-    output_folder=parser.parse_args().output_folder
-    opt = OptimizationModel(mine_system, time_series, gap, solver_name, output_folder)
+    solver_name=args.solver
+    output_folder=args.output_folder
+    opt = OptimizationModel(
+        mine_system,
+        time_series,
+        gap,
+        solver_name,
+        output_folder,
+        warm_start_folder=args.warm_start_folder,
+    )
 
 
 if __name__ == '__main__':

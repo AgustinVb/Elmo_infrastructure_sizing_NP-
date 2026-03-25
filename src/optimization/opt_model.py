@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 import threading
 import signal
 import atexit
@@ -27,8 +28,13 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None):
         self.output_folder   = output_folder
+        os.makedirs(self.output_folder, exist_ok=True)
+        self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
+        self.infeasible_log_path = os.path.join(self.output_folder, "infeasible_log.txt")
+        self.warm_start_folder = warm_start_folder
+        self.has_warm_start = False
         self.set_builder      = OptSets(mine_system, time_series)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
@@ -36,6 +42,8 @@ class OptModel(object):
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        if self.warm_start_folder:
+            self.load_warm_start(self.warm_start_folder)
         
         # No guardar archivos del modelo formulado
         # self.save_formulated_model()
@@ -61,6 +69,94 @@ class OptModel(object):
         self.objective_rules.build_objective(model)
 
         return model
+
+    def _normalize_warm_token(self, value):
+        try:
+            number = float(value)
+            if abs(number - round(number)) < 1e-9:
+                return str(int(round(number)))
+            return format(number, ".15g")
+        except Exception:
+            return str(value)
+
+    def _flatten_warm_start_json(self, node, collected=None, expect_axis=True):
+        if collected is None:
+            collected = []
+
+        if isinstance(node, dict):
+            if expect_axis:
+                for _, next_node in node.items():
+                    yield from self._flatten_warm_start_json(next_node, collected, expect_axis=False)
+            else:
+                for actual_value, next_node in node.items():
+                    yield from self._flatten_warm_start_json(next_node, collected + [actual_value], expect_axis=True)
+            return
+
+        yield collected, node
+
+    def load_warm_start(self, warm_start_folder):
+        folder = Path(warm_start_folder)
+        if not folder.exists():
+            print(f"⚠️ Warm start folder no existe: {folder}")
+            return
+
+        total_loaded = 0
+        loaded_by_var = {}
+
+        for var_comp in self.model.component_objects(pyo.Var, active=True):
+            json_path = folder / f"{var_comp.name}.json"
+            if not json_path.exists():
+                continue
+
+            try:
+                payload = json.loads(json_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                print(f"⚠️ No se pudo leer warm start de {json_path.name}: {exc}")
+                continue
+
+            count = 0
+            if var_comp.is_indexed():
+                index_lookup = {}
+                for idx in var_comp:
+                    idx_tuple = idx if isinstance(idx, tuple) else (idx,)
+                    normalized = tuple(self._normalize_warm_token(v) for v in idx_tuple)
+                    index_lookup[normalized] = idx
+
+                for tokens, raw_value in self._flatten_warm_start_json(payload):
+                    normalized_tokens = tuple(self._normalize_warm_token(v) for v in tokens)
+                    if normalized_tokens not in index_lookup:
+                        continue
+                    try:
+                        vardata = var_comp[index_lookup[normalized_tokens]]
+                        value_to_set = float(raw_value)
+                        if vardata.is_binary() or vardata.is_integer():
+                            value_to_set = int(round(value_to_set))
+                        vardata.set_value(value_to_set, skip_validation=True)
+                        count += 1
+                    except Exception:
+                        continue
+            else:
+                try:
+                    value_to_set = float(payload)
+                    vardata = var_comp
+                    if vardata.is_binary() or vardata.is_integer():
+                        value_to_set = int(round(value_to_set))
+                    vardata.set_value(value_to_set, skip_validation=True)
+                    count = 1
+                except Exception:
+                    count = 0
+
+            if count:
+                loaded_by_var[var_comp.name] = count
+                total_loaded += count
+
+        self.has_warm_start = total_loaded > 0
+        if self.has_warm_start:
+            print(f"🔥 Warm start cargado desde {folder}")
+            for var_name, count in sorted(loaded_by_var.items()):
+                print(f"   - {var_name}: {count} valores")
+        else:
+            print(f"⚠️ No se cargaron valores útiles desde warm start: {folder}")
 
     def limited_infeasible_log(self, model, timeout=60, log_file="infeasible_log.txt"):
         def target():
@@ -95,7 +191,7 @@ class OptModel(object):
                 print("⚠️ Could not read log file for summary:", e)
 
     def solve_model(self, gap, solvername, timelimit=172800): 
-        log_file = "ELMO_log.txt"
+        log_file = self.gurobi_log_path
         if os.path.exists(log_file):
             os.remove(log_file)
 
@@ -140,7 +236,10 @@ class OptModel(object):
         
         # --- Bloque de seguridad para interrupción manual ---
         try:
-            result = opt.solve(self.model, tee=True, load_solutions=True)
+            solve_kwargs = {"tee": True, "load_solutions": True}
+            if solvername == 'gurobi' and self.has_warm_start:
+                solve_kwargs["warmstart"] = True
+            result = opt.solve(self.model, **solve_kwargs)
             self.solution_status = result.solver.termination_condition
             
         except KeyboardInterrupt:
@@ -190,11 +289,11 @@ class OptModel(object):
                 # -----------------------------------
             else:
                 print("⚠️ Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
-                self.limited_infeasible_log(self.model)
+                self.limited_infeasible_log(self.model, log_file=self.infeasible_log_path)
 
         else:
             print(f"⚠️ Termination condition: {self.solution_status}")
-            self.limited_infeasible_log(self.model, timeout=60, log_file="infeasible_log.txt")
+            self.limited_infeasible_log(self.model, timeout=60, log_file=self.infeasible_log_path)
 
         try:
             if 'result' in locals() and hasattr(result.solver, 'relative_gap'):
