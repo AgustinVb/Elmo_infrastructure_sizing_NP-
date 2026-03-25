@@ -5,12 +5,12 @@ from src.io.printer import Printer
 
 class OptimizationModel(object):
     def __init__(self, mine_system, time_series, gap,
-                 solver_name, output_folder):
+                 solver_name, output_folder, warm_start_folder=None):
 
         t0 = time.time()
 
         # 1) Construye y resuelve el modelo
-        self.opt_model = OptModel(mine_system, time_series, output_folder)
+        self.opt_model = OptModel(mine_system, time_series, output_folder, warm_start_folder=warm_start_folder)
         print('formulation time:', time.time() - t0)
         self.opt_model.solve_model(gap, solver_name)
 
