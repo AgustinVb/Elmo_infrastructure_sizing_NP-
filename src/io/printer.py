@@ -185,9 +185,9 @@ class Printer:
 
         self.var_index_schema: Dict[str, List[str]] = {
             "Z":        ["d", "t", "i"],
-            "Z_charge": ["k","d", "t", "i"],
+            "Z_charge": ["k", "i", "d", "t"],
             "Y":        ["d", "t", "i", "j"],
-            "P":        ["d", "t", "i"],
+            "P":        ["k", "i", "d", "t"],
             "B":        ["d", "t", "i"],
             "N_chargers": ["k"],
             "X":         ["k"],
@@ -196,14 +196,14 @@ class Printer:
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["d", "t", "i"],
-            "Z_charge": ["k","d", "t", "i"],
+            "Z_charge": ["k", "i", "d", "t"],
             "Y":        ["d", "t", "i", "j"],
-            "P":        ["d", "t", "i"],
+            "P":        ["k", "i", "d", "t"],
             "B":        ["d", "t", "i"],
             "N_chargers": ["k"],
             "X":         ["k"],
-            "StartCharge": ["d", "t", "i", "k"],
-            "EndCharge":   ["d", "t", "i", "k"],
+            "StartCharge": ["k", "i", "d", "t"],
+            "EndCharge":   ["k", "i", "d", "t"],
         }
 
         self.float_tol: float = 1e-9
