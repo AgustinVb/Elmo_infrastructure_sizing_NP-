@@ -369,36 +369,79 @@ def calculate_lhd_charge_cost(root: Path) -> float:
     p_data = load_json(p_path)
     params_data = load_json(params_path)
     
-    delta_t = params_data.get("delta_t", 0.5)
+    delta_t = params_data.get("dt", params_data.get("delta_t", 0.5))
     costo_marginal = params_data.get("costo_marginal", {})
     scaling_factor = params_data.get("scaling_factor_op_cost", 1.0)
     
     total_cost = 0.0
     
-    # Iterar sobre las estaciones en P.json
-    if "d" in p_data and isinstance(p_data["d"], dict):
-        for station_id, station_data in p_data["d"].items():
-            if "t" in station_data and isinstance(station_data["t"], dict):
-                for lhd_id, lhd_data in station_data["t"].items():
-                    if "i" in lhd_data and isinstance(lhd_data["i"], dict):
-                        for day_key, day_data in lhd_data["i"].items():
-                            if isinstance(day_data, dict):
-                                for time_key, time_data in day_data.items():
-                                    if isinstance(time_data, dict):
-                                        for t_str, power in time_data.items():
-                                            try:
-                                                # Obtener costo marginal correspondiente
-                                                cost = 1.0  # valor por defecto
-                                                if "_1" in costo_marginal:
-                                                    cm_lhd = costo_marginal["_1"].get(lhd_id, {})
-                                                    if "_2" in cm_lhd:
-                                                        cm_day = cm_lhd["_2"].get(day_key, {})
-                                                        if "_3" in cm_day:
-                                                            cost = cm_day["_3"].get(t_str, 1.0)
-                                                
-                                                total_cost += float(power) * float(cost) * delta_t
-                                            except (ValueError, TypeError):
-                                                continue
+    # Estructura esperada: k -> station -> i -> lhd -> d -> day -> t -> interval
+    if "k" in p_data and isinstance(p_data["k"], dict):
+        for station_data in p_data["k"].values():
+            if not isinstance(station_data, dict):
+                continue
+            lhd_block = station_data.get("i", {})
+            if not isinstance(lhd_block, dict):
+                continue
+            for lhd_id, lhd_data in lhd_block.items():
+                if not isinstance(lhd_data, dict):
+                    continue
+                day_block = lhd_data.get("d", {})
+                if not isinstance(day_block, dict):
+                    continue
+                for day_key, day_data in day_block.items():
+                    if not isinstance(day_data, dict):
+                        continue
+                    time_block = day_data.get("t", {})
+                    if not isinstance(time_block, dict):
+                        continue
+                    for t_str, power in time_block.items():
+                        try:
+                            cost = 1.0
+                            if "_1" in costo_marginal:
+                                cm_lhd = costo_marginal["_1"].get(lhd_id, {})
+                                if "_2" in cm_lhd:
+                                    cm_day = cm_lhd["_2"].get(str(day_key), {})
+                                    if "_3" in cm_day:
+                                        cost = cm_day["_3"].get(str(t_str), 1.0)
+
+                            total_cost += float(power) * float(cost) * float(delta_t)
+                        except (ValueError, TypeError):
+                            continue
+
+    # Compatibilidad con estructura antigua: d -> station -> t -> lhd -> i -> day -> ? -> interval
+    elif "d" in p_data and isinstance(p_data["d"], dict):
+        for station_data in p_data["d"].values():
+            if not isinstance(station_data, dict):
+                continue
+            t_block = station_data.get("t", {})
+            if not isinstance(t_block, dict):
+                continue
+            for lhd_id, lhd_data in t_block.items():
+                if not isinstance(lhd_data, dict):
+                    continue
+                i_block = lhd_data.get("i", {})
+                if not isinstance(i_block, dict):
+                    continue
+                for day_key, day_data in i_block.items():
+                    if not isinstance(day_data, dict):
+                        continue
+                    for time_data in day_data.values():
+                        if not isinstance(time_data, dict):
+                            continue
+                        for t_str, power in time_data.items():
+                            try:
+                                cost = 1.0
+                                if "_1" in costo_marginal:
+                                    cm_lhd = costo_marginal["_1"].get(lhd_id, {})
+                                    if "_2" in cm_lhd:
+                                        cm_day = cm_lhd["_2"].get(str(day_key), {})
+                                        if "_3" in cm_day:
+                                            cost = cm_day["_3"].get(str(t_str), 1.0)
+
+                                total_cost += float(power) * float(cost) * float(delta_t)
+                            except (ValueError, TypeError):
+                                continue
     
     return total_cost * scaling_factor
 
