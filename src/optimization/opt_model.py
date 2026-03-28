@@ -2,10 +2,10 @@ import os
 import sys
 import time
 import json
+import logging
 import threading
 import signal
 import atexit
-from contextlib import redirect_stdout
 from pathlib import Path
 
 import pyomo.environ as pyo
@@ -13,8 +13,6 @@ from pyomo.environ import SolverFactory, value
 from pyomo.core.base import Suffix
 from pyomo.opt import TerminationCondition
 from pyomo.util.infeasible import log_infeasible_constraints
-
-from gurobipy import GRB, read as grb_read
 
 from src.optimization.functions import (
     OptSets,
@@ -158,15 +156,68 @@ class OptModel(object):
         else:
             print(f"⚠️ No se cargaron valores útiles desde warm start: {folder}")
 
+    def _build_infeasible_logger(self, log_file):
+        logger_name = f"infeasible_logger_{id(self)}"
+        logger = logging.getLogger(logger_name)
+        logger.handlers.clear()
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+        return logger, handler
+
+    def _configure_solver(self, solvername, gap, timelimit, log_file):
+        if solvername == 'glpk':
+            solverpath_folder = 'C:\\glpk\\w64'
+            if solverpath_folder not in sys.path:
+                sys.path.append(solverpath_folder)
+            opt = SolverFactory('glpk', tee=True)
+            opt.options['mipgap'] = gap
+            return opt
+
+        if solvername == 'gurobi':
+            self.model.branch_priority = Suffix(direction=Suffix.EXPORT, datatype=Suffix.INT)
+            opt = SolverFactory('gurobi', solver_io="python")
+            opt.options['OutputFlag'] = 1
+            opt.options['LogToConsole'] = 1
+            opt.options['MIPGap'] = gap
+            opt.options['LogFile'] = log_file
+            opt.options['Threads'] = 24
+            opt.options['Heuristics'] = 0.5
+            opt.options['MIPFocus'] = 3
+            opt.options['Presolve'] = 2
+            opt.options['FlowCoverCuts'] = 2
+            opt.options['TimeLimit'] = timelimit
+            return opt
+
+        raise ValueError(f"Solver no soportado: {solvername}")
+
+    def _find_fallback_solver(self):
+        for candidate in ['highs', 'cbc', 'glpk']:
+            try:
+                candidate_opt = SolverFactory(candidate)
+                if candidate_opt is not None and candidate_opt.available(exception_flag=False):
+                    return candidate
+            except Exception:
+                continue
+        return None
+
     def limited_infeasible_log(self, model, timeout=60, log_file="infeasible_log.txt"):
         def target():
             print(f"🔍 Checking for infeasible constraints (max {timeout}s)...")
+            logger = None
+            handler = None
             try:
-                with open(log_file, "w") as f:
-                    with redirect_stdout(f):
-                        log_infeasible_constraints(model, log_expression=True)
+                logger, handler = self._build_infeasible_logger(log_file)
+                log_infeasible_constraints(model, log_expression=True, logger=logger)
             except Exception as e:
                 print("⚠️ Error while logging infeasibilities:", e)
+            finally:
+                if handler is not None:
+                    handler.close()
+                if logger is not None:
+                    logger.handlers.clear()
 
         thread = threading.Thread(target=target)
         thread.start()
@@ -195,28 +246,8 @@ class OptModel(object):
         if os.path.exists(log_file):
             os.remove(log_file)
 
-        if solvername == 'glpk':
- 
-            solverpath_folder = 'C:\\glpk\\w64'
-            sys.path.append(solverpath_folder)
-            opt = SolverFactory('glpk', tee=True)
-            opt.options['mipgap'] = gap
-
-
-        elif solvername == 'gurobi':
-            self.model.branch_priority = Suffix(direction=Suffix.EXPORT, datatype=Suffix.INT)
-            
-            opt = SolverFactory('gurobi', solver_io="python")
-            opt.options['OutputFlag']   = 1
-            opt.options['LogToConsole'] = 1
-            opt.options['MIPGap']       = gap
-            opt.options['LogFile']      = log_file
-            opt.options['Threads']      = 24
-            opt.options['Heuristics']   = 0.5
-            opt.options['MIPFocus']     = 3      
-            opt.options['Presolve']     = 2      
-            opt.options['FlowCoverCuts'] = 2  
-            opt.options['TimeLimit'] = timelimit 
+        result = None
+        opt = self._configure_solver(solvername, gap, timelimit, log_file)
 
         print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
         start_time = time.time()
@@ -255,8 +286,31 @@ class OptModel(object):
                 except Exception as e:
                     print(f"⚠️ Error al escribir log: {e}")
         except Exception as e:
-            print(f"⚠️ Ocurrió un error inesperado: {e}")
-            self.solution_status = TerminationCondition.error
+            error_text = str(e)
+            is_gurobi_license_error = (
+                solvername == 'gurobi' and 'license expired' in error_text.lower()
+            )
+
+            if is_gurobi_license_error:
+                print("⚠️ La licencia de Gurobi está expirada. Intentando solver alternativo...")
+                fallback_solver = self._find_fallback_solver()
+                if fallback_solver is None:
+                    print("❌ No se encontró solver alternativo disponible (highs/cbc/glpk).")
+                    print("   Renueva licencia de Gurobi o instala otro solver MIP.")
+                    self.solution_status = TerminationCondition.error
+                else:
+                    print(f"🔁 Reintentando con solver fallback: {fallback_solver}")
+                    try:
+                        opt = self._configure_solver(fallback_solver, gap, timelimit, log_file)
+                        result = opt.solve(self.model, tee=True, load_solutions=True)
+                        self.solution_status = result.solver.termination_condition
+                        print(f"✅ Solver fallback ejecutado con estado: {self.solution_status}")
+                    except Exception as fallback_error:
+                        print(f"❌ Falló también el solver fallback ({fallback_solver}): {fallback_error}")
+                        self.solution_status = TerminationCondition.error
+            else:
+                print(f"⚠️ Ocurrió un error inesperado: {e}")
+                self.solution_status = TerminationCondition.error
         finally:
             # Restaurar el manejador anterior
             signal.signal(signal.SIGINT, old_sigint_handler)
