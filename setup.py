@@ -50,7 +50,7 @@ def main():
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
-    gap= 6/100;
+    gap= 1/100;
     solver_name=args.solver
     output_folder=args.output_folder
     y_init_path=args.y_init_path
