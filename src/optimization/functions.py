@@ -571,7 +571,7 @@ class ConstraintRules(OptRules):
         if k == "station_1":
             return model.N_chargers[k] == 2
         elif k == "station_2":
-            return model.N_chargers[k] == 3
+            return model.N_chargers[k] == 2
         else:
             return model.N_chargers[k] == 2
         
@@ -579,7 +579,7 @@ class ConstraintRules(OptRules):
         if k == "station_1":
             return model.N_batteries[k] == 2
         elif k == "station_2":
-            return model.N_batteries[k] == 3
+            return model.N_batteries[k] == 2
         else:
             return model.N_batteries[k] == 2
 
