@@ -51,7 +51,7 @@ class Timeseries(object):
         row = self.mapper['MarginalCost'].loc[location_name, hours].astype(float)
 
         # Paso 2: 0 -> 0.001
-        row = row.replace(0.0, 0.01)
+        row = row.replace(0.0, 0.001)
 
         # Paso 3: escalar a promedio 0.1
         current_mean = float(row.mean())

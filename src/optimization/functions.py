@@ -396,52 +396,6 @@ class ConstraintRules(OptRules):
     def max_power(self, model, k, i, d, t):
         return model.P[k, i, d, t]  <= model.Z_charge[k, i, d, t] * model.p_charger
     
-    #Asignación estaciones de carga por macrobloque
-    def stations_assignment(self, model, k, i, d, t):
-        return model.Z_charge[k, i ,d ,t] <= model.U[k,i]
-    
-    def one_station_per_lhd(self, model, i):
-        return sum(model.U[k,i] for k in model.stations_set) == 1
-    
-    def assignation_station_only_existing(self, model, k, i):
-        return model.U[k,i] <= model.X[k]
-    
-    def macroblock_station_assignment(self, model, k, i):
-        import re 
-        import pyomo.environ as pyo
-
-        # 1. IDENTIFICAR ID DEL LHD (i es string "LH518B_1")
-        match_lhd = re.search(r'(\d+)$', str(i))
-        if match_lhd:
-            lhd_id = int(match_lhd.group(1)) # Extrae el 1
-        else:
-            return pyo.Constraint.Skip
-
-        # 2. IDENTIFICAR ID DE LA ESTACIÓN (k es string "station_1")
-        station_id = k 
-        if isinstance(k, str):
-            match_station = re.search(r'(\d+)$', k)
-            if match_station:
-                station_id = int(match_station.group(1)) # Extrae el 1
-        
-        # 3. LOGICA
-        target_station = None
-        if lhd_id in [1, 2, 3, 4]:
-            target_station = 1
-        elif lhd_id in [5, 6, 7, 8]:
-            target_station = 2
-        elif lhd_id in [9, 10, 11, 12]:
-            target_station = 3
-            
-        # 4. RESTRICCIÓN
-        if target_station is not None:
-            if station_id == target_station:
-                return model.U[k, i] == 1
-            else:
-                return model.U[k, i] == 0
-        
-        return pyo.Constraint.Skip
-    
     #  Sistemas distribución 
     def max_installed_capacity(self, model, k, d, t):
         # Suma P solo sobre elhds válidos para esta estación
@@ -482,6 +436,16 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z[i, d, t] == 1
     
+    # Fijar cantidad de cargadores 
+    def fixed_n_chargers(self, model, k):
+        if k == "station_1":
+            return model.N_chargers[k] == 2
+        elif k == "station_2":
+            return model.N_chargers[k] == 2
+        elif k == "station_3":
+            return model.N_chargers[k] == 2
+        
+    
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
         model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
@@ -512,6 +476,9 @@ class ConstraintRules(OptRules):
         #Detenciones 
         model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+
+        #fijar cantidad de cargadores
+        #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
 
 class ObjectiveRules(OptRules):
 
