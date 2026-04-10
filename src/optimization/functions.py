@@ -399,7 +399,10 @@ class ConstraintRules(OptRules):
     #  Sistemas distribución 
     def max_installed_capacity(self, model, k, d, t):
         # Suma P solo sobre elhds válidos para esta estación
-        return sum(model.P[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.p_max_k[k]
+        station_elhds = [i for (k2, i) in model.ZCHARGE_INDEX if k2 == k]
+        if not station_elhds:
+            return pyo.Constraint.Skip
+        return sum(model.P[k, i, d, t] for i in station_elhds) <= model.p_max_k[k]
 
     def peak_power(self, model, d,t):
         # Suma P solo sobre tuplas válidas en ZCHARGE_INDEX
@@ -474,8 +477,8 @@ class ConstraintRules(OptRules):
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         #Detenciones 
-        model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
-        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
 
         #fijar cantidad de cargadores
         #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
