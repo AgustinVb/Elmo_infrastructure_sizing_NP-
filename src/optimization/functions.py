@@ -442,11 +442,11 @@ class ConstraintRules(OptRules):
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_2":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_3":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         
     
     def build_all_constraints(self, model):
@@ -477,11 +477,11 @@ class ConstraintRules(OptRules):
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         #Detenciones 
-        #model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
-        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
 
         #fijar cantidad de cargadores
-        #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
+        model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
 
 class ObjectiveRules(OptRules):
 
