@@ -633,9 +633,9 @@ class ConstraintRules(OptRules):
         # 2) Infraestructura de estaciones y capacidad eléctrica
         model.max_n_chargers = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
-        model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
+        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -737,18 +737,19 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales
-        model.meal_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.meal_stop_all,
-        )
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
+        #model.meal_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.meal_stop_all,
+        #)
+
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.maint_stop_all,
+        #)
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
