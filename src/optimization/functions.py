@@ -241,7 +241,7 @@ class BoundRules(OptRules):
         # Sets de índices (solo contienen tuplas válidas)
         model.Y_INDEX  = pyo.Set(dimen=4, initialize=_init_Y_INDEX)
         # Variable binaria que indica si hay penalidad en la producción por swap
-        model.Z_pen = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
+        #model.Z_pen = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
         #Viaje completo de LHD i al nodo j en (d,t)
         model.Y = pyo.Var(model.Y_INDEX, bounds=self.Y, domain=pyo.Binary)
         # Variable binaria que indica si el LHD esta inactivo o no
@@ -372,10 +372,10 @@ class ConstraintRules(OptRules):
         term_de = sum(model.Y[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i]
                   for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
 
-        pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
-                  for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
+        #pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
+        #          for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
 
-        return term_de - pen + model.F[j, d] >= target
+        return term_de + model.F[j, d] >= target
 
     def aux_zpen_1(self, model, i, j, d, t):
         # Z_pen >= Z_swap + Y - 1  →  fuerza Z_pen=1 cuando Y=1 y Σ Z_swap=1
@@ -715,9 +715,9 @@ class ConstraintRules(OptRules):
 
         # 5) Producción y penalizaciones
         model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
-        model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
-        model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
-        model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
+        #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
+        #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
+        #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
         model.daily_extraction = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
@@ -737,19 +737,19 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales
-        #model.meal_stop_all = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.meal_stop_all,
-        #)
+        model.meal_stop_all = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.meal_stop_all,
+        )
 
-        #model.maintenance_stop_all = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.maint_stop_all,
-        #)
+        model.maintenance_stop_all = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.maint_stop_all,
+        )
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
