@@ -3,6 +3,7 @@ import math
 import pandas as pd
 import numpy as np
 import time
+import re
 from pyomo.environ import quicksum, value
 
 class OptRules(object):
@@ -30,6 +31,11 @@ class OptRules(object):
 class OptSets(OptRules):
     
     
+    def _extract_lhd_numeric_suffix(self, lhd_name):
+        """Return the trailing integer in an LHD name, or None if absent."""
+        match = re.search(r"(\d+)$", str(lhd_name))
+        return int(match.group(1)) if match else None
+
     def _get_pause_definitions(self):
         """Hardcoded pauses as (start_time, end_time, pause_type) in HH:MM.
 
@@ -37,16 +43,43 @@ class OptSets(OptRules):
         Times strictly before 08:00 are interpreted as next day (e.g., 04:00).
         If end_time is earlier than start_time, the pause crosses midnight (e.g., 22:00 -> 00:30).
         """
-        return [
-            # Mantenciones (las que me dijiste)
+        pauses = [
+            # Mantenciones forzadas
             ("10:04", "12:26", "maintenance"),
-            ("16:04", "17:26", "maintenance"),
+            ("16:04", "17:34", "maintenance"),
             ("22:04", "00:26", "maintenance"),
-            ("04:04", "05:26", "maintenance"),
+            ("04:04", "05:34", "maintenance"),
 
-            ("14:04", "14:56", "meal"),
-            ("02:04", "02:56", "meal"),
+            # Colación común para todas las tecnologías: ~60 min (delta_t = 8 min)
+            ("14:04", "15:04", "meal"),
+            ("02:04", "03:04", "meal"),
         ]
+
+        return pauses
+
+    def _split_contiguous_blocks(self, intervals):
+        if not intervals:
+            return []
+
+        blocks = [[intervals[0]]]
+        for t in intervals[1:]:
+            if t == blocks[-1][-1] + 1:
+                blocks[-1].append(t)
+            else:
+                blocks.append([t])
+        return blocks
+
+    def _split_meal_blocks(self, meal_intervals):
+        meal_g1 = []
+        meal_g2 = []
+
+        for block in self._split_contiguous_blocks(meal_intervals):
+            mid = len(block) // 2
+            meal_g1.extend(block[:mid])
+            meal_g2.extend(block[mid:])
+
+        return meal_g1, meal_g2
+
 
 
     def _get_time_intervals_for_pause_type(self, pause_type):
@@ -106,7 +139,7 @@ class OptSets(OptRules):
                     indices.add(t)
 
         return sorted(indices)
-    
+
     def build_sets(self, model):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
         model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
@@ -121,13 +154,53 @@ class OptSets(OptRules):
         # Tramos de penalización para déficit F (piecewise lineal)
         model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
 
-            # Nuevos subsets de tiempo para pausas de comida y mantenimiento
+         # Subsets de tiempo para pausas
+        meal_intervals = self._get_time_intervals_for_pause_type("meal")
+        meal_g1_intervals, meal_g2_intervals = self._split_meal_blocks(meal_intervals)
+
         model.time_intervals_meal_set = pyo.Set(
-            initialize=self._get_time_intervals_for_pause_type("meal")
+            initialize=meal_intervals
+        )
+        model.time_intervals_meal_g1_set = pyo.Set(
+            initialize=meal_g1_intervals
+        )
+        model.time_intervals_meal_g2_set = pyo.Set(
+            initialize=meal_g2_intervals
         )
         model.time_intervals_maintenance_set = pyo.Set(
             initialize=self._get_time_intervals_for_pause_type("maintenance")
         )
+
+
+
+        
+        # -----------------------------
+        # Grupos de colación para todos los LHD:
+        # Grupo 1 = sufijo par, Grupo 2 = sufijo impar.
+        # Si algún nombre no trae sufijo numérico, se reparte en fallback para
+        # no dejar equipos fuera de ambos grupos.
+        # -----------------------------
+        all_lhds = sorted(set(self.mine_system.get_system_lhds()))
+
+        group1 = []
+        group2 = []
+        fallback = []
+
+        for lhd_name in all_lhds:
+            suffix = self._extract_lhd_numeric_suffix(lhd_name)
+            if suffix is None:
+                fallback.append(lhd_name)
+            elif suffix % 2 == 0:
+                group1.append(lhd_name)
+            else:
+                group2.append(lhd_name)
+
+        split_fallback = (len(fallback) + 1) // 2
+        group1.extend(fallback[:split_fallback])
+        group2.extend(fallback[split_fallback:])
+
+        model.meal_group1_set = pyo.Set(initialize=sorted(set(group1)))
+        model.meal_group2_set = pyo.Set(initialize=sorted(set(group2)))
 
 
 class OptParameters(OptRules):
@@ -416,17 +489,28 @@ class ConstraintRules(OptRules):
 
      # Pausas: MEAL
     # --------------------------
-    def meal_stop_all(self, model, i, d, t):
-        """En intervalos MEAL todos los LHD deben estar detenidos
-        (estacionados, cargando o swapeando según tecnología)."""
-        if t not in model.time_intervals_meal_set:
+    def meal_g1_no_travel_group1(self, model, i, d, t):
+        """En meal_g1 el Grupo 1 no puede viajar."""
+        if t not in model.time_intervals_meal_g1_set:
+            return pyo.Constraint.Skip
+        if i not in model.meal_group1_set:
             return pyo.Constraint.Skip
 
         nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
         if not nodes:
             return pyo.Constraint.Skip
+        return sum(model.Y[i, j, d, t] for j in nodes) == 0
 
-        # Prohibimos viajes: solo Z / Z_charge / Swap quedan posibles
+    def meal_g2_no_travel_group2(self, model, i, d, t):
+        """En meal_g2 el Grupo 2 no puede viajar."""
+        if t not in model.time_intervals_meal_g2_set:
+            return pyo.Constraint.Skip
+        if i not in model.meal_group2_set:
+            return pyo.Constraint.Skip
+
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
         return sum(model.Y[i, j, d, t] for j in nodes) == 0
 
     # --------------------------
@@ -442,11 +526,11 @@ class ConstraintRules(OptRules):
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         elif k == "station_2":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         elif k == "station_3":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         
     
     def build_all_constraints(self, model):
@@ -477,7 +561,8 @@ class ConstraintRules(OptRules):
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         #Detenciones 
-        model.meal_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.meal_stop_all)
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
 
         #fijar cantidad de cargadores

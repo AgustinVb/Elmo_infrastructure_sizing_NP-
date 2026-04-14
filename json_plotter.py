@@ -155,26 +155,39 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
 
     # -------------------------------------------------------------------------
     # Caso 1: Estructura con eje 'k' (P.json, etc.)
+    # Se estandariza a: k -> station -> i -> lhd -> d -> day -> t -> interval
     # -------------------------------------------------------------------------
     elif "k" in data:
         for station, k_block in data["k"].items():
-            if not isinstance(k_block, dict) or "d" not in k_block:
+            if not isinstance(k_block, dict):
                 continue
-            d_data = k_block["d"]
-            for lhd, t_block in d_data.items():
-                if not isinstance(t_block, dict):
+            i_block = k_block.get("i", {})
+            if not isinstance(i_block, dict):
+                continue
+
+            for lhd, lhd_block in i_block.items():
+                if not isinstance(lhd_block, dict):
                     continue
-                if "t" in t_block and isinstance(t_block["t"], dict):
-                    for k1, v1 in t_block["t"].items():
-                        if isinstance(v1, dict) and "i" in v1:
-                            for interval, val in v1["i"].items():
-                                rows.append({
-                                    "lhd": lhd,
-                                    "station": station,
-                                    "day": _numeric_or_str(k1),
-                                    "interval": _numeric_or_str(interval),
-                                    "value": float(val),
-                                })
+                d_data = lhd_block.get("d", {})
+                if not isinstance(d_data, dict):
+                    continue
+                for day, day_block in d_data.items():
+                    if not isinstance(day_block, dict):
+                        continue
+                    t_map = day_block.get("t", {})
+                    if not isinstance(t_map, dict):
+                        continue
+                    for interval, val in t_map.items():
+                        try:
+                            rows.append({
+                                "lhd": _numeric_or_str(lhd),
+                                "station": _numeric_or_str(station),
+                                "day": _numeric_or_str(day),
+                                "interval": _numeric_or_str(interval),
+                                "value": float(val),
+                            })
+                        except Exception:
+                            continue
 
     # -------------------------------------------------------------------------
     # Caso 2: Estructura directa con 'd' (estructura original)
