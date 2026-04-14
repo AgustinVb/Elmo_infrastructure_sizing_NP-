@@ -206,10 +206,15 @@ class OptSets(OptRules):
 class OptParameters(OptRules):
 
     def build_parameters(self, model):
+        max_extraction_goal = max(
+            (self.time_series.get_extraction_goal(j, d) for j in model.nodes_set for d in model.days),
+            default=0.0
+        )
         #Parámetros temporales
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
+        model.F_max_global = pyo.Param(initialize=max_extraction_goal, mutable=True)
         #Parámetros económicos
         model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
         model.costo_marginal = pyo.Param(model.elhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.elhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
@@ -254,7 +259,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000.0, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5.0, 2: 5.0, 3: 40.0, 4: 50.0, 5: 1e18},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5.0, 2: 5.0, 3: 40.0, 4: 50.0, 5: max(0.0, max_extraction_goal - 100.0)},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
 
 class BoundRules(OptRules):
@@ -283,7 +288,7 @@ class BoundRules(OptRules):
         return (0, model.bmax_b[b])
     
     def F(self, model, j, d):
-        return (0, None)
+        return (0, model.F_max_global)
 
     def build_all_variables(self, model):
           # Índice esparso para carga: solo (station, elhd) válidas según StationAssignment
@@ -333,8 +338,8 @@ class BoundRules(OptRules):
         
         ## NUEVAS VARIABLES 
 
-        #extracción total del equipo i en el día d.
-        model.M = pyo.Var(model.lhd_set, model.nodes_set, model.days, domain=pyo.NonNegativeReals)
+        # Extracción por intervalo, consistente con Y_INDEX.
+        model.M = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
         
         # Holgura producción 
         model.F = pyo.Var(model.nodes_set, model.days, bounds=self.F)
@@ -420,18 +425,18 @@ class ConstraintRules(OptRules):
         return term_de  <= target*2.5
 
 
-    def daily_extraction_M(self, model, i, j, d):
+    def interval_extraction_M(self, model, i, j, d, t):
         """
-        M[i,d] = extracción total del equipo i en el día d.
+        M[i,j,d,t] = extracción del equipo i en el nodo j
+        durante el intervalo t del día d.
         Misma unidad que el término de producción (g_i * n_trips * f_i).
         """
-        term = sum(
-            model.Y[i2, j2, d2, t2] * model.g_i[i2]
-            * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y
-            if i2 == i and d2 == d and j2 == j
+        return model.M[i, j, d, t] == (
+            model.Y[i, j, d, t]
+            * model.g_i[i]
+            * self.time_series.get_n_trips(j, i)
+            * model.filling_factor[i]
         )
-        return model.M[i, j, d] == term
 
      # Penalización por tramos (piecewise) para F
     # --------------------------
@@ -526,11 +531,11 @@ class ConstraintRules(OptRules):
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         elif k == "station_2":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         elif k == "station_3":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 4
         
     
     def build_all_constraints(self, model):
@@ -554,7 +559,7 @@ class ConstraintRules(OptRules):
         
         #Producción nuevas
         model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
-        model.daily_extraction_M= pyo.Constraint(model.elhd_set, model.nodes_set, model.days, rule=self.daily_extraction_M)
+        model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
         # Penalización por tramos para F (piecewise lineal)
         model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
