@@ -526,11 +526,11 @@ class ConstraintRules(OptRules):
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_2":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_3":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         
     
     def build_all_constraints(self, model):
