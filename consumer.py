@@ -1209,8 +1209,9 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         energy_cost = 0.0
 
     # Costo de energía "real":
-    # - Si costo es fijo: E_real * costo_fijo * scaling_factor_op_cost
-    # - Si costo es variable: energy_cost - (delta_E * costo_min * scaling_factor_op_cost)
+    # - Si parameters.energy_cost == "Profile_fixed": E_real * costo_fijo * scaling_factor_op_cost
+    # - En otro caso (perfil variable):
+    #   energy_cost - (delta_E * costo_min * scaling_factor_op_cost),
     #   asumiendo que el delta de energía se habría cargado al menor costo.
     real_energy_cost = 0.0
     try:
@@ -1243,10 +1244,9 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
             raise ValueError("No hay valores en costo_electricidad para costo fijo")
 
         c_min = min(fixed_candidates)
-        c_max = max(fixed_candidates)
-        is_fixed_cost = abs(c_max - c_min) <= 1e-12
+        energy_cost_profile = str(params_data.get("energy_cost", "")).strip()
 
-        if is_fixed_cost:
+        if energy_cost_profile == "Profile_fixed":
             real_energy_cost = float(real_swap_energy_kwh) * c_min * scaling_factor
         else:
             delta_energy_kwh = sv_energy_total_kwh - float(real_swap_energy_kwh)

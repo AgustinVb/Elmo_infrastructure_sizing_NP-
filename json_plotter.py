@@ -149,6 +149,49 @@ def load_Z_swap_df(path: str) -> Optional[pd.DataFrame]:
             .reset_index(drop=True)) if rows else pd.DataFrame(columns=["station", "lhd", "day", "interval", "value"])
 
 
+def load_Sv_df(path: str) -> Optional[pd.DataFrame]:
+    """
+    Carga Sv.json con estructura esperada:
+      _1[station]._2[day]._3[t]._4[a] = numero de baterias conectadas.
+    """
+    data = _load_json(path)
+    if not data:
+        return None
+
+    rows = []
+    root = data.get("_1", {}) if isinstance(data, dict) else {}
+    if not isinstance(root, dict):
+        return pd.DataFrame(columns=["station", "day", "interval", "start_interval", "value"])
+
+    for station, blk_station in root.items():
+        day_blk = blk_station.get("_2", {}) if isinstance(blk_station, dict) else {}
+        if not isinstance(day_blk, dict):
+            continue
+        for day, blk_day in day_blk.items():
+            t_blk = blk_day.get("_3", {}) if isinstance(blk_day, dict) else {}
+            if not isinstance(t_blk, dict):
+                continue
+            for t, blk_t in t_blk.items():
+                a_blk = blk_t.get("_4", {}) if isinstance(blk_t, dict) else {}
+                if not isinstance(a_blk, dict):
+                    continue
+                for a, val in a_blk.items():
+                    try:
+                        rows.append({
+                            "station": str(station),
+                            "day": _numeric_or_str(day),
+                            "interval": _numeric_or_str(t),
+                            "start_interval": _numeric_or_str(a),
+                            "value": float(val),
+                        })
+                    except Exception:
+                        continue
+
+    return (pd.DataFrame(rows)
+            .sort_values(["station", "day", "interval", "start_interval"])
+            .reset_index(drop=True)) if rows else pd.DataFrame(columns=["station", "day", "interval", "start_interval", "value"])
+
+
 def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
     """
     Soporta patrones:
@@ -485,6 +528,7 @@ class JSONPlotter:
         self.df_Bs = load_Bs_df(os.path.join(json_dir, "B_s.json"))
         self.df_Y = load_binary_Y_df(os.path.join(json_dir, "Y.json"))
         self.df_Z_swap = load_Z_swap_df(os.path.join(json_dir, "Z_swap.json"))
+        self.df_Sv = load_Sv_df(os.path.join(json_dir, "Sv.json"))
         self.df_P = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
         self.df_C = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
         self.df_E = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
@@ -500,7 +544,7 @@ class JSONPlotter:
 
     def _detect_days(self) -> List[int]:
         sources = []
-        for df in [self.df_B, self.df_Bs, self.df_Y, self.df_Z_swap, self.df_P, self.df_C, self.df_E]:
+        for df in [self.df_B, self.df_Bs, self.df_Y, self.df_Z_swap, self.df_Sv, self.df_P, self.df_C, self.df_E]:
             if df is not None and "day" in df.columns and not df.empty:
                 sources.append(sorted(df["day"].dropna().unique().tolist()))
         if self.params.costo_marginal is not None:
@@ -509,7 +553,7 @@ class JSONPlotter:
 
     def _detect_intervals(self) -> List[int]:
         sources = []
-        for df in [self.df_B, self.df_Bs, self.df_Y, self.df_Z_swap, self.df_P, self.df_C, self.df_E]:
+        for df in [self.df_B, self.df_Bs, self.df_Y, self.df_Z_swap, self.df_Sv, self.df_P, self.df_C, self.df_E]:
             if df is not None and "interval" in df.columns and not df.empty:
                 sources.append(sorted(df["interval"].dropna().unique().tolist()))
         if self.params.costo_marginal is not None:
@@ -620,6 +664,123 @@ class JSONPlotter:
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
         pass
+
+    def plot_charging_batteries_vs_price(self):
+        if self.df_Sv is None or self.df_Sv.empty:
+            print("⚠️ No hay Sv.json. Omitiendo 'ChargingBatteries_vs_price'.")
+            return
+        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
+            print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargingBatteries_vs_price'.")
+            return
+
+        dt = float(self.delta_t)
+
+        for d in self.days:
+            sv_day = (
+                self.df_Sv.query("day == @d")[["interval", "value"]]
+                .groupby("interval")["value"]
+                .sum()
+                .reindex(self.intervals)
+                .fillna(0.0)
+            )
+            if sv_day.empty:
+                continue
+
+            price_day = (
+                self.params.costo_marginal.query("day == @d")
+                .groupby("interval")["price"]
+                .mean()
+                .reindex(self.intervals)
+                .ffill()
+                .bfill()
+                .fillna(0.0)
+            )
+
+            # Misma construcción temporal del gráfico SoC:
+            # x en [0,24] y serie extendida para cubrir el último intervalo.
+            x_steps = np.array([0.0] + [t * dt for t in self.intervals], dtype=float)
+            y_batt = np.concatenate([[sv_day.iloc[0] if len(sv_day) else 0.0], sv_day.to_numpy(dtype=float)])
+            y_price = np.concatenate([[price_day.iloc[0] if len(price_day) else 0.0], price_day.to_numpy(dtype=float)])
+
+            fig = plt.figure(figsize=(18, 6))
+            fig.subplots_adjust(left=0.06, right=0.92, top=0.84, bottom=0.12)
+            gs = gridspec.GridSpec(2, 1, height_ratios=[0.65, 4.2], hspace=0.08)
+            legend_ax = fig.add_subplot(gs[0])
+            legend_ax.axis("off")
+            ax_main = fig.add_subplot(gs[1])
+            ax_price = ax_main.twinx()
+
+            batt_color = "#4F81BD"
+            price_color = "#3366CC"
+
+            batt_step = ax_main.step(
+                x_steps,
+                y_batt,
+                where="post",
+                color=batt_color,
+                linewidth=2.8,
+                label="Charging Batteries",
+            )[0]
+            ax_main.fill_between(x_steps, y_batt, step="post", alpha=0.25, color=batt_color)
+
+            price_line = ax_price.plot(
+                x_steps,
+                y_price,
+                color=price_color,
+                linestyle="--",
+                linewidth=2.6,
+                alpha=0.9,
+                label="Energy Price",
+            )[0]
+
+            handles = [
+                plt.Line2D([0], [0], color=batt_color, lw=4, label="Charging Batteries"),
+                plt.Line2D([0], [0], color=price_color, lw=3, ls="--", label="Energy Price"),
+            ]
+            ax_main.legend(
+                handles=handles,
+                loc="upper left",
+                bbox_to_anchor=(0.15, 1.27),
+                ncols=2,
+                frameon=True,
+                fontsize=16,
+                framealpha=0.6,
+            )
+
+            ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+            ax_main.set_xticks(ticks)
+            ax_main.set_xticklabels(labels, fontsize=13, rotation=0, ha="center")
+
+            ax_main.set_xlim(0, 24)
+            ax_price.set_xlim(0, 24)
+
+            ax_main.set_xlabel("Time", fontsize=18)
+            ax_main.set_ylabel("Batteries Charging [count]", fontsize=17, color=batt_color)
+            ax_price.set_ylabel("Energy Price [USD/kWh]", fontsize=17, color=price_color)
+
+            y_max = max(float(np.nanmax(y_batt)) if len(y_batt) else 0.0, 1.0)
+            ax_main.set_ylim(0.0, y_max * 1.15)
+            ax_main.yaxis.set_major_locator(MultipleLocator(max(1.0, round(y_max / 6.0))))
+
+            ax_price.set_ylim(0.0, max(0.30, float(np.nanmax(y_price)) * 1.1 if len(y_price) else 0.30))
+            ax_price.yaxis.set_major_locator(MultipleLocator(0.05))
+
+            ax_main.tick_params(axis="y", labelsize=16)
+            ax_price.tick_params(axis="y", labelsize=16)
+            ax_main.tick_params(axis="x", labelsize=15.5)
+            ax_main.grid(False)
+            ax_main.grid(axis="x", which="major", linestyle="--", alpha=0.5)
+            ax_main.yaxis.grid(False)
+            ax_price.grid(False)
+            legend_ax.set_xlim(0, 24)
+
+            month = self._rep_day_label(d)
+            season = self._season_label(d)
+            season_txt = f" ({season})" if season else ""
+            fig.suptitle(f"Charging Batteries and Price - {month}{season_txt}", y=0.96, fontsize=18)
+
+            fig.savefig(os.path.join(self.plot_dir, f"ChargingBatteries_vs_price_{month}.png"), dpi=150, bbox_inches="tight")
+            plt.close(fig)
 
     
     def plot_node_extraction_vs_demand(self):
@@ -1112,6 +1273,7 @@ class JSONPlotter:
 
     def create_all_plots(self):
         self.plot_charge_power_vs_price()
+        self.plot_charging_batteries_vs_price()
         #self.plot_node_extraction_vs_demand()
         self.plot_lhd_costs_bars()
         self.plot_lhd_soc_vs_price_and_states()
