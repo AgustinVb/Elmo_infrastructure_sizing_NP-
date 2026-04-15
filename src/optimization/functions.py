@@ -257,9 +257,9 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000.0, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 100, 2: 200, 3: 300, 4: 400, 5: 200},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5.0, 2: 5.0, 3: 40.0, 4: 50.0, 5: max(0.0, max_extraction_goal - 100.0)},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
 
 class BoundRules(OptRules):

@@ -26,7 +26,7 @@ def build_mine(args):
     series = Series(args.data_folder+args.series)
     #time_series = timeseries.Timeseries(series, [1], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60)
-    time_series = timeseries.Timeseries(series, [1,2,3], 8/60)
+    time_series = timeseries.Timeseries(series, [1], 8/60)
     mine_system = mine.Mine(model)
     time_series.mapper['Trips'] = time_series.get_trips(mine_system)
     return series, mine_system, time_series
