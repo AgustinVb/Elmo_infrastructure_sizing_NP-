@@ -257,9 +257,9 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 100, 2: 200, 3: 300, 4: 400, 5: 200},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.01, 2: 200, 3: 300, 4: 400, 5: 200},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
 
 class BoundRules(OptRules):
@@ -535,7 +535,7 @@ class ConstraintRules(OptRules):
         elif k == "station_2":
             return model.N_chargers[k] == 2
         elif k == "station_3":
-            return model.N_chargers[k] == 4
+            return model.N_chargers[k] == 2
         
     
     def build_all_constraints(self, model):
@@ -571,7 +571,7 @@ class ConstraintRules(OptRules):
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
 
         #fijar cantidad de cargadores
-        model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
+        #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
 
 class ObjectiveRules(OptRules):
 
