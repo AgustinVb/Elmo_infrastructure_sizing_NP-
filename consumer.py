@@ -820,6 +820,227 @@ def total_extraction(m_json_path: Path) -> Tuple[float, Dict[str, int]]:
     return total, meta
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def calculate_daily_trips(y_json_path: Path) -> Dict[str, float]:
+    """Cuenta viajes diarios como activaciones positivas de Y por día."""
+    data = load_json(y_json_path)
+    trips_by_day: Dict[str, float] = {}
+
+    if not isinstance(data, dict) or "d" not in data or not isinstance(data["d"], dict):
+        return trips_by_day
+
+    for lhd_data in data["d"].values():
+        if not isinstance(lhd_data, dict):
+            continue
+        t_block = lhd_data.get("t", {})
+        if not isinstance(t_block, dict):
+            continue
+
+        for node_data in t_block.values():
+            if not isinstance(node_data, dict):
+                continue
+            i_block = node_data.get("i", {})
+            if not isinstance(i_block, dict):
+                continue
+
+            for day_key, day_data in i_block.items():
+                if not isinstance(day_data, dict):
+                    continue
+                j_block = day_data.get("j", {})
+                if not isinstance(j_block, dict):
+                    continue
+
+                day = str(day_key)
+                trips_by_day.setdefault(day, 0.0)
+                for val in j_block.values():
+                    if _as_float(val, 0.0) > 0.5:
+                        trips_by_day[day] += 1.0
+
+    return trips_by_day
+
+
+def _extract_y_counts(y_json_path: Path) -> Dict[Tuple[str, str, str], float]:
+    """Retorna sum_t Y[i,j,d,t] por clave (i,j,d)."""
+    data = load_json(y_json_path)
+    y_counts: Dict[Tuple[str, str, str], float] = {}
+
+    if not isinstance(data, dict) or "d" not in data or not isinstance(data["d"], dict):
+        return y_counts
+
+    for i_name, lhd_data in data["d"].items():
+        if not isinstance(lhd_data, dict):
+            continue
+        t_block = lhd_data.get("t", {})
+        if not isinstance(t_block, dict):
+            continue
+
+        for j_name, node_data in t_block.items():
+            if not isinstance(node_data, dict):
+                continue
+            i_block = node_data.get("i", {})
+            if not isinstance(i_block, dict):
+                continue
+
+            for day_key, day_data in i_block.items():
+                if not isinstance(day_data, dict):
+                    continue
+                t_inner = day_data.get("j", {})
+                if not isinstance(t_inner, dict):
+                    continue
+
+                key = (str(i_name), str(j_name), str(day_key))
+                y_counts.setdefault(key, 0.0)
+                for val in t_inner.values():
+                    y_counts[key] += _as_float(val, 0.0)
+
+    return y_counts
+
+
+def _extract_m_values(m_json_path: Path) -> Dict[Tuple[str, str, str], float]:
+    """Retorna M[i,j,d] por clave (i,j,d)."""
+    data = load_json(m_json_path)
+    m_values: Dict[Tuple[str, str, str], float] = {}
+
+    root = data.get("_1", {}) if isinstance(data, dict) else {}
+    if not isinstance(root, dict):
+        return m_values
+
+    for i_name, i_data in root.items():
+        if not isinstance(i_data, dict):
+            continue
+        j_block = i_data.get("_2", {})
+        if not isinstance(j_block, dict):
+            continue
+
+        for j_name, j_data in j_block.items():
+            if not isinstance(j_data, dict):
+                continue
+            d_block = j_data.get("_3", {})
+            if not isinstance(d_block, dict):
+                continue
+
+            for day_key, m_val in d_block.items():
+                m_values[(str(i_name), str(j_name), str(day_key))] = _as_float(m_val, 0.0)
+
+    return m_values
+
+
+def calculate_cycles_from_y_ntrips(y_json_path: Path, m_json_path: Path, params_path: Path) -> Tuple[float, Dict[str, float]]:
+    """Calcula ciclos con cycles_total = sum(Y[i,j] * n_trips[j,i]).
+
+    n_trips[j,i] se reconstruye desde outputs usando:
+    M[i,j,d] = (sum_t Y[i,j,d,t]) * g_i[i] * filling_factor[i] * n_trips[j,i]
+    """
+    y_counts = _extract_y_counts(y_json_path)
+    m_values = _extract_m_values(m_json_path)
+    params = load_json(params_path)
+
+    g_i = params.get("g_i", {}).get("_1", {}) if isinstance(params, dict) else {}
+    filling = params.get("filling_factor", {}).get("_1", {}) if isinstance(params, dict) else {}
+
+    ntr_num: Dict[Tuple[str, str], float] = {}
+    ntr_den: Dict[Tuple[str, str], float] = {}
+
+    for (i_name, j_name, day_key), y_sum in y_counts.items():
+        if y_sum <= 0.0:
+            continue
+        g = _as_float(g_i.get(i_name, 0.0), 0.0)
+        f = _as_float(filling.get(i_name, 0.0), 0.0)
+        if g <= 0.0 or f <= 0.0:
+            continue
+
+        m_val = _as_float(m_values.get((i_name, j_name, day_key), 0.0), 0.0)
+        ntr_day = m_val / (y_sum * g * f)
+        pair = (i_name, j_name)
+        ntr_num[pair] = ntr_num.get(pair, 0.0) + ntr_day * y_sum
+        ntr_den[pair] = ntr_den.get(pair, 0.0) + y_sum
+
+    n_trips_map: Dict[Tuple[str, str], float] = {}
+    for pair, den in ntr_den.items():
+        if den > 0.0:
+            n_trips_map[pair] = ntr_num[pair] / den
+
+    cycles_total = 0.0
+    cycles_by_day: Dict[str, float] = {}
+    for (i_name, j_name, day_key), y_sum in y_counts.items():
+        ntr = n_trips_map.get((i_name, j_name), 0.0)
+        cycles = y_sum * ntr
+        cycles_total += cycles
+        cycles_by_day[day_key] = cycles_by_day.get(day_key, 0.0) + cycles
+
+    return cycles_total, cycles_by_day
+
+
+def calculate_daily_charged_energy(root: Path) -> Dict[str, float]:
+    """Suma energía diaria [kWh] desde P (on-board) o Sv (swap)."""
+    params_path = find_json_in_folder(root, "parameters.json")
+    if not params_path or is_effectively_empty_json(params_path):
+        return {}
+
+    params = load_json(params_path)
+    dt = _as_float(params.get("delta_t", params.get("dt", 0.0)), 0.0)
+    if dt <= 0.0:
+        return {}
+
+    # Swap: Sv[k,d,t,a] -> energia = sum_a Sv * p_charger * dt
+    sv_path = find_json_in_folder(root, "Sv.json")
+    if sv_path and not is_effectively_empty_json(sv_path):
+        p_charger = _as_float(params.get("p_charger", 0.0), 0.0)
+        out: Dict[str, float] = {}
+        sv_data = load_json(sv_path)
+        s1 = sv_data.get("_1", {}) if isinstance(sv_data, dict) else {}
+        if isinstance(s1, dict):
+            for station_data in s1.values():
+                d_node = station_data.get("_2", {}) if isinstance(station_data, dict) else {}
+                if not isinstance(d_node, dict):
+                    continue
+                for day_key, day_data in d_node.items():
+                    t_node = day_data.get("_3", {}) if isinstance(day_data, dict) else {}
+                    if not isinstance(t_node, dict):
+                        continue
+                    day = str(day_key)
+                    out.setdefault(day, 0.0)
+                    for t_data in t_node.values():
+                        a_node = t_data.get("_4", {}) if isinstance(t_data, dict) else {}
+                        if not isinstance(a_node, dict):
+                            continue
+                        for sv_val in a_node.values():
+                            out[day] += _as_float(sv_val, 0.0) * p_charger * dt
+        return out
+
+    # On-board: P[k,i,d,t] -> energia = sum P * dt
+    p_path = find_json_in_folder(root, "P.json")
+    if p_path and not is_effectively_empty_json(p_path):
+        out: Dict[str, float] = {}
+        p_data = load_json(p_path)
+        if "k" in p_data and isinstance(p_data["k"], dict):
+            for station_data in p_data["k"].values():
+                i_block = station_data.get("i", {}) if isinstance(station_data, dict) else {}
+                if not isinstance(i_block, dict):
+                    continue
+                for lhd_data in i_block.values():
+                    d_block = lhd_data.get("d", {}) if isinstance(lhd_data, dict) else {}
+                    if not isinstance(d_block, dict):
+                        continue
+                    for day_key, day_data in d_block.items():
+                        t_block = day_data.get("t", {}) if isinstance(day_data, dict) else {}
+                        if not isinstance(t_block, dict):
+                            continue
+                        day = str(day_key)
+                        out.setdefault(day, 0.0)
+                        for power in t_block.values():
+                            out[day] += _as_float(power, 0.0) * dt
+        return out
+
+    return {}
+
+
 # -----------------------------
 # CLI principal
 # -----------------------------
@@ -845,6 +1066,10 @@ def main() -> None:
     e_path = find_json_in_folder(root, "E.json")
     b_path = find_json_in_folder(root, "B.json")
     m_path = find_json_in_folder(root, "M.json")
+    y_path = find_json_in_folder(root, "Y.json")
+    p_path = find_json_in_folder(root, "P.json")
+    sv_path = find_json_in_folder(root, "Sv.json")
+    params_path = find_json_in_folder(root, "parameters.json")
 
     # Tabla “inputs”
     inputs_rows = [
@@ -853,6 +1078,10 @@ def main() -> None:
         ["E.json", str(e_path) if e_path else "NO ENCONTRADO"],
         ["B.json", str(b_path) if b_path else "NO ENCONTRADO"],
         ["M.json", str(m_path) if m_path else "NO ENCONTRADO"],
+        ["Y.json", str(y_path) if y_path else "NO ENCONTRADO"],
+        ["P.json", str(p_path) if p_path else "NO ENCONTRADO"],
+        ["Sv.json", str(sv_path) if sv_path else "NO ENCONTRADO"],
+        ["parameters.json", str(params_path) if params_path else "NO ENCONTRADO"],
     ]
     print(make_table("INPUTS", ["Campo", "Valor"], inputs_rows))
     print()
@@ -980,6 +1209,56 @@ def main() -> None:
             print()
     else:
         print(make_table("M (EXTRACCIÓN)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacío/no usable."]]))
+        print()
+
+    # ---- Operación diaria (viajes, ciclos y energía)
+    try:
+        trips_daily = calculate_daily_trips(y_path) if (y_path and not is_effectively_empty_json(y_path)) else {}
+        cycles_total = 0.0
+        cycles_daily: Dict[str, float] = {}
+        if (
+            y_path and m_path and params_path
+            and not is_effectively_empty_json(y_path)
+            and not is_effectively_empty_json(m_path)
+            and not is_effectively_empty_json(params_path)
+        ):
+            cycles_total, cycles_daily = calculate_cycles_from_y_ntrips(y_path, m_path, params_path)
+
+        energy_daily = calculate_daily_charged_energy(root)
+
+        all_days = sorted(set(trips_daily.keys()) | set(cycles_daily.keys()) | set(energy_daily.keys()), key=lambda d: float(d))
+        if all_days:
+            rows = []
+            total_trips = 0.0
+            total_cycles = 0.0
+            total_energy = 0.0
+            for d in all_days:
+                trips = trips_daily.get(d, 0.0)
+                cycles = cycles_daily.get(d, 0.0)
+                energy = energy_daily.get(d, 0.0)
+
+                total_trips += trips
+                total_cycles += cycles
+                total_energy += energy
+
+                rows.append([d, f"{trips:.0f}", f"{cycles:.3f}", f"{energy:.3f}"])
+
+            rows.append(["TOTAL", f"{total_trips:.0f}", f"{total_cycles:.3f}", f"{total_energy:.3f}"])
+            print(make_table(
+                "OPERACIÓN DIARIA",
+                ["Día", "Viajes diarios totales", "Ciclos (Y*n_trips)", "Energía diaria [kWh]"],
+                rows,
+            ))
+            print()
+            print(make_table(
+                "CICLOS TOTALES",
+                ["Métrica", "Valor"],
+                [["cycles_total = sum(Y[i,j] * n_trips[j,i])", f"{cycles_total:.3f}"]],
+            ))
+            print()
+            printed_any = True
+    except Exception as ex:
+        print(make_table("OPERACIÓN DIARIA", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
         print()
 
     if not printed_any:
