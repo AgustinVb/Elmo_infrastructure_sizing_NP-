@@ -208,6 +208,10 @@ class OptSets(OptRules):
 class OptParameters(OptRules):
 
     def build_parameters(self, model):
+        max_extraction_goal = max(
+            (self.time_series.get_extraction_goal(j, d) for j in model.nodes_set for d in model.days),
+            default=0.0
+        )
         #Parámetros temporales
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
@@ -264,10 +268,20 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000.0, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.1, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
 
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5.0, 2: 5.0, 3: 40.0, 4: 50.0, 5: 1e18},mutable=True)
+        model.F_penalty_cap = pyo.Param(
+            model.F_SEG,
+            initialize={
+                1: 5.0,
+                2: 0.0,
+                3: 0.0,
+                4: 0,
+                5: 0,
+            },
+            mutable=True
+        )
         model.Voll = pyo.Param(initialize=1000, mutable=True)
 class BoundRules(OptRules):
 
