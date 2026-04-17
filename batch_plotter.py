@@ -3,7 +3,7 @@
 # Guarda los gráficos en <escenario>/plots/
 #
 # Ejemplo (Windows):
-#   python batch_plotter.py --root_dir "C:\ruta\al\output" --depth 2 --energy_price_scale 1.0
+#   python batch_plotter.py --root_dir "C:\ruta\al\output" --depth 2 --costo_electricidad_scale 1.0
 #
 from __future__ import annotations
 from pathlib import Path
@@ -60,7 +60,14 @@ def main():
     ap = argparse.ArgumentParser(description="Batch runner para json_plotter.py sobre subcarpetas de escenarios")
     ap.add_argument("--root_dir", required=True, help="Carpeta 'output' que contiene subcarpetas por escenario")
     ap.add_argument("--depth", type=int, default=2, help="Profundidad máxima a explorar (default: 2)")
-    ap.add_argument("--energy_price_scale", type=float, default=1.0, help="Escala para precio marginal")
+    ap.add_argument(
+        "--costo_electricidad_scale",
+        "--energy_price_scale",
+        dest="costo_electricidad_scale",
+        type=float,
+        default=1.0,
+        help="Escala para costo_electricidad",
+    )
     args = ap.parse_args()
 
     root = Path(args.root_dir).expanduser()
@@ -87,7 +94,7 @@ def main():
     for sdir in scenarios:
         print(f"\n📊 Procesando escenario: {sdir}")
         try:
-            plotter = JSONPlotter(str(sdir), energy_price_scale=args.energy_price_scale)
+            plotter = JSONPlotter(str(sdir), energy_price_scale=args.costo_electricidad_scale)
             plotter.create_all_plots()
             print(f"✅ Listo: {sdir / 'plots'}")
         except Exception as e:

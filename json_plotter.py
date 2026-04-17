@@ -381,6 +381,8 @@ class Parameters:
         self.energy_price_scale = float(energy_price_scale)
 
         self.m_j = None
+        self.costo_electricidad = None
+        # Alias legacy: algunas funciones todavía referencian costo_marginal.
         self.costo_marginal = None
 
         # Dos formas de emisiones:
@@ -415,18 +417,32 @@ class Parameters:
                 m_j.setdefault(pex, {})[_numeric_or_str(day)] = float(val)
         self.m_j = m_j if m_j else None
 
-        # -------- costo_marginal por LHD → día → intervalo --------
-        cm = []
+        # -------- costo_electricidad (nuevo): día → intervalo --------
+        ce = []
+        for day, t_blk in data.get("costo_electricidad", {}).get("_1", {}).items():
+            for interval, price in t_blk.get("_2", {}).items():
+                ce.append({
+                    "day": _numeric_or_str(day),
+                    "interval": _numeric_or_str(interval),
+                    "price": float(price) * self.energy_price_scale,
+                })
+
+        # -------- costo_marginal (legacy): LHD → día → intervalo --------
+        cm_legacy = []
         for lhd, blk1 in data.get("costo_marginal", {}).get("_1", {}).items():
             for day, t_blk in blk1.get("_2", {}).items():
                 for interval, price in t_blk.get("_3", {}).items():
-                    cm.append({
+                    cm_legacy.append({
                         "lhd": lhd,
                         "day": _numeric_or_str(day),
                         "interval": _numeric_or_str(interval),
                         "price": float(price) * self.energy_price_scale,
                     })
-        self.costo_marginal = pd.DataFrame(cm) if cm else None
+
+        price_df = pd.DataFrame(ce) if ce else (pd.DataFrame(cm_legacy) if cm_legacy else None)
+        self.costo_electricidad = price_df
+        # Mantener alias para código legado.
+        self.costo_marginal = price_df
 
         # -------- emisiones por LHD (si existiese legacy key 'emisiones') --------
         em = []
@@ -661,6 +677,35 @@ class JSONPlotter:
         labels = [f"{(start_hour + h) % 24:02d}:00" for h in ticks]
         return ticks, labels
 
+    def _price_series(self, day: int, lhd: Optional[str] = None) -> pd.Series:
+        """Retorna serie de precio por intervalo para un día.
+
+        Soporta dos formatos en parameters.json:
+        - Nuevo: costo_electricidad con columnas [day, interval, price]
+        - Legacy: costo_marginal con columnas [lhd, day, interval, price]
+        """
+        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
+            return pd.Series(index=self.intervals, dtype=float)
+
+        df_price = self.params.costo_marginal
+
+        if lhd is not None and "lhd" in df_price.columns:
+            filtered = df_price.query("lhd == @lhd and day == @day")
+        else:
+            filtered = df_price.query("day == @day")
+
+        if filtered.empty:
+            return pd.Series(index=self.intervals, dtype=float)
+
+        return (
+            filtered.groupby("interval")["price"]
+            .mean()
+            .reindex(self.intervals)
+            .ffill()
+            .bfill()
+            .fillna(0.0)
+        )
+
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
         pass
@@ -670,7 +715,7 @@ class JSONPlotter:
             print("⚠️ No hay Sv.json. Omitiendo 'ChargingBatteries_vs_price'.")
             return
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
-            print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargingBatteries_vs_price'.")
+            print("⚠️ No hay costo_electricidad en parameters.json. Omitiendo 'ChargingBatteries_vs_price'.")
             return
 
         dt = float(self.delta_t)
@@ -686,15 +731,7 @@ class JSONPlotter:
             if sv_day.empty:
                 continue
 
-            price_day = (
-                self.params.costo_marginal.query("day == @d")
-                .groupby("interval")["price"]
-                .mean()
-                .reindex(self.intervals)
-                .ffill()
-                .bfill()
-                .fillna(0.0)
-            )
+            price_day = self._price_series(day=d)
 
             # Misma construcción temporal del gráfico SoC:
             # x en [0,24] y serie extendida para cubrir el último intervalo.
@@ -853,7 +890,7 @@ class JSONPlotter:
             print("⚠️ No hay B.json, B_s.json ni E.json. Omitiendo 'SoC_vs_price_and_states'.")
             return
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
-            print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'SoC_vs_price_and_states'.")
+            print("⚠️ No hay costo_electricidad en parameters.json. Omitiendo 'SoC_vs_price_and_states'.")
             return
 
         delta_t = float(self.delta_t)
@@ -934,12 +971,7 @@ class JSONPlotter:
                     path_effects.Normal(),
                 ])
 
-                price_day = (self.params.costo_marginal
-                             .query("lhd == @lhd and day == @day")[["interval", "price"]]
-                             .set_index("interval")
-                             .reindex(self.intervals)["price"]
-                             .ffill().bfill().fillna(0.0)
-                             .to_numpy(dtype=float))
+                price_day = self._price_series(day=day, lhd=lhd).to_numpy(dtype=float)
                 y_price = np.concatenate([[price_day[0] if len(price_day) else 0.0], price_day])
                 line_price = ax_price.plot(
                     x_steps,
@@ -1153,16 +1185,32 @@ class JSONPlotter:
 
     def plot_lhd_costs_bars(self):
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
-            print("⚠️ No hay costo marginal. Omitiendo 'LHD_total_costs'.")
+            print("⚠️ No hay costo_electricidad. Omitiendo 'LHD_total_costs'.")
             return
-        lhds = sorted(self.params.costo_marginal["lhd"].unique().tolist())
+
+        if "lhd" in self.params.costo_marginal.columns:
+            lhds = sorted(self.params.costo_marginal["lhd"].unique().tolist())
+        else:
+            lhds = []
+            if self.df_P is not None and not self.df_P.empty and "lhd" in self.df_P.columns:
+                lhds.extend(self.df_P["lhd"].dropna().unique().tolist())
+            if self.df_E is not None and not self.df_E.empty and "lhd" in self.df_E.columns:
+                lhds.extend(self.df_E["lhd"].dropna().unique().tolist())
+            lhds = sorted(set(lhds))
+
+        if not lhds:
+            print("⚠️ No se pudieron detectar LHD para 'LHD_total_costs'.")
+            return
+
         costs = {l: 0.0 for l in lhds}
 
         if self.df_P is not None and not self.df_P.empty:
             for lhd in lhds:
                 for d in self.days:
                     price = (self.params.costo_marginal
-                             .query("lhd == @lhd and day == @d")[["interval","price"]].set_index("interval"))
+                             .query("lhd == @lhd and day == @d")[["interval","price"]].set_index("interval")
+                             if "lhd" in self.params.costo_marginal.columns
+                             else self._price_series(day=d).to_frame(name="price"))
                     p = (self.df_P.query("day == @d and lhd == @lhd")[["interval","value"]].set_index("interval"))
                     if not p.empty and not price.empty:
                         merged = p.join(price, how="inner")
@@ -1171,7 +1219,9 @@ class JSONPlotter:
             for lhd in lhds:
                 for d in self.days:
                     price = (self.params.costo_marginal
-                             .query("lhd == @lhd and day == @d")[["interval","price"]].set_index("interval"))
+                             .query("lhd == @lhd and day == @d")[["interval","price"]].set_index("interval")
+                             if "lhd" in self.params.costo_marginal.columns
+                             else self._price_series(day=d).to_frame(name="price"))
                     e = (self.df_E.query("day == @d and lhd == @lhd")[["interval","value"]].set_index("interval"))
                     if not e.empty and not price.empty:
                         merged = e.join(price, how="inner")
@@ -1287,7 +1337,7 @@ def main():
     ap = argparse.ArgumentParser(description="Graficador para salidas JSON del modelo")
     ap.add_argument("--json_dir", required=True, help="Carpeta con *.json (variables + parameters.json)")
     ap.add_argument("--energy_price_scale", type=float, default=DEFAULT_ENERGY_PRICE_SCALE,
-                    help="Escala para precio marginal (opcional)")
+                    help="Escala para costo_electricidad (opcional)")
     args = ap.parse_args()
 
     plotter = JSONPlotter(args.json_dir, energy_price_scale=args.energy_price_scale)

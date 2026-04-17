@@ -218,7 +218,7 @@ class OptParameters(OptRules):
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
         #Parámetros económicos
         model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
-        model.costo_marginal = pyo.Param(model.slhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.slhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
+        #model.costo_marginal = pyo.Param(model.slhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.slhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
         model.costo_electricidad = pyo.Param(model.days, model.time_intervals_set, initialize={(d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.chargers.get_energy_cost(), d, t) for d in model.days for t in model.time_intervals_set}, mutable=True)
         #Parámetros LHD
         # Parámetros de viaje por nodo
@@ -268,13 +268,13 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.1, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
 
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(
             model.F_SEG,
             initialize={
-                1: 5.0,
+                1: 0.0,
                 2: 0.0,
                 3: 0.0,
                 4: 0,
@@ -535,17 +535,6 @@ class ConstraintRules(OptRules):
     def chargers_le_batteries(self, model, k):
         return model.N_chargers[k] <= model.N_batteries[k]
 
-    # Fijar infraestructura (número de cargadores)
-    def fix_n_chargers(self, model, k):
-        return model.N_chargers[k] == 1
-
-    # Fijar infraestructura (número de baterías)
-    def fix_n_batteries(self, model, k):
-        return model.N_batteries[k] == 1
-
-    # Fijar todas las estaciones activas
-    def fix_stations(self, model, k):
-        return model.X[k] == 1
 
     # Existencia de la estación
     def station_existence_constraint_swap(self, model, k, i, d, t):
@@ -743,8 +732,8 @@ class ConstraintRules(OptRules):
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -915,6 +904,9 @@ class ObjectiveRules(OptRules):
 
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
+
+    #def build_objective(self, model):
+    #    model.obj = pyo.Objective(rule=self.lhd_charge_cost_bs, sense=pyo.minimize)
 
 class OutputManager(OptRules):
 
