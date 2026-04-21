@@ -47,6 +47,11 @@ def main():
     parser.add_argument('--solver', default='glpk')
     parser.add_argument('--y_init_path', default=None,
                         help='Ruta opcional a Y.json para usar warm start en variable Y')
+    parser.add_argument(
+        '--relax_integrality',
+        action='store_true',
+        help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
+    )
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
@@ -54,7 +59,15 @@ def main():
     solver_name=args.solver
     output_folder=args.output_folder
     y_init_path=args.y_init_path
-    opt = OptimizationModel(mine_system, time_series, gap, solver_name, output_folder, y_init_path=y_init_path)
+    opt = OptimizationModel(
+        mine_system,
+        time_series,
+        gap,
+        solver_name,
+        output_folder,
+        y_init_path=y_init_path,
+        relax_integrality=args.relax_integrality,
+    )
 
 
 if __name__ == '__main__':

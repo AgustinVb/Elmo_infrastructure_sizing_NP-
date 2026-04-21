@@ -59,6 +59,7 @@ def run_one_day(args, day: int) -> bool:
             output_folder=day_output,
             timelimit=args.timelimit,
             y_init_path=args.y_init_path,
+            relax_integrality=args.relax_integrality,
         )
 
         elapsed = time.time() - t0
@@ -111,6 +112,11 @@ def main():
         "--y_init_path",
         default=None,
         help="Optional path to Y.json for warm start",
+    )
+    parser.add_argument(
+        "--relax_integrality",
+        action="store_true",
+        help="Solve the linear relaxation instead of the MIP",
     )
 
     args = parser.parse_args()

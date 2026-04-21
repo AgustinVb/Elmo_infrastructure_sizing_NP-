@@ -158,7 +158,7 @@ class OptModel(object):
         self.model            = self.build_model()
         self._load_y_warmstart(y_init_path)
 
-    def solve_model(self, gap, solvername, timelimit=172800): 
+    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
         # Log file now in output folder to avoid conflicts
         # Normalize output_folder path to avoid double backslashes
         output_folder_normalized = os.path.normpath(self.output_folder)
@@ -166,6 +166,14 @@ class OptModel(object):
         log_file = os.path.join(output_folder_normalized, "ELMO_log.txt")
         if os.path.exists(log_file):
             os.remove(log_file)
+
+        model_to_solve = self.model
+        if relax_integrality:
+            self.original_model = self.model
+            model_to_solve = self.model.clone()
+            pyo.TransformationFactory('core.relax_integer_vars').apply_to(model_to_solve)
+            self.relaxed_model = model_to_solve
+            self.model = model_to_solve
 
         if solvername == 'glpk':
  
@@ -188,7 +196,7 @@ class OptModel(object):
             opt.options['Presolve']     = 2      
             opt.options['FlowCoverCuts'] = 2
             try:
-                result = opt.solve(self.model, tee=True, load_solutions=True, warmstart=True)
+                result = opt.solve(model_to_solve, tee=True, load_solutions=True, warmstart=True)
                 self.solution_status = result.solver.termination_condition
             except KeyboardInterrupt:
                 print("\n🛑 ¡Interrupción manual detectada! Intentando recuperar la mejor solución hasta ahora...")

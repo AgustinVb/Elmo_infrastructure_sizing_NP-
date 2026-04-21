@@ -456,7 +456,8 @@ class ConstraintRules(OptRules):
 
     # Producción mínima
     def production_swap(self, model, d, j):
-        target = model.m_j[j,d]
+        #target = model.m_j[j,d]
+        target =140
         def ntr(node,i):
             return self.time_series.get_n_trips(node,i)
 
@@ -666,19 +667,27 @@ class ConstraintRules(OptRules):
     # Fijar baterias y cargadores
     def fix_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         elif k == "station_2":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         else:
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         
     def fix_n_batteries(self, model, k):
         if k == "station_1":
-            return model.N_batteries[k] == 1
+            return model.N_batteries[k] == 2
         elif k == "station_2":
-            return model.N_batteries[k] == 1
+            return model.N_batteries[k] == 2
         else:
-            return model.N_batteries[k] == 1
+            return model.N_batteries[k] == 2
+        
+    #FORTALECIMIENTO 
+    def n_swaps_limit_1(self, model, i, d):
+        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 5
+    
+    def n_swaps_limit_2(self, model, i, d):
+        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 4
+
 
     def build_all_constraints(self, model):
         # 1) Energía / SOC de baterías del LHD (swap)
@@ -732,8 +741,8 @@ class ConstraintRules(OptRules):
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -838,12 +847,12 @@ class ConstraintRules(OptRules):
         model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.maint_stop_all,
+        #)
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
