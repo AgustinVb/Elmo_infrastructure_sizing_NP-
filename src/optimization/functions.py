@@ -346,15 +346,15 @@ class BoundRules(OptRules):
         # SOC de batería b al final de (d,t)
         model.B         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
-        model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
+        model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers, bounds= (1, 12))
         #Elección estación de carga
-        model.X = pyo.Var(model.stations_set, domain=pyo.Binary)
+        model.X = pyo.Var(model.stations_set, domain=pyo.Binary, bounds=(1,1))
         #Inicio de una carga on-board
         #model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)    
         # Indica si termina una carga en t
         #model.EndCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
         # Cantidad de baterías en estación
-        model.N_batteries = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
+        model.N_batteries = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers, bounds=(1, 12))
         # Variable que actualiza el estado de carga de la batería del LHD
         model.B_s = pyo.Var(model.slhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         # Número de baterías cargadas en el intervalo t en la estación k
@@ -433,6 +433,18 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.B_s[i,d,t-1] >= sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) * model.bmax_b[i]
 
+    def swap_soc_limit_30(self, model, i, d, t):
+        t0 = self.time_series.get_time_intervals()[0]
+        if t < t0:
+            return pyo.Constraint.Skip
+
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
+        if not valid_k_list:
+            return pyo.Constraint.Skip
+
+        swap_flag = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
+        return model.B[i, d, t-1] <= 0.30 * model.bmax_b[i] + (1 - swap_flag) * model.bmax_b[i]
+
     # Límite inferior de SOC batería
     def battery_lower(self, model, i, d, t):
         return model.B[i, d, t] >= model.bmin_b[i] * model.bmax_b[i]
@@ -456,18 +468,34 @@ class ConstraintRules(OptRules):
 
     # Producción mínima
     def production_swap(self, model, d, j):
-        #target = model.m_j[j,d]
-        target =140
-        def ntr(node,i):
-            return self.time_series.get_n_trips(node,i)
+        # Mínimo de 10 viajes efectivos por punto de extracción y día.
+        target = 9
 
-        term_de = sum(model.Y[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i]
-                  for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
+        term_de = sum(
+            model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)
+            for (i, j2, d2, t) in model.Y_INDEX
+            if j2 == j and d2 == d
+        )
 
         #pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
         #          for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
 
         return term_de + model.F[j, d] >= target
+    
+    def production_swap_max(self, model, d, j):
+        # Mínimo de 10 viajes efectivos por punto de extracción y día.
+        target = 12
+
+        term_de = sum(
+            model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)
+            for (i, j2, d2, t) in model.Y_INDEX
+            if j2 == j and d2 == d
+        )
+
+        #pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
+        #          for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
+
+        return term_de + model.F[j, d] <= target
 
     def aux_zpen_1(self, model, i, j, d, t):
         # Z_pen >= Z_swap + Y - 1  →  fuerza Z_pen=1 cuando Y=1 y Σ Z_swap=1
@@ -667,26 +695,26 @@ class ConstraintRules(OptRules):
     # Fijar baterias y cargadores
     def fix_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_2":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         else:
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         
     def fix_n_batteries(self, model, k):
         if k == "station_1":
-            return model.N_batteries[k] == 2
+            return model.N_batteries[k] == 1
         elif k == "station_2":
-            return model.N_batteries[k] == 2
+            return model.N_batteries[k] == 1
         else:
-            return model.N_batteries[k] == 2
+            return model.N_batteries[k] == 1
         
     #FORTALECIMIENTO 
     def n_swaps_limit_1(self, model, i, d):
-        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 5
+        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 4
     
     def n_swaps_limit_2(self, model, i, d):
-        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 4
+        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 3
 
 
     def build_all_constraints(self, model):
@@ -721,6 +749,12 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_4,
         )
+        model.swap_soc_limit_30 = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.swap_soc_limit_30,
+        )
         model.battery_lower = pyo.Constraint(
             model.slhd_set,
             model.days,
@@ -741,8 +775,8 @@ class ConstraintRules(OptRules):
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -768,12 +802,12 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
-        model.between_shifts_elhd_swap = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_between_shifts_set,
-            rule=self.between_shifts_elhd_swap,
-        )
+        #model.between_shifts_elhd_swap = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_between_shifts_set,
+        #    rule=self.between_shifts_elhd_swap,
+        #)
         model.total_swaps = pyo.Constraint(
             model.stations_set,
             model.days,
@@ -785,6 +819,16 @@ class ConstraintRules(OptRules):
             model.days,
             model.time_intervals_set,
             rule=self.max_swaps,
+        )
+        model.n_swaps_limit_1 = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            rule=self.n_swaps_limit_1,
+        )
+        model.n_swaps_limit_2 = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            rule=self.n_swaps_limit_2,
         )
 
         # 4) Inventario de baterías en estaciones
@@ -822,6 +866,7 @@ class ConstraintRules(OptRules):
 
         # 5) Producción y penalizaciones
         model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
+        model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
         #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
         #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
