@@ -201,6 +201,20 @@ class OptSets(OptRules):
         model.meal_group1_set = pyo.Set(initialize=sorted(set(group1)))
         model.meal_group2_set = pyo.Set(initialize=sorted(set(group2)))
 
+        # Orden de precedencia para swaps: menor índice de LHD debe swapear antes.
+        ordered_slhds = sorted(
+            set(self.mine_system.get_swap_lhds()),
+            key=lambda x: (
+                self._extract_lhd_numeric_suffix(x) is None,
+                self._extract_lhd_numeric_suffix(x) if self._extract_lhd_numeric_suffix(x) is not None else float("inf"),
+                str(x),
+            ),
+        )
+        model.swap_precedence_pairs = pyo.Set(
+            dimen=2,
+            initialize=[(ordered_slhds[idx], ordered_slhds[idx + 1]) for idx in range(len(ordered_slhds) - 1)],
+        )
+
         # Tramos de penalización para déficit F (piecewise lineal)
         model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
 
@@ -411,27 +425,43 @@ class ConstraintRules(OptRules):
         else:
             return pyo.Constraint.Skip
 
-    # Definición de B_s: actualización del estado de carga con swap
+    # Definición de B_s: actualización del estado de carga con swap (Convex-Hull Formulation)
+    # New formulation: tighter Big-M coefficients for improved LP relaxation
+    # z_agg = sum of Z_swap over all valid stations k for LHD i at (d,t)
+    # U = b_max[i], L = b_min[i] * b_max[i]
+    # Constraints:
+    #   (1) B_s <= B + (U - L) * z_agg  (tighter upper bound when z=0: B_s <= B)
+    #   (2) B_s >= B                    (sharpened lower bound)
+    #   (3) B_s <= U                    (unconditional upper limit)
+    #   (4) B_s >= L + (U - L) * z_agg  (dynamic lower limit: when z=0: B_s >= L impossible unless B >= L)
+    
     def battery_soc_swap_update_1(self, model, i, d, t):
+        """Convex-hull upper bound: B_s <= B + (U - L) * z_agg"""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        return model.B_s[i,d,t-1] <= model.B[i,d,t-1] + sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) * model.bmax_b[i]
+        U = model.bmax_b[i]
+        L = model.bmin_b[i] * model.bmax_b[i]
+        z_agg = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
+        return model.B_s[i, d, t-1] <= model.B[i, d, t-1] + (U - L) * z_agg
 
     def battery_soc_swap_update_2(self, model, i, d, t):
-        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
-        if not valid_k_list:
-            return pyo.Constraint.Skip
-        return model.B_s[i,d,t-1] >= model.B[i,d,t-1] - sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) * model.bmax_b[i]
+        """Convex-hull lower bound (sharpened): B_s >= B"""
+        return model.B_s[i, d, t-1] >= model.B[i, d, t-1]
     
     def battery_soc_swap_update_3(self, model, i, d, t):
-        return model.B_s[i,d,t-1] <= model.bmax_b[i]
+        """Unconditional upper limit: B_s <= U"""
+        return model.B_s[i, d, t-1] <= model.bmax_b[i]
 
     def battery_soc_swap_update_4(self, model, i, d, t):
+        """Convex-hull lower limit (dynamic): B_s >= L + (U - L) * z_agg"""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        return model.B_s[i,d,t-1] >= sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) * model.bmax_b[i]
+        U = model.bmax_b[i]
+        L = model.bmin_b[i] * model.bmax_b[i]
+        z_agg = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
+        return model.B_s[i, d, t-1] >= L + (U - L) * z_agg
 
     def swap_soc_limit_30(self, model, i, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -442,8 +472,11 @@ class ConstraintRules(OptRules):
         if not valid_k_list:
             return pyo.Constraint.Skip
 
+        # Tight Big-M: if swap_flag=1 => B <= 0.30*U; if swap_flag=0 => B <= U.
+        # This uses M = U-0.30*U = 0.70*U (stronger than M = U in LP relaxation).
+        U = model.bmax_b[i]
         swap_flag = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
-        return model.B[i, d, t-1] <= 0.30 * model.bmax_b[i] + (1 - swap_flag) * model.bmax_b[i]
+        return model.B[i, d, t-1] <= U - 0.70 * U * swap_flag
 
     # Límite inferior de SOC batería
     def battery_lower(self, model, i, d, t):
@@ -597,6 +630,27 @@ class ConstraintRules(OptRules):
         if not valid_k_list:
             return pyo.Constraint.Skip
         return sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) <= 1
+
+    def swap_precedence_by_index(self, model, i_low, i_high, d, t):
+        """Forces cumulative swaps of lower-index LHDs to be >= higher-index LHDs at each time t."""
+        valid_k_low = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i_low]
+        valid_k_high = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i_high]
+        if not valid_k_low or not valid_k_high:
+            return pyo.Constraint.Skip
+
+        cumulative_low = sum(
+            model.Z_swap[k, i_low, d, tau]
+            for k in valid_k_low
+            for tau in model.time_intervals_set
+            if tau <= t
+        )
+        cumulative_high = sum(
+            model.Z_swap[k, i_high, d, tau]
+            for k in valid_k_high
+            for tau in model.time_intervals_set
+            if tau <= t
+        )
+        return cumulative_low >= cumulative_high
     
     # Inventario de baterías descargadas
     def inventory_discharged_batteries_rule(self, model, k, d, t):
@@ -775,8 +829,8 @@ class ConstraintRules(OptRules):
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -819,6 +873,12 @@ class ConstraintRules(OptRules):
             model.days,
             model.time_intervals_set,
             rule=self.max_swaps,
+        )
+        model.swap_precedence_by_index = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            model.time_intervals_set,
+            rule=self.swap_precedence_by_index,
         )
         model.n_swaps_limit_1 = pyo.Constraint(
             model.slhd_set,
