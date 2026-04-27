@@ -55,17 +55,18 @@ def _load_json(path: str) -> Optional[Dict[str, Any]]:
 
 # -------------------- Loaders --------------------
 def load_B_df(path: str) -> Optional[pd.DataFrame]:
+    """Load B (battery SOC) from JSON with structure: i -> d -> t -> value"""
     data = _load_json(path)
     if not data:
         return None
     rows = []
-    d = data.get("d", {})
-    for lhd, d_block in d.items():
-        t_block = d_block.get("t", {})
-        for day, day_block in t_block.items():
-            # B.json puede usar "b" o "i" con series por intervalo
-            b_block = day_block.get("b", {}) or day_block.get("i", {})
-            for interval, value in b_block.items():
+    # New structure: i (LHD) -> d (day) -> t (interval)
+    i_dict = data.get("i", {})
+    for lhd, d_block in i_dict.items():
+        d_inner = d_block.get("d", {})
+        for day, t_block in d_inner.items():
+            t_inner = t_block.get("t", {})
+            for interval, value in t_inner.items():
                 rows.append({
                     "lhd": lhd,
                     "day": _numeric_or_str(day),
@@ -78,18 +79,20 @@ def load_B_df(path: str) -> Optional[pd.DataFrame]:
 
 
 def load_binary_Y_df(path: str) -> Optional[pd.DataFrame]:
+    """Load Y (trip binary) from JSON with structure: i -> j -> d -> t -> value"""
     data = _load_json(path)
     if not data:
         return None
     rows = []
-    d = data.get("d", {})
-    for lhd, t_block in d.items():
-        t_dict = t_block.get("t", {})
-        for node, i_block in t_dict.items():
-            i_dict = i_block.get("i", {})
-            for day, j_block in i_dict.items():
-                j_dict = j_block.get("j", {})
-                for interval, val in j_dict.items():
+    # New structure: i (LHD) -> j (node) -> d (day) -> t (interval)
+    i_dict = data.get("i", {})
+    for lhd, j_block in i_dict.items():
+        j_inner = j_block.get("j", {})
+        for node, d_block in j_inner.items():
+            d_inner = d_block.get("d", {})
+            for day, t_block in d_inner.items():
+                t_inner = t_block.get("t", {})
+                for interval, val in t_inner.items():
                     rows.append({
                         "lhd": lhd,
                         "node": str(node),
@@ -103,16 +106,18 @@ def load_binary_Y_df(path: str) -> Optional[pd.DataFrame]:
 
 
 def load_Bs_df(path: str) -> Optional[pd.DataFrame]:
+    """Load B_s (battery SOC smooth) from JSON with structure: i -> d -> t -> value"""
     data = _load_json(path)
     if not data:
         return None
     rows = []
-    root = data.get("_1", {})
-    for lhd, blk_lhd in root.items():
-        day_blk = blk_lhd.get("_2", {}) if isinstance(blk_lhd, dict) else {}
-        for day, blk_day in day_blk.items():
-            int_blk = blk_day.get("_3", {}) if isinstance(blk_day, dict) else {}
-            for interval, value in int_blk.items():
+    # Structure: i (LHD) -> d (day) -> t (interval)
+    i_dict = data.get("i", {})
+    for lhd, d_block in i_dict.items():
+        d_inner = d_block.get("d", {})
+        for day, t_block in d_inner.items():
+            t_inner = t_block.get("t", {})
+            for interval, value in t_inner.items():
                 rows.append({
                     "lhd": lhd,
                     "day": _numeric_or_str(day),
@@ -125,18 +130,20 @@ def load_Bs_df(path: str) -> Optional[pd.DataFrame]:
 
 
 def load_Z_swap_df(path: str) -> Optional[pd.DataFrame]:
+    """Load Z_swap (swap binary) from JSON with structure: k -> i -> d -> t -> value"""
     data = _load_json(path)
     if not data:
         return None
     rows = []
-    root = data.get("_1", {})
-    for station, blk_station in root.items():
-        lhd_blk = blk_station.get("_2", {}) if isinstance(blk_station, dict) else {}
-        for lhd, blk_lhd in lhd_blk.items():
-            day_blk = blk_lhd.get("_3", {}) if isinstance(blk_lhd, dict) else {}
-            for day, blk_day in day_blk.items():
-                int_blk = blk_day.get("_4", {}) if isinstance(blk_day, dict) else {}
-                for interval, value in int_blk.items():
+    # Structure: k (station) -> i (LHD) -> d (day) -> t (interval)
+    k_dict = data.get("k", {})
+    for station, i_block in k_dict.items():
+        i_inner = i_block.get("i", {})
+        for lhd, d_block in i_inner.items():
+            d_inner = d_block.get("d", {})
+            for day, t_block in d_inner.items():
+                t_inner = t_block.get("t", {})
+                for interval, value in t_inner.items():
                     rows.append({
                         "station": station,
                         "lhd": lhd,
@@ -152,36 +159,36 @@ def load_Z_swap_df(path: str) -> Optional[pd.DataFrame]:
 def load_Sv_df(path: str) -> Optional[pd.DataFrame]:
     """
     Carga Sv.json con estructura esperada:
-      _1[station]._2[day]._3[t]._4[a] = numero de baterias conectadas.
+      k (station) -> d (day) -> t (time interval) -> t_start (charging start interval) -> valor
     """
     data = _load_json(path)
     if not data:
         return None
 
     rows = []
-    root = data.get("_1", {}) if isinstance(data, dict) else {}
-    if not isinstance(root, dict):
+    k_dict = data.get("k", {})
+    if not isinstance(k_dict, dict):
         return pd.DataFrame(columns=["station", "day", "interval", "start_interval", "value"])
 
-    for station, blk_station in root.items():
-        day_blk = blk_station.get("_2", {}) if isinstance(blk_station, dict) else {}
-        if not isinstance(day_blk, dict):
+    for station, d_block in k_dict.items():
+        d_inner = d_block.get("d", {}) if isinstance(d_block, dict) else {}
+        if not isinstance(d_inner, dict):
             continue
-        for day, blk_day in day_blk.items():
-            t_blk = blk_day.get("_3", {}) if isinstance(blk_day, dict) else {}
-            if not isinstance(t_blk, dict):
+        for day, t_block in d_inner.items():
+            t_inner = t_block.get("t", {}) if isinstance(t_block, dict) else {}
+            if not isinstance(t_inner, dict):
                 continue
-            for t, blk_t in t_blk.items():
-                a_blk = blk_t.get("_4", {}) if isinstance(blk_t, dict) else {}
-                if not isinstance(a_blk, dict):
+            for t, t_start_block in t_inner.items():
+                t_start_inner = t_start_block.get("t_start", {}) if isinstance(t_start_block, dict) else {}
+                if not isinstance(t_start_inner, dict):
                     continue
-                for a, val in a_blk.items():
+                for t_start, val in t_start_inner.items():
                     try:
                         rows.append({
                             "station": str(station),
                             "day": _numeric_or_str(day),
                             "interval": _numeric_or_str(t),
-                            "start_interval": _numeric_or_str(a),
+                            "start_interval": _numeric_or_str(t_start),
                             "value": float(val),
                         })
                     except Exception:

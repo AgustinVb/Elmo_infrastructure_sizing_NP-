@@ -213,27 +213,46 @@ class Printer:
         _ensure_dir(self.path)
 
         # ---------- SCHEMA POSICIONAL Y ORDEN DE ANIDACIÓN POR VARIABLE ----------
+        # CRITICAL: Order MUST match variable definition in functions.py
+        # Variable definitions (functions.py lines ~351-389):
+        # Y: (i,j,d,t) via Y_INDEX; Z: (i,d,t); Z_swap: (k,i,d,t); B: (i,d,t); B_s: (b,d,t)
+        # S,Sv,X_dch,X_ini,W: (k,d,t); Sv has extra 4th dimension: (k,d,t,t_start)
+        # N_chargers,X,N_batteries: (k); M: (b,j,d); F: (j,d); F_seg: (j,d,seg)
         self.var_index_schema: Dict[str, List[str]] = {
-            "Z":        ["d", "t", "i"],
-            "Z_charge": ["k","d", "t", "i"],
-            "Y":        ["d", "t", "i", "j"],
-            "P":        ["d", "t", "i"],
+            "Z":        ["i", "d", "t"],
+            "Z_swap":   ["k", "i", "d", "t"],
+            "Y":        ["i", "j", "d", "t"],
             "B":        ["i", "d", "t"],
+            "B_s":      ["b", "d", "t"],
             "N_chargers": ["k"],
-            "X":         ["k"],
-            "StartCharge": ["k", "i", "d", "t"],
-            "EndCharge":   ["k", "i", "d", "t"],
+            "X":        ["k"],
+            "N_batteries": ["k"],
+            "S":        ["k", "d", "t"],
+            "Sv":       ["k", "d", "t", "t_start"],
+            "X_dch":    ["k", "d", "t"],
+            "X_ini":    ["k", "d", "t"],
+            "W":        ["k", "d", "t"],
+            "M":        ["b", "j", "d"],
+            "F":        ["j", "d"],
+            "F_seg":    ["j", "d", "seg"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
-            "Z":        ["d", "t", "i"],
-            "Z_charge": ["k","d", "t", "i"],
-            "Y":        ["d", "t", "i", "j"],
-            "P":        ["d", "t", "i"],
+            "Z":        ["i", "d", "t"],
+            "Z_swap":   ["k", "i", "d", "t"],
+            "Y":        ["i", "j", "d", "t"],
             "B":        ["i", "d", "t"],
+            "B_s":      ["b", "d", "t"],
             "N_chargers": ["k"],
-            "X":         ["k"],
-            "StartCharge": ["d", "t", "i", "k"],
-            "EndCharge":   ["d", "t", "i", "k"],
+            "X":        ["k"],
+            "N_batteries": ["k"],
+            "S":        ["k", "d", "t"],
+            "Sv":       ["k", "d", "t", "t_start"],
+            "X_dch":    ["k", "d", "t"],
+            "X_ini":    ["k", "d", "t"],
+            "W":        ["k", "d", "t"],
+            "M":        ["b", "j", "d"],
+            "F":        ["j", "d"],
+            "F_seg":    ["j", "d", "seg"],
         }
 
         # tolerancia para considerar "casi cero" como cero

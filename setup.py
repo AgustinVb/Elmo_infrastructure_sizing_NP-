@@ -48,6 +48,11 @@ def main():
     parser.add_argument('--y_init_path', default=None,
                         help='Ruta opcional a Y.json para usar warm start en variable Y')
     parser.add_argument(
+        '--init_solution_folder',
+        default=None,
+        help='Carpeta opcional con JSONs de variables (<VarName>.json) para warm start completo',
+    )
+    parser.add_argument(
         '--relax_integrality',
         action='store_true',
         help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
@@ -59,6 +64,7 @@ def main():
     solver_name=args.solver
     output_folder=args.output_folder
     y_init_path=args.y_init_path
+    init_solution_folder=args.init_solution_folder
     opt = OptimizationModel(
         mine_system,
         time_series,
@@ -66,6 +72,7 @@ def main():
         solver_name,
         output_folder,
         y_init_path=y_init_path,
+        init_solution_folder=init_solution_folder,
         relax_integrality=args.relax_integrality,
     )
 

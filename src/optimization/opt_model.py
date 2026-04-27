@@ -4,7 +4,9 @@ import time
 import threading
 import json
 from contextlib import redirect_stdout
+from typing import Dict, List, Tuple, Any
 
+import numpy as np
 import pyomo.environ as pyo
 from pyomo.environ import SolverFactory, value
 from pyomo.core.base import Suffix
@@ -22,6 +24,167 @@ from src.optimization.functions import (
 
 
 class OptModel(object):
+
+    @staticmethod
+    def _flatten_nested_solution_tree(tree, var_axis_order: List[str] = None):
+        """
+        Flatten nested JSON solution trees produced by Printer into
+        (index_tokens, value) records in the order specified by var_axis_order.
+        
+        Printer creates: i -> {LHD_values} -> j -> {node_values} -> d -> {day_values} -> t -> {time_values: leaf}
+        Pattern: axis_name -> {axis_values_dict} -> axis_name -> ... -> leaf_value
+        """
+        records = []
+
+        def walk(node, tokens):
+            if not isinstance(node, dict):
+                return
+            
+            for axis_name, axis_values in node.items():
+                if not isinstance(axis_values, dict):
+                    # Scalar value - this is a leaf
+                    # axis_name is the last axis value
+                    final_tokens = tokens + [(None, str(axis_name))]
+                    
+                    if var_axis_order:
+                        axis_dict = {n: v for n, v in final_tokens if n is not None}
+                        ordered = [axis_dict.get(ax, None) for ax in var_axis_order]
+                        ordered = [t for t in ordered if t is not None]
+                    else:
+                        ordered = [v for n, v in final_tokens if n is not None]
+                    
+                    if ordered:
+                        records.append((ordered, axis_values))
+                    continue
+                
+                # axis_values is a dict - these are axis values
+                for axis_value, child in axis_values.items():
+                    if isinstance(child, dict):
+                        # child is another level of nesting - recurse
+                        walk(child, tokens + [(axis_name, str(axis_value))])
+                    else:
+                        # child is a scalar leaf value
+                        final_tokens = tokens + [(axis_name, str(axis_value))]
+                        
+                        if var_axis_order:
+                            axis_dict = {n: v for n, v in final_tokens}
+                            ordered = [axis_dict.get(ax, None) for ax in var_axis_order]
+                            ordered = [t for t in ordered if t is not None]
+                        else:
+                            ordered = [v for n, v in final_tokens]
+                        
+                        records.append((ordered, child))
+
+        walk(tree, [])
+        return records
+
+    @staticmethod
+    def _cast_token_like(example_value, token):
+        """Cast a string token to the type of an example index value."""
+        if example_value is None:
+            return token
+
+        try:
+            if isinstance(example_value, str):
+                return str(token)
+            if isinstance(example_value, (int, np.integer)):
+                return int(float(token))
+            if isinstance(example_value, (float, np.floating)):
+                return float(token)
+        except Exception:
+            pass
+        return token
+
+    def _load_solution_warmstart_folder(self, init_solution_folder):
+        """
+        Loads initial values for model variables from a folder containing
+        JSON files named like <VarName>.json (Printer export format).
+        """
+        if not init_solution_folder:
+            return
+
+        folder = os.path.normpath(init_solution_folder)
+        if not os.path.isdir(folder):
+            print(f"⚠️ Carpeta de solución inicial no encontrada: {folder}")
+            return
+
+        total_loaded = 0
+        total_skipped = 0
+
+        for var_comp in self.model.component_objects(pyo.Var, active=True):
+            var_name = str(var_comp.name)
+            json_path = os.path.join(folder, f"{var_name}.json")
+            if not os.path.exists(json_path):
+                continue
+
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                print(f"⚠️ No se pudo leer {json_path}: {e}")
+                continue
+
+            # Get axis order for this variable (if available)
+            axis_order = self.var_axis_order.get(var_name)
+            
+            # Flatten with axis ordering to ensure correct token sequence
+            records = self._flatten_nested_solution_tree(data, var_axis_order=axis_order)
+            if not records:
+                continue
+
+            sample_key = None
+            try:
+                sample_key = next(iter(var_comp.keys()))
+            except Exception:
+                sample_key = None
+
+            if isinstance(sample_key, tuple):
+                sample_types = sample_key
+            elif sample_key is None:
+                sample_types = ()
+            else:
+                sample_types = (sample_key,)
+
+            loaded = 0
+            skipped = 0
+
+            for idx_tokens, val in records:
+                try:
+                    v = float(val)
+                except Exception:
+                    skipped += 1
+                    continue
+
+                try:
+                    if sample_types:
+                        casted = [
+                            self._cast_token_like(sample_types[pos], idx_tokens[pos])
+                            for pos in range(min(len(sample_types), len(idx_tokens)))
+                        ]
+                    else:
+                        casted = list(idx_tokens)
+
+                    if len(casted) == 1:
+                        idx = casted[0]
+                    else:
+                        idx = tuple(casted)
+
+                    if idx in var_comp:
+                        var_comp[idx].value = v
+                        loaded += 1
+                    else:
+                        skipped += 1
+                except Exception:
+                    skipped += 1
+
+            total_loaded += loaded
+            total_skipped += skipped
+            print(f"✔ Warm start {var_name}: {loaded} cargados, {skipped} omitidos")
+
+        print(
+            f"✔ Warm start completo desde '{folder}': "
+            f"{total_loaded} valores cargados, {total_skipped} omitidos"
+        )
 
     def _load_y_warmstart(self, y_init_path):
         if not y_init_path:
@@ -145,7 +308,7 @@ class OptModel(object):
             except Exception as e:
                 print("⚠️ Could not read log file for summary:", e)
 
-    def __init__(self, mine_system, time_series, output_folder, y_init_path=None):
+    def __init__(self, mine_system, time_series, output_folder, y_init_path=None, init_solution_folder=None):
         self.output_folder   = output_folder
         self.time_series     = time_series
         self.mine_system     = mine_system
@@ -156,6 +319,33 @@ class OptModel(object):
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        
+        # Variable axis ordering (must match printer.py var_axis_order)
+        # CRITICAL: Order must match variable definition in functions.py
+        # Variable definitions (functions.py lines ~351-389):
+        # Y: (i,j,d,t); Z: (i,d,t); Z_swap: (k,i,d,t); B: (i,d,t); B_s: (b,d,t)
+        # S,X_dch,X_ini,W: (k,d,t); Sv: (k,d,t,t_start); N_chargers,X,N_batteries: (k)
+        # M: (b,j,d); F: (j,d); F_seg: (j,d,seg)
+        self.var_axis_order: Dict[str, List[str]] = {
+            "Z":        ["i", "d", "t"],
+            "Z_swap":   ["k", "i", "d", "t"],
+            "Y":        ["i", "j", "d", "t"],
+            "B":        ["i", "d", "t"],
+            "B_s":      ["b", "d", "t"],
+            "N_chargers": ["k"],
+            "X":        ["k"],
+            "N_batteries": ["k"],
+            "S":        ["k", "d", "t"],
+            "Sv":       ["k", "d", "t", "t_start"],
+            "X_dch":    ["k", "d", "t"],
+            "X_ini":    ["k", "d", "t"],
+            "W":        ["k", "d", "t"],
+            "M":        ["b", "j", "d"],
+            "F":        ["j", "d"],
+            "F_seg":    ["j", "d", "seg"],
+        }
+        
+        self._load_solution_warmstart_folder(init_solution_folder)
         self._load_y_warmstart(y_init_path)
 
     def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 

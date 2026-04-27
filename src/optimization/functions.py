@@ -282,13 +282,13 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.01, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
 
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(
             model.F_SEG,
             initialize={
-                1: 0.0,
+                1: 5.0,
                 2: 0.0,
                 3: 0.0,
                 4: 0,
@@ -487,13 +487,18 @@ class ConstraintRules(OptRules):
         return model.B[i, d, t] <= model.bmax_b[i]
 
     # Condición de borde SOC batería
-    def battery_boundary(self, model, i, d):
-        tf = self.time_series.get_time_intervals()[-1]
-        return model.B[i, d, 0] == model.B[i, d, tf]
-
     def battery_boundary_swap(self, model, i, d):
         tf = self.time_series.get_time_intervals()[-1]
         return model.B_s[i, d, 0] == model.B[i, d, 0]
+    
+    def battery_energy_conservation(self, model, i, d):
+        # Use interval 0 (initial pre-interval) to enforce cycle with final interval
+        tf = self.time_series.get_time_intervals()[-1]
+        return model.B[i, d, 0] == model.B[i, d, tf]
+
+    def battery_boundary_break_simmetry_lhds_start(self, model, i_low, i_high, d):
+        return model.B[i_low, d, 0] <= model.B[i_high, d, 0]
+
 
     # ==========================================================
     # 3) Producción y penalizaciones operacionales
@@ -502,10 +507,10 @@ class ConstraintRules(OptRules):
     # Producción mínima
     def production_swap(self, model, d, j):
         # Mínimo de 10 viajes efectivos por punto de extracción y día.
-        target = 9
+        target = 140
 
         term_de = sum(
-            model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)
+            model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)* model.g_i[i] * model.filling_factor[i]
             for (i, j2, d2, t) in model.Y_INDEX
             if j2 == j and d2 == d
         )
@@ -749,23 +754,23 @@ class ConstraintRules(OptRules):
     # Fijar baterias y cargadores
     def fix_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         elif k == "station_2":
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         else:
-            return model.N_chargers[k] == 1
+            return model.N_chargers[k] == 2
         
     def fix_n_batteries(self, model, k):
         if k == "station_1":
-            return model.N_batteries[k] == 1
+            return model.N_batteries[k] == 2
         elif k == "station_2":
-            return model.N_batteries[k] == 1
+            return model.N_batteries[k] == 2
         else:
-            return model.N_batteries[k] == 1
+            return model.N_batteries[k] == 2
         
     #FORTALECIMIENTO 
     def n_swaps_limit_1(self, model, i, d):
-        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 4
+        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 5
     
     def n_swaps_limit_2(self, model, i, d):
         return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 3
@@ -821,16 +826,16 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.battery_upper,
         )
-        model.battery_boundary = pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary)
         model.battery_boundary_swap = pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary_swap)
+        model.batter_energy_conservation = pyo.Constraint(model.slhd_set, model.days, rule=self.battery_energy_conservation)
 
         # 2) Infraestructura de estaciones y capacidad eléctrica
         model.max_n_chargers = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -856,12 +861,12 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
-        #model.between_shifts_elhd_swap = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_between_shifts_set,
-        #    rule=self.between_shifts_elhd_swap,
-        #)
+        model.between_shifts_elhd_swap = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_between_shifts_set,
+            rule=self.between_shifts_elhd_swap,
+        )
         model.total_swaps = pyo.Constraint(
             model.stations_set,
             model.days,
@@ -874,21 +879,15 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.max_swaps,
         )
-        model.swap_precedence_by_index = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_precedence_by_index,
-        )
         model.n_swaps_limit_1 = pyo.Constraint(
             model.slhd_set,
             model.days,
             rule=self.n_swaps_limit_1,
         )
         model.n_swaps_limit_2 = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            rule=self.n_swaps_limit_2,
+           model.slhd_set,
+           model.days,
+           rule=self.n_swaps_limit_2,
         )
 
         # 4) Inventario de baterías en estaciones
@@ -926,7 +925,7 @@ class ConstraintRules(OptRules):
 
         # 5) Producción y penalizaciones
         model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
-        model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
+        #model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
         #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
         #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
@@ -952,11 +951,25 @@ class ConstraintRules(OptRules):
         model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        #model.maintenance_stop_all = pyo.Constraint(
-        #    model.slhd_set,
+        model.maintenance_stop_all = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.maint_stop_all,
+        )
+
+        # 7) Rotura simetría
+        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    rule=self.battery_boundary_break_simmetry_lhds_start,
+        #)
+
+        #model.swap_precedence_by_index = pyo.Constraint(
+        #    model.swap_precedence_pairs,
         #    model.days,
         #    model.time_intervals_set,
-        #    rule=self.maint_stop_all,
+        #    rule=self.swap_precedence_by_index,
         #)
 
 class ObjectiveRules(OptRules):
