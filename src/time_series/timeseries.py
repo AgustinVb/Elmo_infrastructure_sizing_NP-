@@ -1,4 +1,4 @@
-
+﻿
 import math
 import pandas as pd
 from pandas import DataFrame, concat
@@ -10,11 +10,14 @@ class Timeseries(object):
 
     def __init__(self, series, days, delta_t):
         self.series = series
-        self.days = days
+        self.days = sorted(days)
         self.delta_t = delta_t
-        self.scaling_factor_op_cost = 365/(len(self.days))
-        # Conservamos el diccionario 'time' de tu código original por compatibilidad
+        self.scaling_factor_op_cost = 365 / len(self.days)
+        # Conservamos el diccionario 'time' de tu cÃ³digo original por compatibilidad
         self.time, self.mapper = dict(hourly=1, daily=24, weekly=168), {}
+        self.day_to_year = {int(day): self.get_year_of_day(day) for day in self.days}
+        self.years = sorted(set(self.day_to_year.values()))
+        self.day_weights = self._build_day_weights()
         self.time_intervals = self.build_mappers()
         self.shifts = self.get_shifts()
         self._mc_scaled_cache = {}
@@ -32,13 +35,60 @@ class Timeseries(object):
         return self.mapper['Time_Intervals']
     
     def _hours_of_day(self, day: int):
-        """Horas absolutas del año (1..8760) que pertenecen al día 'day'."""
+        """Horas absolutas del aÃ±o (1..8760) que pertenecen al dÃ­a 'day'."""
         start = (int(day) - 1) * 24 + 1
         return list(range(start, start + 24))
 
+    def get_year_of_day(self, day: int) -> int:
+        """
+        Mapea un dÃ­a absoluto del horizonte a su aÃ±o correspondiente.
+        ConvenciÃ³n:
+        - 1..365 -> aÃ±o 1
+        - 366..730 -> aÃ±o 2
+        - etc.
+        """
+        day_int = int(day)
+        if day_int <= 0:
+            raise ValueError(f"day must be positive, got {day}")
+        return ((day_int - 1) // 365) + 1
+
+    def get_representative_day_of_year(self, year: int) -> int:
+        """
+        Retorna el dÃ­a absoluto representativo del aÃ±o.
+        ConvenciÃ³n:
+        - aÃ±o 1 -> dÃ­a 1
+        - aÃ±o 2 -> dÃ­a 366
+        - etc.
+        """
+        year_int = int(year)
+        if year_int <= 0:
+            raise ValueError(f"year must be positive, got {year}")
+        return 1 + (year_int - 1) * 365
+
+    def _build_day_weights(self) -> dict:
+        """
+        Asigna a cada dÃ­a modelado un peso igual a la cantidad de dÃ­as reales
+        que representa dentro de su aÃ±o.
+
+        Si hay un solo dÃ­a muestreado en un aÃ±o, pesa 365.
+        Si hay n dÃ­as muestreados en un mismo aÃ±o, cada uno pesa 365/n.
+        """
+        days_by_year = {}
+        for day in self.days:
+            year = self.day_to_year[int(day)]
+            days_by_year.setdefault(year, []).append(int(day))
+
+        weights = {}
+        for year, days_in_year in days_by_year.items():
+            weight = 365.0 / len(days_in_year)
+            for day in days_in_year:
+                weights[day] = weight
+
+        return weights
+
     def _scaled_day_marginal_cost(self, location_name: str, day: int):
         """
-        Devuelve una Serie (index: horas del año) del día 'day' para 'location_name'
+        Devuelve una Serie (index: horas del aÃ±o) del dÃ­a 'day' para 'location_name'
         con 0 -> 0.001 y escalada para que el promedio diario sea 0.1.
         Usa cache para no recalcular.
         """
@@ -47,7 +97,7 @@ class Timeseries(object):
             return self._mc_scaled_cache[key]
 
         hours = self._hours_of_day(day)
-        # Tomamos la fila por ubicación y las 24 columnas del día
+        # Tomamos la fila por ubicaciÃ³n y las 24 columnas del dÃ­a
         row = self.mapper['MarginalCost'].loc[location_name, hours].astype(float)
 
         # Paso 2: 0 -> 0.001
@@ -55,7 +105,7 @@ class Timeseries(object):
 
         # Paso 3: escalar a promedio 0.1
         current_mean = float(row.mean())
-        # Por seguridad: si fuese ~0 (no debería ocurrir tras el reemplazo), no escalar
+        # Por seguridad: si fuese ~0 (no deberÃ­a ocurrir tras el reemplazo), no escalar
         alpha = 0.1 / current_mean if current_mean > 0 else 1.0
         scaled = row * alpha
 
@@ -65,14 +115,14 @@ class Timeseries(object):
     def get_marginal_cost_scaled(self, location_name: str, day: int, time_interval: int) -> float:
         """
         Costo marginal ajustado para (location, day, interval):
-        (1) extrae el día, (2) 0->0.001, (3) escala promedio diario a 0.1.
-        Respeta delta_t (mapea intervalos sub-horarios al índice horario por 'ceil').
+        (1) extrae el dÃ­a, (2) 0->0.001, (3) escala promedio diario a 0.1.
+        Respeta delta_t (mapea intervalos sub-horarios al Ã­ndice horario por 'ceil').
         """
         import math
         hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
         scaled_day = self._scaled_day_marginal_cost(location_name, day)
 
-        # Si por alguna razón el hour_of_year no está (no debería), cae al valor original
+        # Si por alguna razÃ³n el hour_of_year no estÃ¡ (no deberÃ­a), cae al valor original
         if hour_of_year in scaled_day.index:
             return float(scaled_day.loc[hour_of_year])
         else:
@@ -118,7 +168,7 @@ class Timeseries(object):
         Agrega las columnas:
           - start_day, end_day
           - start_interval, end_interval
-        Igual que en el original, pero sin modificar la lógica.
+        Igual que en el original, pero sin modificar la lÃ³gica.
         """
         na = node_assignment[['shift_name_start', 'shift_name_end', 'elhd_name', 'ex_node_name']].copy()
         na['start_day'] = [self.get_shift_day_start(s) for s in na['shift_name_start']]
@@ -160,8 +210,23 @@ class Timeseries(object):
 
     def sample_extraction_goal(self, extraction_goal: pd.DataFrame) -> pd.DataFrame:
         extraction_goal = extraction_goal.set_index('name')
-        days_selected = np.arange(self.days[0], (self.days[len(self.days) - 1]) + 1)
-        return extraction_goal[days_selected]
+        day_columns = {}
+        for col in extraction_goal.columns:
+            try:
+                day_columns[col] = int(col)
+            except (TypeError, ValueError):
+                continue
+
+        extraction_goal = extraction_goal[list(day_columns.keys())].copy()
+        extraction_goal.columns = [day_columns[col] for col in extraction_goal.columns]
+        representative_days = [self.get_representative_day_of_year(year) for year in self.years]
+        missing_days = [day for day in representative_days if day not in extraction_goal.columns]
+        if missing_days:
+            raise KeyError(
+                "Missing representative day columns in ExtractionGoal for years in horizon: "
+                f"{missing_days}"
+            )
+        return extraction_goal[representative_days]
 
     def get_marginal_cost(self, location_name: str, day: int, time_interval: int) -> float:
         hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
@@ -172,7 +237,9 @@ class Timeseries(object):
         return self.mapper['Emissions'].loc[tipo, hour_of_year]
 
     def get_extraction_goal(self, node_name: str, day: int) -> float:
-        return self.mapper['ExtractionGoal'].loc[node_name, day]
+        year = self.day_to_year[int(day)]
+        representative_day = self.get_representative_day_of_year(year)
+        return self.mapper['ExtractionGoal'].loc[node_name, representative_day]
 
     def get_shift_start_interval(self, shift_name: str) -> float:
         h_start = self.mapper['Shifts'].loc[shift_name, :]['hour_start'].iloc[0]
@@ -244,7 +311,7 @@ class Timeseries(object):
         return list(sa_elhd['station'])
 
     def get_station_assignment(self, elhds: list) -> int:
-        """Puebla `self.mapper['Stations_per_elhd']` con asignación estática.
+        """Puebla `self.mapper['Stations_per_elhd']` con asignaciÃ³n estÃ¡tica.
         Para cada elhd almacena la lista de estaciones asociadas.
         """
         station_per_elhd = {}
@@ -254,7 +321,7 @@ class Timeseries(object):
         return 0
        
     def get_elhd_at_station(self, stations: list) -> int:
-        """Invierte `Stations_per_elhd` → `elhd_per_station[(station)] = [elhds]`"""
+        """Invierte `Stations_per_elhd` â†’ `elhd_per_station[(station)] = [elhds]`"""
         elhd_per_station = {}
         for st in stations:
             elhd_per_station[st] = []
@@ -306,12 +373,12 @@ class Timeseries(object):
         last_int = int(self.get_last_interval())
         for _, row in ba_elhd.iterrows():
             sd, ed = row.start_day, row.end_day
-            # ¿Este BA cubre el día?
+            # Â¿Este BA cubre el dÃ­a?
             if not (sd <= day <= ed):
                 continue
-            # si es día de inicio, arrancamos en start_interval; si no, en la 1
+            # si es dÃ­a de inicio, arrancamos en start_interval; si no, en la 1
             si = row.start_interval if day == sd else 1
-            # si es día de fin, paramos en end_interval; si no, en el último intervalo
+            # si es dÃ­a de fin, paramos en end_interval; si no, en el Ãºltimo intervalo
             ei = row.end_interval if day == ed else last_int
             if si <= interval <= ei:
                 assigned.append(row.battery_name)
@@ -365,13 +432,13 @@ class Timeseries(object):
             trips.loc[(elhd, node), 'travel_duration'] = 1
             trips.loc[(elhd, node), 'energy_consumption'] = energy_per_trip
 
-            # 🔥 NUEVO: transformar kWh a litros de diésel si corresponde
+            # ðŸ”¥ NUEVO: transformar kWh a litros de diÃ©sel si corresponde
             tech_type = mine_system.elhd.get_technology_type(elhd).lower()
             if tech_type == 'diesel':
                 bsfc_g_per_kwh = 230          # Brake Specific Fuel Consumption [g/kWh]
-                diesel_density_g_per_l = 832  # Densidad del diésel [g/L]
+                diesel_density_g_per_l = 832  # Densidad del diÃ©sel [g/L]
 
-                # Calcular gramos de diésel
+                # Calcular gramos de diÃ©sel
                 grams_diesel = energy_per_trip * bsfc_g_per_kwh  # gramos
 
                 # Convertir gramos a litros
@@ -398,7 +465,7 @@ class Timeseries(object):
 
     def get(self, start_col=None, end_col=None, keys=None):
         """
-        Generic getter de tu código original (no tocamos esta parte).
+        Generic getter de tu cÃ³digo original (no tocamos esta parte).
         """
         if start_col and end_col:
             if keys:
@@ -464,11 +531,11 @@ class Timeseries(object):
         return df.iloc[:, 0].to_dict()
 
     #def get_n_chargers(self) -> int:
-    #    """Devuelve el número de cargadores según Misc → 'chargers'."""
+    #    """Devuelve el nÃºmero de cargadores segÃºn Misc â†’ 'chargers'."""
     #    return self.mapper['Misc']['chargers']
 
     #def get_grid_power(self) -> float:
-    #    """Devuelve el parámetro Pmine según Misc → 'Pmine'."""
+    #    """Devuelve el parÃ¡metro Pmine segÃºn Misc â†’ 'Pmine'."""
     #    return self.mapper['Misc']['Pmine']
 
 
