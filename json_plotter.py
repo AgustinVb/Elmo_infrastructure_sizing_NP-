@@ -137,7 +137,10 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
         return None
 
     # -------------------------------------------------------------------------
-    # Caso especial: M.json tipo _1 -> LHD -> _2 -> CXXXX -> _3 -> day
+    # Caso especial: M.json
+    # Formatos soportados:
+    #   - _1 -> LHD -> _2 -> CXXXX -> _3 -> day : value
+    #   - _1 -> LHD -> _2 -> CXXXX -> _3 -> day -> _4 -> interval : value
     # -------------------------------------------------------------------------
     if any(str(k).startswith("_") for k in data.keys()):
         for k1, v1 in data.items():            # _1
@@ -146,12 +149,28 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                     for j, v4 in v3.items():  # C0044, C0045... nodo j
                         for k3, val_dict in v4.items():  # _3
                             for day, val in val_dict.items():
-                                rows.append({
-                                    "lhd": lhd,
-                                    "j": j,
-                                    "day": int(day),
-                                    "value": float(val)
-                                })
+                                if isinstance(val, dict):
+                                    # Nuevo formato: el valor diario trae un mapa por intervalo.
+                                    interval_map = val.get("_4", val)
+                                    if isinstance(interval_map, dict):
+                                        for interval, val_t in interval_map.items():
+                                            if isinstance(val_t, (dict, list)):
+                                                continue
+                                            rows.append({
+                                                "lhd": lhd,
+                                                "j": j,
+                                                "day": _numeric_or_str(day),
+                                                "interval": _numeric_or_str(interval),
+                                                "value": float(val_t)
+                                            })
+                                else:
+                                    # Formato legacy: valor diario escalar.
+                                    rows.append({
+                                        "lhd": lhd,
+                                        "j": j,
+                                        "day": _numeric_or_str(day),
+                                        "value": float(val)
+                                    })
 
     # -------------------------------------------------------------------------
     # Caso 1: Estructura con eje 'k' (P.json, etc.)
@@ -318,6 +337,9 @@ class Parameters:
         self.between_shifts = []
         self.meals = []
         self.maintenance = []
+        # DET defaults
+        self.shift_change = []
+        self.forced_detention = []
 
         self._load()
 
@@ -402,6 +424,14 @@ class Parameters:
         maint_raw = data.get("time_intevals_maintenance_set", data.get("time_intervals_maintenance_set", []))
         self.maintenance = sorted(int(v) for v in maint_raw)
 
+        # DET-specific sets (written by Printer when model exposes them)
+        # Support multiple possible key names for backward compatibility
+        shift_raw = data.get("time_intervals_shift_change_det_set", data.get("time_intervals_shift_change_set", []))
+        self.shift_change = sorted(int(v) for v in shift_raw)
+
+        forced_raw = data.get("time_intervals_forced_detention_set", data.get("time_intervals_fuel_delay_set", []))
+        self.forced_detention = sorted(int(v) for v in forced_raw)
+
 # -------------------- Plotter --------------------
 class JSONPlotter:
     MONTH_LABELS = {
@@ -418,8 +448,9 @@ class JSONPlotter:
             11: "November",
             12: "December",
         }
-    def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE):
+    def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
+        self.mode = mode.upper() if isinstance(mode, str) else "DCH"
 
         # Guardar SIEMPRE en <json_dir>/plots
         self.plot_dir = os.path.join(self.json_dir, "plots")
@@ -612,23 +643,44 @@ class JSONPlotter:
                 "meal": sorted(int(v) for v in sets_data.get("time_intervals_meal_set", [])),
                 "maintenance": sorted(int(v) for v in sets_data.get("time_intervals_maintenance_set", [])),
             }
+        # Default DCH scheme (colaciones, cambios de turno, mantenimiento)
+        if self.mode == "DCH":
+            return {
+                "between_shifts": self._build_intervals_from_clock_windows([
+                    ("19:00", "21:00"),
+                    ("07:00", "09:00"),
+                ], start_hour=9),
+                "meal": self._build_intervals_from_clock_windows([
+                    ("14:04", "14:56"),
+                    ("02:04", "02:56"),
+                ], start_hour=9),
+                "maintenance": self._build_intervals_from_clock_windows([
+                    ("10:04", "12:26"),
+                    ("16:04", "17:26"),
+                    ("22:04", "00:26"),
+                    ("04:04", "05:26"),
+                ], start_hour=9),
+            }
 
-        return {
-            "between_shifts": self._build_intervals_from_clock_windows([
-                ("19:00", "21:00"),
-                ("07:00", "09:00"),
-            ], start_hour=9),
-            "meal": self._build_intervals_from_clock_windows([
-                ("14:04", "14:56"),
-                ("02:04", "02:56"),
-            ], start_hour=9),
-            "maintenance": self._build_intervals_from_clock_windows([
-                ("10:04", "12:26"),
-                ("16:04", "17:26"),
-                ("22:04", "00:26"),
-                ("04:04", "05:26"),
-            ], start_hour=9),
-        }
+        # DET scheme: use provided shift_change + fuel_delay windows to build DET intervals
+        if self.mode == "DET":
+            det_windows = [
+                ("09:00", "10:12"),          # fuel_delay during shift 2 (overlap from 09:00)
+                ("16:00", "17:04"),          # shift_change at 16:00
+                ("17:04", "18:16"),          # fuel_delay
+                ("00:00", "01:04"),          # shift_change at 00:00
+                ("01:04", "02:16"),          # fuel_delay
+                ("08:00", "09:04"),          # shift_change next day
+            ]
+            det_intervals = self._build_intervals_from_clock_windows(det_windows, start_hour=9)
+            return {
+                "between_shifts": [],
+                "meal": [],
+                "maintenance": det_intervals,
+            }
+
+        # Fallback: empty sets
+        return {"between_shifts": [], "meal": [], "maintenance": []}
 
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
@@ -686,16 +738,24 @@ class JSONPlotter:
                 groups.append((start, prev))
                 return groups
 
-            # Franjas de fondo usando intervalos exportados en parameters.json
-            between_shifts_intervals = self.params.between_shifts if self.params.between_shifts else self.special_intervals.get("between_shifts", [])
-            meal_intervals = self.params.meals if self.params.meals else self.special_intervals.get("meal", [])
-            maintenance_intervals = self.params.maintenance if self.params.maintenance else self.special_intervals.get("maintenance", [])
+            # Selección de franjas de fondo según modo
+            if self.mode == "DET":
+                shift_change_intervals = self.params.shift_change if getattr(self.params, 'shift_change', None) else self.special_intervals.get("shift_change", [])
+                forced_intervals = self.params.forced_detention if getattr(self.params, 'forced_detention', None) else self.special_intervals.get("forced_detention", [])
+                shade_specs = [
+                    (shift_change_intervals, 'darkgray', 0.7),
+                    (forced_intervals, '#ffe6e6', 0.8),
+                ]
+            else:
+                between_shifts_intervals = self.params.between_shifts if getattr(self.params, 'between_shifts', None) else self.special_intervals.get("between_shifts", [])
+                meal_intervals = self.params.meals if getattr(self.params, 'meals', None) else self.special_intervals.get("meal", [])
+                maintenance_intervals = self.params.maintenance if getattr(self.params, 'maintenance', None) else self.special_intervals.get("maintenance", [])
 
-            shade_specs = [
-                (between_shifts_intervals, 'darkgray', 0.7),
-                (meal_intervals, 'lightgray', 0.4),
-                (maintenance_intervals, '#ffe6e6', 0.8),
-            ]
+                shade_specs = [
+                    (between_shifts_intervals, 'darkgray', 0.7),
+                    (meal_intervals, 'lightgray', 0.4),
+                    (maintenance_intervals, '#ffe6e6', 0.8),
+                ]
             for intervals_list, color, alpha in shade_specs:
                 for gs, ge in _group_consecutive(intervals_list):
                     x0 = start_hour + (gs - 1) * dt

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import argparse
@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple, Optional
 
 # ============================================================
-# CONFIG: define aquí el delta t por defecto (minutos)
+# CONFIG: define aquÃ­ el delta t por defecto (minutos)
 # (Puedes sobreescribirlo con --delta-minutes en la consola)
 # ============================================================
 DEFAULT_DELTA_MINUTES = 8.0
 
 
 # -----------------------------
-# Helpers lectura / vacío
+# Helpers lectura / vacÃ­o
 # -----------------------------
 def is_effectively_empty_json(path: Path) -> bool:
     if not path.exists():
@@ -57,7 +57,7 @@ def find_json_in_folder(root: Path, filename: str) -> Optional[Path]:
     if not matches:
         return None
 
-    # prioriza el más grande
+    # prioriza el mÃ¡s grande
     matches.sort(key=lambda p: (p.stat().st_size if p.exists() else 0), reverse=True)
     return matches[0]
 
@@ -98,7 +98,7 @@ def make_table(title: str, headers: List[str], rows: List[List[Any]]) -> str:
 
 
 # -----------------------------
-# Serie genérica para E/B
+# Serie genÃ©rica para E/B
 # -----------------------------
 def parse_timeseries(v_map: Dict[str, Any]) -> List[Tuple[float, float]]:
     items: List[Tuple[float, float]] = []
@@ -146,11 +146,11 @@ def mean_drop_rate_per_hour_fixed_dt(
     """
     data = load_json(json_path)
     if not isinstance(data, dict):
-        raise ValueError("JSON inesperado: la raíz no es un objeto/dict.")
+        raise ValueError("JSON inesperado: la raÃ­z no es un objeto/dict.")
 
     vehicles = data["d"] if ("d" in data and isinstance(data["d"], dict)) else data
     if not isinstance(vehicles, dict) or len(vehicles) == 0:
-        raise ValueError("No pude detectar series por vehículo (dict vacío o formato no soportado).")
+        raise ValueError("No pude detectar series por vehÃ­culo (dict vacÃ­o o formato no soportado).")
 
     step_hours = delta_minutes / 60.0
     total_drop = 0.0
@@ -217,7 +217,7 @@ def mean_consumption_kwhph(b_json_path: Path, delta_minutes: float, eps: float =
 
 
 # -----------------------------
-# M: extracción total (sumar números)
+# M: extracciÃ³n total (sumar nÃºmeros)
 # -----------------------------
 def total_extraction(m_json_path: Path) -> Tuple[float, Dict[str, int]]:
     data = load_json(m_json_path)
@@ -257,7 +257,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def calculate_daily_trips(y_json_path: Path) -> Dict[str, float]:
-    """Cuenta viajes diarios como activaciones positivas de Y por día."""
+    """Cuenta viajes diarios como activaciones positivas de Y por dÃ­a."""
     data = load_json(y_json_path)
     trips_by_day: Dict[str, float] = {}
 
@@ -295,7 +295,7 @@ def calculate_daily_trips(y_json_path: Path) -> Dict[str, float]:
 
 
 def calculate_daily_charged_energy(p_json_path: Path, step_hours: float) -> Dict[str, float]:
-    """Suma energía diaria [kWh] desde P [kW] usando step_hours."""
+    """Suma energÃ­a diaria [kWh] desde P [kW] usando step_hours."""
     data = load_json(p_json_path)
     energy_by_day: Dict[str, float] = {}
 
@@ -410,7 +410,7 @@ def calculate_cycles_from_y_ntrips(y_json_path: Path, m_json_path: Path, params_
     g_i = params.get("g_i", {}).get("_1", {}) if isinstance(params, dict) else {}
     filling = params.get("filling_factor", {}).get("_1", {}) if isinstance(params, dict) else {}
 
-    # Estimación de n_trips[j,i] por promedio ponderado en Y
+    # EstimaciÃ³n de n_trips[j,i] por promedio ponderado en Y
     ntr_num: Dict[Tuple[str, str], float] = {}
     ntr_den: Dict[Tuple[str, str], float] = {}
 
@@ -462,10 +462,10 @@ def infer_step_hours(root: Path, fallback_minutes: float) -> float:
 # -----------------------------
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Analiza outputs desde una carpeta: E (L/h), B (kWh/h) y M (extracción total). "
-                    "Omite automáticamente JSON faltantes o vacíos."
+        description="Analiza outputs desde una carpeta: E (L/h), B (kWh/h) y M (extracciÃ³n total). "
+                    "Omite automÃ¡ticamente JSON faltantes o vacÃ­os."
     )
-    ap.add_argument("folder", help="Ruta de la carpeta que contiene los JSON (búsqueda recursiva).")
+    ap.add_argument("folder", help="Ruta de la carpeta que contiene los JSON (bÃºsqueda recursiva).")
     ap.add_argument(
         "--delta-minutes",
         type=float,
@@ -477,7 +477,7 @@ def main() -> None:
 
     root = Path(args.folder).expanduser()
     if not root.exists() or not root.is_dir():
-        raise SystemExit(f"Carpeta no válida: {root}")
+        raise SystemExit(f"Carpeta no vÃ¡lida: {root}")
 
     e_path = find_json_in_folder(root, "E.json")
     b_path = find_json_in_folder(root, "B.json")
@@ -486,7 +486,7 @@ def main() -> None:
     p_path = find_json_in_folder(root, "P.json")
     params_path = find_json_in_folder(root, "parameters.json")
 
-    # Tabla “inputs”
+    # Tabla â€œinputsâ€
     inputs_rows = [
         ["Folder", str(root)],
         ["Delta t (min)", fmt_num(args.delta_minutes, 3)],
@@ -508,21 +508,21 @@ def main() -> None:
             kwhph, s = mean_consumption_kwhph(b_path, delta_minutes=args.delta_minutes, eps=args.eps)
             rows = [
                 ["Promedio consumo (solo descensos)", f"{kwhph:.6f} kWh/h"],
-                ["Energía consumida (solo descensos)", f"{s['total_drop_kwh']:.6f} kWh"],
+                ["EnergÃ­a consumida (solo descensos)", f"{s['total_drop_kwh']:.6f} kWh"],
                 ["Pasos con descenso", str(int(s["n_drop_steps"]))],
                 ["Pares totales evaluados", str(int(s["n_pairs_total"]))],
-                ["Vehículos usados", str(int(s["n_vehicles_used"]))],
-                ["Series (vehículo-día)", str(int(s["n_series"]))],
+                ["VehÃ­culos usados", str(int(s["n_vehicles_used"]))],
+                ["Series (vehÃ­culo-dÃ­a)", str(int(s["n_series"]))],
                 ["Delta t usado", f"{s['delta_minutes']:.3f} min"],
             ]
-            print(make_table("B (ELÉCTRICO)", ["Métrica", "Valor"], rows))
+            print(make_table("B (ELÃ‰CTRICO)", ["MÃ©trica", "Valor"], rows))
             print()
             printed_any = True
         except Exception as ex:
-            print(make_table("B (ELÉCTRICO)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+            print(make_table("B (ELÃ‰CTRICO)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
             print()
     else:
-        print(make_table("B (ELÉCTRICO)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacío/no usable."]]))
+        print(make_table("B (ELÃ‰CTRICO)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacÃ­o/no usable."]]))
         print()
 
     # ---- M
@@ -530,23 +530,23 @@ def main() -> None:
         try:
             tot, meta = total_extraction(m_path)
             rows = [
-                ["Extracción total (toda la operación)", f"{tot:.6f} (unidad de M)"],
-                ["Valores numéricos sumados", str(meta["values_summed"])],
+                ["ExtracciÃ³n total (toda la operaciÃ³n)", f"{tot:.6f} (unidad de M)"],
+                ["Valores numÃ©ricos sumados", str(meta["values_summed"])],
             ]
-            print(make_table("M (EXTRACCIÓN)", ["Métrica", "Valor"], rows))
+            print(make_table("M (EXTRACCIÃ“N)", ["MÃ©trica", "Valor"], rows))
             print()
             printed_any = True
         except Exception as ex:
-            print(make_table("M (EXTRACCIÓN)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+            print(make_table("M (EXTRACCIÃ“N)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
             print()
     else:
-        print(make_table("M (EXTRACCIÓN)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacío/no usable."]]))
+        print(make_table("M (EXTRACCIÃ“N)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacÃ­o/no usable."]]))
         print()
 
     if not printed_any:
-        print("No se pudo calcular nada: no encontré JSON utilizables (o todos estaban vacíos).")
+        print("No se pudo calcular nada: no encontrÃ© JSON utilizables (o todos estaban vacÃ­os).")
 
-    # ---- Operación diaria (viajes y energía)
+    # ---- OperaciÃ³n diaria (viajes y energÃ­a)
     try:
         trips_daily = calculate_daily_trips(y_path) if (y_path and not is_effectively_empty_json(y_path)) else {}
         step_hours = infer_step_hours(root, args.delta_minutes)
@@ -591,19 +591,19 @@ def main() -> None:
                 f"{total_energy:.3f}",
             ])
             print(make_table(
-                "OPERACIÓN DIARIA",
-                ["Día", "Viajes diarios totales", "Ciclos (Y*n_trips)", "Energía diaria [kWh]"],
+                "OPERACIÃ“N DIARIA",
+                ["DÃ­a", "Viajes diarios totales", "Ciclos (Y*n_trips)", "EnergÃ­a diaria [kWh]"],
                 rows,
             ))
             print()
             print(make_table(
                 "CICLOS TOTALES",
-                ["Métrica", "Valor"],
+                ["MÃ©trica", "Valor"],
                 [["cycles_total = sum(Y[i,j] * n_trips[j,i])", f"{cycles_total:.3f}"]],
             ))
             print()
     except Exception as ex:
-        print(make_table("OPERACIÓN DIARIA", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+        print(make_table("OPERACIÃ“N DIARIA", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
         print()
     
     # ---- Cost
@@ -611,8 +611,9 @@ def main() -> None:
         costs = calculate_total_costs(root)
         if costs:
             rows = [
-                ["Costo energía carga (USD)", f"{costs['energy_cost']:.2f}"],
-                ["Costo inversión (USD)", f"{costs['investment_cost']:.2f}"],
+                ["Costo energÃ­a carga (USD)", f"{costs['energy_cost']:.2f}"],
+                ["Costo inversiÃ³n (USD)", f"{costs['investment_cost']:.2f}"],
+                ["Costo potencia punta (USD)", f"{costs['power_cost']:.2f}"],
                 ["Costo penalidad (USD)", f"{costs['penalty_cost']:.2f}"],
                 ["COSTO TOTAL (USD)", f"{costs['total_cost']:.2f}"],
             ]
@@ -624,11 +625,11 @@ def main() -> None:
 
 
 # -----------------------------
-# Módulo de cálculo de costos
+# MÃ³dulo de cÃ¡lculo de costos
 # -----------------------------
 def calculate_lhd_charge_cost(root: Path) -> float:
     """
-    Calcula el costo de carga de los LHD eléctricos.
+    Calcula el costo de carga de los LHD elÃ©ctricos.
     Usa P.json (potencia de carga) y parameters.json (costos marginales y delta_t).
     """
     p_path = find_json_in_folder(root, "P.json")
@@ -638,7 +639,7 @@ def calculate_lhd_charge_cost(root: Path) -> float:
         raise ValueError("No se encontraron P.json o parameters.json")
     
     if is_effectively_empty_json(p_path) or is_effectively_empty_json(params_path):
-        raise ValueError("P.json o parameters.json están vacíos")
+        raise ValueError("P.json o parameters.json estÃ¡n vacÃ­os")
     
     p_data = load_json(p_path)
     params_data = load_json(params_path)
@@ -722,8 +723,8 @@ def calculate_lhd_charge_cost(root: Path) -> float:
 
 def calculate_investment_cost(root: Path) -> float:
     """
-    Calcula el costo de inversión en estaciones y cargadores.
-    Usa X.json (estaciones instaladas), N_chargers.json (número de cargadores)
+    Calcula el costo de inversiÃ³n en estaciones y cargadores.
+    Usa X.json (estaciones instaladas), N_chargers.json (nÃºmero de cargadores)
     y parameters.json (costos).
     """
     x_path = find_json_in_folder(root, "X.json")
@@ -731,10 +732,10 @@ def calculate_investment_cost(root: Path) -> float:
     params_path = find_json_in_folder(root, "parameters.json")
     
     if not params_path:
-        raise ValueError("No se encontró parameters.json")
+        raise ValueError("No se encontrÃ³ parameters.json")
     
     if is_effectively_empty_json(params_path):
-        raise ValueError("parameters.json está vacío")
+        raise ValueError("parameters.json estÃ¡ vacÃ­o")
     
     params_data = load_json(params_path)
     
@@ -749,8 +750,8 @@ def calculate_investment_cost(root: Path) -> float:
         if "k" in x_data and isinstance(x_data["k"], dict):
             for station_id, value in x_data["k"].items():
                 try:
-                    if float(value) > 0.5:  # estación instalada
-                        # Buscar costo de la estación
+                    if float(value) > 0.5:  # estaciÃ³n instalada
+                        # Buscar costo de la estaciÃ³n
                         if "_1" in station_costs:
                             cost = station_costs["_1"].get(station_id, 0.0)
                             total_cost += float(cost)
@@ -776,8 +777,8 @@ def calculate_investment_cost(root: Path) -> float:
 
 def calculate_penalty_cost(root: Path) -> float:
     """
-    Calcula el costo de penalidad por déficit de producción.
-    Basado en la función F_penalty_cost de functions.py.
+    Calcula el costo de penalidad por dÃ©ficit de producciÃ³n.
+    Basado en la funciÃ³n F_penalty_cost de functions.py.
     F_penalty_cost = sum(F_seg[j, d, s] * (Voll / F_penalty_div[s]))
     """
     params_path = find_json_in_folder(root, "parameters.json")
@@ -798,7 +799,7 @@ def calculate_penalty_cost(root: Path) -> float:
     
     total_penalty = 0.0
     
-    # F_seg.json tiene estructura: {"_1": {"nodo": {"_2": {"día": {"_3": {"segmento": valor}}}}}}
+    # F_seg.json tiene estructura: {"_1": {"nodo": {"_2": {"dÃ­a": {"_3": {"segmento": valor}}}}}}
     if "_1" in f_seg_data and isinstance(f_seg_data["_1"], dict):
         for node_id, node_data in f_seg_data["_1"].items():
             if "_2" in node_data and isinstance(node_data["_2"], dict):
@@ -820,24 +821,53 @@ def calculate_penalty_cost(root: Path) -> float:
     return total_penalty * scaling_factor
 
 
+def _sum_numeric_leaves(data: Any) -> float:
+    """Suma todos los valores numericos en una estructura JSON anidada."""
+    if isinstance(data, dict):
+        return sum(_sum_numeric_leaves(v) for v in data.values())
+    if isinstance(data, list):
+        return sum(_sum_numeric_leaves(v) for v in data)
+    try:
+        return float(data)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def calculate_power_cost(root: Path) -> float:
+    """
+    Calcula el costo por potencia punta.
+
+    Misma formula que ObjectiveRules.power_cost:
+        sum(P_pot[y] * 12 * 10 for y in years)
+    """
+    p_pot_path = find_json_in_folder(root, "P_pot.json")
+
+    if not p_pot_path or is_effectively_empty_json(p_pot_path):
+        return 0.0
+
+    p_pot_data = load_json(p_pot_path)
+    total_p_peak = _sum_numeric_leaves(p_pot_data)
+    return total_p_peak * 12.0 * 10.0
+
+
 def calculate_total_costs(root: Path) -> Dict[str, float]:
     """
     Calcula todos los costos del sistema:
-    - Costo de energía (lhd_charge_cost)
-    - Costo de inversión (inversion_cost)
+    - Costo de energÃ­a (lhd_charge_cost)
+    - Costo de inversiÃ³n (inversion_cost)
     - Costo de penalidad (F_penalty_cost)
     - Costo total
     """
     try:
         energy_cost = calculate_lhd_charge_cost(root)
     except Exception as ex:
-        print(f"Advertencia al calcular costo de energía: {ex}")
+        print(f"Advertencia al calcular costo de energÃ­a: {ex}")
         energy_cost = 0.0
     
     try:
         investment_cost = calculate_investment_cost(root)
     except Exception as ex:
-        print(f"Advertencia al calcular costo de inversión: {ex}")
+        print(f"Advertencia al calcular costo de inversiÃ³n: {ex}")
         investment_cost = 0.0
     
     try:
@@ -845,12 +875,19 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     except Exception as ex:
         print(f"Advertencia al calcular costo de penalidad: {ex}")
         penalty_cost = 0.0
+
+    try:
+        power_cost = calculate_power_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo por potencia: {ex}")
+        power_cost = 0.0
     
-    total_cost = investment_cost + energy_cost + penalty_cost
+    total_cost = investment_cost + energy_cost + power_cost + penalty_cost
     
     return {
         "energy_cost": energy_cost,
         "investment_cost": investment_cost,
+        "power_cost": power_cost,
         "penalty_cost": penalty_cost,
         "total_cost": total_cost,
     }

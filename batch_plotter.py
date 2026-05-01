@@ -61,6 +61,7 @@ def main():
     ap.add_argument("--root_dir", required=True, help="Carpeta 'output' que contiene subcarpetas por escenario")
     ap.add_argument("--depth", type=int, default=2, help="Profundidad máxima a explorar (default: 2)")
     ap.add_argument("--energy_price_scale", type=float, default=1.0, help="Escala para precio marginal")
+    ap.add_argument("--mode", choices=["DCH","DET"], default="DCH", help="Modo de detenciones para graficar: DCH (default) o DET")
     args = ap.parse_args()
 
     root = Path(args.root_dir).expanduser()
@@ -87,7 +88,7 @@ def main():
     for sdir in scenarios:
         print(f"\n📊 Procesando escenario: {sdir}")
         try:
-            plotter = JSONPlotter(str(sdir), energy_price_scale=args.energy_price_scale)
+            plotter = JSONPlotter(str(sdir), energy_price_scale=args.energy_price_scale, mode=args.mode)
             plotter.create_all_plots()
             print(f"✅ Listo: {sdir / 'plots'}")
         except Exception as e:
