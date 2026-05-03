@@ -1,4 +1,4 @@
-import pyomo.environ as pyo
+﻿import pyomo.environ as pyo
 import math
 import pandas as pd
 import numpy as np
@@ -25,6 +25,58 @@ class OptRules(object):
                 setattr(model, object_name, pyo.Constraint(sets, rule=rule))
         end = time.time()
         print(object_name, end - start)
+
+    def _build_intervals_from_clock_windows(self, windows, start_hour: int = 9):
+        """Convert a list of (HH:MM, HH:MM) windows into interval indices.
+
+        Uses self.time_series.delta_t (hours) and self.time_series.time_intervals.
+        start_hour is the hour (0-23) considered as interval 1 start (default 9).
+        """
+        if not hasattr(self.time_series, "time_intervals") or len(self.time_series.time_intervals) == 0:
+            return []
+
+        dt_minutes = int(round(self.time_series.delta_t * 60))
+        if dt_minutes <= 0:
+            return []
+
+        max_t = int(max(self.time_series.time_intervals))
+        base_minutes = int(start_hour) * 60
+
+        def _parse_hhmm(s):
+            hh, mm = s.strip().split(":")
+            return int(hh) * 60 + int(mm)
+
+        out = set()
+        for start_str, end_str in windows:
+            a = _parse_hhmm(start_str)
+            b = _parse_hhmm(end_str)
+            if a < base_minutes:
+                a += 24 * 60
+            if b < base_minutes:
+                b += 24 * 60
+            if b <= a:
+                b += 24 * 60
+
+            a_rel = a - base_minutes
+            b_rel = b - base_minutes
+
+            for t in range(1, max_t + 1):
+                s = (t - 1) * dt_minutes
+                e = t * dt_minutes
+                if max(s, a_rel) < min(e, b_rel):
+                    out.add(t)
+
+        allowed = set(int(v) for v in self.time_series.time_intervals)
+        return sorted(v for v in out if v in allowed)
+
+    def _get_peak_intervals(self, windows: list = None, start_hour: int = 9):
+        """Return sorted list of interval indices considered peak-hours.
+
+        If windows is None a sensible default is used.
+        """
+        if windows is None:
+            windows = [("09:00", "13:00"), ("17:00", "21:00")]
+        return self._build_intervals_from_clock_windows(windows, start_hour=start_hour)
 
 class OptSets(OptRules):
     def _extract_lhd_numeric_suffix(self, lhd_name):
@@ -135,6 +187,59 @@ class OptSets(OptRules):
                     indices.add(t)
 
         return sorted(indices)
+
+    def _build_intervals_from_clock_windows(self, windows, start_hour: int = 9):
+        """Convert a list of (HH:MM, HH:MM) windows into interval indices.
+
+        Uses self.time_series.delta_t (hours) and self.time_series.time_intervals.
+        start_hour is the hour (0-23) considered as interval 1 start (default 9).
+        """
+        if not hasattr(self.time_series, "time_intervals") or len(self.time_series.time_intervals) == 0:
+            return []
+
+        dt_minutes = int(round(self.time_series.delta_t * 60))
+        if dt_minutes <= 0:
+            return []
+
+        max_t = int(max(self.time_series.time_intervals))
+        base_minutes = int(start_hour) * 60
+
+        def _parse_hhmm(s):
+            hh, mm = s.strip().split(":")
+            return int(hh) * 60 + int(mm)
+
+        out = set()
+        for start_str, end_str in windows:
+            a = _parse_hhmm(start_str)
+            b = _parse_hhmm(end_str)
+            if a < base_minutes:
+                a += 24 * 60
+            if b < base_minutes:
+                b += 24 * 60
+            if b <= a:
+                b += 24 * 60
+
+            a_rel = a - base_minutes
+            b_rel = b - base_minutes
+
+            for t in range(1, max_t + 1):
+                s = (t - 1) * dt_minutes
+                e = t * dt_minutes
+                if max(s, a_rel) < min(e, b_rel):
+                    out.add(t)
+
+        allowed = set(int(v) for v in self.time_series.time_intervals)
+        return sorted(v for v in out if v in allowed)
+
+    def _get_peak_intervals(self, windows: list = None, start_hour: int = 9):
+        """Return sorted list of interval indices considered peak-hours.
+
+        If windows is None a sensible default is used.
+        """
+        if windows is None:
+            # sensible default peak windows (adjust if needed)
+            windows = [("09:00", "13:00"), ("17:00", "21:00")]
+        return self._build_intervals_from_clock_windows(windows, start_hour=start_hour)
       
     
     
@@ -261,6 +366,7 @@ class OptParameters(OptRules):
         model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
         model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
+        model.demand_charge_coef = pyo.Param(initialize=12 * 10, mutable=True)
         model.battery_cost = pyo.Param(initialize=self.mine_system.chargers.get_battery_cost(), mutable=False)
         #Parametros estaciones de carga
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False)
@@ -289,7 +395,7 @@ class OptParameters(OptRules):
             model.F_SEG,
             initialize={
                 1: 5.0,
-                2: 0.0,
+                2: 10.0,
                 3: 0.0,
                 4: 0,
                 5: 0,
@@ -345,6 +451,10 @@ class BoundRules(OptRules):
                             yield (i, j, d, t)
         # Sets de índices (solo contienen tuplas válidas)
         model.Y_INDEX  = pyo.Set(dimen=4, initialize=_init_Y_INDEX)
+        # Peak intervals set (for demand-charge constraints)
+        def _init_peak_set(m):
+            return tuple(self._get_peak_intervals())
+        model.time_intervals_peak_set = pyo.Set(initialize=_init_peak_set)
         # Variable binaria que indica si hay penalidad en la producción por swap
         #model.Z_pen = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
         #Viaje completo de LHD i al nodo j en (d,t)
@@ -381,6 +491,8 @@ class BoundRules(OptRules):
         model.X_ini = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # Demanda de baterías en el intervalo t en la estación k
         model.W = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        # Variable de potencia pico contratada / demand charge
+        model.P_pot = pyo.Var(domain=pyo.NonNegativeReals)
         #extracción total del equipo i en el día d.
         model.M = pyo.Var(model.slhd_set, model.nodes_set, model.days, domain=pyo.NonNegativeReals)
         # Holgura producción 
@@ -619,6 +731,13 @@ class ConstraintRules(OptRules):
     def peak_power_swap(self, model, d, t):
         return sum(model.Sv[k, d, t, a]*model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.p_peak
 
+    def power_peak_limit(self, model, d, t):
+        """Demand-charge constraint: total instantaneous power at peak t
+        (sum over stations k and starts a of p_charger * Sv[k,d,t,a]) <= P_pot
+        Indexed over days and peak time intervals only (model.time_intervals_peak_set).
+        """
+        return sum(model.Sv[k, d, t, a] * model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.P_pot
+
     # ==========================================================
     # 5) Inventario de baterías en estaciones
     # ==========================================================
@@ -834,8 +953,8 @@ class ConstraintRules(OptRules):
         model.max_n_batteries = pyo.Constraint(model.stations_set, rule=self.max_n_batteries)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -853,6 +972,7 @@ class ConstraintRules(OptRules):
             rule=self.charger_limit_swap,
         )
         model.peak_power_swap = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power_swap)
+        model.power_peak_limit = pyo.Constraint(model.days, model.time_intervals_peak_set, rule=self.power_peak_limit)
 
         # 3) Operación de LHD (estado, viajes y swaps)
         model.state_unique_elhd_swap = pyo.Constraint(
@@ -879,16 +999,16 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.max_swaps,
         )
-        model.n_swaps_limit_1 = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            rule=self.n_swaps_limit_1,
-        )
-        model.n_swaps_limit_2 = pyo.Constraint(
-           model.slhd_set,
-           model.days,
-           rule=self.n_swaps_limit_2,
-        )
+        #model.n_swaps_limit_1 = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    rule=self.n_swaps_limit_1,
+        #)
+        #model.n_swaps_limit_2 = pyo.Constraint(
+        #   model.slhd_set,
+        #   model.days,
+        #   rule=self.n_swaps_limit_2,
+        #)
 
         # 4) Inventario de baterías en estaciones
         model.inventory_discharged_batteries = pyo.Constraint(
@@ -948,29 +1068,29 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
-
-        # 7) Rotura simetría
-        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    rule=self.battery_boundary_break_simmetry_lhds_start,
-        #)
-
-        #model.swap_precedence_by_index = pyo.Constraint(
-        #    model.swap_precedence_pairs,
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
         #    model.days,
         #    model.time_intervals_set,
-        #    rule=self.swap_precedence_by_index,
+        #    rule=self.maint_stop_all,
         #)
+
+        # 7) Rotura simetría
+        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            rule=self.battery_boundary_break_simmetry_lhds_start,
+        )
+
+        model.swap_precedence_by_index = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            model.time_intervals_set,
+            rule=self.swap_precedence_by_index,
+        )
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
@@ -1027,7 +1147,10 @@ class ObjectiveRules(OptRules):
         return cost_el + F_penalty
     
     def total_cost(self, model):
-        return self.lhd_charge_cost_bs(model) + self.inversion_cost(model) + self.penalization(model)
+        return self.lhd_charge_cost_bs(model) + self.inversion_cost(model) + self.penalization(model) + self.peak_power_cost(model)
+
+    def peak_power_cost(self, model):
+        return model.P_pot * 12 * 10
 
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)

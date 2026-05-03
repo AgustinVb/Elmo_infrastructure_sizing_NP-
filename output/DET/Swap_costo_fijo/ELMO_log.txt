@@ -1,0 +1,97 @@
+
+Gurobi 10.0.0 (win64) logging started Sun May  3 17:48:52 2026
+
+Set parameter LogFile to value "output\DET\Swap_costo_fijo\ELMO_log.txt"
+Set parameter Threads to value 24
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 24 threads
+
+Warning: Thread count (24) is larger than processor count (8)
+         Reduce the value of the Threads parameter to improve performance
+
+
+Optimize a model with 40257 rows, 80572 columns and 576966 nonzeros
+Model fingerprint: 0xac742bc1
+Variable types: 6409 continuous, 74163 integer (41041 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 4e+02]
+  Objective range  [1e+02, 4e+06]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 3e+03]
+Presolve removed 27397 rows and 36196 columns
+Presolve time: 4.57s
+Presolved: 12860 rows, 44376 columns, 206832 nonzeros
+Variable types: 3649 continuous, 40727 integer (39410 binary)
+Root relaxation presolve removed 5 rows and 5 columns
+Root relaxation presolved: 12855 rows, 44371 columns, 206822 nonzeros
+
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing first log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    4.4151200e+05   7.238332e+03   8.191976e+09      6s
+   19912    1.1655435e+07   0.000000e+00   5.053295e+07      9s
+   24005    1.3865247e+06   0.000000e+00   6.398000e+06     10s
+   36632    1.1846598e+06   0.000000e+00   1.307409e+06     15s
+   44572    1.1711718e+06   0.000000e+00   0.000000e+00     19s
+Concurrent spin time: 7.00s
+
+Solved with primal simplex
+   44572    1.1711718e+06   0.000000e+00   0.000000e+00     26s
+
+Root relaxation: objective 1.171172e+06, 44572 iterations, 21.12 seconds (18.96 work units)
+Total elapsed time = 32.91s
+Total elapsed time = 35.39s
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 1171171.83    0  997          - 1171171.83      -     -   37s
+     0     0 1229323.43    0 1012          - 1229323.43      -     -   58s
+     0     0 1268275.66    0 1049          - 1268275.66      -     -   65s
+     0     0 1271115.67    0 1004          - 1271115.67      -     -   67s
+     0     0 1271115.67    0  972          - 1271115.67      -     -   69s
+     0     0 1271115.67    0  994          - 1271115.67      -     -   71s
+     0     0 1279635.73    0  839          - 1279635.73      -     -   92s
+     0     0 1279635.73    0  848          - 1279635.73      -     -   94s
+     0     0 1279635.73    0  837          - 1279635.73      -     -  112s
+     0     0 1279635.73    0  917          - 1279635.73      -     -  115s
+     0     0 1279635.73    0  842          - 1279635.73      -     -  134s
+     0     0 1279635.73    0  842          - 1279635.73      -     -  136s
+     0     0 1279635.73    0  861          - 1279635.73      -     -  159s
+     0     0 1279635.73    0  836          - 1279635.73      -     -  166s
+     0     2 1279635.73    0  786          - 1279635.73      -     -  259s
+     1     2 1279635.73    1  695          - 1279635.73      -  6662  261s
+     5     6 1284918.79    3  736          - 1284918.79      -  2373  273s
+     9    12 1284918.79    4  712          - 1284918.79      -  2977  283s
+    15    24 1284918.79    5  719          - 1284918.79      -  3220  303s
+
+Cutting planes:
+  Gomory: 18
+  Lift-and-project: 7
+  Cover: 4
+  Implied bound: 8
+  MIR: 374
+  StrongCG: 175
+  Flow cover: 576
+  GUB cover: 2
+  Zero half: 49
+  RLT: 53
+  Relax-and-lift: 1
+
+Explored 27 nodes (312265 simplex iterations) in 303.69 seconds (280.66 work units)
+Thread count was 24 (of 8 available processors)
+
+Solution count 0
+
+Solve interrupted
+Best objective -, best bound 1.284918792372e+06, gap -
