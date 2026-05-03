@@ -361,7 +361,7 @@ class BoundRules(OptRules):
         return (0, model.pmax_b[i])
 
     def P_pot(self, model, y):
-        return (0, model.p_charger)
+        return (0, None)
 
     def B(self, model, b, d, t):
         return (0, model.bmax_b[b])
@@ -408,7 +408,7 @@ class BoundRules(OptRules):
         # Potencia de carga de baterÃ­a b en (d,t)
         model.P         = pyo.Var(model.ZCHARGE_INDEX, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # Maxima potencia consumida en periodos de punta por anio
-        model.P_pot = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=self.P_pot)
+        model.P_pot = pyo.Var(model.years, domain=pyo.NonNegativeReals)
         # SOC de baterÃ­a b al final de (d,t)
         model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
