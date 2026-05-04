@@ -135,7 +135,6 @@ def load_Z_swap_df(path: str) -> Optional[pd.DataFrame]:
     if not data:
         return None
     rows = []
-    # Structure: k (station) -> i (LHD) -> d (day) -> t (interval)
     k_dict = data.get("k", {})
     for station, i_block in k_dict.items():
         i_inner = i_block.get("i", {})
@@ -404,6 +403,8 @@ class Parameters:
         self.between_shifts: List[int] = []
         self.meals: List[int] = []
         self.maintenance: List[int] = []
+        self.shift_change: List[int] = []
+        self.forced_detention: List[int] = []
 
         self._load()
 
@@ -523,6 +524,13 @@ class Parameters:
             data.get("time_intevals_maintenance_set", data.get("time_intervals_maintenance_set", []))
         )
 
+        self.shift_change = _as_interval_list(
+            data.get("time_intervals_shift_change_det_set", data.get("time_intervals_shift_change_set", []))
+        )
+        self.forced_detention = _as_interval_list(
+            data.get("time_intervals_forced_detention_set", data.get("time_intervals_fuel_delay_set", []))
+        )
+
 # -------------------- Plotter --------------------
 class JSONPlotter:
     MONTH_LABELS = {
@@ -539,8 +547,9 @@ class JSONPlotter:
             11: "November",
             12: "December",
         }
-    def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE):
+    def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
+        self.mode = str(mode).upper() if mode else "DCH"
 
         # Guardar SIEMPRE en <json_dir>/plots
         self.plot_dir = os.path.join(self.json_dir, "plots")
@@ -564,6 +573,41 @@ class JSONPlotter:
         # Dominio
         self.days = self._detect_days()
         self.intervals = self._detect_intervals()
+
+    def _group_consecutive(self, values: List[int]) -> List[Tuple[int, int]]:
+        cleaned = sorted(set(int(v) for v in values if v is not None))
+        if not cleaned:
+            return []
+        groups = []
+        start = cleaned[0]
+        prev = cleaned[0]
+        for current in cleaned[1:]:
+            if current == prev + 1:
+                prev = current
+                continue
+            groups.append((start, prev))
+            start = current
+            prev = current
+        groups.append((start, prev))
+        return groups
+
+    def _special_mode_intervals(self, day: int) -> Dict[str, List[int]]:
+        if self.mode == "DET":
+            return {
+                "shift_change": self.params.shift_change,
+                "forced_detention": self.params.forced_detention,
+            }
+
+        return {
+            "between_shifts": self.params.between_shifts,
+            "meal": self.params.meals,
+            "maintenance": self.params.maintenance,
+        }
+
+    def _mode_plot_title(self) -> str:
+        if self.mode == "DET":
+            return "DET"
+        return "DCH"
 
     def _detect_days(self) -> List[int]:
         sources = []
@@ -715,7 +759,220 @@ class JSONPlotter:
 
     # ---------- Plots ----------
     def plot_charge_power_vs_price(self):
-        pass
+        if self.df_P is None or self.df_P.empty:
+            print("⚠️ No hay P.json. Omitiendo 'ChargePower_vs_price'.")
+            return
+        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
+            print("⚠️ No hay costo_electricidad en parameters.json. Omitiendo 'ChargePower_vs_price'.")
+            return
+
+        title_fs = 22
+        axis_label_fs = 16
+        tick_fs = 14
+        legend_fs = 14
+        start_hour = 9.0
+        dt = float(self.delta_t)
+
+        for d in self.days:
+            p_day = (
+                self.df_P.query("day == @d")[["interval", "value"]]
+                .groupby("interval")["value"]
+                .sum()
+                .reindex(self.intervals)
+                .fillna(0.0)
+            )
+            if p_day.empty:
+                continue
+
+            price_day = (
+                self.params.costo_marginal.query("day == @d")[["interval", "price"]]
+                .groupby("interval")["price"]
+                .mean()
+                .reindex(self.intervals)
+                .ffill().bfill().fillna(0.0)
+            )
+
+            times = np.array([(t - 1) * dt for t in self.intervals], dtype=float)
+            pcharge = p_day.values
+            marginal = price_day.values
+
+            times_step = np.append(times, times[-1] + dt) + start_hour
+            pcharge_step = np.append(pcharge, pcharge[-1])
+            marginal_step = np.append(marginal, marginal[-1])
+
+            fig, ax1 = plt.subplots(figsize=(9, 5.6))
+
+            interval_groups = self._special_mode_intervals(d)
+            if self.mode == "DET":
+                shade_specs = [
+                    (interval_groups.get("shift_change", []), "darkgray", 0.7, "Shift Change"),
+                    (interval_groups.get("forced_detention", []), "#ffe6e6", 0.8, "Forced Detention"),
+                ]
+            else:
+                shade_specs = [
+                    (interval_groups.get("between_shifts", []), "darkgray", 0.7, "Between Shifts"),
+                    (interval_groups.get("meal", []), "lightgray", 0.4, "Meal"),
+                    (interval_groups.get("maintenance", []), "#ffe6e6", 0.8, "Maintenance"),
+                ]
+
+            for intervals_list, color, alpha, _label in shade_specs:
+                for gs, ge in self._group_consecutive(intervals_list):
+                    x0 = start_hour + (gs - 1) * dt
+                    x1 = start_hour + ge * dt
+                    ax1.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
+
+            ax1.step(times_step, pcharge_step, where="post", label="Charge Power", color="blue", linewidth=1.5)
+
+            ax1.set_ylabel("Charge Power [kW]", color="black", fontsize=axis_label_fs)
+            ax1.set_xlabel("Hour", fontsize=axis_label_fs)
+            ax1.tick_params(axis="y", labelcolor="black", labelsize=tick_fs)
+            ax1.set_ylim(0, max(2500, float(np.nanmax(pcharge_step)) * 1.15 if len(pcharge_step) else 2500))
+            ax1.set_xlim(times_step[0], times_step[-1])
+            ax1.grid(False)
+
+            end = np.ceil(times_step[-1])
+            xticks = np.arange(start_hour, end + 1, 4)
+            ax1.xaxis.set_major_locator(FixedLocator(xticks))
+
+            def hour_formatter(x, pos):
+                h = int(np.floor(x)) % 24
+                m = int(round((x - np.floor(x)) * 60)) % 60
+                return f"{h:02d}:{m:02d}"
+
+            ax1.xaxis.set_major_formatter(FuncFormatter(hour_formatter))
+            ax1.xaxis.set_minor_locator(MultipleLocator(1))
+            ax1.tick_params(axis="x", labelsize=tick_fs)
+
+            ax2 = ax1.twinx()
+            ax2.step(times_step, marginal_step, where="post", label="Energy Price", color="red", linewidth=1.5)
+            ax2.set_ylabel("Energy Price [USD/kWh]", color="black", fontsize=axis_label_fs)
+            ax2.tick_params(axis="y", labelcolor="black", labelsize=tick_fs)
+            ax2.set_ylim(0.0, 0.30)
+            ax2.grid(False)
+
+            handles = [
+                plt.Line2D([0], [0], color="blue", label="Charge Power"),
+                plt.Line2D([0], [0], color="red", label="Energy Price"),
+            ]
+            for _vals, color, alpha, label in shade_specs:
+                handles.append(mpatches.Patch(color=color, alpha=alpha, label=label))
+
+            month = self._rep_day_label(d)
+            fig.suptitle(f"{month} - {self._mode_plot_title()} Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
+            fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.99), ncol=3, fontsize=legend_fs, frameon=True)
+
+            plt.tight_layout()
+            fig.subplots_adjust(top=0.82)
+            fig.savefig(os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"), bbox_inches="tight", dpi=120)
+            plt.close(fig)
+
+    def plot_swaps_vs_price(self):
+        if self.df_Z_swap is None or self.df_Z_swap.empty:
+            print("⚠️ No hay Z_swap.json. Omitiendo 'Swaps_vs_price'.")
+            return
+        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
+            print("⚠️ No hay costo_electricidad en parameters.json. Omitiendo 'Swaps_vs_price'.")
+            return
+
+        title_fs = 22
+        axis_label_fs = 16
+        tick_fs = 14
+        legend_fs = 14
+        start_hour = 9.0
+        dt = float(self.delta_t)
+
+        for d in self.days:
+            swap_day = (
+                self.df_Z_swap.query("day == @d and value >= 0.5")[['interval', 'value']]
+                .groupby('interval')['value']
+                .sum()
+                .reindex(self.intervals)
+                .fillna(0.0)
+            )
+            if swap_day.empty:
+                continue
+
+            price_day = (
+                self.params.costo_marginal.query("day == @d")[["interval", "price"]]
+                .groupby("interval")["price"]
+                .mean()
+                .reindex(self.intervals)
+                .ffill().bfill().fillna(0.0)
+            )
+
+            times = np.array([(t - 1) * dt for t in self.intervals], dtype=float)
+            swap_counts = swap_day.values
+            marginal = price_day.values
+
+            times_step = np.append(times, times[-1] + dt) + start_hour
+            swap_step = np.append(swap_counts, swap_counts[-1])
+            marginal_step = np.append(marginal, marginal[-1])
+
+            fig, ax1 = plt.subplots(figsize=(9, 5.6))
+
+            interval_groups = self._special_mode_intervals(d)
+            if self.mode == "DET":
+                shade_specs = [
+                    (interval_groups.get("shift_change", []), "darkgray", 0.7, "Shift Change"),
+                    (interval_groups.get("forced_detention", []), "#ffe6e6", 0.8, "Forced Detention"),
+                ]
+            else:
+                shade_specs = [
+                    (interval_groups.get("between_shifts", []), "darkgray", 0.7, "Between Shifts"),
+                    (interval_groups.get("meal", []), "lightgray", 0.4, "Meal"),
+                    (interval_groups.get("maintenance", []), "#ffe6e6", 0.8, "Maintenance"),
+                ]
+
+            for intervals_list, color, alpha, _label in shade_specs:
+                for gs, ge in self._group_consecutive(intervals_list):
+                    x0 = start_hour + (gs - 1) * dt
+                    x1 = start_hour + ge * dt
+                    ax1.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
+
+            ax1.step(times_step, swap_step, where="post", label="Swaps", color="blue", linewidth=1.5)
+
+            ax1.set_ylabel("Swaps [count]", color="black", fontsize=axis_label_fs)
+            ax1.set_xlabel("Hour", fontsize=axis_label_fs)
+            ax1.tick_params(axis="y", labelcolor="black", labelsize=tick_fs)
+            ax1.set_ylim(0, max(1.0, float(np.nanmax(swap_step)) * 1.15 if len(swap_step) else 1.0))
+            ax1.set_xlim(times_step[0], times_step[-1])
+            ax1.grid(False)
+
+            end = np.ceil(times_step[-1])
+            xticks = np.arange(start_hour, end + 1, 4)
+            ax1.xaxis.set_major_locator(FixedLocator(xticks))
+
+            def hour_formatter(x, pos):
+                h = int(np.floor(x)) % 24
+                m = int(round((x - np.floor(x)) * 60)) % 60
+                return f"{h:02d}:{m:02d}"
+
+            ax1.xaxis.set_major_formatter(FuncFormatter(hour_formatter))
+            ax1.xaxis.set_minor_locator(MultipleLocator(1))
+            ax1.tick_params(axis="x", labelsize=tick_fs)
+
+            ax2 = ax1.twinx()
+            ax2.step(times_step, marginal_step, where="post", label="Energy Price", color="red", linewidth=1.5)
+            ax2.set_ylabel("Energy Price [USD/kWh]", color="black", fontsize=axis_label_fs)
+            ax2.tick_params(axis="y", labelcolor="black", labelsize=tick_fs)
+            ax2.set_ylim(0.0, 0.30)
+            ax2.grid(False)
+
+            handles = [
+                plt.Line2D([0], [0], color="blue", label="Swaps"),
+                plt.Line2D([0], [0], color="red", label="Energy Price"),
+            ]
+            for _vals, color, alpha, label in shade_specs:
+                handles.append(mpatches.Patch(color=color, alpha=alpha, label=label))
+
+            month = self._rep_day_label(d)
+            fig.suptitle(f"{month} - {self._mode_plot_title()} Swaps vs Energy Price", fontsize=title_fs, y=1.06)
+            fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.99), ncol=3, fontsize=legend_fs, frameon=True)
+
+            plt.tight_layout()
+            fig.subplots_adjust(top=0.82)
+            fig.savefig(os.path.join(self.plot_dir, f"Swaps_vs_price_{month}.png"), bbox_inches="tight", dpi=120)
+            plt.close(fig)
 
     def plot_charging_batteries_vs_price(self):
         if self.df_Sv is None or self.df_Sv.empty:
@@ -893,8 +1150,8 @@ class JSONPlotter:
 
 
     def plot_lhd_soc_vs_price_and_states(self):
-        if (self.df_B is None or self.df_B.empty) and (self.df_Bs is None or self.df_Bs.empty) and (self.df_E is None or self.df_E.empty):
-            print("⚠️ No hay B.json, B_s.json ni E.json. Omitiendo 'SoC_vs_price_and_states'.")
+        if (self.df_B is None or self.df_B.empty) and (self.df_E is None or self.df_E.empty):
+            print("⚠️ No hay B.json ni E.json. Omitiendo 'SoC_vs_price_and_states'.")
             return
         if self.params.costo_marginal is None or self.params.costo_marginal.empty:
             print("⚠️ No hay costo_electricidad en parameters.json. Omitiendo 'SoC_vs_price_and_states'.")
@@ -907,8 +1164,6 @@ class JSONPlotter:
         lhds = set()
         if self.df_B is not None and not self.df_B.empty:
             lhds.update(self.df_B["lhd"].unique().tolist())
-        if self.df_Bs is not None and not self.df_Bs.empty:
-            lhds.update(self.df_Bs["lhd"].unique().tolist())
         if self.df_E is not None and not self.df_E.empty:
             lhds.update(self.df_E["lhd"].unique().tolist())
         lhds = sorted(lhds)
@@ -917,21 +1172,18 @@ class JSONPlotter:
             for day in self.days:
                 dfB_sel = (self.df_B.query("lhd == @lhd and day == @day")
                            if (self.df_B is not None and not self.df_B.empty) else pd.DataFrame())
-                dfBs_sel = (self.df_Bs.query("lhd == @lhd and day == @day")
-                            if (self.df_Bs is not None and not self.df_Bs.empty) else pd.DataFrame())
                 dfE_sel = (self.df_E.query("lhd == @lhd and day == @day")
                            if (self.df_E is not None and not self.df_E.empty) else pd.DataFrame())
 
-                if dfB_sel.empty and dfBs_sel.empty and dfE_sel.empty:
+                if dfB_sel.empty and dfE_sel.empty:
                     continue
-                is_electric = (not dfB_sel.empty) or (not dfBs_sel.empty)
+                is_electric = not dfB_sel.empty
 
                 palette = {
                     "State-of-Charge": "#f78c11",
                     "Fuel": "#4169E1",
                     "Energy Price": "#3366CC",
                     "Charging": "#3366CC",
-                    "Battery Swap": "#3366CC",
                     "Inactive": "#B0B0B0",
                     "In-Transit": "#F0BF57",
                 }
@@ -945,9 +1197,8 @@ class JSONPlotter:
                 ax_task = fig.add_subplot(gs[2], sharex=ax_main)
                 ax_price = ax_main.twinx()
 
-                if not dfB_sel.empty or not dfBs_sel.empty:
-                    source_soc = dfB_sel if not dfB_sel.empty else dfBs_sel
-                    series = (source_soc[["interval", "value"]]
+                if not dfB_sel.empty:
+                    series = (dfB_sel[["interval", "value"]]
                               .set_index("interval")["value"]
                               .reindex(self.intervals)
                               .ffill().bfill().fillna(0.0))
@@ -994,8 +1245,17 @@ class JSONPlotter:
                               if (self.df_Y is not None and not self.df_Y.empty) else pd.DataFrame())
                 P_filtered = (self.df_P.query("lhd == @lhd and day == @day")
                               if (self.df_P is not None and not self.df_P.empty) else pd.DataFrame())
-                Zswap_filtered = (self.df_Z_swap.query("lhd == @lhd and day == @day and value >= 0.5")
-                                  if (self.df_Z_swap is not None and not self.df_Z_swap.empty) else pd.DataFrame())
+
+                if self.mode == "DET":
+                    for interval_list, color, alpha in [
+                        (self.params.shift_change, "darkgray", 0.18),
+                        (self.params.forced_detention, "#ffe6e6", 0.22),
+                    ]:
+                        for gs, ge in self._group_consecutive(interval_list):
+                            x0 = (gs - 1) * delta_t
+                            x1 = ge * delta_t
+                            ax_main.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
+                            ax_task.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
 
                 states = []
                 for t in self.intervals:
@@ -1003,17 +1263,11 @@ class JSONPlotter:
                     if not Y_filtered.empty and "interval" in Y_filtered.columns:
                         is_traveling = not Y_filtered.query("interval == @t").empty
 
-                    is_swapping = False
-                    if not Zswap_filtered.empty and "interval" in Zswap_filtered.columns:
-                        is_swapping = not Zswap_filtered.query("interval == @t").empty
-
                     is_charging = False
                     if is_electric and not P_filtered.empty and {"interval", "value"}.issubset(P_filtered.columns):
                         is_charging = not P_filtered.query("interval == @t and value > 1").empty
 
-                    if is_swapping:
-                        states.append("Battery Swap")
-                    elif is_traveling:
+                    if is_traveling:
                         states.append("In-Transit")
                     elif is_charging:
                         states.append("Charging")
@@ -1045,7 +1299,7 @@ class JSONPlotter:
                         )
 
                 row1_names = [soc_name, "Energy Price"]
-                row2_names = ["Battery Swap", "Inactive", "In-Transit"]
+                row2_names = ["Inactive", "In-Transit", "Charging"]
                 row1_handles = [
                     plt.Line2D([0], [0], color=palette[name], lw=4, label=name)
                     for name in row1_names
@@ -1114,7 +1368,7 @@ class JSONPlotter:
                 month = self._rep_day_label(day)
                 season = self._season_label(day)
                 season_txt = f" ({season})" if season else ""
-                fig.suptitle(f"LHD {lhd} {month}{season_txt}", y=0.96, fontsize=18)
+                fig.suptitle(f"LHD {lhd} {self._mode_plot_title()} - {month}{season_txt}", y=0.96, fontsize=18)
 
                 fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
@@ -1329,6 +1583,7 @@ class JSONPlotter:
             plt.close(fig)
 
     def create_all_plots(self):
+        self.plot_swaps_vs_price()
         self.plot_charge_power_vs_price()
         self.plot_charging_batteries_vs_price()
         #self.plot_node_extraction_vs_demand()
@@ -1343,11 +1598,12 @@ class JSONPlotter:
 def main():
     ap = argparse.ArgumentParser(description="Graficador para salidas JSON del modelo")
     ap.add_argument("--json_dir", required=True, help="Carpeta con *.json (variables + parameters.json)")
+    ap.add_argument("--mode", choices=["DCH", "DET"], default="DCH", help="Modo de graficado")
     ap.add_argument("--energy_price_scale", type=float, default=DEFAULT_ENERGY_PRICE_SCALE,
                     help="Escala para costo_electricidad (opcional)")
     args = ap.parse_args()
 
-    plotter = JSONPlotter(args.json_dir, energy_price_scale=args.energy_price_scale)
+    plotter = JSONPlotter(args.json_dir, energy_price_scale=args.energy_price_scale, mode=args.mode)
     plotter.create_all_plots()
 
 if __name__ == "__main__":

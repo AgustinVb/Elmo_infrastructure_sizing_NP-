@@ -424,6 +424,18 @@ class Printer:
             "time_intevals_maintenance_set",
             "time_intervals_maintenance_set",
         )
+        payload["time_intervals_shift_change_det_set"] = _export_set_values(
+            "time_intervals_shift_change_det_set",
+            "time_intervals_shift_change_set",
+        )
+        payload["time_intervals_forced_detention_set"] = _export_set_values(
+            "time_intervals_forced_detention_set",
+            "time_intervals_fuel_delay_set",
+        )
+        payload["time_intervals_det_set"] = _export_set_values(
+            "time_intervals_det_set",
+        )
+        payload["marginal_cost_alpha"] = float(getattr(self.time_series, "_mc_alpha", 1.0))
 
         out_path = os.path.join(self.path, filename)
         with open(out_path, "w", encoding="utf-8") as f:

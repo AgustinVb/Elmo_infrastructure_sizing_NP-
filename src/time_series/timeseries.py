@@ -17,6 +17,7 @@ class Timeseries(object):
         self.time_intervals = self.build_mappers()
         self.shifts = self.get_shifts()
         self._mc_scaled_cache = {}
+        self._mc_alpha = self._load_marginal_cost_alpha()
 
     def build_mappers(self):
         #self.mapper['Emissions']       = self.sample_emissions(self.series['Emissions'])
@@ -35,13 +36,39 @@ class Timeseries(object):
         start = (int(day) - 1) * 24 + 1
         return list(range(start, start + 24))
 
-    def _scaled_day_marginal_cost(self, location_name: str, day: int):
+    def _load_marginal_cost_alpha(self) -> float:
+        """Lee alpha desde la fila Profile_fixed de MarginalCost si existe."""
+        marginal_cost = self.mapper.get('MarginalCost')
+        if marginal_cost is None or marginal_cost.empty:
+            return 1.0
+
+        profile_row = None
+        if 'Profile_fixed' in marginal_cost.index:
+            profile_row = marginal_cost.loc['Profile_fixed']
+        elif 'Profile_fixed' in marginal_cost.get('name', []):
+            try:
+                profile_row = marginal_cost.set_index('name').loc['Profile_fixed']
+            except Exception:
+                profile_row = None
+
+        if profile_row is None:
+            return 1.0
+
+        series = pd.to_numeric(profile_row, errors='coerce').dropna()
+        if series.empty:
+            return 1.0
+
+        first_value = float(series.iloc[0])
+        return first_value if first_value > 0 else 1.0
+
+    def _scaled_day_marginal_cost(self, location_name: str, day: int, alpha: float | None = None):
         """
         Devuelve una Serie (index: horas del año) del día 'day' para 'location_name'
-        con 0 -> 0.001 y escalada para que el promedio diario sea 0.1.
+        con 0 -> 0.001 y escalada por alpha.
         Usa cache para no recalcular.
         """
-        key = (location_name, int(day))
+        alpha_value = self._mc_alpha if alpha is None else float(alpha)
+        key = (location_name, int(day), alpha_value)
         if key in self._mc_scaled_cache:
             return self._mc_scaled_cache[key]
 
@@ -52,24 +79,24 @@ class Timeseries(object):
         # Paso 2: 0 -> 0.001
         row = row.replace(0.0, 0.001)
 
-        # Paso 3: escalar a promedio 0.1
+        # Paso 3: escalar usando alpha
         current_mean = float(row.mean())
         # Por seguridad: si fuese ~0 (no debería ocurrir tras el reemplazo), no escalar
-        alpha = 0.1 / current_mean if current_mean > 0 else 1.0
-        scaled = row * alpha
+        scale_factor = alpha_value / current_mean if current_mean > 0 else 1.0
+        scaled = row * scale_factor
 
         self._mc_scaled_cache[key] = scaled
         return scaled
 
-    def get_marginal_cost_scaled(self, location_name: str, day: int, time_interval: int) -> float:
+    def get_marginal_cost_scaled(self, location_name: str, day: int, time_interval: int, alpha: float | None = None) -> float:
         """
         Costo marginal ajustado para (location, day, interval):
-        (1) extrae el día, (2) 0->0.001, (3) escala promedio diario a 0.1.
+        (1) extrae el día, (2) 0->0.001, (3) escala por alpha.
         Respeta delta_t (mapea intervalos sub-horarios al índice horario por 'ceil').
         """
         import math
         hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
-        scaled_day = self._scaled_day_marginal_cost(location_name, day)
+        scaled_day = self._scaled_day_marginal_cost(location_name, day, alpha=alpha)
 
         # Si por alguna razón el hour_of_year no está (no debería), cae al valor original
         if hour_of_year in scaled_day.index:
