@@ -85,22 +85,52 @@ class OptSets(OptRules):
         return int(match.group(1)) if match else None
 
     def _get_pause_definitions(self):
-        """Hardcoded pauses as (start_time, end_time, pause_type) in HH:MM.
+        """Detenciones DCH (legacy): pauses as (start_time, end_time, pause_type) in HH:MM.
 
-        The optimization horizon starts at 08:00.
-        Times strictly before 08:00 are interpreted as next day (e.g., 04:00).
-        If end_time is earlier than start_time, the pause crosses midnight (e.g., 22:00 -> 00:30).
+        This is the original scheme (DCH) kept for backward compatibility.
         """
         pauses = [
-            # Mantenciones forzadas
-            ("10:04", "12:26", "maintenance"),
-            ("16:04", "17:34", "maintenance"),
-            ("22:04", "00:26", "maintenance"),
-            ("04:04", "05:34", "maintenance"),
+            # --- Shift 2 (in progress): 08:00 - 16:00 ---
+            # Shift change at 08:00 already happened before the horizon.
+            # Fuel delay + cleaning starts before horizon and overlaps from 09:00.
+            ("09:00", "10:12", "fuel_delay"),
 
-            # Colación común para todas las tecnologías: ~60 min (delta_t = 8 min)
-            ("14:04", "15:04", "meal"),
-            ("02:04", "03:04", "meal"),
+            # --- Shift 3: 16:00 - 00:00 ---
+            ("16:00", "17:04", "shift_change"),
+            ("17:04", "18:16", "fuel_delay"),
+
+            # --- Shift 1: 00:00 - 08:00 ---
+            ("00:00", "01:04", "shift_change"),
+            ("01:04", "02:16", "fuel_delay"),
+
+            # --- Shift 2 (next day): 08:00 - 16:00 ---
+            ("08:00", "09:04", "shift_change"),
+        ]
+
+        return pauses
+
+    def _get_pause_definitions_det(self):
+        """Detenciones DET (nuevo): pauses as (start_time, end_time, pause_type) in HH:MM.
+
+        This contains the new, user-provided DET schedule.
+        """
+        pauses = [
+            # --- Shift 2 (in progress): 08:00 - 16:00 ---
+            # Shift change already started at 08:00, horizon captures from 09:00
+            ("09:00", "09:40", "shift_change"),
+            ("10:28", "14:48", "forced_detention"),
+
+            # --- Shift 3: 16:00 - 00:00 ---
+            ("16:30", "17:40", "shift_change"),
+            ("19:28", "22:48", "forced_detention"),
+
+            # --- Shift 1: 00:00 - 08:00 ---
+            ("00:30", "01:40", "shift_change"),
+            ("03:28", "06:48", "forced_detention"),
+
+            # --- Shift 2 (next day): 08:00 - 16:00 ---
+            # Interpreted as next day since 08:30 < 09:00
+            ("08:30", "09:00", "shift_change"),
         ]
 
         return pauses
@@ -130,7 +160,7 @@ class OptSets(OptRules):
 
 
 
-    def _get_time_intervals_for_pause_type(self, pause_type):
+    def _get_time_intervals_for_pause_type(self, pause_type, pauses=None):
         """
         Return sorted list of time-interval indices for a given pause_type.
 
@@ -139,7 +169,7 @@ class OptSets(OptRules):
         - self.time_series.delta_t is in hours
         - pause definitions are (start_hhmm, end_hhmm, pause_type)
         """
-        # Ajusta esto a tu inicio real del horizonte (09:00 según tu comentario)
+        # Ajusta esto a tu inicio real del horizonte (09:00 segÃºn tu comentario)
         base_minutes = 9 * 60
 
         dt_minutes = int(round(self.time_series.delta_t * 60))
@@ -158,20 +188,23 @@ class OptSets(OptRules):
 
         indices = set()
 
-        for start_str, end_str, ptype in self._get_pause_definitions():
+        if pauses is None:
+            pauses = self._get_pause_definitions()
+
+        for start_str, end_str, ptype in pauses:
             if ptype != pause_type:
                 continue
 
             start_min = _parse_hhmm(start_str)
             end_min   = _parse_hhmm(end_str)
 
-            # Interpretar horas < base como "día siguiente" dentro del ciclo 24h del horizonte
+            # Interpretar horas < base como "dÃ­a siguiente" dentro del ciclo 24h del horizonte
             if start_min < base_minutes:
                 start_min += 24 * 60
             if end_min < base_minutes:
                 end_min += 24 * 60
 
-            # Si el fin quedó antes (o igual) que el inicio => cruza medianoche
+            # Si el fin quedÃ³ antes (o igual) que el inicio => cruza medianoche
             if end_min <= start_min:
                 end_min += 24 * 60
 
@@ -273,6 +306,38 @@ class OptSets(OptRules):
         )
         model.time_intervals_maintenance_set = pyo.Set(
             initialize=self._get_time_intervals_for_pause_type("maintenance")
+        )
+
+           # Shift-change and fuel-delay sets for the legacy DCH scheme
+        model.time_intervals_shift_change_set = pyo.Set(
+            initialize=self._get_time_intervals_for_pause_type("shift_change")
+        )
+        model.time_intervals_fuel_delay_set = pyo.Set(
+            initialize=self._get_time_intervals_for_pause_type("fuel_delay")
+        )
+
+        # DET (nuevo) detentions: build sets using the DET pause definitions
+        det_shift = self._get_time_intervals_for_pause_type("shift_change", pauses=self._get_pause_definitions_det())
+        det_forced = self._get_time_intervals_for_pause_type("forced_detention", pauses=self._get_pause_definitions_det())
+        model.time_intervals_det_set = pyo.Set(
+            initialize=sorted(set(det_shift) | set(det_forced))
+        )
+
+        # Expose DET-specific subsets so they are serialized into parameters.json
+        model.time_intervals_shift_change_det_set = pyo.Set(
+            initialize=sorted(det_shift)
+        )
+
+        model.time_intervals_forced_detention_set = pyo.Set(
+            initialize=sorted(det_forced)
+        )
+
+        # DCH detentions (legacy) kept under a separate set name
+        model.time_intervals_dch_det_set = pyo.Set(
+            initialize=sorted(
+                set(self._get_time_intervals_for_pause_type("shift_change"))
+                | set(self._get_time_intervals_for_pause_type("fuel_delay"))
+            )
         )
 
 
@@ -870,6 +935,12 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z[i, d, t] == 1
     
+    def det_stop_all(self, model, i, d, t):
+        """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
+        if t not in model.time_intervals_det_set:
+            return pyo.Constraint.Skip
+        return model.Z[i, d, t] == 1
+    
     # Fijar baterias y cargadores
     def fix_n_chargers(self, model, k):
         if k == "station_1":
@@ -1077,6 +1148,7 @@ class ConstraintRules(OptRules):
         #    model.time_intervals_set,
         #    rule=self.maint_stop_all,
         #)
+        model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Rotura simetría
         model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
