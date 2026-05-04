@@ -619,7 +619,7 @@ class ConstraintRules(OptRules):
     # Producción mínima
     def production_swap(self, model, d, j):
         # Mínimo de 10 viajes efectivos por punto de extracción y día.
-        target = 140
+        target = model.m_j[j, d] 
 
         term_de = sum(
             model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)* model.g_i[i] * model.filling_factor[i]
@@ -634,7 +634,7 @@ class ConstraintRules(OptRules):
     
     def production_swap_max(self, model, d, j):
         # Mínimo de 10 viajes efectivos por punto de extracción y día.
-        target = 12
+        target = model.m_j[j, d] * 1.5 
 
         term_de = sum(
             model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)

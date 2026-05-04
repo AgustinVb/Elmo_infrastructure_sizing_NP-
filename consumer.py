@@ -62,6 +62,48 @@ def find_json_in_folder(root: Path, filename: str) -> Optional[Path]:
     return matches[0]
 
 
+def _iter_leaf_records(node: Any, path: Tuple[str, ...] = ()):
+    """Yield (path, scalar_value) pairs for every leaf in a nested JSON tree."""
+    if isinstance(node, dict):
+        if not node:
+            return
+        if all(not isinstance(v, dict) for v in node.values()):
+            for key, value in node.items():
+                yield path + (str(key),), value
+            return
+        for key, child in node.items():
+            yield from _iter_leaf_records(child, path + (str(key),))
+    elif isinstance(node, list):
+        for idx, child in enumerate(node):
+            yield from _iter_leaf_records(child, path + (str(idx),))
+    else:
+        yield path, node
+
+
+def _axis_map_from_path(path: Tuple[str, ...]) -> Dict[str, str]:
+    """Convert alternating axis-name / axis-value tokens into a dict."""
+    tokens = [str(token) for token in path]
+    axis_map: Dict[str, str] = {}
+    for idx in range(0, len(tokens) - 1, 2):
+        axis_map[tokens[idx]] = tokens[idx + 1]
+    return axis_map
+
+
+def _unwrap_named_tree(node: Any) -> Any:
+    """Return the most useful nested dict level for legacy parameter/variable JSON wrappers."""
+    if not isinstance(node, dict):
+        return node
+    for key in ("i", "k", "b", "d", "_1"):
+        value = node.get(key)
+        if isinstance(value, dict):
+            return value
+    if len(node) == 1:
+        first_value = next(iter(node.values()))
+        if isinstance(first_value, dict):
+            return first_value
+    return node
+
+
 # -----------------------------
 # Tablas ASCII (sin dependencias)
 # -----------------------------
@@ -257,59 +299,29 @@ def consumed_energy_swap_travel(root: Path, eps: float = 1e-9) -> Tuple[float, D
     b_data = load_json(b_path)
     bs_data = load_json(bs_path)
 
-    def _extract_series_map(data: Any) -> Dict[str, Dict[int, Dict[int, float]]]:
+    def _extract_series_map(data: Any, lhd_axis: str) -> Dict[str, Dict[int, Dict[int, float]]]:
         out: Dict[str, Dict[int, Dict[int, float]]] = {}
-        if isinstance(data, dict):
-            root_i = data.get("i", {})
-            if not isinstance(root_i, dict) or not root_i:
-                root_i = data.get("_1", {})
-            if not isinstance(root_i, dict) or not root_i:
-                root_i = data.get("d", {})
-        else:
-            root_i = {}
-        if not isinstance(root_i, dict):
+        if not isinstance(data, dict):
             return out
 
-        for lhd, lhd_node in root_i.items():
-            if not isinstance(lhd_node, dict):
+        for path, value in _iter_leaf_records(data):
+            axis_map = _axis_map_from_path(path)
+            lhd = axis_map.get(lhd_axis) or axis_map.get("i") or axis_map.get("b") or axis_map.get("_1")
+            day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_2")
+            time_key = axis_map.get("t") or axis_map.get("time") or axis_map.get("_3")
+            if lhd is None or day_key is None or time_key is None:
                 continue
-            d_node = lhd_node.get("d", {})
-            if not isinstance(d_node, dict) or not d_node:
-                d_node = lhd_node.get("_2", {})
-            if not isinstance(d_node, dict) or not d_node:
-                d_node = lhd_node.get("t", {})
-            if not isinstance(d_node, dict):
+            try:
+                day = int(float(day_key))
+                t = int(float(time_key))
+                out.setdefault(str(lhd), {}).setdefault(day, {})[t] = float(value)
+            except Exception:
                 continue
-
-            day_map: Dict[int, Dict[int, float]] = {}
-            for day_k, day_node in d_node.items():
-                try:
-                    day = int(float(day_k))
-                except Exception:
-                    continue
-
-                t_node = day_node.get("t", {}) if isinstance(day_node, dict) else {}
-                if not isinstance(t_node, dict) or not t_node:
-                    t_node = day_node.get("_3", {}) if isinstance(day_node, dict) else {}
-                if not isinstance(t_node, dict) or not t_node:
-                    t_node = day_node.get("i", {}) if isinstance(day_node, dict) else {}
-                if not isinstance(t_node, dict):
-                    continue
-
-                ser: Dict[int, float] = {}
-                for tk, tv in t_node.items():
-                    try:
-                        ser[int(float(tk))] = float(tv)
-                    except Exception:
-                        continue
-                day_map[day] = ser
-
-            out[lhd] = day_map
 
         return out
 
-    b_map = _extract_series_map(b_data)
-    bs_map = _extract_series_map(bs_data)
+    b_map = _extract_series_map(b_data, "i")
+    bs_map = _extract_series_map(bs_data, "b")
 
     total_consumed = 0.0
     n_intervals = 0
@@ -457,28 +469,19 @@ def calculate_station_inventory_delta(root: Path) -> Tuple[float, Dict[str, floa
 
     def _to_series_map(obj: Any) -> Dict[Tuple[str, int], Dict[int, float]]:
         out: Dict[Tuple[str, int], Dict[int, float]] = {}
-        s1 = obj.get("_1", {}) if isinstance(obj, dict) else {}
-        if not isinstance(s1, dict):
-            return out
-        for station, s_node in s1.items():
-            d_node = s_node.get("_2", {}) if isinstance(s_node, dict) else {}
-            if not isinstance(d_node, dict):
+        for path, value in _iter_leaf_records(obj):
+            axis_map = _axis_map_from_path(path)
+            station = axis_map.get("k") or axis_map.get("station") or axis_map.get("i") or axis_map.get("b")
+            day_key = axis_map.get("d") or axis_map.get("day")
+            time_key = axis_map.get("t") or axis_map.get("time")
+            if station is None or day_key is None or time_key is None:
                 continue
-            for day_k, day_node in d_node.items():
-                try:
-                    day = int(float(day_k))
-                except Exception:
-                    continue
-                t_node = day_node.get("_3", {}) if isinstance(day_node, dict) else {}
-                if not isinstance(t_node, dict):
-                    continue
-                ser: Dict[int, float] = {}
-                for tk, tv in t_node.items():
-                    try:
-                        ser[int(float(tk))] = float(tv)
-                    except Exception:
-                        continue
-                out[(station, day)] = ser
+            try:
+                day = int(float(day_key))
+                time_index = int(float(time_key))
+                out.setdefault((str(station), day), {})[time_index] = float(value)
+            except Exception:
+                continue
         return out
 
     s_map = _to_series_map(s_data)
@@ -540,28 +543,15 @@ def calculate_charged_energy_from_sv(root: Path) -> Tuple[float, Dict[str, float
     p_charger = float(params_data.get("p_charger", 0.0))
     delta_t = float(params_data.get("delta_t", 0.0))
 
-    def _sum_numbers(obj: Any) -> Tuple[float, int]:
-        s = 0.0
-        n = 0
-        if isinstance(obj, dict):
-            for v in obj.values():
-                ss, nn = _sum_numbers(v)
-                s += ss
-                n += nn
-        elif isinstance(obj, list):
-            for v in obj:
-                ss, nn = _sum_numbers(v)
-                s += ss
-                n += nn
-        else:
-            try:
-                s += float(obj)
-                n += 1
-            except Exception:
-                pass
-        return s, n
+    sv_sum = 0.0
+    n_terms = 0
+    for _, value in _iter_leaf_records(sv_data):
+        try:
+            sv_sum += float(value)
+            n_terms += 1
+        except Exception:
+            continue
 
-    sv_sum, n_terms = _sum_numbers(sv_data)
     charged_energy_kwh = sv_sum * p_charger * delta_t
     meta = {
         "sv_sum": sv_sum,
@@ -625,7 +615,7 @@ def calculate_real_charged_energy_from_swaps(
             resolved_intervals = None
 
         if resolved_intervals is None and delta_t > 0:
-            t_swap_raw = params_data.get("t_swap", {}).get("_1", {})
+            t_swap_raw = _unwrap_named_tree(params_data.get("t_swap", {}))
             if isinstance(t_swap_raw, dict) and t_swap_raw:
                 vals = []
                 for v in t_swap_raw.values():
@@ -639,7 +629,7 @@ def calculate_real_charged_energy_from_swaps(
         charge_intervals = resolved_intervals if (resolved_intervals is not None and resolved_intervals > 0) else 6
 
     if soc_base is None:
-        bmin_raw = params_data.get("bmin_b", {}).get("_1", {})
+        bmin_raw = _unwrap_named_tree(params_data.get("bmin_b", {}))
         resolved_soc: Optional[float] = None
         if isinstance(bmin_raw, dict) and bmin_raw:
             vals = []
@@ -656,117 +646,104 @@ def calculate_real_charged_energy_from_swaps(
     sv_energy_total, _ = calculate_charged_energy_from_sv(root)
 
     p_charger = float(params_data.get("p_charger", 0.0))
-    bmax_raw = params_data.get("bmax_b", {}).get("_1", {})
+    bmax_raw = params_data.get("bmax_b", {})
 
     # Mapa B[i][d][t] -> nivel de energía (kWh)
     b_map: Dict[str, Dict[int, Dict[int, float]]] = {}
-    vehicles = b_data.get("i", {}) if isinstance(b_data, dict) else {}
-    if isinstance(vehicles, dict):
-        for lhd, lhd_node in vehicles.items():
-            dnode = lhd_node.get("d", {}) if isinstance(lhd_node, dict) else {}
-            if not isinstance(dnode, dict):
-                continue
-            day_map: Dict[int, Dict[int, float]] = {}
-            for day_k, day_node in dnode.items():
-                try:
-                    day = int(float(day_k))
-                except Exception:
-                    continue
-                tnode = day_node.get("t", {}) if isinstance(day_node, dict) else {}
-                if not isinstance(tnode, dict):
-                    continue
-                series: Dict[int, float] = {}
-                for tk, tv in tnode.items():
-                    try:
-                        series[int(float(tk))] = float(tv)
-                    except Exception:
-                        continue
-                day_map[day] = series
-            b_map[lhd] = day_map
+    for path, b_val in _iter_leaf_records(b_data):
+        axis_map = _axis_map_from_path(path)
+        lhd = axis_map.get("i") or axis_map.get("lhd") or axis_map.get("_1")
+        day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_2")
+        time_key = axis_map.get("t") or axis_map.get("time") or axis_map.get("_3")
+        if lhd is None or day_key is None or time_key is None:
+            continue
+        try:
+            day = int(float(day_key))
+            t = int(float(time_key))
+            b_map.setdefault(str(lhd), {}).setdefault(day, {})[t] = float(b_val)
+        except Exception:
+            continue
 
     total_real = 0.0
     n_events = 0
     n_events_with_discount = 0
     n_events_missing_b = 0
     n_events_missing_bmax = 0
+    soc_arrival_sum = 0.0
+    soc_arrival_min: Optional[float] = None
+    soc_arrival_max: Optional[float] = None
     event_details: List[Dict[str, Any]] = []
 
-    # Estructura esperada: _1[k]._2[i]._3[d]._4[t] = 0/1
-    k_node = z_data.get("_1", {}) if isinstance(z_data, dict) else {}
-    if not isinstance(k_node, dict):
-        k_node = {}
-
-    for station, st_data in k_node.items():
-        i_node = st_data.get("_2", {}) if isinstance(st_data, dict) else {}
-        if not isinstance(i_node, dict):
+    bmax_map: Dict[str, float] = {}
+    for path, bmax_val in _iter_leaf_records(bmax_raw):
+        axis_map = _axis_map_from_path(path)
+        station = axis_map.get("b") or axis_map.get("i") or axis_map.get("_1")
+        if station is None:
             continue
-        for lhd, lhd_data in i_node.items():
-            d_node = lhd_data.get("_3", {}) if isinstance(lhd_data, dict) else {}
-            if not isinstance(d_node, dict):
-                continue
+        try:
+            bmax_map[str(station)] = float(bmax_val)
+        except Exception:
+            continue
 
-            bmax_i_raw = bmax_raw.get(lhd)
-            try:
-                bmax_i = float(bmax_i_raw)
-            except Exception:
-                bmax_i = None
+    # Z_swap[k,i,d,t] = 0/1, soportando ambos formatos de exportación.
+    for path, z_val in _iter_leaf_records(z_data):
+        axis_map = _axis_map_from_path(path)
+        station = axis_map.get("k") or axis_map.get("station") or axis_map.get("_1")
+        lhd = axis_map.get("i") or axis_map.get("lhd") or axis_map.get("_2")
+        day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_3")
+        time_key = axis_map.get("t") or axis_map.get("time") or axis_map.get("_4")
+        if station is None or lhd is None or day_key is None or time_key is None:
+            continue
 
-            for day_k, day_data in d_node.items():
-                try:
-                    day = int(float(day_k))
-                except Exception:
-                    continue
+        try:
+            zval = float(z_val)
+        except Exception:
+            continue
+        if zval <= 0.5 + eps:
+            continue
 
-                t_node = day_data.get("_4", {}) if isinstance(day_data, dict) else {}
-                if not isinstance(t_node, dict):
-                    continue
+        n_events += 1
 
-                series = b_map.get(lhd, {}).get(day, {})
+        bmax_i = bmax_map.get(str(lhd))
+        if bmax_i is None or bmax_i <= 0:
+            n_events_missing_bmax += 1
+            continue
 
-                for tk, val in t_node.items():
-                    try:
-                        zval = float(val)
-                    except Exception:
-                        continue
-                    if zval <= 0.5 + eps:
-                        continue
+        try:
+            day = int(float(day_key))
+            t = int(float(time_key))
+        except Exception:
+            continue
 
-                    n_events += 1
+        series = b_map.get(str(lhd), {}).get(day, {})
+        b_prev = series.get(t - 1)
+        if b_prev is None:
+            b_prev = series.get(t)
+        if b_prev is None:
+            n_events_missing_b += 1
+            continue
 
-                    if bmax_i is None or bmax_i <= 0:
-                        n_events_missing_bmax += 1
-                        continue
+        soc_arrival = b_prev / bmax_i
+        event_real = max(0.0, bmax_i - b_prev)
+        if event_real > eps:
+            n_events_with_discount += 1
+        total_real += event_real
+        soc_arrival_sum += soc_arrival
+        soc_arrival_min = soc_arrival if soc_arrival_min is None else min(soc_arrival_min, soc_arrival)
+        soc_arrival_max = soc_arrival if soc_arrival_max is None else max(soc_arrival_max, soc_arrival)
 
-                    try:
-                        t = int(float(tk))
-                    except Exception:
-                        continue
-
-                    b_prev = series.get(t - 1)
-                    if b_prev is None:
-                        b_prev = series.get(t)
-                    if b_prev is None:
-                        n_events_missing_b += 1
-                        continue
-
-                    soc_arrival = b_prev / bmax_i
-                    event_real = max(0.0, bmax_i - b_prev)
-                    if event_real > eps:
-                        n_events_with_discount += 1
-                    total_real += event_real
-
-                    event_details.append(
-                        {
-                            "station": station,
-                            "lhd": lhd,
-                            "day": day,
-                            "t": t,
-                            "soc_arrival": soc_arrival,
-                            "bmax_kwh": bmax_i,
-                            "b_arrival_kwh": b_prev,
-                            "real_event_kwh": event_real,
-                        }
-                    )
+        event_details.append(
+            {
+                "station": station,
+                "lhd": lhd,
+                "day": day,
+                "t": t,
+                "soc_arrival": soc_arrival,
+                "bmax_kwh": bmax_i,
+                "b_arrival_kwh": b_prev,
+                "real_event_kwh": event_real,
+            }
+        )
 
     event_details.sort(key=lambda r: (r["day"], r["t"], r["lhd"], r["station"]))
 
@@ -780,6 +757,9 @@ def calculate_real_charged_energy_from_swaps(
         "sv_energy_total_kwh": sv_energy_total,
         "gap_vs_sv_kwh": sv_energy_total - total_real,
         "soc_base": soc_base,
+        "soc_arrival_avg": (soc_arrival_sum / n_events) if n_events else 0.0,
+        "soc_arrival_min": soc_arrival_min if soc_arrival_min is not None else 0.0,
+        "soc_arrival_max": soc_arrival_max if soc_arrival_max is not None else 0.0,
         "charge_intervals": float(charge_intervals),
         "p_charger": p_charger,
         "delta_t": delta_t,
@@ -832,35 +812,14 @@ def calculate_daily_trips(y_json_path: Path) -> Dict[str, float]:
     data = load_json(y_json_path)
     trips_by_day: Dict[str, float] = {}
 
-    if not isinstance(data, dict) or "d" not in data or not isinstance(data["d"], dict):
-        return trips_by_day
-
-    for lhd_data in data["d"].values():
-        if not isinstance(lhd_data, dict):
+    for path, value in _iter_leaf_records(data):
+        axis_map = _axis_map_from_path(path)
+        day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_3")
+        if day_key is None:
             continue
-        t_block = lhd_data.get("t", {})
-        if not isinstance(t_block, dict):
-            continue
-
-        for node_data in t_block.values():
-            if not isinstance(node_data, dict):
-                continue
-            i_block = node_data.get("i", {})
-            if not isinstance(i_block, dict):
-                continue
-
-            for day_key, day_data in i_block.items():
-                if not isinstance(day_data, dict):
-                    continue
-                j_block = day_data.get("j", {})
-                if not isinstance(j_block, dict):
-                    continue
-
-                day = str(day_key)
-                trips_by_day.setdefault(day, 0.0)
-                for val in j_block.values():
-                    if _as_float(val, 0.0) > 0.5:
-                        trips_by_day[day] += 1.0
+        if _as_float(value, 0.0) > 0.5:
+            day = str(day_key)
+            trips_by_day[day] = trips_by_day.get(day, 0.0) + 1.0
 
     return trips_by_day
 
@@ -870,34 +829,15 @@ def _extract_y_counts(y_json_path: Path) -> Dict[Tuple[str, str, str], float]:
     data = load_json(y_json_path)
     y_counts: Dict[Tuple[str, str, str], float] = {}
 
-    if not isinstance(data, dict) or "d" not in data or not isinstance(data["d"], dict):
-        return y_counts
-
-    for i_name, lhd_data in data["d"].items():
-        if not isinstance(lhd_data, dict):
+    for path, value in _iter_leaf_records(data):
+        axis_map = _axis_map_from_path(path)
+        i_name = axis_map.get("i") or axis_map.get("_1")
+        j_name = axis_map.get("j") or axis_map.get("_2")
+        day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_3")
+        if i_name is None or j_name is None or day_key is None:
             continue
-        t_block = lhd_data.get("t", {})
-        if not isinstance(t_block, dict):
-            continue
-
-        for j_name, node_data in t_block.items():
-            if not isinstance(node_data, dict):
-                continue
-            i_block = node_data.get("i", {})
-            if not isinstance(i_block, dict):
-                continue
-
-            for day_key, day_data in i_block.items():
-                if not isinstance(day_data, dict):
-                    continue
-                t_inner = day_data.get("j", {})
-                if not isinstance(t_inner, dict):
-                    continue
-
-                key = (str(i_name), str(j_name), str(day_key))
-                y_counts.setdefault(key, 0.0)
-                for val in t_inner.values():
-                    y_counts[key] += _as_float(val, 0.0)
+        key = (str(i_name), str(j_name), str(day_key))
+        y_counts[key] = y_counts.get(key, 0.0) + _as_float(value, 0.0)
 
     return y_counts
 
@@ -907,26 +847,14 @@ def _extract_m_values(m_json_path: Path) -> Dict[Tuple[str, str, str], float]:
     data = load_json(m_json_path)
     m_values: Dict[Tuple[str, str, str], float] = {}
 
-    root = data.get("_1", {}) if isinstance(data, dict) else {}
-    if not isinstance(root, dict):
-        return m_values
-
-    for i_name, i_data in root.items():
-        if not isinstance(i_data, dict):
+    for path, value in _iter_leaf_records(data):
+        axis_map = _axis_map_from_path(path)
+        i_name = axis_map.get("b") or axis_map.get("i") or axis_map.get("_1")
+        j_name = axis_map.get("j") or axis_map.get("_2")
+        day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_3")
+        if i_name is None or j_name is None or day_key is None:
             continue
-        j_block = i_data.get("_2", {})
-        if not isinstance(j_block, dict):
-            continue
-
-        for j_name, j_data in j_block.items():
-            if not isinstance(j_data, dict):
-                continue
-            d_block = j_data.get("_3", {})
-            if not isinstance(d_block, dict):
-                continue
-
-            for day_key, m_val in d_block.items():
-                m_values[(str(i_name), str(j_name), str(day_key))] = _as_float(m_val, 0.0)
+        m_values[(str(i_name), str(j_name), str(day_key))] = _as_float(value, 0.0)
 
     return m_values
 
@@ -941,8 +869,8 @@ def calculate_cycles_from_y_ntrips(y_json_path: Path, m_json_path: Path, params_
     m_values = _extract_m_values(m_json_path)
     params = load_json(params_path)
 
-    g_i = params.get("g_i", {}).get("_1", {}) if isinstance(params, dict) else {}
-    filling = params.get("filling_factor", {}).get("_1", {}) if isinstance(params, dict) else {}
+    g_i = _unwrap_named_tree(params.get("g_i", {})) if isinstance(params, dict) else {}
+    filling = _unwrap_named_tree(params.get("filling_factor", {})) if isinstance(params, dict) else {}
 
     ntr_num: Dict[Tuple[str, str], float] = {}
     ntr_den: Dict[Tuple[str, str], float] = {}
@@ -994,24 +922,14 @@ def calculate_daily_charged_energy(root: Path) -> Dict[str, float]:
         p_charger = _as_float(params.get("p_charger", 0.0), 0.0)
         out: Dict[str, float] = {}
         sv_data = load_json(sv_path)
-        s1 = sv_data.get("_1", {}) if isinstance(sv_data, dict) else {}
-        if isinstance(s1, dict):
-            for station_data in s1.values():
-                d_node = station_data.get("_2", {}) if isinstance(station_data, dict) else {}
-                if not isinstance(d_node, dict):
-                    continue
-                for day_key, day_data in d_node.items():
-                    t_node = day_data.get("_3", {}) if isinstance(day_data, dict) else {}
-                    if not isinstance(t_node, dict):
-                        continue
-                    day = str(day_key)
-                    out.setdefault(day, 0.0)
-                    for t_data in t_node.values():
-                        a_node = t_data.get("_4", {}) if isinstance(t_data, dict) else {}
-                        if not isinstance(a_node, dict):
-                            continue
-                        for sv_val in a_node.values():
-                            out[day] += _as_float(sv_val, 0.0) * p_charger * dt
+        for path, sv_val in _iter_leaf_records(sv_data):
+            axis_map = _axis_map_from_path(path)
+            day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_2")
+            if day_key is None:
+                continue
+            day = str(day_key)
+            out.setdefault(day, 0.0)
+            out[day] += _as_float(sv_val, 0.0) * p_charger * dt
         return out
 
     # On-board: P[k,i,d,t] -> energia = sum P * dt
@@ -1132,6 +1050,18 @@ def main() -> None:
                 [
                     "Eventos swap considerados",
                     str(int(real_swap_meta.get("events", 0.0))) if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "SOC llegada promedio",
+                    f"{100.0 * float(real_swap_meta.get('soc_arrival_avg', 0.0)):.2f}%" if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "SOC llegada mínimo",
+                    f"{100.0 * float(real_swap_meta.get('soc_arrival_min', 0.0)):.2f}%" if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "SOC llegada máximo",
+                    f"{100.0 * float(real_swap_meta.get('soc_arrival_max', 0.0)):.2f}%" if real_swap_energy_kwh is not None else "N/D",
                 ],
                 [
                     "Referencia energía Sv (función objetivo)",
@@ -1271,6 +1201,7 @@ def main() -> None:
             rows = [
                 ["Costo energía carga (USD)", f"{costs['energy_cost']:.2f}"],
                 ["Costo energía carga real (USD)", f"{costs.get('real_energy_cost', 0.0):.2f}"],
+                ["Costo potencia pico (USD)", f"{costs.get('peak_power_cost', 0.0):.2f}"],
                 ["Costo inversión (USD)", f"{costs['investment_cost']:.2f}"],
                 ["Costo penalidad (USD)", f"{costs['penalty_cost']:.2f}"],
                 ["COSTO TOTAL (USD)", f"{costs['total_cost']:.2f}"],
@@ -1302,42 +1233,74 @@ def calculate_lhd_charge_cost(root: Path) -> float:
     
     sv_data = load_json(sv_path)
     params_data = load_json(params_path)
-    
-    delta_t = params_data.get("delta_t")
-    p_charger = params_data.get("p_charger")  # potencia del cargador
-    costo_electricidad = params_data.get("costo_electricidad", {})
-    scaling_factor = params_data.get("scaling_factor_op_cost")
-    
+
+    delta_t = float(params_data.get("delta_t", 0.0))
+    p_charger = float(params_data.get("p_charger", 0.0))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+    costo_electricidad = _unwrap_named_tree(params_data.get("costo_electricidad", {}))
+
+    cost_lookup: Dict[Tuple[str, str], float] = {}
+    for path, cost_val in _iter_leaf_records(costo_electricidad):
+        axis_map = _axis_map_from_path(path)
+        day_key = axis_map.get("d") or axis_map.get("day") or (path[0] if len(path) >= 1 else None)
+        time_key = axis_map.get("t") or axis_map.get("time") or (path[-1] if len(path) >= 1 else None)
+        if day_key is None or time_key is None:
+            continue
+        try:
+            cost_lookup[(str(day_key), str(time_key))] = float(cost_val)
+        except Exception:
+            continue
+
     total_cost = 0.0
-    
-    # Estructura: Sv[k,d,t,a] = _1[station]._2[day]._3[time_t]._4[time_a]
-    # costo_electricidad[d,t] = _1[day]._2[time_t]
-    if "_1" in sv_data and isinstance(sv_data["_1"], dict):
-        for station_id, station_data in sv_data["_1"].items():
-            if "_2" in station_data and isinstance(station_data["_2"], dict):
-                for day_id, day_data in station_data["_2"].items():
-                    if "_3" in day_data and isinstance(day_data["_3"], dict):
-                        for time_t, time_t_data in day_data["_3"].items():
-                            # Obtener costo electricidad para este día y tiempo
-                            cost_elec = 0.1  # valor por defecto
-                            try:
-                                if "_1" in costo_electricidad and day_id in costo_electricidad["_1"]:
-                                    day_costs = costo_electricidad["_1"][day_id]
-                                    if "_2" in day_costs and time_t in day_costs["_2"]:
-                                        cost_elec = float(day_costs["_2"][time_t])
-                            except (KeyError, ValueError, TypeError):
-                                pass
-                            
-                            # Sumar sobre todos los tiempos de inicio 'a'
-                            if "_4" in time_t_data and isinstance(time_t_data["_4"], dict):
-                                for time_a, num_batteries in time_t_data["_4"].items():
-                                    try:
-                                        # Costo = costo_elec[d,t] * Sv[k,d,t,a] * p_charger * delta_t
-                                        total_cost += cost_elec * float(num_batteries) * p_charger * delta_t
-                                    except (ValueError, TypeError):
-                                        continue
-    
+    for path, sv_val in _iter_leaf_records(sv_data):
+        axis_map = _axis_map_from_path(path)
+        day_key = axis_map.get("d") or axis_map.get("day")
+        time_key = axis_map.get("t") or axis_map.get("time")
+        if day_key is None or time_key is None:
+            continue
+        cost_elec = cost_lookup.get((str(day_key), str(time_key)), 0.0)
+        try:
+            total_cost += cost_elec * float(sv_val) * p_charger * delta_t
+        except Exception:
+            continue
+
     return total_cost * scaling_factor
+
+
+def calculate_peak_power_cost(root: Path) -> float:
+    """Calcula el costo por potencia pico usando P_pot.json y el coeficiente de demanda."""
+    ppot_path = find_json_in_folder(root, "P_pot.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not ppot_path or not params_path:
+        return 0.0
+    if is_effectively_empty_json(ppot_path) or is_effectively_empty_json(params_path):
+        return 0.0
+
+    ppot_data = load_json(ppot_path)
+    params_data = load_json(params_path)
+
+    try:
+        if isinstance(ppot_data, dict):
+            ppot_value = None
+            if "P_pot" in ppot_data:
+                ppot_value = ppot_data.get("P_pot")
+            elif "value" in ppot_data:
+                ppot_value = ppot_data.get("value")
+            elif ppot_data:
+                ppot_value = next(iter(ppot_data.values()))
+            ppot = float(ppot_value)
+        else:
+            ppot = float(ppot_data)
+    except Exception:
+        return 0.0
+
+    try:
+        demand_charge_coef = float(params_data.get("demand_charge_coef", 12 * 10))
+    except Exception:
+        demand_charge_coef = 12 * 10
+
+    return ppot * demand_charge_coef
 
 
 def calculate_investment_cost(root: Path) -> float:
@@ -1364,23 +1327,13 @@ def calculate_investment_cost(root: Path) -> float:
     # Costo de estaciones
     if x_path and not is_effectively_empty_json(x_path):
         x_data = load_json(x_path)
-        station_costs = params_data.get("station_cost_k", {})
-        
-        # X.json puede tener estructura {"k": {...}} o {"_1": {...}}
-        station_dict = None
-        if "k" in x_data and isinstance(x_data["k"], dict):
-            station_dict = x_data["k"]
-        elif "_1" in x_data and isinstance(x_data["_1"], dict):
-            station_dict = x_data["_1"]
-        
-        if station_dict:
+        station_costs = _unwrap_named_tree(params_data.get("station_cost_k", {}))
+        station_dict = _unwrap_named_tree(x_data)
+        if isinstance(station_dict, dict) and isinstance(station_costs, dict):
             for station_id, value in station_dict.items():
                 try:
-                    if float(value) > 0.5:  # estación instalada
-                        # Buscar costo de la estación
-                        if "_1" in station_costs:
-                            cost = station_costs["_1"].get(station_id, 0.0)
-                            total_cost += float(cost)
+                    if float(value) > 0.5:
+                        total_cost += float(station_costs.get(station_id, 0.0))
                 except (ValueError, TypeError):
                     continue
     
@@ -1388,19 +1341,12 @@ def calculate_investment_cost(root: Path) -> float:
     if n_chargers_path and not is_effectively_empty_json(n_chargers_path):
         n_chargers_data = load_json(n_chargers_path)
         charger_cost = params_data.get("charger_cost", 0.0)
-        
-        # N_chargers.json puede tener estructura {"k": {...}} o {"_1": {...}}
-        station_dict = None
-        if "k" in n_chargers_data and isinstance(n_chargers_data["k"], dict):
-            station_dict = n_chargers_data["k"]
-        elif "_1" in n_chargers_data and isinstance(n_chargers_data["_1"], dict):
-            station_dict = n_chargers_data["_1"]
-        
-        if station_dict:
-            for station_id, value in station_dict.items():
+
+        station_dict = _unwrap_named_tree(n_chargers_data)
+        if isinstance(station_dict, dict):
+            for _, value in station_dict.items():
                 try:
-                    n_chargers = float(value)
-                    total_cost += n_chargers * float(charger_cost)
+                    total_cost += float(value) * float(charger_cost)
                 except (ValueError, TypeError):
                     continue
     
@@ -1408,19 +1354,12 @@ def calculate_investment_cost(root: Path) -> float:
     if n_batteries_path and not is_effectively_empty_json(n_batteries_path):
         n_batteries_data = load_json(n_batteries_path)
         battery_cost = params_data.get("battery_cost", 0.0)
-        
-        # N_batteries.json puede tener estructura {"k": {...}} o {"_1": {...}}
-        station_dict = None
-        if "k" in n_batteries_data and isinstance(n_batteries_data["k"], dict):
-            station_dict = n_batteries_data["k"]
-        elif "_1" in n_batteries_data and isinstance(n_batteries_data["_1"], dict):
-            station_dict = n_batteries_data["_1"]
-        
-        if station_dict:
-            for station_id, value in station_dict.items():
+
+        station_dict = _unwrap_named_tree(n_batteries_data)
+        if isinstance(station_dict, dict):
+            for _, value in station_dict.items():
                 try:
-                    n_batteries = float(value)
-                    total_cost += n_batteries * float(battery_cost)
+                    total_cost += float(value) * float(battery_cost)
                 except (ValueError, TypeError):
                     continue
     
@@ -1445,30 +1384,22 @@ def calculate_penalty_cost(root: Path) -> float:
     params_data = load_json(params_path)
     f_seg_data = load_json(f_seg_path)
     
-    voll = float(params_data.get("Voll"))
-    f_penalty_div = params_data.get("F_penalty_div", {})
-    scaling_factor = float(params_data.get("scaling_factor_op_cost"))
+    voll = float(params_data.get("Voll", 0.0))
+    f_penalty_div = _unwrap_named_tree(params_data.get("F_penalty_div", {}))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
     
     total_penalty = 0.0
     
-    # F_seg.json tiene estructura: {"_1": {"nodo": {"_2": {"día": {"_3": {"segmento": valor}}}}}}
-    if "_1" in f_seg_data and isinstance(f_seg_data["_1"], dict):
-        for node_id, node_data in f_seg_data["_1"].items():
-            if "_2" in node_data and isinstance(node_data["_2"], dict):
-                for day_id, day_data in node_data["_2"].items():
-                    if "_3" in day_data and isinstance(day_data["_3"], dict):
-                        for seg_id, seg_value in day_data["_3"].items():
-                            try:
-                                # Obtener divisor de penalidad para este segmento
-                                if "_1" in f_penalty_div:
-                                    divisor = float(f_penalty_div["_1"].get(seg_id, 1.0))
-                                else:
-                                    divisor = 1.0
-                                
-                                penalty = float(seg_value) * (voll / divisor)
-                                total_penalty += penalty
-                            except (ValueError, TypeError, ZeroDivisionError):
-                                continue
+    for path, value in _iter_leaf_records(f_seg_data):
+        axis_map = _axis_map_from_path(path)
+        seg_id = axis_map.get("seg") or axis_map.get("_3")
+        if seg_id is None:
+            continue
+        try:
+            divisor = float(f_penalty_div.get(str(seg_id), 1.0)) if isinstance(f_penalty_div, dict) else 1.0
+            total_penalty += float(value) * (voll / divisor)
+        except (ValueError, TypeError, ZeroDivisionError):
+            continue
     
     return total_penalty * scaling_factor
 
@@ -1506,18 +1437,11 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
 
         costo_electricidad = params_data.get("costo_electricidad", {})
         fixed_candidates: List[float] = []
-        if isinstance(costo_electricidad, dict) and isinstance(costo_electricidad.get("_1"), dict):
-            for day_data in costo_electricidad["_1"].values():
-                if not isinstance(day_data, dict):
-                    continue
-                t_map = day_data.get("_2", {})
-                if not isinstance(t_map, dict):
-                    continue
-                for v in t_map.values():
-                    try:
-                        fixed_candidates.append(float(v))
-                    except Exception:
-                        continue
+        for _, v in _iter_leaf_records(costo_electricidad):
+            try:
+                fixed_candidates.append(float(v))
+            except Exception:
+                continue
 
         if not fixed_candidates:
             raise ValueError("No hay valores en costo_electricidad para costo fijo")
@@ -1545,14 +1469,21 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     except Exception as ex:
         print(f"Advertencia al calcular costo de penalidad: {ex}")
         penalty_cost = 0.0
+
+    try:
+        peak_power_cost = calculate_peak_power_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo por potencia pico: {ex}")
+        peak_power_cost = 0.0
     
-    total_cost = investment_cost + energy_cost + penalty_cost
+    total_cost = investment_cost + energy_cost + penalty_cost + peak_power_cost
     
     return {
         "energy_cost": energy_cost,
         "real_energy_cost": real_energy_cost,
         "investment_cost": investment_cost,
         "penalty_cost": penalty_cost,
+        "peak_power_cost": peak_power_cost,
         "total_cost": total_cost,
     }
 

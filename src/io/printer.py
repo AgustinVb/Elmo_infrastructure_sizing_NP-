@@ -59,6 +59,8 @@ def _coerce_json_val(x: Any) -> Any:
 
 def _insert_nested(d: dict, keys: List[Union[str, int]], value_: Any) -> None:
     """Inserta value en dict anidado usando la secuencia de keys (todas se guardan como str)."""
+    if not keys:
+        raise ValueError("No se puede insertar un valor con ruta de claves vacía")
     cur = d
     for k in keys[:-1]:
         ks = str(k)
@@ -266,6 +268,36 @@ class Printer:
         """
         base_name = str(var_comp.name)
         is_binary = _is_binary_var_component(var_comp)
+
+        if not var_comp.is_indexed():
+            vd = next(iter(var_comp.values()), None)
+            if vd is None:
+                return
+
+            x = vd.value
+            if x is None:
+                return
+            try:
+                xv = float(x)
+            except Exception:
+                return
+
+            try:
+                if vd.is_integer() or vd.is_binary():
+                    xv = int(round(xv))
+                elif abs(xv) < self.float_tol:
+                    xv = 0.0
+            except Exception:
+                if abs(xv) < self.float_tol:
+                    xv = 0.0
+
+            if is_binary and abs(float(xv)) < self.float_tol:
+                return
+
+            out_path = os.path.join(self.path, f"{base_name}.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(_coerce_json_val(xv), f, ensure_ascii=False, indent=2)
+            return
 
         tree: Dict[str, Any] = {}
 
