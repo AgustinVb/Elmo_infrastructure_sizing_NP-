@@ -620,7 +620,7 @@ class ConstraintRules(OptRules):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         if t not in model.time_intervals_det_set:
             return pyo.Constraint.Skip
-        return model.Z[i, d, t] == 1
+        return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i) == 1
     
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
@@ -664,7 +664,7 @@ class ConstraintRules(OptRules):
         #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
         #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         #fijar cantidad de cargadores
         #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)

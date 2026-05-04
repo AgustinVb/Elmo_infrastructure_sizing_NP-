@@ -334,6 +334,8 @@ class Printer:
             payload[str(p.name)] = self._param_payload(p)
         for s in self.model.component_objects(pyo.Set, active=True):
             payload[str(s.name)] = self._set_payload(s)
+        if getattr(self.time_series, "_mc_alpha", None) is not None:
+            payload["marginal_cost_alpha"] = float(self.time_series._mc_alpha)
 
         out_path = os.path.join(self.path, filename)
         with open(out_path, "w", encoding="utf-8") as f:
