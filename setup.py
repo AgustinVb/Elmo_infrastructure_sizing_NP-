@@ -45,7 +45,18 @@ def main():
     parser.add_argument('--series', default='time_series.xlsx')
     parser.add_argument('--output_folder', default='output/')
     parser.add_argument('--solver', default='glpk')
-    parser.add_argument('--warm_start_folder', default=None)
+    parser.add_argument('--y_init_path', default=None, help='Ruta opcional a Y.json para warm start puntual')
+    parser.add_argument(
+        '--init_solution_folder', '--warm_start_folder',
+        dest='init_solution_folder',
+        default=None,
+        help='Carpeta opcional con JSONs de variables (<VarName>.json) para warm start completo'
+    )
+    parser.add_argument(
+        '--relax_integrality',
+        action='store_true',
+        help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
+    )
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
@@ -58,7 +69,9 @@ def main():
         gap,
         solver_name,
         output_folder,
-        warm_start_folder=args.warm_start_folder,
+        y_init_path=args.y_init_path,
+        init_solution_folder=args.init_solution_folder,
+        relax_integrality=args.relax_integrality,
     )
 
 

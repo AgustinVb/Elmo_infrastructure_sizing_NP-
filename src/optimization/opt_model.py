@@ -7,6 +7,7 @@ import threading
 import signal
 import atexit
 from pathlib import Path
+from typing import Any, Dict, List
 
 import pyomo.environ as pyo
 from pyomo.environ import SolverFactory, value
@@ -26,12 +27,15 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
         self.infeasible_log_path = os.path.join(self.output_folder, "infeasible_log.txt")
         self.warm_start_folder = warm_start_folder
+        self.y_init_path = y_init_path
+        self.init_solution_folder = init_solution_folder if init_solution_folder is not None else warm_start_folder
+        self.relax_integrality = relax_integrality
         self.has_warm_start = False
         self.set_builder      = OptSets(mine_system, time_series)
         self.param_rules      = OptParameters(mine_system, time_series)
@@ -40,8 +44,25 @@ class OptModel(object):
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
-        if self.warm_start_folder:
-            self.load_warm_start(self.warm_start_folder)
+        self.var_index_order: Dict[str, List[str]] = {
+            "Z": ["i", "d", "t"],
+            "Z_charge": ["k", "i", "d", "t"],
+            "Y": ["i", "j", "d", "t"],
+            "P": ["k", "i", "d", "t"],
+            "P_pot": ["y"],
+            "B": ["i", "d", "t"],
+            "N_chargers": ["k"],
+            "X": ["k"],
+            "StartCharge": ["k", "i", "d", "t"],
+            "EndCharge": ["k", "i", "d", "t"],
+            "M": ["i", "j", "d", "t"],
+            "F": ["j", "d"],
+            "F_seg": ["j", "d", "seg"],
+        }
+        if self.init_solution_folder:
+            self._load_solution_warmstart_folder(self.init_solution_folder)
+        if self.y_init_path:
+            self._load_y_warmstart(self.y_init_path)
         
         # No guardar archivos del modelo formulado
         # self.save_formulated_model()
@@ -68,61 +89,95 @@ class OptModel(object):
 
         return model
 
-    def _normalize_warm_token(self, value):
+    @staticmethod
+    def _flatten_nested_solution_tree(tree):
+        records = []
+
+        def walk(node, tokens):
+            if not isinstance(node, dict):
+                return
+
+            for axis_name, axis_values in node.items():
+                if not isinstance(axis_values, dict):
+                    final_tokens = tokens + [str(axis_name)]
+                    if final_tokens:
+                        records.append((final_tokens, axis_values))
+                    continue
+
+                for axis_value, child in axis_values.items():
+                    if isinstance(child, dict):
+                        walk(child, tokens + [str(axis_value)])
+                    else:
+                        final_tokens = tokens + [str(axis_value)]
+                        records.append((final_tokens, child))
+
+        walk(tree, [])
+        return records
+
+    @staticmethod
+    def _cast_token_like(example_value, token):
+        if example_value is None:
+            return token
+
         try:
-            number = float(value)
-            if abs(number - round(number)) < 1e-9:
-                return str(int(round(number)))
-            return format(number, ".15g")
+            if isinstance(example_value, str):
+                return str(token)
+            if isinstance(example_value, (int,)):
+                return int(float(token))
+            if isinstance(example_value, (float,)):
+                return float(token)
         except Exception:
-            return str(value)
+            pass
+        return token
 
-    def _flatten_warm_start_json(self, node, collected=None, expect_axis=True):
-        if collected is None:
-            collected = []
-
-        if isinstance(node, dict):
-            if expect_axis:
-                for _, next_node in node.items():
-                    yield from self._flatten_warm_start_json(next_node, collected, expect_axis=False)
-            else:
-                for actual_value, next_node in node.items():
-                    yield from self._flatten_warm_start_json(next_node, collected + [actual_value], expect_axis=True)
+    def _load_solution_warmstart_folder(self, init_solution_folder):
+        if not init_solution_folder:
             return
 
-        yield collected, node
-
-    def load_warm_start(self, warm_start_folder):
-        folder = Path(warm_start_folder)
+        folder = Path(os.path.normpath(init_solution_folder))
         if not folder.exists():
-            print(f"⚠️ Warm start folder no existe: {folder}")
+            print(f"WARN Warm start folder no existe: {folder}")
             return
 
         total_loaded = 0
-        loaded_by_var = {}
+        total_skipped = 0
 
         for var_comp in self.model.component_objects(pyo.Var, active=True):
-            json_path = folder / f"{var_comp.name}.json"
-            if not json_path.exists():
+            var_name = str(var_comp.name)
+            json_path = os.path.join(str(folder), f"{var_name}.json")
+            if not os.path.exists(json_path):
                 continue
 
             try:
-                payload = json.loads(json_path.read_text(encoding="utf-8"))
+                with open(json_path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
             except Exception as exc:
-                print(f"⚠️ No se pudo leer warm start de {json_path.name}: {exc}")
+                print(f"WARN No se pudo leer warm start de {os.path.basename(json_path)}: {exc}")
                 continue
 
             count = 0
+            skipped = 0
             if var_comp.is_indexed():
                 index_lookup = {}
                 for idx in var_comp:
                     idx_tuple = idx if isinstance(idx, tuple) else (idx,)
-                    normalized = tuple(self._normalize_warm_token(v) for v in idx_tuple)
+                    normalized = tuple(str(v) for v in idx_tuple)
                     index_lookup[normalized] = idx
 
-                for tokens, raw_value in self._flatten_warm_start_json(payload):
-                    normalized_tokens = tuple(self._normalize_warm_token(v) for v in tokens)
+                axis_order = self.var_index_order.get(var_name)
+                records = self._flatten_nested_solution_tree(payload)
+                for tokens, raw_value in records:
+                    if not axis_order:
+                        skipped += 1
+                        continue
+
+                    if len(tokens) < len(axis_order):
+                        skipped += 1
+                        continue
+
+                    normalized_tokens = tuple(tokens[:len(axis_order)])
                     if normalized_tokens not in index_lookup:
+                        skipped += 1
                         continue
                     try:
                         vardata = var_comp[index_lookup[normalized_tokens]]
@@ -132,6 +187,7 @@ class OptModel(object):
                         vardata.set_value(value_to_set, skip_validation=True)
                         count += 1
                     except Exception:
+                        skipped += 1
                         continue
             else:
                 try:
@@ -143,18 +199,84 @@ class OptModel(object):
                     count = 1
                 except Exception:
                     count = 0
+                    skipped = 1
 
-            if count:
-                loaded_by_var[var_comp.name] = count
-                total_loaded += count
+            print(f"OK Warm start {var_name}: {count} cargados, {skipped} omitidos")
+            total_loaded += count
+            total_skipped += skipped
 
         self.has_warm_start = total_loaded > 0
-        if self.has_warm_start:
-            print(f"🔥 Warm start cargado desde {folder}")
-            for var_name, count in sorted(loaded_by_var.items()):
-                print(f"   - {var_name}: {count} valores")
-        else:
-            print(f"⚠️ No se cargaron valores útiles desde warm start: {folder}")
+        print(f"OK Warm start completo desde '{folder}': {total_loaded} valores cargados, {total_skipped} omitidos")
+
+    def _load_y_warmstart(self, y_init_path):
+        if not y_init_path:
+            return
+
+        if not os.path.exists(y_init_path):
+            print(f"WARN Warm start Y no encontrado: {y_init_path}")
+            return
+
+        try:
+            with open(y_init_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"WARN No se pudo leer warm start Y: {e}")
+            return
+
+        d_root = data.get("d", {}) if isinstance(data, dict) else {}
+        if not isinstance(d_root, dict):
+            print("WARN Warm start Y con formato no soportado (falta raíz 'd').")
+            return
+
+        loaded = 0
+        skipped = 0
+
+        for lhd, lhd_block in d_root.items():
+            if not isinstance(lhd_block, dict):
+                continue
+            t_nodes = lhd_block.get("t", {})
+            if not isinstance(t_nodes, dict):
+                continue
+
+            for node, node_block in t_nodes.items():
+                if not isinstance(node_block, dict):
+                    continue
+                day_map = node_block.get("i", {})
+                if not isinstance(day_map, dict):
+                    continue
+
+                for day_key, day_block in day_map.items():
+                    if not isinstance(day_block, dict):
+                        continue
+                    interval_map = day_block.get("j", {})
+                    if not isinstance(interval_map, dict):
+                        continue
+
+                    try:
+                        day = int(float(day_key))
+                    except Exception:
+                        skipped += 1
+                        continue
+
+                    for interval_key, val in interval_map.items():
+                        try:
+                            t = int(float(interval_key))
+                            v = float(val)
+                        except Exception:
+                            skipped += 1
+                            continue
+
+                        if v < 0.5:
+                            continue
+
+                        idx = (lhd, str(node), day, t)
+                        if idx in self.model.Y:
+                            self.model.Y[idx].value = 1.0
+                            loaded += 1
+                        else:
+                            skipped += 1
+
+        print(f"OK Warm start Y cargado desde '{y_init_path}': {loaded} valores, {skipped} omitidos")
 
     def _build_infeasible_logger(self, log_file):
         logger_name = f"infeasible_logger_{id(self)}"
@@ -212,7 +334,7 @@ class OptModel(object):
                 logger, handler = self._build_infeasible_logger(log_file)
                 log_infeasible_constraints(model, log_expression=True, logger=logger)
             except Exception as e:
-                print("⚠️ Error while logging infeasibilities:", e)
+                print("WARN Error while logging infeasibilities:", e)
             finally:
                 if handler is not None:
                     handler.close()
@@ -239,14 +361,22 @@ class OptModel(object):
                     if len(lines) > 10:
                         print("... (see full log in infeasible_log.txt)")
             except Exception as e:
-                print("⚠️ Could not read log file for summary:", e)
+                print("WARN Could not read log file for summary:", e)
 
-    def solve_model(self, gap, solvername, timelimit=172800): 
+    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
         log_file = self.gurobi_log_path
         if os.path.exists(log_file):
             os.remove(log_file)
 
         result = None
+        model_to_solve = self.model
+        if relax_integrality:
+            self.original_model = self.model
+            model_to_solve = self.model.clone()
+            pyo.TransformationFactory('core.relax_integer_vars').apply_to(model_to_solve)
+            self.relaxed_model = model_to_solve
+            self.model = model_to_solve
+
         opt = self._configure_solver(solvername, gap, timelimit, log_file)
 
         print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
@@ -270,7 +400,7 @@ class OptModel(object):
             solve_kwargs = {"tee": True, "load_solutions": True}
             if solvername == 'gurobi' and self.has_warm_start:
                 solve_kwargs["warmstart"] = True
-            result = opt.solve(self.model, **solve_kwargs)
+            result = opt.solve(model_to_solve, **solve_kwargs)
             self.solution_status = result.solver.termination_condition
             
         except KeyboardInterrupt:
@@ -284,7 +414,7 @@ class OptModel(object):
                         f.write(f"\n--- Ejecución interrumpida por usuario ---\n")
                     print(f"✅ Log guardado exitosamente en {log_file}")
                 except Exception as e:
-                    print(f"⚠️ Error al escribir log: {e}")
+                    print(f"WARN Error al escribir log: {e}")
         except Exception as e:
             error_text = str(e)
             is_gurobi_license_error = (
@@ -292,7 +422,7 @@ class OptModel(object):
             )
 
             if is_gurobi_license_error:
-                print("⚠️ La licencia de Gurobi está expirada. Intentando solver alternativo...")
+                print("WARN La licencia de Gurobi está expirada. Intentando solver alternativo...")
                 fallback_solver = self._find_fallback_solver()
                 if fallback_solver is None:
                     print("❌ No se encontró solver alternativo disponible (highs/cbc/glpk).")
@@ -302,14 +432,14 @@ class OptModel(object):
                     print(f"🔁 Reintentando con solver fallback: {fallback_solver}")
                     try:
                         opt = self._configure_solver(fallback_solver, gap, timelimit, log_file)
-                        result = opt.solve(self.model, tee=True, load_solutions=True)
+                        result = opt.solve(model_to_solve, tee=True, load_solutions=True)
                         self.solution_status = result.solver.termination_condition
                         print(f"✅ Solver fallback ejecutado con estado: {self.solution_status}")
                     except Exception as fallback_error:
                         print(f"❌ Falló también el solver fallback ({fallback_solver}): {fallback_error}")
                         self.solution_status = TerminationCondition.error
             else:
-                print(f"⚠️ Ocurrió un error inesperado: {e}")
+                print(f"WARN Ocurrió un error inesperado: {e}")
                 self.solution_status = TerminationCondition.error
         finally:
             # Restaurar el manejador anterior
@@ -342,11 +472,11 @@ class OptModel(object):
                 #print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
                 # -----------------------------------
             else:
-                print("⚠️ Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
+                print("WARN Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
                 self.limited_infeasible_log(self.model, log_file=self.infeasible_log_path)
 
         else:
-            print(f"⚠️ Termination condition: {self.solution_status}")
+            print(f"WARN Termination condition: {self.solution_status}")
             self.limited_infeasible_log(self.model, timeout=60, log_file=self.infeasible_log_path)
 
         try:

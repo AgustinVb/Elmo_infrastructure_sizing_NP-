@@ -337,7 +337,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.01, 2: 200, 3: 300, 4: 400, 5: 200},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 10, 3: 0, 4: 0, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 10, 3: 100, 4: 0, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
 
 class BoundRules(OptRules):
@@ -619,7 +619,7 @@ class ConstraintRules(OptRules):
     def det_stop_all(self, model, i, d, t):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         if t not in model.time_intervals_det_set:
-            return pyo.Constraint.Skip
+            return sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i) == 0
         return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i) == 1
     
     # Fijar cantidad de cargadores 
@@ -666,7 +666,7 @@ class ConstraintRules(OptRules):
         #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
         #
         # 
-        #  model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         #fijar cantidad de cargadores
         #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)

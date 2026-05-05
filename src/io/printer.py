@@ -185,26 +185,34 @@ class Printer:
         _ensure_dir(self.path)
 
         self.var_index_schema: Dict[str, List[str]] = {
-            "Z":        ["d", "t", "i"],
+            "Z":        ["i", "d", "t"],
             "Z_charge": ["k", "i", "d", "t"],
-            "Y":        ["d", "t", "i", "j"],
+            "Y":        ["i", "j", "d", "t"],
             "P":        ["k", "i", "d", "t"],
-            "B":        ["d", "t", "i"],
+            "P_pot":    ["y"],
+            "B":        ["i", "d", "t"],
             "N_chargers": ["k"],
             "X":         ["k"],
             "StartCharge": ["k", "i", "d", "t"],
             "EndCharge":   ["k", "i", "d", "t"],
+            "M":        ["i", "j", "d", "t"],
+            "F":        ["j", "d"],
+            "F_seg":    ["j", "d", "seg"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
-            "Z":        ["d", "t", "i"],
+            "Z":        ["i", "d", "t"],
             "Z_charge": ["k", "i", "d", "t"],
-            "Y":        ["d", "t", "i", "j"],
+            "Y":        ["i", "j", "d", "t"],
             "P":        ["k", "i", "d", "t"],
-            "B":        ["d", "t", "i"],
+            "P_pot":    ["y"],
+            "B":        ["i", "d", "t"],
             "N_chargers": ["k"],
             "X":         ["k"],
             "StartCharge": ["k", "i", "d", "t"],
             "EndCharge":   ["k", "i", "d", "t"],
+            "M":        ["i", "j", "d", "t"],
+            "F":        ["j", "d"],
+            "F_seg":    ["j", "d", "seg"],
         }
 
         self.float_tol: float = 1e-9

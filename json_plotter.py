@@ -53,12 +53,55 @@ def _load_json(path: str) -> Optional[Dict[str, Any]]:
         return json.load(f)
 
 
+def _collect_named_leaf_records(tree: Any, tokens: Tuple[Tuple[str, Any], ...] = ()) -> List[Tuple[Tuple[Tuple[str, Any], ...], Any]]:
+    records: List[Tuple[Tuple[Tuple[str, Any], ...], Any]] = []
+    if not isinstance(tree, dict):
+        return records
+
+    for axis_name, axis_values in tree.items():
+        if not isinstance(axis_values, dict):
+            records.append((tokens + ((str(axis_name), axis_values),), axis_values))
+            continue
+
+        for axis_value, child in axis_values.items():
+            next_tokens = tokens + ((str(axis_name), _numeric_or_str(axis_value)),)
+            if isinstance(child, dict):
+                records.extend(_collect_named_leaf_records(child, next_tokens))
+            else:
+                records.append((next_tokens, child))
+
+    return records
+
+
 # -------------------- Loaders --------------------
 def load_B_df(path: str) -> Optional[pd.DataFrame]:
     data = _load_json(path)
     if not data:
         return None
+
     rows = []
+    for tokens, value in _collect_named_leaf_records(data):
+        axes = {name: axis_value for name, axis_value in tokens}
+        if {"i", "d", "t"}.issubset(axes):
+            rows.append({
+                "lhd": axes["i"],
+                "day": _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "value": float(value),
+            })
+        elif {"d", "t", "i"}.issubset(axes):
+            rows.append({
+                "lhd": axes["d"],
+                "day": _numeric_or_str(axes["t"]),
+                "interval": _numeric_or_str(axes["i"]),
+                "value": float(value),
+            })
+
+    if rows:
+        return (pd.DataFrame(rows)
+                .sort_values(["lhd", "day", "interval"])
+                .reset_index(drop=True))
+
     d = data.get("d", {})
     for lhd, d_block in d.items():
         t_block = d_block.get("t", {})
@@ -81,7 +124,32 @@ def load_binary_Y_df(path: str) -> Optional[pd.DataFrame]:
     data = _load_json(path)
     if not data:
         return None
+
     rows = []
+    for tokens, value in _collect_named_leaf_records(data):
+        axes = {name: axis_value for name, axis_value in tokens}
+        if {"i", "j", "d", "t"}.issubset(axes):
+            rows.append({
+                "lhd": axes["i"],
+                "node": str(axes["j"]),
+                "day": _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "value": float(value),
+            })
+        elif {"d", "t", "i", "j"}.issubset(axes):
+            rows.append({
+                "lhd": axes["d"],
+                "node": str(axes["t"]),
+                "day": _numeric_or_str(axes["i"]),
+                "interval": _numeric_or_str(axes["j"]),
+                "value": float(value),
+            })
+
+    if rows:
+        return (pd.DataFrame(rows)
+                .sort_values(["lhd", "node", "day", "interval"])
+                .reset_index(drop=True))
+
     d = data.get("d", {})
     for lhd, t_block in d.items():
         t_dict = t_block.get("t", {})
@@ -115,6 +183,47 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
     if not data:
         return None
     rows = []
+
+    for tokens, value in _collect_named_leaf_records(data):
+        axes = {name: axis_value for name, axis_value in tokens}
+        row: Dict[str, Any] = {"value": float(value)}
+
+        if {"k", "i", "d", "t"}.issubset(axes):
+            row.update({
+                "station": str(axes["k"]),
+                "lhd": axes["i"],
+                "day": _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+            })
+        elif {"i", "j", "d", "t"}.issubset(axes):
+            row.update({
+                "lhd": axes["i"],
+                "node": str(axes["j"]),
+                "day": _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+            })
+        elif {"i", "d", "t"}.issubset(axes):
+            row.update({
+                "lhd": axes["i"],
+                "day": _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+            })
+        elif {"d", "t", "i"}.issubset(axes):
+            row.update({
+                "lhd": axes["d"],
+                "day": _numeric_or_str(axes["t"]),
+                "interval": _numeric_or_str(axes["i"]),
+            })
+        else:
+            row = {}
+
+        if row:
+            rows.append(row)
+
+    if rows:
+        df = pd.DataFrame(rows)
+        cols = [c for c in ["lhd", "station", "node", "j", "day", "interval", "value"] if c in df.columns]
+        return df[cols].sort_values([c for c in cols if c != "value"]).reset_index(drop=True)
 
     def _find_interval_map(obj):
         """Recursively search for a dict whose values are scalar (int/float/str). Return it or None."""
