@@ -461,7 +461,7 @@ class OptParameters(OptRules):
             initialize={
                 1: 5.0,
                 2: 10.0,
-                3: 20.0,
+                3: 100.0,
                 4: 0,
                 5: 0,
             },
@@ -939,8 +939,7 @@ class ConstraintRules(OptRules):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if t not in model.time_intervals_det_set:
-            if not valid_k_list:
-                return pyo.Constraint.Skip
+            return pyo.Constraint.Skip
         return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
     
     # Fijar baterias y cargadores
