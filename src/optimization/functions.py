@@ -118,15 +118,15 @@ class OptSets(OptRules):
             # --- Shift 2 (in progress): 08:00 - 16:00 ---
             # Shift change already started at 08:00, horizon captures from 09:00
             ("09:00", "09:40", "shift_change"),
-            ("10:28", "14:48", "forced_detention"),
+            ("10:28", "12:58", "forced_detention"),
 
             # --- Shift 3: 16:00 - 00:00 ---
             ("16:30", "17:40", "shift_change"),
-            ("19:28", "22:48", "forced_detention"),
+            ("19:28", "21:58", "forced_detention"),
 
             # --- Shift 1: 00:00 - 08:00 ---
             ("00:30", "01:40", "shift_change"),
-            ("03:28", "06:48", "forced_detention"),
+            ("03:28", "05:58", "forced_detention"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
             # Interpreted as next day since 08:30 < 09:00
