@@ -132,25 +132,41 @@ def iter_day_series_key(vehicle_node: Any, series_key: str) -> Iterator[Dict[str
         if isinstance(day_node, dict) and isinstance(day_node.get(series_key), dict):
             yield day_node[series_key]
 
+def iter_timeseries_from_i_d_t(data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Extract timeseries from i -> d -> t layout (for B.json).
+    Yields each t-series dict (time_interval -> value).
+    """
+    if not isinstance(data, dict) or "i" not in data or not isinstance(data["i"], dict):
+        return
+    
+    for lhd_data in data["i"].values():
+        if not isinstance(lhd_data, dict) or "d" not in lhd_data:
+            continue
+        d_block = lhd_data.get("d")
+        if not isinstance(d_block, dict):
+            continue
+        
+        for day_data in d_block.values():
+            if not isinstance(day_data, dict) or "t" not in day_data:
+                continue
+            t_series = day_data.get("t")
+            if isinstance(t_series, dict):
+                yield t_series
+
 
 def mean_drop_rate_per_hour_fixed_dt(
     json_path: Path,
     delta_minutes: float,
     eps: float,
-    series_key: str,
     label_total_drop: str,
 ) -> Tuple[float, Dict[str, float]]:
     """
-    Promedio (unidades/h) considerando SOLO pasos donde el nivel baja,
-    usando delta_minutes MANUAL (no inferido desde timestamps).
+    Calcula consumo medio horario considerando SOLO pasos donde el nivel baja,
+    leyendo la estructura i -> d -> t de B.json (SOC por baterÃ­a, dÃ­a, intervalo).
     """
     data = load_json(json_path)
     if not isinstance(data, dict):
         raise ValueError("JSON inesperado: la raÃ­z no es un objeto/dict.")
-
-    vehicles = data["d"] if ("d" in data and isinstance(data["d"], dict)) else data
-    if not isinstance(vehicles, dict) or len(vehicles) == 0:
-        raise ValueError("No pude detectar series por vehÃ­culo (dict vacÃ­o o formato no soportado).")
 
     step_hours = delta_minutes / 60.0
     total_drop = 0.0
@@ -158,26 +174,26 @@ def mean_drop_rate_per_hour_fixed_dt(
     n_vehicles_used = 0
     n_series = 0
     n_pairs_total = 0
+    vehicles_seen = set()
 
-    for _, vnode in vehicles.items():
-        had_series = False
-        for series_map in iter_day_series_key(vnode, series_key):
-            had_series = True
-            n_series += 1
+    for series_map in iter_timeseries_from_i_d_t(data):
+        if not isinstance(series_map, dict) or len(series_map) == 0:
+            continue
+        
+        n_series += 1
+        series = parse_timeseries(series_map)
+        if len(series) < 2:
+            continue
 
-            series = parse_timeseries(series_map)
-            if len(series) < 2:
-                continue
-
-            for (_, v0), (_, v1) in zip(series, series[1:]):
-                n_pairs_total += 1
-                drop = v0 - v1
-                if drop > eps:
-                    total_drop += drop
-                    n_drop_steps += 1
-
-        if had_series:
-            n_vehicles_used += 1
+        for (_, v0), (_, v1) in zip(series, series[1:]):
+            n_pairs_total += 1
+            drop = v0 - v1
+            if drop > eps:
+                total_drop += drop
+                n_drop_steps += 1
+        
+        if n_series == 1:
+            vehicles_seen.add(True)
 
     if n_drop_steps == 0:
         raise ValueError("No se encontraron descensos (pasos con consumo) en el JSON.")
@@ -189,7 +205,7 @@ def mean_drop_rate_per_hour_fixed_dt(
         label_total_drop: total_drop,
         "n_drop_steps": float(n_drop_steps),
         "n_pairs_total": float(n_pairs_total),
-        "n_vehicles_used": float(n_vehicles_used),
+        "n_vehicles_used": float(len(vehicles_seen) if vehicles_seen else 1),
         "n_series": float(n_series),
         "delta_minutes": float(delta_minutes),
     }
@@ -201,7 +217,6 @@ def mean_consumption_lph(e_json_path: Path, delta_minutes: float, eps: float = 1
         json_path=e_json_path,
         delta_minutes=delta_minutes,
         eps=eps,
-        series_key="i",  # E: instantes -> litros
         label_total_drop="total_drop_liters",
     )
 
@@ -211,7 +226,6 @@ def mean_consumption_kwhph(b_json_path: Path, delta_minutes: float, eps: float =
         json_path=b_json_path,
         delta_minutes=delta_minutes,
         eps=eps,
-        series_key="i",  # B: instantes -> kWh
         label_total_drop="total_drop_kwh",
     )
 
@@ -261,33 +275,33 @@ def calculate_daily_trips(y_json_path: Path) -> Dict[str, float]:
     data = load_json(y_json_path)
     trips_by_day: Dict[str, float] = {}
 
-    if not isinstance(data, dict) or "d" not in data or not isinstance(data["d"], dict):
+    if not isinstance(data, dict) or "i" not in data or not isinstance(data["i"], dict):
         return trips_by_day
 
-    for lhd_data in data["d"].values():
+    for lhd_data in data["i"].values():
         if not isinstance(lhd_data, dict):
             continue
-        t_block = lhd_data.get("t", {})
-        if not isinstance(t_block, dict):
+        j_block = lhd_data.get("j", {})
+        if not isinstance(j_block, dict):
             continue
 
-        for node_data in t_block.values():
+        for node_data in j_block.values():
             if not isinstance(node_data, dict):
                 continue
-            i_block = node_data.get("i", {})
-            if not isinstance(i_block, dict):
+            d_block = node_data.get("d", {})
+            if not isinstance(d_block, dict):
                 continue
 
-            for day_key, day_data in i_block.items():
+            for day_key, day_data in d_block.items():
                 if not isinstance(day_data, dict):
                     continue
-                j_block = day_data.get("j", {})
-                if not isinstance(j_block, dict):
+                t_block = day_data.get("t", {})
+                if not isinstance(t_block, dict):
                     continue
 
                 day = str(day_key)
                 trips_by_day.setdefault(day, 0.0)
-                for val in j_block.values():
+                for val in t_block.values():
                     if _as_float(val, 0.0) > 0.5:
                         trips_by_day[day] += 1.0
 
@@ -336,27 +350,27 @@ def _extract_y_counts(y_json_path: Path) -> Dict[Tuple[str, str, str], float]:
     data = load_json(y_json_path)
     y_counts: Dict[Tuple[str, str, str], float] = {}
 
-    if not isinstance(data, dict) or "d" not in data or not isinstance(data["d"], dict):
+    if not isinstance(data, dict) or "i" not in data or not isinstance(data["i"], dict):
         return y_counts
 
-    for i_name, lhd_data in data["d"].items():
+    for i_name, lhd_data in data["i"].items():
         if not isinstance(lhd_data, dict):
             continue
-        t_block = lhd_data.get("t", {})
-        if not isinstance(t_block, dict):
+        j_block = lhd_data.get("j", {})
+        if not isinstance(j_block, dict):
             continue
 
-        for j_name, node_data in t_block.items():
+        for j_name, node_data in j_block.items():
             if not isinstance(node_data, dict):
                 continue
-            i_block = node_data.get("i", {})
-            if not isinstance(i_block, dict):
+            d_block = node_data.get("d", {})
+            if not isinstance(d_block, dict):
                 continue
 
-            for day_key, day_data in i_block.items():
+            for day_key, day_data in d_block.items():
                 if not isinstance(day_data, dict):
                     continue
-                t_inner = day_data.get("j", {})
+                t_inner = day_data.get("t", {})
                 if not isinstance(t_inner, dict):
                     continue
 
@@ -373,26 +387,39 @@ def _extract_m_values(m_json_path: Path) -> Dict[Tuple[str, str, str], float]:
     data = load_json(m_json_path)
     m_values: Dict[Tuple[str, str, str], float] = {}
 
-    root = data.get("_1", {}) if isinstance(data, dict) else {}
-    if not isinstance(root, dict):
+    if not isinstance(data, dict) or "i" not in data or not isinstance(data["i"], dict):
         return m_values
 
-    for i_name, i_data in root.items():
+    for i_name, i_data in data["i"].items():
         if not isinstance(i_data, dict):
             continue
-        j_block = i_data.get("_2", {})
+        j_block = i_data.get("j", {})
         if not isinstance(j_block, dict):
             continue
 
         for j_name, j_data in j_block.items():
             if not isinstance(j_data, dict):
                 continue
-            d_block = j_data.get("_3", {})
+            d_block = j_data.get("d", {})
             if not isinstance(d_block, dict):
                 continue
 
             for day_key, m_val in d_block.items():
-                m_values[(str(i_name), str(j_name), str(day_key))] = _as_float(m_val, 0.0)
+                # day_data can be a dict with 't' -> {interval: value} or a direct numeric
+                if isinstance(m_val, dict):
+                    # Prefer summing over 't' if present, else sum any numeric children
+                    t_block = m_val.get("t") if isinstance(m_val.get("t", None), dict) else None
+                    if isinstance(t_block, dict):
+                        total = sum(_as_float(v, 0.0) for v in t_block.values())
+                    else:
+                        # Sum any numeric entries inside the dict (fallback)
+                        total = 0.0
+                        for v in m_val.values():
+                            total += _as_float(v, 0.0)
+                else:
+                    total = _as_float(m_val, 0.0)
+
+                m_values[(str(i_name), str(j_name), str(day_key))] = total
 
     return m_values
 
@@ -511,8 +538,7 @@ def main() -> None:
                 ["EnergÃ­a consumida (solo descensos)", f"{s['total_drop_kwh']:.6f} kWh"],
                 ["Pasos con descenso", str(int(s["n_drop_steps"]))],
                 ["Pares totales evaluados", str(int(s["n_pairs_total"]))],
-                ["VehÃ­culos usados", str(int(s["n_vehicles_used"]))],
-                ["Series (vehÃ­culo-dÃ­a)", str(int(s["n_series"]))],
+                ["Series (bateria-dia)", str(int(s["n_series"]))],
                 ["Delta t usado", f"{s['delta_minutes']:.3f} min"],
             ]
             print(make_table("B (ELÃ‰CTRICO)", ["MÃ©trica", "Valor"], rows))
@@ -798,8 +824,27 @@ def calculate_penalty_cost(root: Path) -> float:
     scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
     
     total_penalty = 0.0
-    
-    # F_seg.json tiene estructura: {"_1": {"nodo": {"_2": {"dÃ­a": {"_3": {"segmento": valor}}}}}}
+
+    def _get_divisor_for_segment(seg_key: str) -> float:
+        # Soporta formatos: {"_1": {"1": val}} o {"1": val} o nested
+        try:
+            if isinstance(f_penalty_div, dict):
+                if "_1" in f_penalty_div and isinstance(f_penalty_div["_1"], dict):
+                    return float(f_penalty_div["_1"].get(seg_key, 1.0))
+                # directo al nivel superior: {"1": 1000, ...}
+                if seg_key in f_penalty_div:
+                    return float(f_penalty_div.get(seg_key, 1.0))
+                # intentar buscar en cualquier dict hijo
+                for v in f_penalty_div.values():
+                    if isinstance(v, dict) and seg_key in v:
+                        return float(v.get(seg_key, 1.0))
+        except (ValueError, TypeError, ZeroDivisionError):
+            pass
+        return 1.0
+
+    # Soportar dos formatos habituales de F_seg.json:
+    # 1) formato con ejes indexados por guiones bajos: {"_1": {node: {"_2": {day: {"_3": {seg: val}}}}}}
+    # 2) formato con nombres de ejes: {"j": {node: {"d": {day: {"seg": {seg: val}}}}}}
     if "_1" in f_seg_data and isinstance(f_seg_data["_1"], dict):
         for node_id, node_data in f_seg_data["_1"].items():
             if "_2" in node_data and isinstance(node_data["_2"], dict):
@@ -807,17 +852,23 @@ def calculate_penalty_cost(root: Path) -> float:
                     if "_3" in day_data and isinstance(day_data["_3"], dict):
                         for seg_id, seg_value in day_data["_3"].items():
                             try:
-                                # Obtener divisor de penalidad para este segmento
-                                if "_1" in f_penalty_div:
-                                    divisor = float(f_penalty_div["_1"].get(seg_id, 1.0))
-                                else:
-                                    divisor = 1.0
-                                
-                                penalty = float(seg_value) * (voll / divisor)
-                                total_penalty += penalty
+                                divisor = _get_divisor_for_segment(seg_id)
+                                total_penalty += float(seg_value) * (voll / divisor)
                             except (ValueError, TypeError, ZeroDivisionError):
                                 continue
-    
+    elif "j" in f_seg_data and isinstance(f_seg_data["j"], dict):
+        for node_id, node_data in f_seg_data["j"].items():
+            # node_data expected like {"d": {"1": {"seg": {"1": val}}}}
+            days = node_data.get("d", {}) if isinstance(node_data, dict) else {}
+            for day_id, day_data in days.items():
+                segs = day_data.get("seg", {}) if isinstance(day_data, dict) else {}
+                for seg_id, seg_value in segs.items():
+                    try:
+                        divisor = _get_divisor_for_segment(seg_id)
+                        total_penalty += float(seg_value) * (voll / divisor)
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        continue
+
     return total_penalty * scaling_factor
 
 

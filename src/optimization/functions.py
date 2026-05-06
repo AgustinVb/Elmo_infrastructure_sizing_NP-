@@ -335,9 +335,9 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 0.01, 2: 200, 3: 300, 4: 400, 5: 200},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000, 2: 100, 3: 10, 4: 1, 5: 0.1},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 10, 3: 100, 4: 0, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 10, 3: 50, 4: 100, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
 
 class BoundRules(OptRules):
@@ -486,7 +486,7 @@ class ConstraintRules(OptRules):
     
     # ProducciÃ³n
     def production(self, model, d, j):
-        target = model.m_j[j, d]
+        target = 90
         # Solo sobre llaves EXISTENTES de Y para (d, j)
         term_de = sum(
             model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
@@ -495,9 +495,9 @@ class ConstraintRules(OptRules):
         )
 
         return term_de + model.F[j, d] >= target
-
+    
     def max_production(self, model, d, j):
-        target = model.m_j[j, d]
+        target = 200
         # Solo sobre llaves EXISTENTES de Y para (d, j)
         term_de = sum(
             model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
@@ -505,7 +505,27 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de  <= target*2.5
+        return term_de + model.F[j, d] >= target
+    
+    
+
+    def daily_production(self, model, d):
+        """Production balance for the whole day d (sum over all nodes).
+
+        Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
+        """
+        # Total target across all nodes
+        total_target = 31600
+
+        # Sum production term over all Y tuples for day d
+        term_de = sum(
+            model.Y[i2, j2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
+            for (i2, j2, d2, t2) in model.Y
+            if d2 == d
+        )
+
+
+        return  term_de >= total_target
 
 
     def interval_extraction_M(self, model, i, j, d, t):
@@ -634,7 +654,7 @@ class ConstraintRules(OptRules):
     
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
+        #model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
 
         model.battery_soc                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -654,6 +674,8 @@ class ConstraintRules(OptRules):
         
         #ProducciÃ³n nuevas
         model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
+        model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.max_production)
+        #model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
         # PenalizaciÃ³n por tramos para F (piecewise lineal)
@@ -704,7 +726,7 @@ class ObjectiveRules(OptRules):
         return cost_F*model.scaling_factor_op_cost
     
     def total_cost(self, model):
-        return self.lhd_charge_cost(model) + self.power_cost(model) + self.inversion_cost(model)+ self.F_penalty_cost(model)
+        return self.lhd_charge_cost(model)  + self.inversion_cost(model)+ self.F_penalty_cost(model) + self.power_cost(model)
     
     def op_cost_total(self, model):
         # Coste operativo total (sin inversiÃ³n)
