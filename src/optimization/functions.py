@@ -339,6 +339,7 @@ class OptParameters(OptRules):
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 10, 3: 50, 4: 100, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
+       
 
 class BoundRules(OptRules):
 
@@ -484,20 +485,34 @@ class ConstraintRules(OptRules):
         tf = self.time_series.get_time_intervals()[-1]
         return model.B[i, d, 0] == model.B[i, d, tf]
     
-    # ProducciÃ³n
-    def production(self, model, d, j):
-        target = 90
-        # Solo sobre llaves EXISTENTES de Y para (d, j)
-        term_de = sum(
-            model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
-
-        return term_de + model.F[j, d] >= target
     
-    def max_production(self, model, d, j):
-        target = 200
+    def min_visits_per_node(self, model, j, d):
+        """Garantiza que cada nodo `j` en el dÃ­a `d` sea visitado al menos 2 intervalos.
+
+        Suma `Y[i,j,d,t]` sobre todas las tuplas existentes en `model.Y` para (j,d).
+        """
+        term_visits = sum(
+            model.Y[i2, j2, d2, t2]
+            for (i2, j2, d2, t2) in model.Y
+            if j2 == j and d2 == d
+        )
+
+        return term_visits >= 1
+
+    def max_visits_node(self, model, j, d):
+        """Limita el número máximo de asignaciones (visitas) a un nodo `j` en el día `d`.
+
+        """
+        term_visits = sum(
+            model.Y[i2, j2, d2, t2]
+            for (i2, j2, d2, t2) in model.Y
+            if j2 == j and d2 == d
+        )
+
+        return term_visits <= 4
+    
+    def production_max(self, model, d, j):
+        target = 400
         # Solo sobre llaves EXISTENTES de Y para (d, j)
         term_de = sum(
             model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
@@ -505,7 +520,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de + model.F[j, d] >= target
+        return term_de <= target
     
     
 
@@ -515,7 +530,7 @@ class ConstraintRules(OptRules):
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
         """
         # Total target across all nodes
-        total_target = 31600
+        total_target = 29000
 
         # Sum production term over all Y tuples for day d
         term_de = sum(
@@ -673,9 +688,11 @@ class ConstraintRules(OptRules):
         model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
         
         #ProducciÃ³n nuevas
-        model.production         = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
-        model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.max_production)
-        #model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
+        #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
+        model.min_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
+        model.max_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
+        #model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
+        model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
         # PenalizaciÃ³n por tramos para F (piecewise lineal)

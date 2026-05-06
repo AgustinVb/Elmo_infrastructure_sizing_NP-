@@ -424,6 +424,47 @@ def _extract_m_values(m_json_path: Path) -> Dict[Tuple[str, str, str], float]:
     return m_values
 
 
+def calculate_max_extraction_by_node(m_json_path: Path, y_json_path: Path) -> Dict[str, Any]:
+    """Calcula la máxima extracción por nodo j.
+    
+    Retorna:
+    - max_extraction: valor máximo de M sumado por nodo
+    - max_node: nodo j con máxima extracción
+    - num_intervals: cantidad de intervalos asignados a ese nodo (sum(Y) > 0.5)
+    """
+    m_values = _extract_m_values(m_json_path)
+    y_counts = _extract_y_counts(y_json_path)
+    
+    # Suma M por nodo j (agregando sobre i, d)
+    m_by_node: Dict[str, float] = {}
+    for (i_name, j_name, day_key), m_val in m_values.items():
+        m_by_node.setdefault(j_name, 0.0)
+        m_by_node[j_name] += m_val
+    
+    if not m_by_node:
+        return {
+            "max_extraction": 0.0,
+            "max_node": "N/A",
+            "num_intervals": 0.0,
+        }
+    
+    # Encontrar nodo con máxima extracción
+    max_node = max(m_by_node, key=m_by_node.get)
+    max_extraction = m_by_node[max_node]
+    
+    # Contar intervalos asignados a ese nodo (sum(Y[i, max_node, d, t]) > 0.5)
+    num_intervals = 0.0
+    for (i_name, j_name, day_key), y_sum in y_counts.items():
+        if j_name == max_node and y_sum > 0.5:
+            num_intervals += y_sum
+    
+    return {
+        "max_extraction": max_extraction,
+        "max_node": max_node,
+        "num_intervals": num_intervals,
+    }
+
+
 def calculate_cycles_from_y_ntrips(y_json_path: Path, m_json_path: Path, params_path: Path) -> Tuple[float, Dict[str, float]]:
     """Calcula ciclos con cycles_total = sum(Y[i,j] * n_trips[j,i]).
 
@@ -558,15 +599,25 @@ def main() -> None:
             rows = [
                 ["ExtracciÃ³n total (toda la operaciÃ³n)", f"{tot:.6f} (unidad de M)"],
                 ["Valores numÃ©ricos sumados", str(meta["values_summed"])],
-            ]
-            print(make_table("M (EXTRACCIÃ“N)", ["MÃ©trica", "Valor"], rows))
+            ]            
+            # Agregar métricas de máxima extracción por nodo
+            if y_path and not is_effectively_empty_json(y_path):
+                try:
+                    max_info = calculate_max_extraction_by_node(m_path, y_path)
+                    rows.append(["Máxima extracción (nodo)", f"{max_info['max_extraction']:.6f}"])
+                    rows.append(["Nodo con máxima extracción", str(max_info['max_node'])])
+                    rows.append(["Intervalos asignados a ese nodo", f"{max_info['num_intervals']:.0f}"])
+                except Exception as ex:
+                    pass
+            
+            print(make_table("M (EXTRACCION)", ["Metrica", "Valor"], rows))
             print()
             printed_any = True
         except Exception as ex:
-            print(make_table("M (EXTRACCIÃ“N)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+            print(make_table("M (EXTRACCION)", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
             print()
     else:
-        print(make_table("M (EXTRACCIÃ“N)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacÃ­o/no usable."]]))
+        print(make_table("M (EXTRACCION)", ["Estado", "Detalle"], [["OMITIDO", "No encontrado o vacio/no usable."]]))
         print()
 
     if not printed_any:
