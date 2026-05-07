@@ -434,6 +434,9 @@ class BoundRules(OptRules):
         #AsignaciÃ³n estaciÃ³n por macrobloque
         #model.U = pyo.Var(model.stations_set, model.elhd_set, domain=pyo.Binary)
 
+        #Límite inferior producción por punto
+        model.L = pyo.Var(domain=pyo.NonNegativeReals)
+
 from src.optimization.functions import OptRules
 import pyomo.environ as pyo
 
@@ -530,7 +533,7 @@ class ConstraintRules(OptRules):
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
         """
         # Total target across all nodes
-        total_target = 29000
+        total_target = 32991
 
         # Sum production term over all Y tuples for day d
         term_de = sum(
@@ -666,6 +669,19 @@ class ConstraintRules(OptRules):
         elif k == "station_3":
             return model.N_chargers[k] == 2
         
+     # --------------------------
+    # Metas de extracción por punto
+    # --------------------------
+    
+    def production_per_node(self, model, j, d):
+        """L es menor o igual a la extracción total en el nodo j para el día d."""
+        return model.L <= sum(
+            model.M[i2, j2, d2, t2]
+            for (i2, j2, d2, t2) in model.M
+            if j2 == j and d2 == d
+        )
+    
+    
     
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
@@ -689,9 +705,9 @@ class ConstraintRules(OptRules):
         
         #ProducciÃ³n nuevas
         #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
-        model.min_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
-        model.max_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
-        #model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
+        #model.min_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
+        #model.max_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
+        model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
         model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
@@ -709,6 +725,9 @@ class ConstraintRules(OptRules):
 
         #fijar cantidad de cargadores
         #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
+        
+        # Restricción: L <= extracción en cada punto-día (L es el mínimo)
+        model.production_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.production_per_node)
 
 class ObjectiveRules(OptRules):
 
@@ -749,6 +768,10 @@ class ObjectiveRules(OptRules):
         # Coste operativo total (sin inversiÃ³n)
         return (self.lhd_charge_cost(model) + self.F_penalty_cost(model))/model.scaling_factor_op_cost
     
+    def max_mineral(self, model):
+        """Maximiza L: la extracción mínima garantizada en todos los puntos-días."""
+        return model.L
+    
     #def production_total(self, model, j):
     #    def ntr(node,i):
     #        return self.time_series.get_n_trips(node,i)
@@ -761,7 +784,8 @@ class ObjectiveRules(OptRules):
     #    return term_de*model.scaling_factor_op_cost
 
     def build_objective(self, model):
-        model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
+        #model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
+        model.obj = pyo.Objective(rule=self.max_mineral, sense=pyo.maximize)
 
 class OutputManager(OptRules):
 

@@ -223,6 +223,16 @@ class Printer:
         base_name = str(var_comp.name)
         is_binary = _is_binary_var_component(var_comp)
 
+        if not var_comp.is_indexed():
+            try:
+                scalar_value = value(var_comp)
+            except Exception:
+                scalar_value = None
+            out_path = os.path.join(self.path, f"{base_name}.json")
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(_coerce_json_val(scalar_value), f, ensure_ascii=False, indent=2)
+            return
+
         tree: Dict[str, Any] = {}
         preferred = self.var_axis_order.get(base_name)
         schema = self.var_index_schema
