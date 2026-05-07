@@ -250,6 +250,24 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                                 })
 
     # -------------------------------------------------------------------------
+    # Caso especial M.json moderno: b -> LHD -> j -> nodes -> d -> day : value
+    # -------------------------------------------------------------------------
+    elif "b" in data and not any(str(k).startswith("_") for k in data.keys()):
+        b_data = data.get("b", {})
+        if isinstance(b_data, dict):
+            for lhd, lhd_block in b_data.items():  # LH518B_1, LH518B_2, ...
+                if isinstance(lhd_block, dict) and "j" in lhd_block:
+                    for node, node_block in lhd_block["j"].items():  # node like "06_13F"
+                        if isinstance(node_block, dict) and "d" in node_block:
+                            for day, val in node_block["d"].items():  # day : value
+                                rows.append({
+                                    "lhd": lhd,
+                                    "j": node,
+                                    "day": int(day),
+                                    "value": float(val)
+                                })
+
+    # -------------------------------------------------------------------------
     # Caso 1: Estructura con eje 'k' (P.json, etc.)
     # -------------------------------------------------------------------------
     elif "k" in data:

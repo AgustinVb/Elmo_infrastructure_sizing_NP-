@@ -711,6 +711,49 @@ class ConstraintRules(OptRules):
         #          for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
 
         return term_de  >= target
+    
+    def min_visits_per_node(self, model, j, d):
+        """Garantiza que cada nodo `j` en el dÃ­a `d` sea visitado al menos 1 intervalo.
+
+        Suma `Y[i,j,d,t]` sobre todas las tuplas existentes en `model.Y` para (j,d).
+        """
+        term_visits = sum(
+            model.Y[i2, j2, d2, t2]
+            for (i2, j2, d2, t2) in model.Y
+            if j2 == j and d2 == d
+        )
+
+        return term_visits >= 1
+
+    def max_visits_node(self, model, j, d):
+        """Limita el número máximo de asignaciones (visitas) a un nodo `j` en el día `d`.
+
+        """
+        term_visits = sum(
+            model.Y[i2, j2, d2, t2]
+            for (i2, j2, d2, t2) in model.Y
+            if j2 == j and d2 == d
+        )
+
+        return term_visits <= 4.
+
+    def daily_production(self, model, d):
+        """Production balance for the whole day d (sum over all nodes).
+
+        Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
+        """
+        # Total target across all nodes
+        total_target = 29000
+
+        # Sum production term over all Y tuples for day d
+        term_de = sum(
+            model.Y[i2, j2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
+            for (i2, j2, d2, t2) in model.Y
+            if d2 == d
+        )
+
+
+        return  term_de >= total_target
 
     def aux_zpen_1(self, model, i, j, d, t):
         # Z_pen >= Z_swap + Y - 1  →  fuerza Z_pen=1 cuando Y=1 y Σ Z_swap=1
@@ -999,12 +1042,12 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_4,
         )
-        model.swap_soc_limit_30 = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_soc_limit_30,
-        )
+        #model.swap_soc_limit_30 = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.swap_soc_limit_30,
+        #)
         model.battery_lower = pyo.Constraint(
             model.slhd_set,
             model.days,
@@ -1053,12 +1096,12 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
-        model.between_shifts_elhd_swap = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_between_shifts_set,
-            rule=self.between_shifts_elhd_swap,
-        )
+        #model.between_shifts_elhd_swap = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_between_shifts_set,
+        #    rule=self.between_shifts_elhd_swap,
+        #)
         model.total_swaps = pyo.Constraint(
             model.stations_set,
             model.days,
@@ -1116,17 +1159,24 @@ class ConstraintRules(OptRules):
         )
 
         # 5) Producción y penalizaciones
-        model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
-        model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
+        #model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
+        #model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
         #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
         #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
         model.daily_extraction = pyo.Constraint(
+            model.days,
+            rule=self.daily_production,
+        )
+        model.daily_extraction_M = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
             model.days,
             rule=self.daily_extraction_M,
         )
+        model.min_visits_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
+        model.max_visits_node = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
+
         model.F_piecewise_balance = pyo.Constraint(
             model.nodes_set,
             model.days,
@@ -1152,18 +1202,18 @@ class ConstraintRules(OptRules):
         model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Rotura simetría
-        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            rule=self.battery_boundary_break_simmetry_lhds_start,
-        )
+        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    rule=self.battery_boundary_break_simmetry_lhds_start,
+        #)
 
-        model.swap_precedence_by_index = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_precedence_by_index,
-        )
+        #model.swap_precedence_by_index = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.swap_precedence_by_index,
+        #)
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
@@ -1221,6 +1271,10 @@ class ObjectiveRules(OptRules):
     
     def total_cost(self, model):
         return self.lhd_charge_cost_bs(model) + self.inversion_cost(model) + self.penalization(model) + self.peak_power_cost(model)
+
+    def max_min_extraction(self, model):
+        """Maximiza la cota inferior L de la extracción en todos los puntos."""
+        return model.L
 
     def peak_power_cost(self, model):
         return model.P_pot * 12 * 10
