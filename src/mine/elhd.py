@@ -1,4 +1,3 @@
-from turtle import distance
 from pandas import DataFrame
 import numpy as np
 
@@ -9,38 +8,40 @@ class ELHD(object):
     Este módulo solo maneja los datos que vienen de la hoja “LHD” en el Excel.
     Todos los parámetros relacionados con baterías han sido movidos a `battery.py`.
 
-    Lógica de inversión en esquina (delays) implementada:
+    Logica actual de viajes:
       OUTBOUND:
-        1) Acelera desde 0 hasta recorrer 15 m (o menos si el tramo es más corto).
-        2) Frena en seco con desaceleración infinita (STOP instantáneo).
-           - No hay regeneración.
-           - La frenada NO agrega consumo extra (solo se disipa la energía cinética acumulada).
-        3) Espera t_delay_outbound (solo afecta consumo auxiliar por tiempo).
-        4) Recorre la distancia restante con perfil "acelerar + (crucero opcional) + STOP instantáneo".
+        - La maniobra de inversion se modela solo en la ida.
+        - Primer tramo: primeros 15 m del viaje + 10 m extra asociados al avance
+          de la maniobra.
+        - El equipo se detiene desacelerando con la misma magnitud de aceleracion
+          configurada.
+        - Segundo tramo: resto del viaje + 10 m extra asociados a la continuacion
+          de la maniobra.
+        - Luego vuelve a acelerar y desacelera al final del viaje.
       INBOUND:
-        Igual que outbound.
+        - Viaje continuo de inicio a fin, sin pausas ni metros extra por maniobra.
+        - Perfil cinematico: acelerar + (crucero opcional) + desacelerar.
 
-    Nota física importante:
-      - El STOP instantáneo se modela como tiempo ~0 sin término de energía. La energía cinética ganada
-        durante la aceleración se contabiliza como consumo (y se pierde al frenar, sin recuperar).
+    Nota fisica importante:
+      - No hay regeneracion.
+      - La energia cinetica ganada en cada re-arranque se contabiliza como consumo
+        y luego se pierde durante la frenada.
 
-    Unidades esperadas (consistentes con tu código histórico):
+    Unidades esperadas:
       - speed en Excel: km/h
-      - acceleration en Excel: m/s²
+      - acceleration en Excel: m/s^2
+      - deceleration en Excel: m/s^2
       - loading_time / discharging_time en Excel: segundos
-      - delays: segundos
       - potencias: kW
       - masas: toneladas (t)
     """
 
     __slots__ = ["data", "elhds", "mapper"]
 
-    # Distancia antes de la inversión (m)
+    # Distancias asociadas a la maniobra de inversion (m)
     TURN_SPLIT_DISTANCE_M = 15.0
-
-    # Delays por defecto (s)
-    DEFAULT_DELAY_OUTBOUND_S = 15.0
-    DEFAULT_DELAY_RETURN_S = 15.0
+    TURN_MANEUVER_ENTRY_M = 10.0
+    TURN_MANEUVER_EXIT_M = 10.0
 
     # ------------------------------------------------------------------ #
     # Constructor & utilidades genéricas
@@ -143,6 +144,11 @@ class ELHD(object):
     def get_acceleration(self, keys=None):
         return self._get("acceleration", keys)
 
+    def get_deceleration(self, keys=None):
+        if "deceleration" in self.data.columns:
+            return self._get("deceleration", keys)
+        return self.get_acceleration(keys)
+
     def get_hydraulic_power(self, keys=None):
         return self._get("hydraulic_power", keys)
 
@@ -159,45 +165,36 @@ class ELHD(object):
         return travel_dur, energy
 
     def get_per_trip_info(self, distance_outbound, distance_return, tilt, elhd_name):
-        """Retorna (total_time_sec, energy_kWh) para 1 ciclo.
-
-        El tiempo total incluye: outbound + delay_out + loading + inbound + delay_ret + discharging.
-        La energía incluye: tracción + auxiliares + hidráulica.
-        Los delays solo agregan energía auxiliar (aux_power * tiempo).
-        """
+        """Retorna (total_time_sec, energy_kWh) para 1 ciclo."""
         v_max = float(self.get_speed(elhd_name)) * (1000.0 / 3600.0)  # km/h -> m/s
-        a = float(self.get_acceleration(elhd_name))
-        a = max(a, 1e-9)
+        a_acc = max(float(self.get_acceleration(elhd_name)), 1e-9)
+        a_dec = max(float(self.get_deceleration(elhd_name)), 1e-9)
 
         t_load = float(self.get_loading_time(elhd_name))
         t_discharge = float(self.get_discharging_time(elhd_name))
 
-        t_delay_outbound = float(self.DEFAULT_DELAY_OUTBOUND_S)
-        t_delay_return = float(self.DEFAULT_DELAY_RETURN_S)
+        # Outbound con maniobra de inversion: primer tramo corto + resto.
+        d_out_1, d_out_2 = self._split_distance_with_turn_maneuver(distance_outbound)
+        out1 = self._segment_accel_then_cruise_then_decel(distance_m=d_out_1, v_max=v_max, a_acc=a_acc, a_dec=a_dec)
+        out2 = self._segment_accel_then_cruise_then_decel(distance_m=d_out_2, v_max=v_max, a_acc=a_acc, a_dec=a_dec)
 
-        # Split distancias
-        d_out_1, d_out_2 = self._split_distance(distance_outbound, self.TURN_SPLIT_DISTANCE_M)
-        d_ret_1, d_ret_2 = self._split_distance(distance_return, self.TURN_SPLIT_DISTANCE_M)
+        # Inbound continuo, sin maniobra de inversion.
+        ret = self._segment_accel_then_cruise_then_decel(
+            distance_m=distance_return,
+            v_max=v_max,
+            a_acc=a_acc,
+            a_dec=a_dec,
+        )
 
-        # Perfiles por tramo (STOP instantáneo al final de cada tramo)
-        out1 = self._segment_accel_only(distance_m=d_out_1, a=a)
-        out2 = self._segment_accel_then_cruise_stop(distance_m=d_out_2, v_max=v_max, a=a)
-        ret1 = self._segment_accel_only(distance_m=d_ret_1, a=a)
-        ret2 = self._segment_accel_then_cruise_stop(distance_m=d_ret_2, v_max=v_max, a=a)
-
-        # Tiempos de viaje (sin load/unload)
-        t_outbound = out1["t_total"] + t_delay_outbound + out2["t_total"]
-        t_return = ret1["t_total"] + t_delay_return + ret2["t_total"]
-
+        t_outbound = out1["t_total"] + out2["t_total"]
+        t_return = ret["t_total"]
         total_time_sec = t_outbound + t_load + t_return + t_discharge
 
-        energy_kwh = self.engine_energy_with_instant_stops_and_delays(
+        energy_kwh = self.engine_energy_with_segment_profiles(
             elhd_name=elhd_name,
             tilt=tilt,
             outbound_segments=[out1, out2],
-            return_segments=[ret1, ret2],
-            t_delay_outbound=t_delay_outbound,
-            t_delay_return=t_delay_return,
+            return_segments=[ret],
             t_load=t_load,
             t_discharge=t_discharge,
         )
@@ -215,56 +212,64 @@ class ELHD(object):
         d2 = max(d_total - d1, 0.0)
         return d1, d2
 
-    @staticmethod
-    def _segment_accel_only(distance_m, a):
-        """Tramo: acelerar desde 0 hasta recorrer distance_m, luego STOP instantáneo.
-
-        No hay crucero.
-        Retorna dict con: t_acc, t_const, v_peak, t_total.
-        """
-        d = max(float(distance_m), 0.0)
-        a = max(float(a), 1e-9)
-        if d <= 0.0:
-            return {"t_acc": 0.0, "t_const": 0.0, "v_peak": 0.0, "t_total": 0.0}
-
-        t_acc = np.sqrt(2.0 * d / a)
-        v_peak = a * t_acc
-        t_const = 0.0
-        return {"t_acc": float(t_acc), "t_const": float(t_const), "v_peak": float(v_peak), "t_total": float(t_acc)}
+    def _split_distance_with_turn_maneuver(self, distance_total):
+        d1, d2 = self._split_distance(distance_total, self.TURN_SPLIT_DISTANCE_M)
+        if d1 <= 0.0 and d2 <= 0.0:
+            return 0.0, 0.0
+        return (
+            d1 + float(self.TURN_MANEUVER_ENTRY_M),
+            d2 + float(self.TURN_MANEUVER_EXIT_M),
+        )
 
     @staticmethod
-    def _segment_accel_then_cruise_stop(distance_m, v_max, a):
-        """Tramo: acelerar desde 0, (crucero opcional), luego STOP instantáneo.
-
-        - Si no alcanza v_max: solo acelera (triangular incompleto) y para.
-        - Si alcanza v_max: acelera hasta v_max y luego mantiene v_max.
-
-        Retorna dict con: t_acc, t_const, v_peak, t_total.
-        """
+    def _segment_accel_then_cruise_then_decel(distance_m, v_max, a_acc, a_dec):
+        """Tramo: acelerar desde 0, crucero opcional y desacelerar hasta 0."""
         d = max(float(distance_m), 0.0)
         v_max = max(float(v_max), 0.0)
-        a = max(float(a), 1e-9)
+        a_acc = max(float(a_acc), 1e-9)
+        a_dec = max(float(a_dec), 1e-9)
 
         if d <= 0.0 or v_max <= 0.0:
-            return {"t_acc": 0.0, "t_const": 0.0, "v_peak": 0.0, "t_total": 0.0}
+            return {"t_acc": 0.0, "t_const": 0.0, "t_dec": 0.0, "v_peak": 0.0, "t_total": 0.0}
 
-        d_acc = (v_max ** 2) / (2.0 * a)  # distancia para llegar a v_max
+        d_acc = (v_max ** 2) / (2.0 * a_acc)
+        d_dec = (v_max ** 2) / (2.0 * a_dec)
+        d_min_stop = d_acc + d_dec
 
-        if d >= d_acc:
-            t_acc = v_max / a
+        if d >= d_min_stop:
             v_peak = v_max
-            t_const = (d - d_acc) / v_max
+            t_acc = v_peak / a_acc
+            t_const = (d - d_min_stop) / v_peak
         else:
-            t_acc = np.sqrt(2.0 * d / a)
-            v_peak = a * t_acc
+            v_peak = np.sqrt((2.0 * d) / ((1.0 / a_acc) + (1.0 / a_dec)))
+            t_acc = v_peak / a_acc
             t_const = 0.0
+
+        t_dec = v_peak / a_dec if v_peak > 0.0 else 0.0
 
         return {
             "t_acc": float(t_acc),
             "t_const": float(t_const),
+            "t_dec": float(t_dec),
             "v_peak": float(v_peak),
-            "t_total": float(t_acc + t_const),
+            "t_total": float(t_acc + t_const + t_dec),
         }
+
+    @staticmethod
+    def _integrals_decel(v_peak, decel, t_dec):
+        v_peak = max(float(v_peak), 0.0)
+        decel = max(float(decel), 1e-9)
+        t_dec = max(float(t_dec), 0.0)
+
+        int_v_dt = v_peak * t_dec - 0.5 * decel * (t_dec ** 2)
+        int_v2_dt = (v_peak ** 2) * t_dec - v_peak * decel * (t_dec ** 2) + (decel ** 2) * (t_dec ** 3) / 3.0
+        int_v3_dt = (
+            (v_peak ** 3) * t_dec
+            - 1.5 * (v_peak ** 2) * decel * (t_dec ** 2)
+            + v_peak * (decel ** 2) * (t_dec ** 3)
+            - (decel ** 3) * (t_dec ** 4) / 4.0
+        )
+        return int_v_dt, int_v2_dt, int_v3_dt
 
     # ------------------------------------------------------------------ #
     # Energía: componentes por tramo (acel + constante)
@@ -272,149 +277,120 @@ class ELHD(object):
 
     @staticmethod
     def _delta_kinetic_event(mass_kg, v_peak):
-        """Energía cinética ganada al acelerar desde 0 hasta v_peak (sin regeneración) [J]."""
+        """Energia cinetica ganada al acelerar desde 0 hasta v_peak [J]."""
         m = max(float(mass_kg), 0.0)
         v = max(float(v_peak), 0.0)
         return 0.5 * m * (v ** 2)
 
-    def _aerodynamic_loss_segment(self, elhd_name, t_acc, t_const, v_peak):
-        """Integral de potencia aerodinámica ~ v^3 (acel + constante), Joules [J]."""
-        a = float(self.get_acceleration(elhd_name))
-        a = max(a, 1e-9)
+    def _aerodynamic_loss_segment(self, elhd_name, seg):
+        """Integral de potencia aerodinamica ~ v^3, Joules [J]."""
+        a_acc = max(float(self.get_acceleration(elhd_name)), 1e-9)
+        a_dec = max(float(self.get_deceleration(elhd_name)), 1e-9)
         frontal_area = float(self.get_frontal_area(elhd_name))
         rho = 1.225
         c_drag = 1.95
         constant = 0.5 * rho * frontal_area * c_drag
 
-        t_acc = max(float(t_acc), 0.0)
-        t_const = max(float(t_const), 0.0)
-        v_peak = max(float(v_peak), 0.0)
+        t_acc = max(float(seg["t_acc"]), 0.0)
+        t_const = max(float(seg["t_const"]), 0.0)
+        t_dec = max(float(seg["t_dec"]), 0.0)
+        v_peak = max(float(seg["v_peak"]), 0.0)
 
-        # aceleración: ∫(a t)^3 dt = a^3 t^4/4
-        loss_acc = (a ** 3) * (t_acc ** 4) / 4.0
-        # crucero: v^3 * t
+        loss_acc = (a_acc ** 3) * (t_acc ** 4) / 4.0
         loss_cte = (v_peak ** 3) * t_const
+        _, _, loss_dec = self._integrals_decel(v_peak, a_dec, t_dec)
 
-        return constant * (loss_acc + loss_cte)
+        return constant * (loss_acc + loss_cte + loss_dec)
 
-    def _rolling_resistance_loss_segment(self, elhd_name, tilt, t_acc, t_const, v_peak, mass_kg):
-        """Pérdidas por rodadura (modelo original) integradas (acel + constante), Joules [J]."""
+    def _rolling_resistance_loss_segment(self, elhd_name, tilt, seg, mass_kg):
+        """Perdidas por rodadura integradas, Joules [J]."""
         g = 9.81
         cr = 1.0
         c1 = 0.000
         c2 = 0.03
 
-        a = float(self.get_acceleration(elhd_name))
-        a = max(a, 1e-9)
-
-        t_acc = max(float(t_acc), 0.0)
-        t_const = max(float(t_const), 0.0)
-        v_peak = max(float(v_peak), 0.0)
+        a_acc = max(float(self.get_acceleration(elhd_name)), 1e-9)
+        a_dec = max(float(self.get_deceleration(elhd_name)), 1e-9)
+        t_acc = max(float(seg["t_acc"]), 0.0)
+        t_const = max(float(seg["t_const"]), 0.0)
+        t_dec = max(float(seg["t_dec"]), 0.0)
+        v_peak = max(float(seg["v_peak"]), 0.0)
         mass_kg = max(float(mass_kg), 0.0)
 
         const = mass_kg * g * np.cos(tilt) * cr
 
-        # aceleración: ∫ (c1 v + c2) v dt con v=a t  => (c1 a^2 t^3 / 3 + c2 a t^2 / 2)
-        e_acc = (c1 * (a ** 2) * (t_acc ** 3) / 3.0 + c2 * a * (t_acc ** 2) / 2.0)
-        # crucero
+        e_acc = c1 * (a_acc ** 2) * (t_acc ** 3) / 3.0 + c2 * a_acc * (t_acc ** 2) / 2.0
         e_cte = (c1 * v_peak + c2) * v_peak * t_const
+        int_v_dec, int_v2_dec, _ = self._integrals_decel(v_peak, a_dec, t_dec)
+        e_dec = c1 * int_v2_dec + c2 * int_v_dec
 
-        return const * (e_acc + e_cte)
+        return const * (e_acc + e_cte + e_dec)
 
-    def _gravitational_work_segment(self, tilt_effective, t_acc, t_const, v_peak, mass_kg, elhd_name):
-        """Trabajo gravitacional (acel + constante), Joules [J]."""
+    def _gravitational_work_segment(self, tilt_effective, seg, mass_kg, elhd_name):
+        """Trabajo gravitacional del tramo, Joules [J]."""
         g = 9.81
-        a = float(self.get_acceleration(elhd_name))
-        a = max(a, 1e-9)
+        a_acc = max(float(self.get_acceleration(elhd_name)), 1e-9)
+        a_dec = max(float(self.get_deceleration(elhd_name)), 1e-9)
 
-        t_acc = max(float(t_acc), 0.0)
-        t_const = max(float(t_const), 0.0)
-        v_peak = max(float(v_peak), 0.0)
+        t_acc = max(float(seg["t_acc"]), 0.0)
+        t_const = max(float(seg["t_const"]), 0.0)
+        t_dec = max(float(seg["t_dec"]), 0.0)
+        v_peak = max(float(seg["v_peak"]), 0.0)
         mass_kg = max(float(mass_kg), 0.0)
 
         cte = mass_kg * g * np.sin(tilt_effective)
 
-        # distancia aceleración: a t^2 / 2 ; distancia crucero: v_peak t
-        s_acc = a * (t_acc ** 2) / 2.0
+        s_acc = a_acc * (t_acc ** 2) / 2.0
         s_cte = v_peak * t_const
+        s_dec = v_peak * t_dec - 0.5 * a_dec * (t_dec ** 2)
 
-        return cte * (s_acc + s_cte)
+        return cte * (s_acc + s_cte + s_dec)
 
     # ------------------------------------------------------------------ #
     # Energía total: tracción + auxiliares + hidráulicos
     # ------------------------------------------------------------------ #
 
-    def engine_energy_with_instant_stops_and_delays(
+    def engine_energy_with_segment_profiles(
         self,
         elhd_name,
         tilt,
         outbound_segments,
         return_segments,
-        t_delay_outbound,
-        t_delay_return,
         t_load,
         t_discharge,
     ):
-        """Energía total por ciclo [kWh] con stops instantáneos y delays como espera.
-
-        - outbound_segments / return_segments: lista de dicts con t_acc, t_const, v_peak, t_total.
-        - STOP instantáneo: no agrega consumo extra, pero no hay regeneración.
-          Se contabiliza la energía cinética ganada en cada tramo como consumo (evento cinético).
-        - delays: solo afectan energía auxiliar (aux_power * tiempo).
-        """
-        # Masas
+        """Energia total por ciclo [kWh] usando perfiles por segmento con frenado fisico."""
         m_out = float(self.get_weight(elhd_name)) * 1000.0
         m_ret = (float(self.get_weight(elhd_name)) + float(self.get_load_capacity(elhd_name))) * 1000.0
 
-        # Eficiencias
         eng_eff = max(float(self.get_engine_efficiency(elhd_name)), 1e-9)
         tr_eff = max(float(self.get_transmission_efficiency(elhd_name)), 1e-9)
 
-        # Energía en ruedas (J)
         wheel_energy_J = 0.0
 
-        # Outbound (descargado): tilt
+        # Outbound descargado: tilt
         for seg in outbound_segments:
-            t_acc = seg["t_acc"]
-            t_const = seg["t_const"]
-            v_peak = seg["v_peak"]
+            wheel_energy_J += self._gravitational_work_segment(tilt, seg, m_out, elhd_name)
+            wheel_energy_J += self._aerodynamic_loss_segment(elhd_name, seg)
+            wheel_energy_J += self._rolling_resistance_loss_segment(elhd_name, tilt, seg, m_out)
+            wheel_energy_J += self._delta_kinetic_event(m_out, seg["v_peak"])
 
-            wheel_energy_J += self._gravitational_work_segment(tilt, t_acc, t_const, v_peak, m_out, elhd_name)
-            wheel_energy_J += self._aerodynamic_loss_segment(elhd_name, t_acc, t_const, v_peak)
-            wheel_energy_J += self._rolling_resistance_loss_segment(elhd_name, tilt, t_acc, t_const, v_peak, m_out)
-            wheel_energy_J += self._delta_kinetic_event(m_out, v_peak)
-
-        # Return (cargado): -tilt
+        # Return cargado: -tilt
         for seg in return_segments:
-            t_acc = seg["t_acc"]
-            t_const = seg["t_const"]
-            v_peak = seg["v_peak"]
+            wheel_energy_J += self._gravitational_work_segment(-tilt, seg, m_ret, elhd_name)
+            wheel_energy_J += self._aerodynamic_loss_segment(elhd_name, seg)
+            wheel_energy_J += self._rolling_resistance_loss_segment(elhd_name, tilt, seg, m_ret)
+            wheel_energy_J += self._delta_kinetic_event(m_ret, seg["v_peak"])
 
-            wheel_energy_J += self._gravitational_work_segment(-tilt, t_acc, t_const, v_peak, m_ret, elhd_name)
-            wheel_energy_J += self._aerodynamic_loss_segment(elhd_name, t_acc, t_const, v_peak)
-            wheel_energy_J += self._rolling_resistance_loss_segment(elhd_name, tilt, t_acc, t_const, v_peak, m_ret)
-            wheel_energy_J += self._delta_kinetic_event(m_ret, v_peak)
-
-        # Energía auxiliar (J): movimiento + load/unload + delays
         aux_power_kW = float(self.get_aux_power(elhd_name))
         travel_time_s = sum(s["t_total"] for s in outbound_segments) + sum(s["t_total"] for s in return_segments)
-        total_aux_time_s = (
-            travel_time_s
-            + float(t_load)
-            + float(t_discharge)
-            + float(t_delay_outbound)
-            + float(t_delay_return)
-        )
+        total_aux_time_s = travel_time_s + float(t_load) + float(t_discharge)
         aux_energy_J = 1000.0 * aux_power_kW * total_aux_time_s
 
-        # Energía hidráulica (J): load/unload
         hydraulic_power_kW = float(self.get_hydraulic_power(elhd_name))
         hydraulic_energy_J = 1000.0 * hydraulic_power_kW * (float(t_load) + float(t_discharge))
 
-        # Total (J): replico tu estructura histórica de eficiencias
         total_J = (wheel_energy_J / (eng_eff * tr_eff)) + ((aux_energy_J + hydraulic_energy_J) / tr_eff)
-
-        # J -> kWh
         return total_J / (1000.0 * 3600.0)
     
     def engine_energy_charge_travel(self, distance, elhd_name, tilt):

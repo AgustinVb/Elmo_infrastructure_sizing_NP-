@@ -335,9 +335,9 @@ class OptParameters(OptRules):
         # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
         # Costo unitario por tramo: Voll / divisor
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000, 2: 100, 3: 10, 4: 1, 5: 0.1},mutable=True)
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 10, 3: 50, 4: 100, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 40, 4: 50, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=1000, mutable=True)
        
 
@@ -435,7 +435,7 @@ class BoundRules(OptRules):
         #model.U = pyo.Var(model.stations_set, model.elhd_set, domain=pyo.Binary)
 
         #Límite inferior producción por punto
-        model.L = pyo.Var(domain=pyo.NonNegativeReals)
+        #model.L = pyo.Var(domain=pyo.NonNegativeReals)
 
 from src.optimization.functions import OptRules
 import pyomo.environ as pyo
@@ -544,6 +544,23 @@ class ConstraintRules(OptRules):
 
 
         return  term_de >= total_target
+    
+    def production(self, model, d, j):
+        """Production balance for node j on day d.
+
+        Enforces: sum_i,t Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + F[j,d] == m_j[j,d]
+        """
+        # Target for node j on day d
+        target = model.m_j[j, d]
+
+        # Sum production term over all Y tuples for (d, j)
+        term_de = sum(
+            model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
+            for (i2, j2, d2, t2) in model.Y
+            if j2 == j and d2 == d
+        )
+
+        return term_de + model.F[j, d] >= target
 
 
     def interval_extraction_M(self, model, i, j, d, t):
@@ -663,7 +680,7 @@ class ConstraintRules(OptRules):
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 4
         elif k == "station_2":
             return model.N_chargers[k] == 2
         elif k == "station_3":
@@ -685,7 +702,7 @@ class ConstraintRules(OptRules):
     
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        #model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
+        model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
 
         model.battery_soc                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -699,16 +716,17 @@ class ConstraintRules(OptRules):
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
-        model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
-        model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
-        model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
+        #model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
+        #model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
+        #model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
         
         #ProducciÃ³n nuevas
         #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
         #model.min_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
         #model.max_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
-        model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
-        model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
+        #model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
+        #model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
+        model.production         = pyo.Constraint( model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
         # PenalizaciÃ³n por tramos para F (piecewise lineal)
@@ -727,7 +745,8 @@ class ConstraintRules(OptRules):
         #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
         
         # Restricción: L <= extracción en cada punto-día (L es el mínimo)
-        model.production_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.production_per_node)
+        #model.production_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.production_per_node)
+        model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
 
 class ObjectiveRules(OptRules):
 
@@ -754,7 +773,7 @@ class ObjectiveRules(OptRules):
     
     def F_penalty_cost(self, model):
         cost_F = sum(
-            model.F_seg[j, d, s] * (model.Voll / model.F_penalty_div[s])
+            model.F_seg[j, d, s] * (4*model.Voll / model.F_penalty_div[s])
             for j in model.nodes_set
             for d in model.days
             for s in model.F_SEG
@@ -785,7 +804,7 @@ class ObjectiveRules(OptRules):
 
     def build_objective(self, model):
         #model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
-        model.obj = pyo.Objective(rule=self.max_mineral, sense=pyo.maximize)
+        model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)
 
 class OutputManager(OptRules):
 
