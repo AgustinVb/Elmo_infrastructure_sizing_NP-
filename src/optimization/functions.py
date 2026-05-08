@@ -338,7 +338,7 @@ class OptParameters(OptRules):
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 40, 4: 50, 5: 0},mutable=True)
-        model.Voll = pyo.Param(initialize=1000, mutable=True)
+        model.Voll = pyo.Param(initialize=500, mutable=True)
        
 
 class BoundRules(OptRules):
@@ -716,9 +716,9 @@ class ConstraintRules(OptRules):
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
-        #model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
-        #model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
-        #model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
+        model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
+        model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
+        model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
         
         #ProducciÃ³n nuevas
         #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
@@ -746,7 +746,7 @@ class ConstraintRules(OptRules):
         
         # Restricción: L <= extracción en cada punto-día (L es el mínimo)
         #model.production_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.production_per_node)
-        model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
+        #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
 
 class ObjectiveRules(OptRules):
 
@@ -785,7 +785,7 @@ class ObjectiveRules(OptRules):
     
     def op_cost_total(self, model):
         # Coste operativo total (sin inversiÃ³n)
-        return (self.lhd_charge_cost(model) + self.F_penalty_cost(model))/model.scaling_factor_op_cost
+        return (self.lhd_charge_cost(model) + 4*self.F_penalty_cost(model))/model.scaling_factor_op_cost
     
     def max_mineral(self, model):
         """Maximiza L: la extracción mínima garantizada en todos los puntos-días."""
@@ -803,8 +803,8 @@ class ObjectiveRules(OptRules):
     #    return term_de*model.scaling_factor_op_cost
 
     def build_objective(self, model):
-        #model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
-        model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)
+        model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
+        #model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)
 
 class OutputManager(OptRules):
 
