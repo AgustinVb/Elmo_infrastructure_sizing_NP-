@@ -726,7 +726,7 @@ class ConstraintRules(OptRules):
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
         """
         # Total target across all nodes
-        total_target = 29000
+        total_target = 24173
 
         # Sum production term over all Y tuples for day d
         term_de = sum(
@@ -965,7 +965,7 @@ class ConstraintRules(OptRules):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if t not in model.time_intervals_det_set:
-            return pyo.Constraint.Skip
+            return sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 0
         return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
     
     # Fijar baterias y cargadores
@@ -1147,10 +1147,10 @@ class ConstraintRules(OptRules):
         #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
         #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
-        #model.daily_extraction = pyo.Constraint(
-        #    model.days,
-        #    rule=self.daily_production,
-        #)
+        model.daily_extraction = pyo.Constraint(
+            model.days,
+            rule=self.daily_production,
+        )
         model.daily_extraction_M = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
@@ -1185,18 +1185,18 @@ class ConstraintRules(OptRules):
         model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Rotura simetría
-        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            rule=self.battery_boundary_break_simmetry_lhds_start,
-        )
+        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    rule=self.battery_boundary_break_simmetry_lhds_start,
+        #)
 
-        model.swap_precedence_by_index = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_precedence_by_index,
-        )
+        #model.swap_precedence_by_index = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.swap_precedence_by_index,
+        #)
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
