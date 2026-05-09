@@ -450,24 +450,11 @@ class OptParameters(OptRules):
         model.t_charge = pyo.Param(initialize=int(math.floor(((((value(model.bmax_b[first_slhd]) - value(model.bmax_b[first_slhd]) * value(model.bmin_b[first_slhd])) / value(model.p_charger)) / value(model.delta_t)) + 0.5))), mutable=False)
 
         # ---- Penalización por tramos para F (déficit) ----
-        # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
-        # Costo unitario por tramo: Voll / divisor
-        # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 1000, 2: 100.0, 3: 10.0, 4: 1.0, 5: 0.1},mutable=True)
-
+        # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
+        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(
-            model.F_SEG,
-            initialize={
-                1: 5.0,
-                2: 10.0,
-                3: 100.0,
-                4: 0.0,
-                5: 0,
-            },
-            mutable=True
-        )
-        model.Voll = pyo.Param(initialize=1000, mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 10, 4: 0, 5: 0},mutable=True)
+        model.Voll = pyo.Param(initialize=500, mutable=True)
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
