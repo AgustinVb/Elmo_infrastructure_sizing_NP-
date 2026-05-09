@@ -683,17 +683,13 @@ class ConstraintRules(OptRules):
 
     # Producción mínima
     def production_swap(self, model, d, j):
-        # Mínimo de 10 viajes efectivos por punto de extracción y día.
-        target = 130
+        target = model.m_j[j, d] 
 
         term_de = sum(
             model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)* model.g_i[i] * model.filling_factor[i]
             for (i, j2, d2, t) in model.Y_INDEX
             if j2 == j and d2 == d
         )
-
-        #pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
-        #          for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
 
         return term_de + model.F[j, d] >= target
     
@@ -1159,23 +1155,23 @@ class ConstraintRules(OptRules):
         )
 
         # 5) Producción y penalizaciones
-        #model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
+        model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
         #model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
         #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
         #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
-        model.daily_extraction = pyo.Constraint(
-            model.days,
-            rule=self.daily_production,
-        )
+        #model.daily_extraction = pyo.Constraint(
+        #    model.days,
+        #    rule=self.daily_production,
+        #)
         model.daily_extraction_M = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
             model.days,
             rule=self.daily_extraction_M,
         )
-        model.min_visits_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
-        model.max_visits_node = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
+        #model.min_visits_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
+        #model.max_visits_node = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
 
         model.F_piecewise_balance = pyo.Constraint(
             model.nodes_set,
@@ -1202,18 +1198,18 @@ class ConstraintRules(OptRules):
         model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Rotura simetría
-        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    rule=self.battery_boundary_break_simmetry_lhds_start,
-        #)
+        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            rule=self.battery_boundary_break_simmetry_lhds_start,
+        )
 
-        #model.swap_precedence_by_index = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.swap_precedence_by_index,
-        #)
+        model.swap_precedence_by_index = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            model.time_intervals_set,
+            rule=self.swap_precedence_by_index,
+        )
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
