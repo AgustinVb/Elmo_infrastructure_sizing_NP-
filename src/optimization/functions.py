@@ -271,7 +271,7 @@ class OptSets(OptRules):
         """
         if windows is None:
             # sensible default peak windows (adjust if needed)
-            windows = [("09:00", "13:00"), ("17:00", "21:00")]
+            windows = [ ("18:00", "22:00")]
         return self._build_intervals_from_clock_windows(windows, start_hour=start_hour)
       
     
@@ -453,7 +453,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 40, 4: 100, 5: 150},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=4*500, mutable=True)
 class BoundRules(OptRules):
 
@@ -1148,10 +1148,10 @@ class ConstraintRules(OptRules):
         #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
         #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
         #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
-        model.daily_extraction = pyo.Constraint(
-            model.days,
-            rule=self.daily_production,
-        )
+        #model.daily_extraction = pyo.Constraint(
+        #    model.days,
+        #    rule=self.daily_production,
+        #)
         model.daily_extraction_M = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
@@ -1187,13 +1187,13 @@ class ConstraintRules(OptRules):
 
         # 7) Rotura simetría
         #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-        #    model.swap_precedence_pairs,
+         #   model.swap_precedence_pairs,
         #    model.days,
         #    rule=self.battery_boundary_break_simmetry_lhds_start,
         #)
 
         #model.swap_precedence_by_index = pyo.Constraint(
-        #    model.swap_precedence_pairs,
+         #   model.swap_precedence_pairs,
         #    model.days,
         #    model.time_intervals_set,
         #    rule=self.swap_precedence_by_index,
