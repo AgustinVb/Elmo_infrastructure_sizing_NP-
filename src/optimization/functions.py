@@ -726,7 +726,7 @@ class ConstraintRules(OptRules):
         #model.min_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
         #model.max_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
         #model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
-        #model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
+        model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
         model.production         = pyo.Constraint( model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
