@@ -726,7 +726,7 @@ class ConstraintRules(OptRules):
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
         """
         # Total target across all nodes
-        total_target = 24000
+        total_target = 28500
 
         # Sum production term over all Y tuples for day d
         term_de = sum(
@@ -736,7 +736,7 @@ class ConstraintRules(OptRules):
         )
 
 
-        return  term_de >= total_target
+        return  term_de <= total_target
 
     def aux_zpen_1(self, model, i, j, d, t):
         # Z_pen >= Z_swap + Y - 1  →  fuerza Z_pen=1 cuando Y=1 y Σ Z_swap=1
