@@ -453,8 +453,8 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 10, 4: 0, 5: 0},mutable=True)
-        model.Voll = pyo.Param(initialize=500, mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
+        model.Voll = pyo.Param(initialize=4*500, mutable=True)
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
@@ -726,7 +726,7 @@ class ConstraintRules(OptRules):
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
         """
         # Total target across all nodes
-        total_target = 24173
+        total_target = 24000
 
         # Sum production term over all Y tuples for day d
         term_de = sum(
@@ -966,6 +966,7 @@ class ConstraintRules(OptRules):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if t not in model.time_intervals_det_set:
             return sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 0
+            #return pyo.Constraint.Skip
         return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
     
     # Fijar baterias y cargadores
