@@ -428,8 +428,8 @@ class Printer:
             "time_intervals_shift_change_det_set",
             "time_intervals_shift_change_set",
         )
-        payload["time_intervals_forced_detention_set"] = _export_set_values(
-            "time_intervals_forced_detention_set",
+        payload["time_intervals_stops_set"] = _export_set_values(
+            "time_intervals_stops_set",
             "time_intervals_fuel_delay_set",
         )
         payload["time_intervals_det_set"] = _export_set_values(

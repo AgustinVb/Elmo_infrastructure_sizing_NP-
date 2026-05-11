@@ -422,7 +422,7 @@ class Parameters:
         self.meals: List[int] = []
         self.maintenance: List[int] = []
         self.shift_change: List[int] = []
-        self.forced_detention: List[int] = []
+        self.stops: List[int] = []
 
         self._load()
 
@@ -433,6 +433,7 @@ class Parameters:
             return
         self.ok = True
         self.delta_t = float(data.get("delta_t", 1.0))
+        self.p_charger = float(data.get("p_charger", 150.0))
 
         # -------- m_j (demanda por nodo y día) --------
         m_j = {}
@@ -545,8 +546,14 @@ class Parameters:
         self.shift_change = _as_interval_list(
             data.get("time_intervals_shift_change_det_set", data.get("time_intervals_shift_change_set", []))
         )
-        self.forced_detention = _as_interval_list(
-            data.get("time_intervals_forced_detention_set", data.get("time_intervals_fuel_delay_set", []))
+        self.stops = _as_interval_list(
+            data.get(
+                "time_intervals_stops_set",
+                data.get(
+                    "time_intervals_forced_detention_set",
+                    data.get("time_intervals_fuel_delay_set", []),
+                ),
+            )
         )
 
 # -------------------- Plotter --------------------
@@ -613,7 +620,7 @@ class JSONPlotter:
         if self.mode == "DET":
             return {
                 "shift_change": self.params.shift_change,
-                "forced_detention": self.params.forced_detention,
+                "stops": self.params.stops,
             }
 
         return {
@@ -775,78 +782,155 @@ class JSONPlotter:
             .fillna(0.0)
         )
 
-    # ---------- Plots ----------
-    def plot_charge_power_vs_price(self):
-        if self.df_P is None or self.df_P.empty:
-            print("⚠️ No hay P.json. Omitiendo 'ChargePower_vs_price'.")
-            return
-        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
-            print("⚠️ No hay costo_electricidad en parameters.json. Omitiendo 'ChargePower_vs_price'.")
+    def plot_battery_charging_power(self, charger_power: Optional[float] = None):
+        """
+        Grafica la potencia de carga calculada como:
+        potencia_carga = Sv (cantidad de baterías cargando) × charger_power
+        
+        charger_power: potencia en kW por batería cargando (default 150 kW)
+        """
+        if self.df_Sv is None or self.df_Sv.empty:
+            print("⚠️ No hay Sv.json. Omitiendo 'Battery Charging Power'.")
             return
 
         title_fs = 22
         axis_label_fs = 16
         tick_fs = 14
         legend_fs = 14
+
         start_hour = 9.0
         dt = float(self.delta_t)
 
         for d in self.days:
-            p_day = (
-                self.df_P.query("day == @d")[["interval", "value"]]
+            # Obtener intervalos especiales para este día
+            special_intervals = self._special_mode_intervals(d)
+
+            # Extraer número de baterías cargando por intervalo tal como en
+            # `plot_charging_batteries_vs_price`: agrupar por 'interval' y sumar 'value'.
+            sv_day = (
+                self.df_Sv.query("day == @d")[["interval", "value"]]
                 .groupby("interval")["value"]
                 .sum()
                 .reindex(self.intervals)
                 .fillna(0.0)
             )
-            if p_day.empty:
+
+            if sv_day.empty:
                 continue
 
-            price_day = (
-                self.params.costo_marginal.query("day == @d")[["interval", "price"]]
-                .groupby("interval")["price"]
-                .mean()
-                .reindex(self.intervals)
-                .ffill().bfill().fillna(0.0)
-            )
+            # Determinar potencia por cargador: usar argumento si se pasa, sino leer de parameters.json
+            if charger_power is None:
+                charger_power = getattr(self.params, "p_charger", 150.0)
 
-            times = np.array([(t - 1) * dt for t in self.intervals], dtype=float)
-            pcharge = p_day.values
-            marginal = price_day.values
+            # Calcular potencia: número de baterías cargando × potencia por cargador
+            pcharge = sv_day.to_numpy(dtype=float) * float(charger_power)
+
+            times = np.array([(t - 1) * dt for t in self.intervals])
 
             times_step = np.append(times, times[-1] + dt) + start_hour
             pcharge_step = np.append(pcharge, pcharge[-1])
-            marginal_step = np.append(marginal, marginal[-1])
 
             fig, ax1 = plt.subplots(figsize=(9, 5.6))
 
-            interval_groups = self._special_mode_intervals(d)
-            if self.mode == "DET":
-                shade_specs = [
-                    (interval_groups.get("shift_change", []), "darkgray", 0.7, "Shift Change"),
-                    (interval_groups.get("forced_detention", []), "#ffe6e6", 0.8, "Forced Detention"),
-                ]
-            else:
-                shade_specs = [
-                    (interval_groups.get("between_shifts", []), "darkgray", 0.7, "Between Shifts"),
-                    (interval_groups.get("meal", []), "lightgray", 0.4, "Meal"),
-                    (interval_groups.get("maintenance", []), "#ffe6e6", 0.8, "Maintenance"),
-                ]
+            def _group_consecutive(vals):
+                vals = sorted(set(int(v) for v in vals if int(v) in set(self.intervals)))
+                if not vals:
+                    return []
+                groups = []
+                start = vals[0]
+                prev = vals[0]
+                for curr in vals[1:]:
+                    if curr == prev + 1:
+                        prev = curr
+                        continue
+                    groups.append((start, prev))
+                    start = curr
+                    prev = curr
+                groups.append((start, prev))
+                return groups
 
-            for intervals_list, color, alpha, _label in shade_specs:
-                for gs, ge in self._group_consecutive(intervals_list):
+            stops_color = 'darkgray'
+            stops_alpha = 0.7
+
+            if self.mode == "DET":
+                shift_change_intervals = (
+                    self.params.shift_change
+                    if getattr(self.params, 'shift_change', None)
+                    else special_intervals.get("shift_change", [])
+                )
+                stops_intervals = (
+                    self.params.stops
+                    if getattr(self.params, 'stops', None)
+                    else special_intervals.get("stops", [])
+                )
+                # Combine shift-change and stops into a single 'Stops' shading
+                stops_union = sorted(set(int(v) for v in (list(shift_change_intervals) + list(stops_intervals))))
+                shade_specs = [
+                    (stops_union, stops_color, stops_alpha),
+                ]
+                # Construir intervalos peak: 18:00-22:00 con start_hour=9
+                # Convertir horas a intervalos: intervalo = ceil((hora - start_hour) / dt)
+                peak_start_hour = 18.0
+                peak_end_hour = 22.0
+                peak_start_interval = int(np.ceil((peak_start_hour - start_hour) / dt))
+                peak_end_interval = int(np.ceil((peak_end_hour - start_hour) / dt))
+                peak_intervals = list(range(peak_start_interval, peak_end_interval + 1))
+            else:
+                between_shifts_intervals = (
+                    self.params.between_shifts
+                    if getattr(self.params, 'between_shifts', None)
+                    else special_intervals.get("between_shifts", [])
+                )
+                meal_intervals = (
+                    self.params.meals
+                    if getattr(self.params, 'meals', None)
+                    else special_intervals.get("meal", [])
+                )
+                maintenance_intervals = (
+                    self.params.maintenance
+                    if getattr(self.params, 'maintenance', None)
+                    else special_intervals.get("maintenance", [])
+                )
+
+                shade_specs = [
+                    (between_shifts_intervals, stops_color, stops_alpha),
+                    (meal_intervals, 'lightgray', 0.4),
+                    (maintenance_intervals, stops_color, stops_alpha),
+                ]
+            for intervals_list, color, alpha in shade_specs:
+                for gs, ge in _group_consecutive(intervals_list):
                     x0 = start_hour + (gs - 1) * dt
                     x1 = start_hour + ge * dt
                     ax1.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
 
-            ax1.step(times_step, pcharge_step, where="post", label="Charge Power", color="blue", linewidth=1.5)
+            ax1.step(times_step, pcharge_step, where='post', label='Battery Charging Power', color='blue', linewidth=1.5)
 
-            ax1.set_ylabel("Charge Power [kW]", color="black", fontsize=axis_label_fs)
-            ax1.set_xlabel("Hour", fontsize=axis_label_fs)
-            ax1.tick_params(axis="y", labelcolor="black", labelsize=tick_fs)
-            ax1.set_ylim(0, max(2500, float(np.nanmax(pcharge_step)) * 1.15 if len(pcharge_step) else 2500))
+            ax1.set_ylabel('Charging Power [kW]', color='black', fontsize=axis_label_fs)
+            ax1.set_xlabel('Hour', fontsize=axis_label_fs)
+            ax1.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
+            # Fijar límite superior consistente para comparación entre escenarios
+            ax1.set_ylim(0, 1500)
             ax1.set_xlim(times_step[0], times_step[-1])
             ax1.grid(False)
+
+            if self.mode == "DET":
+                ymin, ymax = ax1.get_ylim()
+                for gs, ge in _group_consecutive(peak_intervals):
+                    x0 = start_hour + (gs - 1) * dt
+                    x1 = start_hour + ge * dt
+                    hatch_rect = mpatches.Rectangle(
+                        (x0, ymin),
+                        x1 - x0,
+                        ymax - ymin,
+                        facecolor='none',
+                        edgecolor='#d62728',
+                        hatch='///',
+                        linewidth=0.0,
+                        alpha=0.35,
+                        zorder=2,
+                    )
+                    ax1.add_patch(hatch_rect)
+                    ax1.vlines([x0, x1], ymin=ymin, ymax=ymax, colors='#d62728', linestyles='--', linewidth=1.2, alpha=0.9)
 
             end = np.ceil(times_step[-1])
             xticks = np.arange(start_hour, end + 1, 4)
@@ -859,29 +943,31 @@ class JSONPlotter:
 
             ax1.xaxis.set_major_formatter(FuncFormatter(hour_formatter))
             ax1.xaxis.set_minor_locator(MultipleLocator(1))
-            ax1.tick_params(axis="x", labelsize=tick_fs)
+            ax1.tick_params(axis='x', labelsize=tick_fs)
 
-            ax2 = ax1.twinx()
-            ax2.step(times_step, marginal_step, where="post", label="Energy Price", color="red", linewidth=1.5)
-            ax2.set_ylabel("Energy Price [USD/kWh]", color="black", fontsize=axis_label_fs)
-            ax2.tick_params(axis="y", labelcolor="black", labelsize=tick_fs)
-            ax2.set_ylim(0.0, 0.30)
-            ax2.grid(False)
+            patch_stops = mpatches.Patch(color=stops_color, alpha=stops_alpha, label='Stops')
+            patch_meal = mpatches.Patch(color='lightgray', alpha=0.4, label='Meal')
+            patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
+            line1 = plt.Line2D([0], [0], color='blue', label='Battery Charging Power')
 
-            handles = [
-                plt.Line2D([0], [0], color="blue", label="Charge Power"),
-                plt.Line2D([0], [0], color="red", label="Energy Price"),
-            ]
-            for _vals, color, alpha, label in shade_specs:
-                handles.append(mpatches.Patch(color=color, alpha=alpha, label=label))
+            if self.mode == "DET":
+                handles = [line1, patch_peak_hatch, patch_stops]
+            else:
+                handles = [line1, patch_stops, patch_meal]
 
             month = self._rep_day_label(d)
-            fig.suptitle(f"{month} - {self._mode_plot_title()} Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
-            fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.99), ncol=3, fontsize=legend_fs, frameon=True)
+            fig.suptitle(f"{month} - Total Charge Power", fontsize=title_fs, y=1.06)
+
+            fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
+                       ncol=3, fontsize=legend_fs, frameon=True)
 
             plt.tight_layout()
             fig.subplots_adjust(top=0.82)
-            fig.savefig(os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"), bbox_inches="tight", dpi=120)
+
+            fig.savefig(
+                os.path.join(self.plot_dir, f"BatteryChargingPower_{month}.png"),
+                bbox_inches="tight", dpi=120
+            )
             plt.close(fig)
 
     def plot_swaps_vs_price(self):
@@ -930,9 +1016,10 @@ class JSONPlotter:
 
             interval_groups = self._special_mode_intervals(d)
             if self.mode == "DET":
+                # Show both shift-change and stops under the same 'Stops' legend
                 shade_specs = [
-                    (interval_groups.get("shift_change", []), "darkgray", 0.7, "Shift Change"),
-                    (interval_groups.get("forced_detention", []), "#ffe6e6", 0.8, "Forced Detention"),
+                    (interval_groups.get("shift_change", []), "#ffe6e6", 0.8, "Stops"),
+                    (interval_groups.get("stops", []), "#ffe6e6", 0.8, "Stops"),
                 ]
             else:
                 shade_specs = [
@@ -980,8 +1067,12 @@ class JSONPlotter:
                 plt.Line2D([0], [0], color="blue", label="Swaps"),
                 plt.Line2D([0], [0], color="red", label="Energy Price"),
             ]
+            # Append unique shade patches by label to avoid duplicate legend entries
+            seen_labels = set()
             for _vals, color, alpha, label in shade_specs:
-                handles.append(mpatches.Patch(color=color, alpha=alpha, label=label))
+                if label not in seen_labels:
+                    handles.append(mpatches.Patch(color=color, alpha=alpha, label=label))
+                    seen_labels.add(label)
 
             month = self._rep_day_label(d)
             fig.suptitle(f"{month} - {self._mode_plot_title()} Swaps vs Energy Price", fontsize=title_fs, y=1.06)
@@ -1267,7 +1358,7 @@ class JSONPlotter:
                 if self.mode == "DET":
                     for interval_list, color, alpha in [
                         (self.params.shift_change, "darkgray", 0.18),
-                        (self.params.forced_detention, "#ffe6e6", 0.22),
+                        (self.params.stops, "#ffe6e6", 0.22),
                     ]:
                         for gs, ge in self._group_consecutive(interval_list):
                             x0 = (gs - 1) * delta_t
@@ -1602,7 +1693,7 @@ class JSONPlotter:
 
     def create_all_plots(self):
         self.plot_swaps_vs_price()
-        self.plot_charge_power_vs_price()
+        self.plot_battery_charging_power()
         self.plot_charging_batteries_vs_price()
         #self.plot_node_extraction_vs_demand()
         self.plot_lhd_costs_bars()
