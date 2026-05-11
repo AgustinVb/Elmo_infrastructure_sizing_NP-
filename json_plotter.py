@@ -796,16 +796,12 @@ class JSONPlotter:
         if self.df_P is None or self.df_P.empty:
             print("⚠️ No hay P.json. Omitiendo 'ChargePower_vs_price'.")
             return
-        if self.params.costo_marginal is None or self.params.costo_marginal.empty:
-            print("⚠️ No hay costo marginal en parameters.json. Omitiendo 'ChargePower_vs_price'.")
-            return
 
         title_fs = 22
         axis_label_fs = 16
         tick_fs = 14
         legend_fs = 14
 
-        # Asumiendo que el día empieza a las 9:00 AM, tal como en tu imagen
         start_hour = 9.0
         dt = float(self.delta_t)
 
@@ -814,19 +810,11 @@ class JSONPlotter:
                         .groupby("interval")["value"].sum()
                         .reindex(self.intervals).fillna(0.0))
 
-            price_day = (self.params.costo_marginal.query("day == @d")
-                            .groupby("interval")["price"].mean()
-                            .reindex(self.intervals).ffill().bfill().fillna(0.0))
-
-            # Transformar intervalos a arreglo de horas relativas (ej. 0 a 24)
             times = np.array([(t - 1) * dt for t in self.intervals])
             pcharge = p_day.values
-            marginal = price_day.values
 
-            # Extender arreglos para que el último escalón cubra el último intervalo correctamente
             times_step = np.append(times, times[-1] + dt) + start_hour
             pcharge_step = np.append(pcharge, pcharge[-1])
-            marginal_step = np.append(marginal, marginal[-1])
 
             fig, ax1 = plt.subplots(figsize=(9, 5.6))
 
@@ -847,23 +835,47 @@ class JSONPlotter:
                 groups.append((start, prev))
                 return groups
 
-            # Selección de franjas de fondo según modo
+            forced_detention_color = 'darkgray'
+            forced_detention_alpha = 0.7
+
             if self.mode == "DET":
-                shift_change_intervals = self.params.shift_change if getattr(self.params, 'shift_change', None) else self.special_intervals.get("shift_change", [])
-                forced_intervals = self.params.forced_detention if getattr(self.params, 'forced_detention', None) else self.special_intervals.get("forced_detention", [])
+                shift_change_intervals = (
+                    self.params.shift_change
+                    if getattr(self.params, 'shift_change', None)
+                    else self.special_intervals.get("shift_change", [])
+                )
+                forced_intervals = (
+                    self.params.forced_detention
+                    if getattr(self.params, 'forced_detention', None)
+                    else self.special_intervals.get("forced_detention", [])
+                )
                 shade_specs = [
-                    (shift_change_intervals, 'darkgray', 0.7),
-                    (forced_intervals, '#ffe6e6', 0.8),
+                    (shift_change_intervals, forced_detention_color, forced_detention_alpha),
+                    (forced_intervals, forced_detention_color, forced_detention_alpha),
                 ]
+                peak_windows = [("18:00", "22:00")]
+                peak_intervals = self._build_intervals_from_clock_windows(peak_windows, start_hour=9)
             else:
-                between_shifts_intervals = self.params.between_shifts if getattr(self.params, 'between_shifts', None) else self.special_intervals.get("between_shifts", [])
-                meal_intervals = self.params.meals if getattr(self.params, 'meals', None) else self.special_intervals.get("meal", [])
-                maintenance_intervals = self.params.maintenance if getattr(self.params, 'maintenance', None) else self.special_intervals.get("maintenance", [])
+                between_shifts_intervals = (
+                    self.params.between_shifts
+                    if getattr(self.params, 'between_shifts', None)
+                    else self.special_intervals.get("between_shifts", [])
+                )
+                meal_intervals = (
+                    self.params.meals
+                    if getattr(self.params, 'meals', None)
+                    else self.special_intervals.get("meal", [])
+                )
+                maintenance_intervals = (
+                    self.params.maintenance
+                    if getattr(self.params, 'maintenance', None)
+                    else self.special_intervals.get("maintenance", [])
+                )
 
                 shade_specs = [
-                    (between_shifts_intervals, 'darkgray', 0.7),
+                    (between_shifts_intervals, forced_detention_color, forced_detention_alpha),
                     (meal_intervals, 'lightgray', 0.4),
-                    (maintenance_intervals, '#ffe6e6', 0.8),
+                    (maintenance_intervals, forced_detention_color, forced_detention_alpha),
                 ]
             for intervals_list, color, alpha in shade_specs:
                 for gs, ge in _group_consecutive(intervals_list):
@@ -871,16 +883,33 @@ class JSONPlotter:
                     x1 = start_hour + ge * dt
                     ax1.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
 
-            # Curvas tipo escalón (step)
             ax1.step(times_step, pcharge_step, where='post', label='Charge Power', color='blue', linewidth=1.5)
 
-            # Formato Eje Y primario (Potencia)
             ax1.set_ylabel('Charge Power [kW]', color='black', fontsize=axis_label_fs)
             ax1.set_xlabel('Hour', fontsize=axis_label_fs)
             ax1.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
             ax1.set_ylim(0, 2500)
             ax1.set_xlim(times_step[0], times_step[-1])
-            ax1.grid(False) # Sin grilla, como en la imagen
+            ax1.grid(False)
+
+            if self.mode == "DET":
+                ymin, ymax = ax1.get_ylim()
+                for gs, ge in _group_consecutive(peak_intervals):
+                    x0 = start_hour + (gs - 1) * dt
+                    x1 = start_hour + ge * dt
+                    hatch_rect = mpatches.Rectangle(
+                        (x0, ymin),
+                        x1 - x0,
+                        ymax - ymin,
+                        facecolor='none',
+                        edgecolor='#d62728',
+                        hatch='///',
+                        linewidth=0.0,
+                        alpha=0.35,
+                        zorder=2,
+                    )
+                    ax1.add_patch(hatch_rect)
+                    ax1.vlines([x0, x1], ymin=ymin, ymax=ymax, colors='#d62728', linestyles='--', linewidth=1.2, alpha=0.9)
 
             end = np.ceil(times_step[-1])
             xticks = np.arange(start_hour, end + 1, 4)
@@ -895,37 +924,25 @@ class JSONPlotter:
             ax1.xaxis.set_minor_locator(MultipleLocator(1))
             ax1.tick_params(axis='x', labelsize=tick_fs)
 
-            # Formato Eje Y secundario (Precio)
-            ax2 = ax1.twinx()
-            ax2.step(times_step, marginal_step, where='post', label='Energy Price', color='red', linewidth=1.5)
-            ax2.set_ylabel('Energy Price [USD/kWh]', color='black', fontsize=axis_label_fs)
-            ax2.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
-            ax2.set_ylim(0.0, 0.30)
-            ax2.grid(False)
-
-            patch_shifts = mpatches.Patch(color='darkgray', alpha=0.7, label='Between Shifts')
+            patch_forced = mpatches.Patch(color=forced_detention_color, alpha=forced_detention_alpha, label='Forced Detention')
             patch_meal = mpatches.Patch(color='lightgray', alpha=0.4, label='Meal')
-            patch_maint = mpatches.Patch(color='#ffe6e6', alpha=0.8, label='Maintenance')
-
+            patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
             line1 = plt.Line2D([0], [0], color='blue', label='Charge Power')
-            line2 = plt.Line2D([0], [0], color='red', label='Energy Price')
 
-            handles = [line1, line2, patch_shifts, patch_meal, patch_maint]
+            if self.mode == "DET":
+                handles = [line1, patch_peak_hatch, patch_forced]
+            else:
+                handles = [line1, patch_forced, patch_meal]
 
-            # Título dinámico con el mes
             month = self._rep_day_label(d)
-            fig.suptitle(f"{month} - Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
+            fig.suptitle(f"{month} - Total Charge Power", fontsize=title_fs, y=1.06)
 
-            # Leyenda superior
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
                        ncol=3, fontsize=legend_fs, frameon=True)
 
             plt.tight_layout()
-
-            # Ajustar espacio superior para que quepa la leyenda
             fig.subplots_adjust(top=0.82)
 
-            # Guardar gráfico
             fig.savefig(
                 os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
                 bbox_inches="tight", dpi=120
