@@ -75,7 +75,7 @@ class OptRules(object):
         If windows is None a sensible default is used.
         """
         if windows is None:
-            windows = [("09:00", "13:00"), ("17:00", "21:00")]
+            windows = [("18:00", "22:00")]
         return self._build_intervals_from_clock_windows(windows, start_hour=start_hour)
 
 class OptSets(OptRules):
@@ -453,7 +453,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 40, 4: 100, 5: 150},mutable=True)
         model.Voll = pyo.Param(initialize=4*500, mutable=True)
 class BoundRules(OptRules):
 
@@ -726,7 +726,7 @@ class ConstraintRules(OptRules):
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
         """
         # Total target across all nodes
-        total_target = 28500
+        total_target = 25000
 
         # Sum production term over all Y tuples for day d
         term_de = sum(
