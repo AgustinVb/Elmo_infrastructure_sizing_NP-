@@ -888,7 +888,7 @@ class JSONPlotter:
             ax1.set_ylabel('Charge Power [kW]', color='black', fontsize=axis_label_fs)
             ax1.set_xlabel('Hour', fontsize=axis_label_fs)
             ax1.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
-            ax1.set_ylim(0, 2500)
+            ax1.set_ylim(0, 1500)
             ax1.set_xlim(times_step[0], times_step[-1])
             ax1.grid(False)
 
@@ -924,7 +924,7 @@ class JSONPlotter:
             ax1.xaxis.set_minor_locator(MultipleLocator(1))
             ax1.tick_params(axis='x', labelsize=tick_fs)
 
-            patch_forced = mpatches.Patch(color=forced_detention_color, alpha=forced_detention_alpha, label='Forced Detention')
+            patch_forced = mpatches.Patch(color=forced_detention_color, alpha=forced_detention_alpha, label='Stops')
             patch_meal = mpatches.Patch(color='lightgray', alpha=0.4, label='Meal')
             patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
             line1 = plt.Line2D([0], [0], color='blue', label='Charge Power')
