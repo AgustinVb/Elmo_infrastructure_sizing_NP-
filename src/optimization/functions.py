@@ -1,4 +1,4 @@
-import pyomo.environ as pyo
+﻿import pyomo.environ as pyo
 import math
 import pandas as pd
 import numpy as np
@@ -453,7 +453,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 50, 2: 100, 3: 200, 4: 1000, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=4*500, mutable=True)
 class BoundRules(OptRules):
 
@@ -1080,12 +1080,12 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
-        #model.between_shifts_elhd_swap = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_between_shifts_set,
-        #    rule=self.between_shifts_elhd_swap,
-        #)
+        model.between_shifts_elhd_swap = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_between_shifts_set,
+            rule=self.between_shifts_elhd_swap,
+        )
         model.total_swaps = pyo.Constraint(
             model.stations_set,
             model.days,
@@ -1174,26 +1174,26 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        #model.maintenance_stop_all = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.maint_stop_all,
-        #)
-        model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.maintenance_stop_all = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.maint_stop_all,
+        )
+        #model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Rotura simetr�a
         #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-         #   model.swap_precedence_pairs,
+        #    model.swap_precedence_pairs,
         #    model.days,
         #    rule=self.battery_boundary_break_simmetry_lhds_start,
         #)
 
         #model.swap_precedence_by_index = pyo.Constraint(
-         #   model.swap_precedence_pairs,
+        #    model.swap_precedence_pairs,
         #    model.days,
         #    model.time_intervals_set,
         #    rule=self.swap_precedence_by_index,
