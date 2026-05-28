@@ -83,19 +83,21 @@ def load_B_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, value in _collect_named_leaf_records(data):
         axes = {name: axis_value for name, axis_value in tokens}
         if {"i", "d", "t"}.issubset(axes):
-            rows.append({
-                "lhd": axes["i"],
-                "day": _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-                "value": float(value),
-            })
-        elif {"d", "t", "i"}.issubset(axes):
-            rows.append({
-                "lhd": axes["d"],
-                "day": _numeric_or_str(axes["t"]),
-                "interval": _numeric_or_str(axes["i"]),
-                "value": float(value),
-            })
+            # Si axes["d"] es string no-numérico, es el lhd (d=lhd, t=day, i=interval)
+            if isinstance(axes["d"], str):
+                rows.append({
+                    "lhd": str(axes["d"]),
+                    "day": _numeric_or_str(axes["t"]),
+                    "interval": _numeric_or_str(axes["i"]),
+                    "value": float(value),
+                })
+            else:
+                rows.append({
+                    "lhd": axes["i"],
+                    "day": _numeric_or_str(axes["d"]),
+                    "interval": _numeric_or_str(axes["t"]),
+                    "value": float(value),
+                })
 
     if rows:
         return (pd.DataFrame(rows)
@@ -129,21 +131,23 @@ def load_binary_Y_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, value in _collect_named_leaf_records(data):
         axes = {name: axis_value for name, axis_value in tokens}
         if {"i", "j", "d", "t"}.issubset(axes):
-            rows.append({
-                "lhd": axes["i"],
-                "node": str(axes["j"]),
-                "day": _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-                "value": float(value),
-            })
-        elif {"d", "t", "i", "j"}.issubset(axes):
-            rows.append({
-                "lhd": axes["d"],
-                "node": str(axes["t"]),
-                "day": _numeric_or_str(axes["i"]),
-                "interval": _numeric_or_str(axes["j"]),
-                "value": float(value),
-            })
+            # Si axes["d"] es string no-numérico, es el lhd (d=lhd, t=node, i=day, j=interval)
+            if isinstance(axes["d"], str):
+                rows.append({
+                    "lhd": str(axes["d"]),
+                    "node": str(axes["t"]),
+                    "day": _numeric_or_str(axes["i"]),
+                    "interval": _numeric_or_str(axes["j"]),
+                    "value": float(value),
+                })
+            else:
+                rows.append({
+                    "lhd": axes["i"],
+                    "node": str(axes["j"]),
+                    "day": _numeric_or_str(axes["d"]),
+                    "interval": _numeric_or_str(axes["t"]),
+                    "value": float(value),
+                })
 
     if rows:
         return (pd.DataFrame(rows)
@@ -196,24 +200,33 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
                 "interval": _numeric_or_str(axes["t"]),
             })
         elif {"i", "j", "d", "t"}.issubset(axes):
-            row.update({
-                "lhd": axes["i"],
-                "node": str(axes["j"]),
-                "day": _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-            })
+            if isinstance(axes["d"], str):
+                row.update({
+                    "lhd": str(axes["d"]),
+                    "node": str(axes["t"]),
+                    "day": _numeric_or_str(axes["i"]),
+                    "interval": _numeric_or_str(axes["j"]),
+                })
+            else:
+                row.update({
+                    "lhd": axes["i"],
+                    "node": str(axes["j"]),
+                    "day": _numeric_or_str(axes["d"]),
+                    "interval": _numeric_or_str(axes["t"]),
+                })
         elif {"i", "d", "t"}.issubset(axes):
-            row.update({
-                "lhd": axes["i"],
-                "day": _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-            })
-        elif {"d", "t", "i"}.issubset(axes):
-            row.update({
-                "lhd": axes["d"],
-                "day": _numeric_or_str(axes["t"]),
-                "interval": _numeric_or_str(axes["i"]),
-            })
+            if isinstance(axes["d"], str):
+                row.update({
+                    "lhd": str(axes["d"]),
+                    "day": _numeric_or_str(axes["t"]),
+                    "interval": _numeric_or_str(axes["i"]),
+                })
+            else:
+                row.update({
+                    "lhd": axes["i"],
+                    "day": _numeric_or_str(axes["d"]),
+                    "interval": _numeric_or_str(axes["t"]),
+                })
         else:
             row = {}
 
@@ -589,7 +602,7 @@ class JSONPlotter:
                 sources.append(sorted(df["day"].dropna().unique().tolist()))
         if self.params.costo_marginal is not None:
             sources.append(sorted(self.params.costo_marginal["day"].unique().tolist()))
-        return sorted({d for lst in sources for d in lst}) if sources else []
+        return sorted({int(d) for lst in sources for d in lst}) if sources else []
 
     def _detect_intervals(self) -> List[int]:
         sources = []
@@ -600,7 +613,7 @@ class JSONPlotter:
             sources.append(sorted(self.params.costo_marginal["interval"].unique().tolist()))
         if not sources:
             return []
-        ints = sorted({t for lst in sources for t in lst})
+        ints = sorted({int(t) for lst in sources for t in lst})
         if ints and ints[0] == 0 and 1 in ints:
             return list(range(min(ints), max(ints) + 1))
         return ints
@@ -628,9 +641,7 @@ class JSONPlotter:
             start = cum + 1
             end = cum + ml
             if start <= day_of_year <= end:
-                day_of_month = day_of_year - cum
-                month_name = self.MONTH_LABELS.get(m, f"Month{m}")
-                return f"{day_of_month} {month_name}"
+                return self.MONTH_LABELS.get(m, f"Month{m}")
             cum += ml
         return f"Day {d}"
 
@@ -817,6 +828,8 @@ class JSONPlotter:
             pcharge_step = np.append(pcharge, pcharge[-1])
 
             fig, ax1 = plt.subplots(figsize=(9, 5.6))
+            ax2 = ax1.twinx()
+            ax2.grid(False)
 
             def _group_consecutive(vals):
                 vals = sorted(set(int(v) for v in vals if int(v) in set(self.intervals)))
@@ -835,8 +848,12 @@ class JSONPlotter:
                 groups.append((start, prev))
                 return groups
 
-            forced_detention_color = 'darkgray'
-            forced_detention_alpha = 0.7
+            between_shifts_color = 'gray'
+            between_shifts_alpha = 0.6
+            meal_color = 'gray'
+            meal_alpha = 0.15
+            maintenance_color = '#FF9999'
+            maintenance_alpha = 0.15
 
             if self.mode == "DET":
                 shift_change_intervals = (
@@ -850,8 +867,8 @@ class JSONPlotter:
                     else self.special_intervals.get("forced_detention", [])
                 )
                 shade_specs = [
-                    (shift_change_intervals, forced_detention_color, forced_detention_alpha),
-                    (forced_intervals, forced_detention_color, forced_detention_alpha),
+                    (shift_change_intervals, between_shifts_color, between_shifts_alpha),
+                    (forced_intervals, between_shifts_color, between_shifts_alpha),
                 ]
                 peak_windows = [("18:00", "22:00")]
                 peak_intervals = self._build_intervals_from_clock_windows(peak_windows, start_hour=9)
@@ -873,9 +890,9 @@ class JSONPlotter:
                 )
 
                 shade_specs = [
-                    (between_shifts_intervals, forced_detention_color, forced_detention_alpha),
-                    (meal_intervals, 'lightgray', 0.4),
-                    (maintenance_intervals, forced_detention_color, forced_detention_alpha),
+                    (between_shifts_intervals, between_shifts_color, between_shifts_alpha),
+                    (meal_intervals, meal_color, meal_alpha),
+                    (maintenance_intervals, maintenance_color, maintenance_alpha),
                 ]
             for intervals_list, color, alpha in shade_specs:
                 for gs, ge in _group_consecutive(intervals_list):
@@ -885,12 +902,31 @@ class JSONPlotter:
 
             ax1.step(times_step, pcharge_step, where='post', label='Charge Power', color='blue', linewidth=1.5)
 
+            # Energy Price line on right axis
+            price_line = None
+            if self.params.costo_marginal is not None and not self.params.costo_marginal.empty:
+                cm = self.params.costo_marginal.query("day == @d") if "day" in self.params.costo_marginal.columns else self.params.costo_marginal
+                if not cm.empty:
+                    price_by_interval = (cm.groupby("interval")["price"].mean()
+                                         .reindex(self.intervals).ffill().bfill().fillna(0.0))
+                    p_times = np.array([(t - 1) * dt + start_hour for t in self.intervals])
+                    p_times_step = np.append(p_times, p_times[-1] + dt)
+                    p_vals_step = np.append(price_by_interval.values, price_by_interval.values[-1])
+                    price_line, = ax2.plot(p_times_step, p_vals_step, color='red', linewidth=1.8,
+                                           label='Energy Price', zorder=3)
+
+            ax2.set_ylabel('Energy Price [USD/kWh]', color='black', fontsize=axis_label_fs)
+            ax2.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
+            ax2.set_ylim(0, 0.30)
+            ax2.yaxis.set_major_locator(MultipleLocator(0.05))
+
             ax1.set_ylabel('Charge Power [kW]', color='black', fontsize=axis_label_fs)
             ax1.set_xlabel('Hour', fontsize=axis_label_fs)
             ax1.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
-            ax1.set_ylim(0, 1500)
+            ax1.set_ylim(0, 2500)
             ax1.set_xlim(times_step[0], times_step[-1])
             ax1.grid(False)
+            ax1.set_axisbelow(False)
 
             if self.mode == "DET":
                 ymin, ymax = ax1.get_ylim()
@@ -924,21 +960,25 @@ class JSONPlotter:
             ax1.xaxis.set_minor_locator(MultipleLocator(1))
             ax1.tick_params(axis='x', labelsize=tick_fs)
 
-            patch_forced = mpatches.Patch(color=forced_detention_color, alpha=forced_detention_alpha, label='Stops')
-            patch_meal = mpatches.Patch(color='lightgray', alpha=0.4, label='Meal')
+            line1 = plt.Line2D([0], [0], color='blue', linewidth=1.5, label='Charge Power')
+            patch_between = mpatches.Patch(color=between_shifts_color, alpha=between_shifts_alpha, label='Between Shifts')
+            patch_meal = mpatches.Patch(color=meal_color, alpha=meal_alpha, label='Meal')
+            patch_maint = mpatches.Patch(color=maintenance_color, alpha=maintenance_alpha, label='Maintenance')
             patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
-            line1 = plt.Line2D([0], [0], color='blue', label='Charge Power')
 
             if self.mode == "DET":
-                handles = [line1, patch_peak_hatch, patch_forced]
+                handles = [line1, patch_peak_hatch, patch_between]
             else:
-                handles = [line1, patch_forced, patch_meal]
+                handles = [line1, patch_between, patch_meal, patch_maint]
+                if price_line is not None:
+                    line_price = plt.Line2D([0], [0], color='red', linewidth=1.8, label='Energy Price')
+                    handles.insert(1, line_price)
 
             month = self._rep_day_label(d)
-            fig.suptitle(f"{month} - Total Charge Power", fontsize=title_fs, y=1.06)
+            fig.suptitle(f"{month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
 
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
-                       ncol=3, fontsize=legend_fs, frameon=True)
+                       ncol=len(handles), fontsize=legend_fs, frameon=True)
 
             plt.tight_layout()
             fig.subplots_adjust(top=0.82)
@@ -1226,9 +1266,7 @@ class JSONPlotter:
                 ax_task.grid(False)
 
                 month = self._rep_day_label(day)
-                season = self._season_label(day)
-                season_txt = f" ({season})" if season else ""
-                fig.suptitle(f"LHD {lhd} {month}{season_txt}", y=0.96, fontsize=18)
+                fig.suptitle(f"LHD {lhd} {month}", y=0.96, fontsize=18)
 
                 fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
