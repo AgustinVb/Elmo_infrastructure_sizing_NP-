@@ -1,4 +1,4 @@
-﻿
+
 import math
 import pandas as pd
 from pandas import DataFrame, concat
@@ -31,6 +31,8 @@ class Timeseries(object):
         self.mapper['Time_Intervals']  = self.get_time_intervals()
         self.mapper['NodeAssignment']  = self.sample_node_assignment(self.series['NodeAssignment'])
         self.mapper['StationAssignment']  = self.sample_station_assignment(self.series['StationAssignment'])
+        if 'GenProfiles' in self.series.container:
+            self.mapper['GenProfiles'] = self.sample_gen_profiles(self.series['GenProfiles'])
         #self.mapper['BatteryAssignment'] = self.sample_battery_assignment(self.series['BatteryAssignment'])
         #self.mapper['Misc'] = self.sample_misc(self.series['Misc'])
         return self.mapper['Time_Intervals']
@@ -347,7 +349,7 @@ class Timeseries(object):
         return 0
        
     def get_elhd_at_station(self, stations: list) -> int:
-        """Invierte `Stations_per_elhd` â†’ `elhd_per_station[(station)] = [elhds]`"""
+        """Invierte `Stations_per_elhd` â†' `elhd_per_station[(station)] = [elhds]`"""
         elhd_per_station = {}
         for st in stations:
             elhd_per_station[st] = []
@@ -458,7 +460,7 @@ class Timeseries(object):
             trips.loc[(elhd, node), 'travel_duration'] = 1
             trips.loc[(elhd, node), 'energy_consumption'] = energy_per_trip
 
-            # ðŸ”¥ NUEVO: transformar kWh a litros de diÃ©sel si corresponde
+            # ðŸ"¥ NUEVO: transformar kWh a litros de diÃ©sel si corresponde
             tech_type = mine_system.elhd.get_technology_type(elhd).lower()
             if tech_type == 'diesel':
                 bsfc_g_per_kwh = 230          # Brake Specific Fuel Consumption [g/kWh]
@@ -557,12 +559,40 @@ class Timeseries(object):
         return df.iloc[:, 0].to_dict()
 
     #def get_n_chargers(self) -> int:
-    #    """Devuelve el nÃºmero de cargadores segÃºn Misc â†’ 'chargers'."""
+    #    """Devuelve el nÃºmero de cargadores segÃºn Misc â†' 'chargers'."""
     #    return self.mapper['Misc']['chargers']
 
     #def get_grid_power(self) -> float:
-    #    """Devuelve el parÃ¡metro Pmine segÃºn Misc â†’ 'Pmine'."""
+    #    """Devuelve el parÃ¡metro Pmine segÃºn Misc â†' 'Pmine'."""
     #    return self.mapper['Misc']['Pmine']
+
+    # ------------------------------------------------------------------ #
+    # Generación renovable
+    # ------------------------------------------------------------------ #
+
+    def sample_gen_profiles(self, gen_profiles: pd.DataFrame) -> pd.DataFrame:
+        """
+        Hoja GenProfiles: columnas ['name', 'day', 1, 2, ..., T]
+        Retorna DataFrame indexado por (name, day), columnas int = intervalos.
+        """
+        meta_cols = {'id', 'name', 'day'}
+        interval_cols = [c for c in gen_profiles.columns if str(c) not in meta_cols]
+        gp = gen_profiles[['name', 'day'] + interval_cols].copy()
+        gp['day'] = gp['day'].astype(int)
+        gp = gp.set_index(['name', 'day'])
+        gp.columns = [int(c) for c in gp.columns]
+        return gp
+
+    def get_alpha_g(self, gen_name: str, day: int, time_interval: int) -> float:
+        """Perfil de disponibilidad alpha[g, d, t] en [0, 1]. Retorna 0 si no existe."""
+        df = self.mapper.get('GenProfiles')
+        if df is None:
+            return 0.0
+        key = (gen_name, int(day))
+        t = int(time_interval)
+        if key in df.index and t in df.columns:
+            return float(df.loc[key, t])
+        return 0.0
 
 
 

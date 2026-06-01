@@ -1,4 +1,4 @@
-﻿import pyomo.environ as pyo
+import pyomo.environ as pyo
 import math
 import pandas as pd
 import numpy as np
@@ -195,6 +195,8 @@ class OptSets(OptRules):
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
         # Tramos de penalizaciÃ³n para dÃ©ficit F (piecewise lineal)
         model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
+        # Generadores renovables (vacio si no hay datos de generacion)
+        model.gen_set = pyo.Set(initialize=self.mine_system.get_system_generators())
 
          # Subsets de tiempo para pausas
         meal_intervals = self._get_time_intervals_for_pause_type("meal")
@@ -339,6 +341,42 @@ class OptParameters(OptRules):
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 5, 3: 40, 4: 50, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=500, mutable=True)
+
+        # Costo de energia de la red por (d,t): usa el primer ELHD como referencia del contrato
+        ref_elhd = list(model.elhd_set)[0]
+        model.costo_red = pyo.Param(
+            model.days, model.time_intervals_set,
+            initialize={(d, t): self.time_series.get_marginal_cost_scaled(
+                            self.mine_system.elhd.get_energy_cost(ref_elhd), d, t)
+                        for d in model.days for t in model.time_intervals_set},
+            mutable=True)
+
+        # Parametros de generacion renovable (solo si existen generadores)
+        if len(list(model.gen_set)) > 0:
+            gen = self.mine_system.generators
+            model.c_inv_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_c_inv(g) for g in model.gen_set},
+                mutable=False)
+            model.c_op_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_c_op(g) for g in model.gen_set},
+                mutable=False)
+            model.p_max_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_p_max(g) for g in model.gen_set},
+                mutable=False)
+            model.g_max_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_g_max(g) for g in model.gen_set},
+                mutable=False)
+            model.alpha_g = pyo.Param(
+                model.gen_set, model.days, model.time_intervals_set,
+                initialize={(g, d, t): self.time_series.get_alpha_g(g, d, t)
+                            for g in model.gen_set
+                            for d in model.days
+                            for t in model.time_intervals_set},
+                mutable=False)
        
 
 class BoundRules(OptRules):
@@ -420,7 +458,17 @@ class BoundRules(OptRules):
         # Indica si termina una carga en t
         model.EndCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
         
-        ## NUEVAS VARIABLES 
+        ## NUEVAS VARIABLES
+
+        # Variables de generacion renovable (solo si existen generadores)
+        if len(list(model.gen_set)) > 0:
+            # Inversion: cantidad de unidades de generacion tipo g
+            model.G_g = pyo.Var(model.gen_set, domain=pyo.NonNegativeIntegers)
+            # Operacion: potencia generada por g en (d,t) [kW]
+            model.P_gen = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
+                                  domain=pyo.NonNegativeReals)
+        # Potencia comprada a la red en (d,t) [kW] — siempre presente
+        model.P_red = pyo.Var(model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
 
         # ExtracciÃ³n por intervalo, consistente con Y_INDEX.
         model.M = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
@@ -620,14 +668,38 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return sum(model.P[k, i, d, t] for i in station_elhds) <= model.p_max_k[k]
 
-    def peak_power(self, model, d,t):
-        # Suma P solo sobre tuplas vÃ¡lidas en ZCHARGE_INDEX
+    def peak_power(self, model, d, t):
+        # REEMPLAZADA por power_balance + grid_limit — se mantiene comentada como referencia
         return sum(model.P[k, i, d, t] for (k, i) in model.ZCHARGE_INDEX) <= model.p_peak
 
     def power_cost_peak_limit(self, model, d, t):
-        if t in model.time_intervals_peak_set:
-            return sum(model.P[k, i, d, t] for (k, i) in model.ZCHARGE_INDEX) <= model.P_pot[model.year_of_day[d]]
-        return pyo.Constraint.Skip
+        # Potencia peak facturable = lo que se toma de la red en horas punta
+        if t not in model.time_intervals_peak_set:
+            return pyo.Constraint.Skip
+        return model.P_red[d, t] <= model.P_pot[model.year_of_day[d]]
+
+    # ------------------------------------------------------------------
+    # Balance de potencia y restricciones de generacion renovable
+    # ------------------------------------------------------------------
+
+    def power_balance(self, model, d, t):
+        """Suma de cargas = potencia de red + potencia generada localmente."""
+        demand = sum(model.P[k, i, d, t] for (k, i) in model.ZCHARGE_INDEX)
+        gen = (sum(model.P_gen[g, d, t] for g in model.gen_set)
+               if len(list(model.gen_set)) > 0 else 0)
+        return model.P_red[d, t] + gen == demand
+
+    def grid_limit(self, model, d, t):
+        """Potencia de red acotada por capacidad de la subestacion."""
+        return model.P_red[d, t] <= model.p_peak
+
+    def gen_limit(self, model, g, d, t):
+        """Potencia generada acotada por unidades instaladas y disponibilidad."""
+        return model.P_gen[g, d, t] <= model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t]
+
+    def gen_max_units(self, model, g):
+        """Cantidad maxima de unidades instalables por tecnologia."""
+        return model.G_g[g] <= model.g_max_g[g]
     
     #Condicion inicial estaciones
     def initial_condition_station(self, model):
@@ -718,8 +790,14 @@ class ConstraintRules(OptRules):
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
-        model.peak_power                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power)
+        # peak_power reemplazada por power_balance + grid_limit
+        model.power_balance                      = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_balance)
+        model.grid_limit                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.grid_limit)
         model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
+        # Restricciones de generacion renovable (solo si gen_set no vacio)
+        if len(list(model.gen_set)) > 0:
+            model.gen_limit      = pyo.Constraint(model.gen_set, model.days, model.time_intervals_set, rule=self.gen_limit)
+            model.gen_max_units  = pyo.Constraint(model.gen_set, rule=self.gen_max_units)
         
         #ProducciÃ³n nuevas
         #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
@@ -752,16 +830,14 @@ class ConstraintRules(OptRules):
 class ObjectiveRules(OptRules):
 
     def lhd_charge_cost(self, model):
-        # Coste de cargar baterÃ­as (electricidad)
+        # Costo de energia comprada a la red (P_red * costo contrato)
         cost_el = sum(
-            model.P[k, i, d, t] * model.costo_marginal[i, d, t] 
-            for (k, i) in model.ZCHARGE_INDEX
+            model.P_red[d, t] * model.costo_red[d, t]
             for d in model.days
             for t in model.time_intervals_set
         ) * model.delta_t
+        return cost_el * model.scaling_factor_op_cost
 
-        return cost_el*model.scaling_factor_op_cost
-    
     def inversion_cost(self, model):
         cost_inv = sum(
             model.station_cost_k[k] * model.X[k] + model.charger_cost * model.N_chargers[k]
@@ -769,20 +845,36 @@ class ObjectiveRules(OptRules):
         )
         return cost_inv
 
+    def gen_investment_cost(self, model):
+        if len(list(model.gen_set)) == 0:
+            return 0
+        return sum(model.G_g[g] * model.c_inv_g[g] for g in model.gen_set)
+
+    def gen_op_cost(self, model):
+        if len(list(model.gen_set)) == 0:
+            return 0
+        # c_op_g es anual; scaling_factor_op_cost extrapola los dias representativos al anio
+        return sum(model.G_g[g] * model.c_op_g[g] for g in model.gen_set)
+
     def power_cost(self, model):
         return sum(model.P_pot[y] * 12 * 10 for y in model.years)
-    
+
     def F_penalty_cost(self, model):
         cost_F = sum(
-            model.F_seg[j, d, s] * (4*model.Voll / model.F_penalty_div[s])
+            model.F_seg[j, d, s] * (4 * model.Voll / model.F_penalty_div[s])
             for j in model.nodes_set
             for d in model.days
             for s in model.F_SEG
         )
-        return cost_F*model.scaling_factor_op_cost
-    
+        return cost_F * model.scaling_factor_op_cost
+
     def total_cost(self, model):
-        return self.lhd_charge_cost(model)  + self.inversion_cost(model)+ self.F_penalty_cost(model) + self.power_cost(model)
+        return (self.lhd_charge_cost(model)
+                + self.inversion_cost(model)
+                + self.gen_investment_cost(model)
+                + self.gen_op_cost(model)
+                + self.F_penalty_cost(model)
+                + self.power_cost(model))
     
     def op_cost_total(self, model):
         # Coste operativo total (sin inversiÃ³n)

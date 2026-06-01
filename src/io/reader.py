@@ -60,14 +60,14 @@ class Series(Reader):
 
     """
 
-    def __init__(self, location, extra='simple', save_sheets=['MarginalCost', 'ExtractionGoal', 'Shifts', 'NodeAssignment', 'StationAssignment']):
+    def __init__(self, location, extra='simple', save_sheets=['MarginalCost', 'ExtractionGoal', 'Shifts', 'NodeAssignment', 'StationAssignment', 'GenProfiles']):
         """
         :param location: path where main files are located
         :param save_sheets: list of sheet names to save as .npy. If None, saves all sheets.
                            Example: ['MarginalCost', 'Emissions']
 
         """
-        self.init = dict(MarginalCost=3,Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=5, StationAssignment=3)
+        self.init = dict(MarginalCost=3, Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=5, StationAssignment=3, GenProfiles=3)
         self.save_sheets = save_sheets  # None = guardar todos, o lista de nombres
         self.conf, self.parser = 'series.ini', ConfigParser()
         self.dirname = dirname(location)
@@ -110,6 +110,8 @@ class Series(Reader):
         """
         for sheet in self.container.keys():
             init = self.init.get(sheet)
+            if init is None:
+                continue
             subset = self.container[sheet].iloc[:, :init]
             subset.to_excel(writer, sheet, index=False)
             # Guardar como .npy solo si está en save_sheets o si save_sheets es None

@@ -3,6 +3,7 @@ from src.mine.battery import Battery
 from src.mine.layout import Layout
 from src.mine.stations import Stations
 from src.mine.chargers import Chargers
+from src.mine.generators import Generators
 
 
 class Mine(object):
@@ -38,6 +39,12 @@ class Mine(object):
         # 5) Chargers: asumimos que la hoja 'chargers' siempre existe
         # y que tiene una columna 'id' que identifica la fila con valores
         self.chargers = Chargers(model['chargers'], 'id')
+
+        # 6) Generators: opcional — solo si la hoja 'Generators' existe en el Excel
+        if 'Generators' in model.container:
+            self.generators = Generators(model['Generators'], 'name')
+        else:
+            self.generators = None
 
     # ------------------------------------------------------------------ #
     # Nodo / Layout
@@ -98,3 +105,12 @@ class Mine(object):
     def get_system_stations(self):
         """Devuelve lista de todas las estaciones de carga."""
         return list(self.stations.get("station_name", None))
+
+    # ------------------------------------------------------------------ #
+    # Generadores
+    # ------------------------------------------------------------------ #
+    def get_system_generators(self) -> list:
+        """Devuelve lista de nombres de generadores, o [] si no hay."""
+        if self.generators is None:
+            return []
+        return self.generators.get_names()
