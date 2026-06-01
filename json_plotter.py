@@ -79,11 +79,29 @@ def load_B_df(path: str) -> Optional[pd.DataFrame]:
 
 
 def load_binary_Y_df(path: str) -> Optional[pd.DataFrame]:
-    """Load Y (trip binary) from JSON with structure: i -> j -> d -> t -> value"""
+    """Load Y (trip binary). Soporta i->j->d->t y d->lhd->t->node->i->day->j->interval."""
     data = _load_json(path)
     if not data:
         return None
     rows = []
+    cols = ["lhd", "node", "day", "interval", "value"]
+
+    # Parche: estructura d->lhd->t->node->i->day->j->interval
+    if "d" in data and "i" not in data:
+        for lhd, t_block in data["d"].items():
+            for node, i_block in t_block.get("t", {}).items():
+                for day, j_block in i_block.get("i", {}).items():
+                    for interval, val in j_block.get("j", {}).items():
+                        try:
+                            rows.append({"lhd": str(lhd), "node": str(node),
+                                         "day": _numeric_or_str(day),
+                                         "interval": _numeric_or_str(interval),
+                                         "value": float(val)})
+                        except Exception:
+                            continue
+        return (pd.DataFrame(rows).sort_values(["lhd","node","day","interval"])
+                .reset_index(drop=True)) if rows else pd.DataFrame(columns=cols)
+
     # New structure: i (LHD) -> j (node) -> d (day) -> t (interval)
     i_dict = data.get("i", {})
     for lhd, j_block in i_dict.items():
@@ -135,6 +153,24 @@ def load_Z_swap_df(path: str) -> Optional[pd.DataFrame]:
     if not data:
         return None
     rows = []
+    cols = ["station", "lhd", "day", "interval", "value"]
+
+    # Parche: estructura _1->station->_2->lhd->_3->day->_4->interval
+    if "_1" in data:
+        for station, v2 in data["_1"].items():
+            for lhd, v3 in v2.get("_2", {}).items():
+                for day, v4 in v3.get("_3", {}).items():
+                    for interval, val in v4.get("_4", {}).items():
+                        try:
+                            rows.append({"station": str(station), "lhd": str(lhd),
+                                         "day": _numeric_or_str(day),
+                                         "interval": _numeric_or_str(interval),
+                                         "value": float(val)})
+                        except Exception:
+                            continue
+        return (pd.DataFrame(rows).sort_values(["station","lhd","day","interval"])
+                .reset_index(drop=True)) if rows else pd.DataFrame(columns=cols)
+
     k_dict = data.get("k", {})
     for station, i_block in k_dict.items():
         i_inner = i_block.get("i", {})
@@ -165,9 +201,27 @@ def load_Sv_df(path: str) -> Optional[pd.DataFrame]:
         return None
 
     rows = []
+    cols = ["station", "day", "interval", "start_interval", "value"]
+
+    # Parche: estructura _1->station->_2->day->_3->interval->_4->start_interval
+    if "_1" in data:
+        for station, v2 in data["_1"].items():
+            for day, v4 in v2.get("_2", {}).items():
+                for interval, v6 in v4.get("_3", {}).items():
+                    for start_interval, val in v6.get("_4", {}).items():
+                        try:
+                            rows.append({"station": str(station), "day": _numeric_or_str(day),
+                                         "interval": _numeric_or_str(interval),
+                                         "start_interval": _numeric_or_str(start_interval),
+                                         "value": float(val)})
+                        except Exception:
+                            continue
+        return (pd.DataFrame(rows).sort_values(["station","day","interval","start_interval"])
+                .reset_index(drop=True)) if rows else pd.DataFrame(columns=cols)
+
     k_dict = data.get("k", {})
     if not isinstance(k_dict, dict):
-        return pd.DataFrame(columns=["station", "day", "interval", "start_interval", "value"])
+        return pd.DataFrame(columns=cols)
 
     for station, d_block in k_dict.items():
         d_inner = d_block.get("d", {}) if isinstance(d_block, dict) else {}
@@ -893,9 +947,9 @@ class JSONPlotter:
                 )
 
                 shade_specs = [
-                    (between_shifts_intervals, stops_color, stops_alpha),
-                    (meal_intervals, 'lightgray', 0.4),
-                    (maintenance_intervals, stops_color, stops_alpha),
+                    (between_shifts_intervals, 'gray', 0.6),
+                    (meal_intervals, 'gray', 0.15),
+                    (maintenance_intervals, '#FF9999', 0.15),
                 ]
             for intervals_list, color, alpha in shade_specs:
                 for gs, ge in _group_consecutive(intervals_list):
@@ -908,10 +962,28 @@ class JSONPlotter:
             ax1.set_ylabel('Charging Power [kW]', color='black', fontsize=axis_label_fs)
             ax1.set_xlabel('Hour', fontsize=axis_label_fs)
             ax1.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
-            # Fijar límite superior consistente para comparación entre escenarios
-            ax1.set_ylim(0, 1500)
+            ax1.set_ylim(0, 2500)
             ax1.set_xlim(times_step[0], times_step[-1])
             ax1.grid(False)
+
+            ax2 = ax1.twinx()
+            ax2.grid(False)
+            price_line = None
+            if self.params.costo_marginal is not None and not self.params.costo_marginal.empty:
+                cm = self.params.costo_marginal.query("day == @d") if "day" in self.params.costo_marginal.columns else self.params.costo_marginal
+                if not cm.empty:
+                    price_by_interval = (cm.groupby("interval")["price"].mean()
+                                         .reindex(self.intervals).ffill().bfill().fillna(0.0))
+                    p_times = np.array([(t - 1) * dt + start_hour for t in self.intervals])
+                    p_times_step = np.append(p_times, p_times[-1] + dt)
+                    p_vals_step = np.append(price_by_interval.values, price_by_interval.values[-1])
+                    price_line, = ax2.plot(p_times_step, p_vals_step, color='red', linewidth=1.8,
+                                           label='Energy Price', zorder=3)
+            ax2.set_ylabel('Energy Price [USD/kWh]', color='black', fontsize=axis_label_fs)
+            ax2.tick_params(axis='y', labelcolor='black', labelsize=tick_fs)
+            ax2.set_ylim(0, 0.30)
+            ax2.yaxis.set_major_locator(MultipleLocator(0.05))
+            ax2.set_axisbelow(False)
 
             if self.mode == "DET":
                 ymin, ymax = ax1.get_ylim()
@@ -946,17 +1018,21 @@ class JSONPlotter:
             ax1.tick_params(axis='x', labelsize=tick_fs)
 
             patch_stops = mpatches.Patch(color=stops_color, alpha=stops_alpha, label='Stops')
-            patch_meal = mpatches.Patch(color='lightgray', alpha=0.4, label='Meal')
+            patch_between = mpatches.Patch(color='gray', alpha=0.6, label='Between Shifts')
+            patch_meal = mpatches.Patch(color='gray', alpha=0.15, label='Meal')
+            patch_maint = mpatches.Patch(color='#FF9999', alpha=0.15, label='Maintenance')
             patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
-            line1 = plt.Line2D([0], [0], color='blue', label='Battery Charging Power')
+            line1 = plt.Line2D([0], [0], color='blue', linewidth=1.5, label='Battery Charging Power')
 
             if self.mode == "DET":
                 handles = [line1, patch_peak_hatch, patch_stops]
             else:
-                handles = [line1, patch_stops, patch_meal]
+                handles = [line1, patch_between, patch_meal, patch_maint]
+                if price_line is not None:
+                    handles.insert(1, plt.Line2D([0], [0], color='red', linewidth=1.8, label='Energy Price'))
 
             month = self._rep_day_label(d)
-            fig.suptitle(f"{month} - Total Charge Power", fontsize=title_fs, y=1.06)
+            fig.suptitle(f"{month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
 
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
                        ncol=3, fontsize=legend_fs, frameon=True)
@@ -1023,9 +1099,9 @@ class JSONPlotter:
                 ]
             else:
                 shade_specs = [
-                    (interval_groups.get("between_shifts", []), "darkgray", 0.7, "Between Shifts"),
-                    (interval_groups.get("meal", []), "lightgray", 0.4, "Meal"),
-                    (interval_groups.get("maintenance", []), "#ffe6e6", 0.8, "Maintenance"),
+                    (interval_groups.get("between_shifts", []), "gray", 0.6, "Between Shifts"),
+                    (interval_groups.get("meal", []), "gray", 0.15, "Meal"),
+                    (interval_groups.get("maintenance", []), "#FF9999", 0.15, "Maintenance"),
                 ]
 
             for intervals_list, color, alpha, _label in shade_specs:
@@ -1185,9 +1261,7 @@ class JSONPlotter:
             legend_ax.set_xlim(0, 24)
 
             month = self._rep_day_label(d)
-            season = self._season_label(d)
-            season_txt = f" ({season})" if season else ""
-            fig.suptitle(f"Charging Batteries and Price - {month}{season_txt}", y=0.96, fontsize=18)
+            fig.suptitle(f"Charging Batteries and Price - {month}", y=0.96, fontsize=18)
 
             fig.savefig(os.path.join(self.plot_dir, f"ChargingBatteries_vs_price_{month}.png"), dpi=150, bbox_inches="tight")
             plt.close(fig)
@@ -1288,11 +1362,15 @@ class JSONPlotter:
                     continue
                 is_electric = not dfB_sel.empty
 
+                is_swap = (self.df_Z_swap is not None and not self.df_Z_swap.empty)
+                charging_label = "Battery Swapping" if is_swap else "Charging"
+
                 palette = {
                     "State-of-Charge": "#f78c11",
                     "Fuel": "#4169E1",
                     "Energy Price": "#3366CC",
                     "Charging": "#3366CC",
+                    "Battery Swapping": "#3366CC",
                     "Inactive": "#B0B0B0",
                     "In-Transit": "#F0BF57",
                 }
@@ -1354,6 +1432,8 @@ class JSONPlotter:
                               if (self.df_Y is not None and not self.df_Y.empty) else pd.DataFrame())
                 P_filtered = (self.df_P.query("lhd == @lhd and day == @day")
                               if (self.df_P is not None and not self.df_P.empty) else pd.DataFrame())
+                Z_filtered = (self.df_Z_swap.query("lhd == @lhd and day == @day and value >= 0.5")
+                              if is_swap else pd.DataFrame())
 
                 if self.mode == "DET":
                     for interval_list, color, alpha in [
@@ -1373,13 +1453,16 @@ class JSONPlotter:
                         is_traveling = not Y_filtered.query("interval == @t").empty
 
                     is_charging = False
-                    if is_electric and not P_filtered.empty and {"interval", "value"}.issubset(P_filtered.columns):
+                    if is_swap:
+                        if not Z_filtered.empty and "interval" in Z_filtered.columns:
+                            is_charging = not Z_filtered.query("interval == @t").empty
+                    elif is_electric and not P_filtered.empty and {"interval", "value"}.issubset(P_filtered.columns):
                         is_charging = not P_filtered.query("interval == @t and value > 1").empty
 
                     if is_traveling:
                         states.append("In-Transit")
                     elif is_charging:
-                        states.append("Charging")
+                        states.append(charging_label)
                     else:
                         states.append("Inactive")
 
@@ -1408,7 +1491,7 @@ class JSONPlotter:
                         )
 
                 row1_names = [soc_name, "Energy Price"]
-                row2_names = ["Inactive", "In-Transit", "Charging"]
+                row2_names = [charging_label, "Inactive", "In-Transit"]
                 row1_handles = [
                     plt.Line2D([0], [0], color=palette[name], lw=4, label=name)
                     for name in row1_names
@@ -1418,20 +1501,20 @@ class JSONPlotter:
                     for name in row2_names
                 ]
 
-                legend1 = ax_main.legend(
+                legend1 = legend_ax.legend(
                     handles=row1_handles,
-                    loc="upper left",
-                    bbox_to_anchor=(0.15, 1.27),
+                    loc="center left",
+                    bbox_to_anchor=(0.0, 0.5),
                     ncols=len(row1_handles),
                     frameon=True,
                     fontsize=16,
                     title_fontsize=17,
                     framealpha=0.6,
                 )
-                legend2 = ax_main.legend(
+                legend2 = legend_ax.legend(
                     handles=row2_handles,
-                    loc="upper right",
-                    bbox_to_anchor=(0.9, 1.35),
+                    loc="center right",
+                    bbox_to_anchor=(1.0, 0.5),
                     ncols=len(row2_handles),
                     frameon=True,
                     fontsize=16,
@@ -1439,7 +1522,7 @@ class JSONPlotter:
                     title_fontsize=17,
                     framealpha=0.6,
                 )
-                ax_main.add_artist(legend1)
+                legend_ax.add_artist(legend1)
                 legend_ax.set_xlim(0, 24)
 
                 ax_main.set_ylabel(y_label, fontsize=17, color=soc_color)
@@ -1475,9 +1558,7 @@ class JSONPlotter:
                 ax_task.grid(False)
 
                 month = self._rep_day_label(day)
-                season = self._season_label(day)
-                season_txt = f" ({season})" if season else ""
-                fig.suptitle(f"LHD {lhd} {self._mode_plot_title()} - {month}{season_txt}", y=0.96, fontsize=18)
+                fig.suptitle(f"LHD {lhd} {self._mode_plot_title()} - {month}", y=0.96, fontsize=18)
 
                 fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
