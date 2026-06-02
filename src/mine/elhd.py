@@ -410,46 +410,37 @@ class ELHD(object):
         m = float(self.get_weight(elhd_name)) * 1000.0
 
         # Segmento ida y vuelta (mismo perfil)
-        seg = self._segment_accel_then_cruise_stop(
+        seg = self._segment_accel_then_cruise_then_decel(
             distance_m=distance,
             v_max=v_max,
-            a=a,
+            a_acc=a,
+            a_dec=a,
         )
 
         # Energía en ruedas (J)
         wheel_energy_J = 0.0
 
         for _ in range(2):  # ida y vuelta
-            t_acc = seg["t_acc"]
-            t_const = seg["t_const"]
-            v_peak = seg["v_peak"]
-
             wheel_energy_J += self._gravitational_work_segment(
                 tilt_effective=tilt,
-                t_acc=t_acc,
-                t_const=t_const,
-                v_peak=v_peak,
+                seg=seg,
                 mass_kg=m,
                 elhd_name=elhd_name,
             )
 
             wheel_energy_J += self._aerodynamic_loss_segment(
                 elhd_name,
-                t_acc,
-                t_const,
-                v_peak,
+                seg,
             )
 
             wheel_energy_J += self._rolling_resistance_loss_segment(
                 elhd_name,
                 tilt,
-                t_acc,
-                t_const,
-                v_peak,
+                seg,
                 m,
             )
             # Evento cinético (sin regeneración)
-            wheel_energy_J += self._delta_kinetic_event(m, v_peak)
+            wheel_energy_J += self._delta_kinetic_event(m, seg["v_peak"])
 
         # Energía auxiliar (J): solo tiempo de viaje
         aux_power_kW = float(self.get_aux_power(elhd_name))
@@ -475,10 +466,11 @@ class ELHD(object):
 
         v_max = float(self.get_speed(elhd_name)) * (1000.0 / 3600.0)
         a = max(float(self.get_acceleration(elhd_name)), 1e-9)
-        seg = self._segment_accel_then_cruise_stop(
+        seg = self._segment_accel_then_cruise_then_decel(
             distance_m=distance,
             v_max=v_max,
-            a=a,
+            a_acc=a,
+            a_dec=a,
         )
 
         # segundos -> horas

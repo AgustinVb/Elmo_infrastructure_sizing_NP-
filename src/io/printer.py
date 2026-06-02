@@ -1,14 +1,15 @@
 # printer.py
 # -*- coding: utf-8 -*-
 """
-Printer SIN GRÁFICOS para ELMO-UG.
+Printer para ELMO-UG.
 
 Salidas:
-1) Un JSON por CADA VARIABLE del modelo, con anidación forzada por variable.
+1) Un JSON por CADA VARIABLE del modelo, con anidacion forzada por variable.
    - Binarias: se omiten entradas con 0.
-2) Un JSON con TODOS los PARÁMETROS del modelo (parameters.json).
+2) Un JSON con TODOS los PARAMETROS del modelo (parameters.json).
 3) Copia/guarda el LOG de Gurobi (gurobi.log) si existe.
-4) Un TXT (summary.txt) con: tiempo, COSTO, PRODUCCIÓN, gap, etc.
+4) Un TXT (summary.txt) con: tiempo, COSTO, PRODUCCION, gap, etc.
+5) PNG con despacho de potencia: red vs generacion renovable por intervalo.
 """
 
 import os
@@ -198,6 +199,8 @@ class Printer:
             "M":        ["i", "j", "d", "t"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "P_gen":    ["g", "d", "t"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["i", "d", "t"],
@@ -213,6 +216,8 @@ class Printer:
             "M":        ["i", "j", "d", "t"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "P_gen":    ["g", "d", "t"],
         }
 
         self.float_tol: float = 1e-9
@@ -458,7 +463,7 @@ class Printer:
         self.write_parameters_json()
         self.save_gurobi_log()
         self.write_summary_txt()
-        print(f"✔ JSONs, log y summary guardados en '{self.path}'.")
+        print(f"JSONs, log y summary guardados en '{self.path}'.")
 
     def run_all(self, write_params: bool = True, log_filename: str = "gurobi.log", summary_filename: str = "summary.txt") -> None:
         self.write_variables_jsons()

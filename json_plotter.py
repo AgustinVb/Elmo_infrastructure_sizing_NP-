@@ -436,6 +436,41 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
     return df[cols].sort_values([c for c in cols if c!="value"]).reset_index(drop=True)
 
 
+def load_p_red_df(path: str) -> Optional[pd.DataFrame]:
+    """Carga P_red.json → DataFrame con columnas [day, interval, value]."""
+    data = _load_json(path)
+    if not data:
+        return None
+    rows = []
+    for tokens, val in _collect_named_leaf_records(data):
+        axes = {n: v for n, v in tokens}
+        if {"d", "t"}.issubset(axes):
+            rows.append({
+                "day":      _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "value":    float(val),
+            })
+    return pd.DataFrame(rows).sort_values(["day", "interval"]).reset_index(drop=True) if rows else None
+
+
+def load_p_gen_df(path: str) -> Optional[pd.DataFrame]:
+    """Carga P_gen.json → DataFrame con columnas [gen, day, interval, value]."""
+    data = _load_json(path)
+    if not data:
+        return None
+    rows = []
+    for tokens, val in _collect_named_leaf_records(data):
+        axes = {n: v for n, v in tokens}
+        if {"g", "d", "t"}.issubset(axes):
+            rows.append({
+                "gen":      str(axes["g"]),
+                "day":      _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "value":    float(val),
+            })
+    return pd.DataFrame(rows).sort_values(["gen", "day", "interval"]).reset_index(drop=True) if rows else None
+
+
 # -------------------- Parámetros --------------------
 class Parameters:
     def __init__(self, params_path: str, energy_price_scale: float = 1.0):
@@ -579,12 +614,14 @@ class JSONPlotter:
         os.makedirs(self.plot_dir, exist_ok=True)
 
         # Variables
-        self.df_B = load_B_df(os.path.join(json_dir, "B.json"))
-        self.df_Y = load_binary_Y_df(os.path.join(json_dir, "Y.json"))
-        self.df_P = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
-        self.df_C = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
-        self.df_E = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
-        self.df_M = load_generic_variable_df(os.path.join(json_dir, "M.json"), "M")
+        self.df_B   = load_B_df(os.path.join(json_dir, "B.json"))
+        self.df_Y   = load_binary_Y_df(os.path.join(json_dir, "Y.json"))
+        self.df_P   = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
+        self.df_C   = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
+        self.df_E   = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
+        self.df_M   = load_generic_variable_df(os.path.join(json_dir, "M.json"), "M")
+        self.df_Pred = load_p_red_df(os.path.join(json_dir, "P_red.json"))
+        self.df_Pgen = load_p_gen_df(os.path.join(json_dir, "P_gen.json"))
 
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
@@ -1487,6 +1524,102 @@ class JSONPlotter:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             plt.close(fig)
 
+    def plot_power_dispatch(self):
+        """
+        Grafico de despacho de potencia apilado por dia.
+        Bandas (de abajo hacia arriba):
+          - Una por cada tecnologia de generacion (P_gen)
+          - Encima: potencia comprada a la red (P_red)
+        La suma de las bandas = demanda total de carga en cada intervalo.
+        Si no existen P_red.json ni P_gen.json el metodo se omite silenciosamente.
+        """
+        if self.df_Pred is None or self.df_Pred.empty:
+            print("INFO: No hay P_red.json — omitiendo grafico de despacho de potencia.")
+            return
+
+        gen_colors = {
+            "Solar_PV": "#F4A836",
+            "Wind":     "#4FC3F7",
+            "Diesel":   "#A5D6A7",
+        }
+        fallback_colors = ["#CE93D8", "#80CBC4", "#EF9A9A", "#FFF176"]
+        grid_color = "#90A4AE"
+
+        dt = float(self.delta_t)
+        start_hour = 9.0
+
+        gen_names: List[str] = []
+        if self.df_Pgen is not None and not self.df_Pgen.empty:
+            gen_names = sorted(self.df_Pgen["gen"].unique().tolist())
+
+        for color_idx, g in enumerate(gen_names):
+            if g not in gen_colors:
+                gen_colors[g] = fallback_colors[color_idx % len(fallback_colors)]
+
+        for d in self.days:
+            p_red_day = (
+                self.df_Pred.query("day == @d")[["interval", "value"]]
+                .set_index("interval")["value"]
+                .reindex(self.intervals)
+                .fillna(0.0)
+            )
+
+            # Eje X en horas absolutas (inicio del dia = 09:00)
+            x_step = np.array([(t - 1) * dt + start_hour for t in self.intervals])
+            x_step = np.append(x_step, x_step[-1] + dt)  # escalon final
+
+            def _step(series: np.ndarray) -> np.ndarray:
+                return np.append(series, series[-1])
+
+            fig, ax = plt.subplots(figsize=(14, 5))
+            bottoms = np.zeros(len(self.intervals))
+            handles = []
+
+            # --- generacion renovable (bandas inferiores) ---
+            for g in gen_names:
+                if self.df_Pgen is not None and not self.df_Pgen.empty:
+                    gen_day = (
+                        self.df_Pgen.query("day == @d and gen == @g")[["interval", "value"]]
+                        .set_index("interval")["value"]
+                        .reindex(self.intervals)
+                        .fillna(0.0)
+                        .values
+                    )
+                else:
+                    gen_day = np.zeros(len(self.intervals))
+
+                color = gen_colors.get(g, "#CE93D8")
+                ax.fill_between(x_step, _step(bottoms), _step(bottoms + gen_day),
+                                step="post", alpha=0.88, color=color, linewidth=0)
+                handles.append(mpatches.Patch(color=color, label=f"Gen. {g}"))
+                bottoms = bottoms + gen_day
+
+            # --- red electrica (banda superior) ---
+            ax.fill_between(x_step,
+                            _step(bottoms),
+                            _step(bottoms + p_red_day.values),
+                            step="post", alpha=0.88, color=grid_color, linewidth=0)
+            handles.append(mpatches.Patch(color=grid_color, label="Red electrica"))
+
+            # --- decoracion ---
+            month = self._rep_day_label(d)
+            ax.set_title(f"Despacho de potencia — {month}", fontsize=14)
+            ax.set_xlabel("Hora", fontsize=12)
+            ax.set_ylabel("Potencia [kW]", fontsize=12)
+            ax.set_xlim(x_step[0], x_step[-1])
+            ax.set_ylim(bottom=0)
+            ax.legend(handles=handles, loc="upper right", fontsize=10, framealpha=0.8)
+            ax.grid(axis="y", linestyle="--", alpha=0.4)
+
+            ticks, labels = self._get_hourly_time_ticks(start_hour=int(start_hour))
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
+
+            fig.tight_layout()
+            fname = f"PowerDispatch_{month.replace(' ', '_')}.png"
+            fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
+            plt.close(fig)
+
     def create_all_plots(self):
         self.plot_charge_power_vs_price()
         #self.plot_node_extraction_vs_demand()
@@ -1494,6 +1627,7 @@ class JSONPlotter:
         self.plot_lhd_soc_vs_price_and_states()
         self.plot_emissions_profiles_for_optimized_day()
         self.plot_material_extraction_by_point()
+        self.plot_power_dispatch()
         print(f"✔ Plots guardados en '{self.plot_dir}'.")
 
 
