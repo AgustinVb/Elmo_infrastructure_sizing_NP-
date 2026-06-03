@@ -4,6 +4,7 @@ from src.mine.layout import Layout
 from src.mine.stations import Stations
 from src.mine.chargers import Chargers
 from src.mine.generators import Generators
+from src.mine.storage import StorageSystems
 
 
 class Mine(object):
@@ -45,6 +46,12 @@ class Mine(object):
             self.generators = Generators(model['Generators'], 'name')
         else:
             self.generators = None
+
+        # 7) Storage (BESS): opcional — solo si la hoja 'Storage' existe en el Excel
+        if 'Storage' in model.container:
+            self.storage = StorageSystems(model['Storage'], 'name')
+        else:
+            self.storage = None
 
     # ------------------------------------------------------------------ #
     # Nodo / Layout
@@ -114,3 +121,12 @@ class Mine(object):
         if self.generators is None:
             return []
         return self.generators.get_names()
+
+    # ------------------------------------------------------------------ #
+    # Almacenamiento (BESS)
+    # ------------------------------------------------------------------ #
+    def get_system_storage(self) -> list:
+        """Devuelve lista de nombres de unidades de almacenamiento, o [] si no hay."""
+        if self.storage is None:
+            return []
+        return self.storage.get_names()

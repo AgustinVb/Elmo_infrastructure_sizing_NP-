@@ -471,6 +471,44 @@ def load_p_gen_df(path: str) -> Optional[pd.DataFrame]:
     return pd.DataFrame(rows).sort_values(["gen", "day", "interval"]).reset_index(drop=True) if rows else None
 
 
+def load_p_bat_df(path: str) -> Optional[pd.DataFrame]:
+    """Carga P_bat.json → DataFrame con columnas [storage, day, interval, value].
+    Valores positivos = descarga (inyecta a la red), negativos = carga (absorbe de la red).
+    """
+    data = _load_json(path)
+    if not data:
+        return None
+    rows = []
+    for tokens, val in _collect_named_leaf_records(data):
+        axes = {n: v for n, v in tokens}
+        if {"h", "d", "t"}.issubset(axes):
+            rows.append({
+                "storage":  str(axes["h"]),
+                "day":      _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "value":    float(val),
+            })
+    return pd.DataFrame(rows).sort_values(["storage", "day", "interval"]).reset_index(drop=True) if rows else None
+
+
+def load_a_h_df(path: str) -> Optional[pd.DataFrame]:
+    """Carga A_h.json → DataFrame con columnas [storage, day, interval, value] en kWh."""
+    data = _load_json(path)
+    if not data:
+        return None
+    rows = []
+    for tokens, val in _collect_named_leaf_records(data):
+        axes = {n: v for n, v in tokens}
+        if {"h", "d", "t"}.issubset(axes):
+            rows.append({
+                "storage":  str(axes["h"]),
+                "day":      _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "value":    float(val),
+            })
+    return pd.DataFrame(rows).sort_values(["storage", "day", "interval"]).reset_index(drop=True) if rows else None
+
+
 # -------------------- Parámetros --------------------
 class Parameters:
     def __init__(self, params_path: str, energy_price_scale: float = 1.0):
@@ -622,6 +660,8 @@ class JSONPlotter:
         self.df_M   = load_generic_variable_df(os.path.join(json_dir, "M.json"), "M")
         self.df_Pred = load_p_red_df(os.path.join(json_dir, "P_red.json"))
         self.df_Pgen = load_p_gen_df(os.path.join(json_dir, "P_gen.json"))
+        self.df_Pbat = load_p_bat_df(os.path.join(json_dir, "P_bat.json"))
+        self.df_Ah   = load_a_h_df(os.path.join(json_dir, "A_h.json"))
 
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
@@ -1524,6 +1564,128 @@ class JSONPlotter:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             plt.close(fig)
 
+    def plot_gen_capacity_profile(self):
+        """
+        Perfil de capacidad disponible por generador renovable:
+          P_cap[g, d, t] = G_g[g] * p_max_g[g] * alpha_g[g, d, t]
+
+        Fuente: G_g.json + parameters.json (campos g_max_g, p_max_g, alpha_g).
+        Se superpone P_gen[g, d, t] como línea discontinua para comparar
+        capacidad vs despacho real.
+        """
+        params_data = _load_json(os.path.join(self.json_dir, "parameters.json"))
+        gg_data     = _load_json(os.path.join(self.json_dir, "G_g.json"))
+
+        if not params_data or not gg_data:
+            print("INFO: Faltan G_g.json o parameters.json — omitiendo perfil de capacidad solar.")
+            return
+
+        # G_g: unidades instaladas por generador
+        gg_raw = gg_data.get("_1", gg_data)
+        gg: Dict[str, float] = {str(g): float(v) for g, v in gg_raw.items()} if isinstance(gg_raw, dict) else {}
+
+        # p_max_g: potencia nominal por unidad [kW]
+        p_max_raw = params_data.get("p_max_g", {})
+        p_max_inner = p_max_raw.get("_1", p_max_raw) if isinstance(p_max_raw, dict) else {}
+        p_max: Dict[str, float] = {str(g): float(v) for g, v in p_max_inner.items()} if isinstance(p_max_inner, dict) else {}
+
+        # alpha_g: _1 → gen → _2 → str(day) → _3 → str(float(t)) → value
+        alpha_root = params_data.get("alpha_g", {}).get("_1", {})
+
+        gen_set = [str(g) for g in params_data.get("gen_set", list(gg.keys()))]
+        active_gens = [g for g in gen_set if gg.get(g, 0.0) > 0 and p_max.get(g, 0.0) > 0]
+
+        if not active_gens:
+            print("INFO: No hay generadores instalados — omitiendo perfil de capacidad.")
+            return
+
+        gen_colors = {
+            "Solar_PV": "#F4A836",
+            "Wind":     "#4FC3F7",
+            "Diesel":   "#A5D6A7",
+        }
+        fallback_colors = ["#CE93D8", "#80CBC4", "#EF9A9A", "#FFF176"]
+        for idx, g in enumerate(active_gens):
+            if g not in gen_colors:
+                gen_colors[g] = fallback_colors[idx % len(fallback_colors)]
+
+        dt = float(self.delta_t)
+        x_rel = np.array([(t - 1) * dt for t in self.intervals])
+        x_step = np.append(x_rel, x_rel[-1] + dt)
+
+        def _step(arr: np.ndarray) -> np.ndarray:
+            return np.append(arr, arr[-1])
+
+        for d in self.days:
+            fig, ax = plt.subplots(figsize=(14, 5))
+            handles = []
+
+            for g in active_gens:
+                units = gg.get(g, 0.0)
+                pmax  = p_max.get(g, 0.0)
+                cap_total = units * pmax   # kW máximos instalados
+
+                # Obtener alpha para (g, day)
+                alpha_day_raw = (
+                    alpha_root
+                    .get(g, {})
+                    .get("_2", {})
+                    .get(str(d), {})
+                    .get("_3", {})
+                )
+                capacity = np.array([
+                    cap_total * float(alpha_day_raw.get(f"{float(t)}", alpha_day_raw.get(str(t), 0.0)))
+                    for t in self.intervals
+                ])
+
+                color = gen_colors[g]
+                # Área rellena = capacidad disponible
+                ax.fill_between(x_step, 0, _step(capacity),
+                                step="post", color=color, alpha=0.35, linewidth=0)
+                ax.step(x_step, _step(capacity), where="post",
+                        color=color, linewidth=2.0, label=f"{g} — cap. disponible")
+                handles.append(mpatches.Patch(color=color, alpha=0.5, label=f"{g} cap. (G·Pmax·α)"))
+
+                # Despacho real (P_gen) como línea discontinua
+                if self.df_Pgen is not None and not self.df_Pgen.empty:
+                    gen_day = (
+                        self.df_Pgen.query("day == @d and gen == @g")[["interval", "value"]]
+                        .set_index("interval")["value"]
+                        .reindex(self.intervals)
+                        .fillna(0.0)
+                        .values
+                    )
+                    ax.step(x_step, _step(gen_day), where="post",
+                            color=color, linewidth=1.5, linestyle="--", alpha=0.9)
+                    handles.append(
+                        plt.Line2D([0], [0], color=color, linewidth=1.5, linestyle="--",
+                                   label=f"{g} despacho real (P_gen)")
+                    )
+
+            month = self._rep_day_label(d)
+            ax.set_title(f"Perfil de capacidad solar disponible — {month}", fontsize=14)
+            ax.set_xlabel("Hora", fontsize=12)
+            ax.set_ylabel("Potencia [kW]", fontsize=12)
+            ax.set_xlim(0, 24)
+            ax.set_ylim(bottom=0)
+            ax.legend(handles=handles, loc="upper right", fontsize=10, framealpha=0.85)
+            ax.grid(axis="y", linestyle="--", alpha=0.4)
+
+            ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
+
+            # Anotación con potencia pico instalada
+            peak = max((gg.get(g, 0) * p_max.get(g, 0) for g in active_gens), default=0)
+            ax.axhline(peak, color="gray", linewidth=0.8, linestyle=":", alpha=0.6)
+            ax.text(0.5, peak, f"  Pico inst. {peak:,.0f} kW",
+                    va="bottom", ha="left", fontsize=8, color="gray", transform=ax.get_yaxis_transform())
+
+            fig.tight_layout()
+            fname = f"GenCapacityProfile_{month.replace(' ', '_')}.png"
+            fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
+            plt.close(fig)
+
     def plot_power_dispatch(self):
         """
         Grafico de despacho de potencia apilado por dia.
@@ -1543,14 +1705,19 @@ class JSONPlotter:
             "Diesel":   "#A5D6A7",
         }
         fallback_colors = ["#CE93D8", "#80CBC4", "#EF9A9A", "#FFF176"]
-        grid_color = "#90A4AE"
+        grid_color  = "#90A4AE"
+        bess_color  = "#4CAF50"   # verde — descarga BESS
+        bess_charge_color = "#C8E6C9"  # verde claro — carga BESS (demanda extra)
 
         dt = float(self.delta_t)
-        start_hour = 9.0
 
         gen_names: List[str] = []
         if self.df_Pgen is not None and not self.df_Pgen.empty:
             gen_names = sorted(self.df_Pgen["gen"].unique().tolist())
+
+        storage_names: List[str] = []
+        if self.df_Pbat is not None and not self.df_Pbat.empty:
+            storage_names = sorted(self.df_Pbat["storage"].unique().tolist())
 
         for color_idx, g in enumerate(gen_names):
             if g not in gen_colors:
@@ -1564,8 +1731,8 @@ class JSONPlotter:
                 .fillna(0.0)
             )
 
-            # Eje X en horas absolutas (inicio del dia = 09:00)
-            x_step = np.array([(t - 1) * dt + start_hour for t in self.intervals])
+            # Eje X en horas relativas (0 = 09:00), coherente con _get_hourly_time_ticks
+            x_step = np.array([(t - 1) * dt for t in self.intervals])
             x_step = np.append(x_step, x_step[-1] + dt)  # escalon final
 
             def _step(series: np.ndarray) -> np.ndarray:
@@ -1594,24 +1761,56 @@ class JSONPlotter:
                 handles.append(mpatches.Patch(color=color, label=f"Gen. {g}"))
                 bottoms = bottoms + gen_day
 
+            # --- BESS: descarga (P_bat > 0) como banda entre gen y red ---
+            bess_added = False
+            for h in storage_names:
+                p_bat_raw = (
+                    self.df_Pbat.query("day == @d and storage == @h")[["interval", "value"]]
+                    .set_index("interval")["value"]
+                    .reindex(self.intervals)
+                    .fillna(0.0)
+                    .values
+                )
+                discharge = np.clip(p_bat_raw, 0, None)   # parte positiva = descarga
+                charge    = np.clip(p_bat_raw, None, 0)   # parte negativa = carga
+
+                if discharge.any():
+                    ax.fill_between(x_step, _step(bottoms), _step(bottoms + discharge),
+                                    step="post", alpha=0.88, color=bess_color, linewidth=0)
+                    if not bess_added:
+                        handles.append(mpatches.Patch(color=bess_color, label="BESS descarga"))
+                    bottoms = bottoms + discharge
+                    bess_added = True
+
+                # Carga BESS: muestra como área rayada debajo de la demanda total
+                if charge.any():
+                    charge_abs = np.abs(charge)
+                    ax.fill_between(x_step, _step(bottoms + p_red_day.values),
+                                    _step(bottoms + p_red_day.values + charge_abs),
+                                    step="post", alpha=0.5, color=bess_charge_color,
+                                    linewidth=0, hatch="///")
+                    handles.append(mpatches.Patch(facecolor=bess_charge_color, hatch="///",
+                                                  edgecolor="gray", alpha=0.6,
+                                                  label="BESS carga"))
+
             # --- red electrica (banda superior) ---
             ax.fill_between(x_step,
                             _step(bottoms),
                             _step(bottoms + p_red_day.values),
                             step="post", alpha=0.88, color=grid_color, linewidth=0)
-            handles.append(mpatches.Patch(color=grid_color, label="Red electrica"))
+            handles.append(mpatches.Patch(color=grid_color, label="Red eléctrica"))
 
             # --- decoracion ---
             month = self._rep_day_label(d)
             ax.set_title(f"Despacho de potencia — {month}", fontsize=14)
             ax.set_xlabel("Hora", fontsize=12)
             ax.set_ylabel("Potencia [kW]", fontsize=12)
-            ax.set_xlim(x_step[0], x_step[-1])
+            ax.set_xlim(0, 24)
             ax.set_ylim(bottom=0)
             ax.legend(handles=handles, loc="upper right", fontsize=10, framealpha=0.8)
             ax.grid(axis="y", linestyle="--", alpha=0.4)
 
-            ticks, labels = self._get_hourly_time_ticks(start_hour=int(start_hour))
+            ticks, labels = self._get_hourly_time_ticks(start_hour=9)
             ax.set_xticks(ticks)
             ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
 
@@ -1619,6 +1818,84 @@ class JSONPlotter:
             fname = f"PowerDispatch_{month.replace(' ', '_')}.png"
             fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
             plt.close(fig)
+
+    def plot_bess_energy_state(self):
+        """
+        Gráfico del estado de energía (A_h) del BESS por día.
+        Eje izquierdo: A_h [kWh] — Eje derecho: P_bat [kW] (descarga +, carga -).
+        """
+        if self.df_Ah is None or self.df_Ah.empty:
+            print("INFO: No hay A_h.json — omitiendo gráfico de estado BESS.")
+            return
+
+        bess_color   = "#4CAF50"
+        charge_color = "#1565C0"
+        dt = float(self.delta_t)
+
+        storage_names = sorted(self.df_Ah["storage"].unique().tolist())
+
+        for h in storage_names:
+            for d in self.days:
+                a_day = (
+                    self.df_Ah.query("day == @d and storage == @h")[["interval", "value"]]
+                    .set_index("interval")["value"]
+                    .reindex(self.intervals)
+                    .fillna(0.0)
+                )
+
+                x_rel  = np.array([(t - 1) * dt for t in self.intervals])
+                x_step = np.append(x_rel, x_rel[-1] + dt)
+
+                fig, ax1 = plt.subplots(figsize=(14, 5))
+                ax2 = ax1.twinx()
+                ax2.grid(False)
+
+                # Estado de energía (área rellena)
+                soc_vals = np.append(a_day.values, a_day.values[-1])
+                ax1.fill_between(x_step, 0, soc_vals, step="post",
+                                 color=bess_color, alpha=0.35, linewidth=0)
+                ax1.step(x_step, soc_vals, where="post",
+                         color=bess_color, linewidth=2.0, label="Estado energía A_h")
+
+                # Potencia BESS (si existe)
+                if self.df_Pbat is not None and not self.df_Pbat.empty:
+                    p_bat = (
+                        self.df_Pbat.query("day == @d and storage == @h")[["interval", "value"]]
+                        .set_index("interval")["value"]
+                        .reindex(self.intervals)
+                        .fillna(0.0)
+                    )
+                    p_step = np.append(p_bat.values, p_bat.values[-1])
+                    ax2.step(x_step, p_step, where="post",
+                             color=charge_color, linewidth=1.8, linestyle="--",
+                             alpha=0.85, label="P_bat (+desc / -carga)")
+                    ax2.axhline(0, color="gray", linewidth=0.6, linestyle=":")
+                    ax2.set_ylabel("Potencia BESS [kW]", fontsize=11, color=charge_color)
+                    ax2.tick_params(axis="y", labelcolor=charge_color, labelsize=10)
+
+                month = self._rep_day_label(d)
+                ax1.set_title(f"Estado de energía BESS — {h} — {month}", fontsize=14)
+                ax1.set_xlabel("Hora", fontsize=12)
+                ax1.set_ylabel("Energía almacenada [kWh]", fontsize=12, color=bess_color)
+                ax1.tick_params(axis="y", labelcolor=bess_color, labelsize=10)
+                ax1.set_xlim(0, 24)
+                ax1.set_ylim(bottom=0)
+                ax1.grid(axis="y", linestyle="--", alpha=0.4)
+
+                ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+                ax1.set_xticks(ticks)
+                ax1.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
+
+                # Leyenda combinada
+                lines1, lbl1 = ax1.get_legend_handles_labels()
+                lines2, lbl2 = ax2.get_legend_handles_labels() if self.df_Pbat is not None else ([], [])
+                ax1.legend(lines1 + lines2, lbl1 + lbl2, loc="upper right",
+                           fontsize=10, framealpha=0.85)
+
+                fig.tight_layout()
+                fname = f"BESS_EnergyState_{h}_{month.replace(' ', '_')}.png"
+                fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
+                plt.close(fig)
 
     def create_all_plots(self):
         self.plot_charge_power_vs_price()
@@ -1628,6 +1905,8 @@ class JSONPlotter:
         self.plot_emissions_profiles_for_optimized_day()
         self.plot_material_extraction_by_point()
         self.plot_power_dispatch()
+        self.plot_gen_capacity_profile()
+        self.plot_bess_energy_state()
         print(f"✔ Plots guardados en '{self.plot_dir}'.")
 
 

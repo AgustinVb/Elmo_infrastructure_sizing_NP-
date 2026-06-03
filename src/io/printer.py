@@ -201,6 +201,9 @@ class Printer:
             "F_seg":    ["j", "d", "seg"],
             "P_red":    ["d", "t"],
             "P_gen":    ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["i", "d", "t"],
@@ -218,6 +221,9 @@ class Printer:
             "F_seg":    ["j", "d", "seg"],
             "P_red":    ["d", "t"],
             "P_gen":    ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
 
         self.float_tol: float = 1e-9

@@ -589,9 +589,10 @@ class Timeseries(object):
         if df is None:
             return 0.0
         key = (gen_name, int(day))
-        t = int(time_interval)
-        if key in df.index and t in df.columns:
-            return float(df.loc[key, t])
+        # Mapea intervalo sub-horario al índice horario del perfil (igual que get_marginal_cost)
+        t_hour = math.ceil(int(time_interval) * self.delta_t)
+        if key in df.index and t_hour in df.columns:
+            return float(df.loc[key, t_hour])
         return 0.0
 
 

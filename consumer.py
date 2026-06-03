@@ -683,16 +683,83 @@ def main() -> None:
         print(make_table("OPERACIÃ“N DIARIA", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
         print()
     
+    # ---- Generación renovable
+    try:
+        gen_info = calculate_gen_costs(root)
+        if gen_info and gen_info.get("generators"):
+            rows = []
+            for g, info in gen_info["generators"].items():
+                rows.append([
+                    g,
+                    f"{info['units']:.0f}",
+                    f"{info['p_max_unit']:.0f}",
+                    f"{info['power_kw']:.0f}",
+                    f"{info['inv_cost']:.2f}",
+                    f"{info['op_cost']:.2f}",
+                ])
+            rows.append([
+                "TOTAL", "", "",
+                f"{gen_info['total_power_kw']:.0f}",
+                f"{gen_info['total_inv_cost']:.2f}",
+                f"{gen_info['total_op_cost']:.2f}",
+            ])
+            print(make_table(
+                "GENERACION RENOVABLE",
+                ["Generador", "Unidades", "P_max/unidad [kW]", "Potencia inst. [kW]", "Costo inv.", "Costo op. anual"],
+                rows,
+            ))
+            print()
+    except Exception as ex:
+        print(make_table("GENERACION RENOVABLE", ["Estado", "Detalle"], [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+        print()
+
+    # ---- Almacenamiento BESS
+    try:
+        bess_info = calculate_bess_costs(root)
+        if bess_info and bess_info.get("units"):
+            rows = []
+            for h, info in bess_info["units"].items():
+                estado = "Instalado" if info["installed"] >= 0.5 else "No instalado"
+                rows.append([
+                    h,
+                    estado,
+                    f"{info['p_max_kw']:.0f}",
+                    f"{info['a_min_kwh']:.0f}",
+                    f"{info['a_max_kwh']:.0f}",
+                    f"{info['inv_cost']:.2f}",
+                    f"{info['op_cost']:.2f}",
+                ])
+            rows.append([
+                "TOTAL", "", "", "", "",
+                f"{bess_info['total_inv_cost']:.2f}",
+                f"{bess_info['total_op_cost']:.2f}",
+            ])
+            print(make_table(
+                "ALMACENAMIENTO BESS",
+                ["Unidad", "Estado", "P_max [kW]", "A_min [kWh]", "A_max [kWh]",
+                 "Costo inv.", "Costo op. anual"],
+                rows,
+            ))
+            print()
+    except Exception as ex:
+        print(make_table("ALMACENAMIENTO BESS", ["Estado", "Detalle"],
+                         [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+        print()
+
     # ---- Cost
     try:
         costs = calculate_total_costs(root)
         if costs:
             rows = [
-                ["Costo energÃ­a carga (USD)", f"{costs['energy_cost']:.2f}"],
-                ["Costo inversiÃ³n (USD)", f"{costs['investment_cost']:.2f}"],
-                ["Costo potencia punta (USD)", f"{costs['power_cost']:.2f}"],
-                ["Costo penalidad (USD)", f"{costs['penalty_cost']:.2f}"],
-                ["COSTO TOTAL (USD)", f"{costs['total_cost']:.2f}"],
+                ["Costo energía carga",         f"{costs['energy_cost']:.2f}"],
+                ["Costo inversión estaciones",   f"{costs['investment_cost']:.2f}"],
+                ["Costo inversión generación",   f"{costs['gen_inv_cost']:.2f}"],
+                ["Costo operación generación",   f"{costs['gen_op_cost']:.2f}"],
+                ["Costo inversión BESS",         f"{costs['bess_inv_cost']:.2f}"],
+                ["Costo operación BESS",         f"{costs['bess_op_cost']:.2f}"],
+                ["Costo potencia punta",         f"{costs['power_cost']:.2f}"],
+                ["Costo penalidad",              f"{costs['penalty_cost']:.2f}"],
+                ["COSTO TOTAL",                  f"{costs['total_cost']:.2f}"],
             ]
             print(make_table("COSTOS", ["Concepto", "Valor"], rows))
             print()
@@ -952,6 +1019,129 @@ def calculate_power_cost(root: Path) -> float:
     return total_p_peak * 12.0 * 10.0
 
 
+def calculate_gen_costs(root: Path) -> Dict[str, Any]:
+    """
+    Lee G_g.json y parameters.json para calcular por generador:
+    - Unidades instaladas (G_g)
+    - Potencia instalada total [kW] = G_g * p_max_g
+    - Costo de inversión = G_g * c_inv_g
+    - Costo de operación anual = G_g * c_op_g
+    """
+    gg_path = find_json_in_folder(root, "G_g.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not gg_path or not params_path:
+        return {}
+    if is_effectively_empty_json(gg_path) or is_effectively_empty_json(params_path):
+        return {}
+
+    gg_data = load_json(gg_path)
+    params_data = load_json(params_path)
+
+    def _extract_param(params: Dict, key: str) -> Dict[str, float]:
+        raw = params.get(key, {})
+        inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
+        return {str(g): _as_float(v, 0.0) for g, v in inner.items()} if isinstance(inner, dict) else {}
+
+    gg_map = _extract_param({"_1": gg_data.get("_1", gg_data)}, "_1")
+    c_inv = _extract_param(params_data, "c_inv_g")
+    c_op  = _extract_param(params_data, "c_op_g")
+    p_max = _extract_param(params_data, "p_max_g")
+
+    gen_set = [str(g) for g in params_data.get("gen_set", list(gg_map.keys()))]
+
+    gens: Dict[str, Dict[str, float]] = {}
+    total_inv = total_op = total_power = 0.0
+
+    for g in gen_set:
+        units = gg_map.get(g, 0.0)
+        inv   = units * c_inv.get(g, 0.0)
+        op    = units * c_op.get(g, 0.0)
+        power = units * p_max.get(g, 0.0)
+        gens[g] = {
+            "units":      units,
+            "p_max_unit": p_max.get(g, 0.0),
+            "power_kw":   power,
+            "inv_cost":   inv,
+            "op_cost":    op,
+        }
+        total_inv   += inv
+        total_op    += op
+        total_power += power
+
+    return {
+        "generators":      gens,
+        "total_inv_cost":  total_inv,
+        "total_op_cost":   total_op,
+        "total_power_kw":  total_power,
+    }
+
+
+def calculate_bess_costs(root: Path) -> Dict[str, Any]:
+    """
+    Lee H_h.json y parameters.json para calcular por unidad BESS:
+    - Instalada (H_h = 1) o no (H_h = 0)
+    - Potencia máxima [kW], capacidad [kWh]
+    - Costo de inversión = H_h * c_inv_h
+    - Costo de operación anual = H_h * c_op_h
+    """
+    hh_path     = find_json_in_folder(root, "H_h.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not hh_path or not params_path:
+        return {}
+    if is_effectively_empty_json(hh_path) or is_effectively_empty_json(params_path):
+        return {}
+
+    hh_data     = load_json(hh_path)
+    params_data = load_json(params_path)
+
+    def _extract_param(params: Dict, key: str) -> Dict[str, float]:
+        raw   = params.get(key, {})
+        inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
+        return {str(h): _as_float(v, 0.0) for h, v in inner.items()} if isinstance(inner, dict) else {}
+
+    # H_h puede venir como {"h": {"Bess": 1}} o {"_1": {"Bess": 1}} o {"Bess": 1}
+    raw_hh = hh_data
+    for candidate in ("h", "_1"):
+        if isinstance(raw_hh, dict) and candidate in raw_hh:
+            raw_hh = raw_hh[candidate]
+            break
+    hh_map  = {str(h): _as_float(v, 0.0) for h, v in raw_hh.items()} if isinstance(raw_hh, dict) else {}
+
+    c_inv  = _extract_param(params_data, "c_inv_h")
+    c_op   = _extract_param(params_data, "c_op_h")
+    p_max  = _extract_param(params_data, "p_max_h")
+    a_max  = _extract_param(params_data, "a_max_h")
+    a_min  = _extract_param(params_data, "a_min_h")
+
+    stor_set = [str(h) for h in params_data.get("storage_set", list(hh_map.keys()))]
+
+    units_info: Dict[str, Dict[str, float]] = {}
+    total_inv = total_op = 0.0
+
+    for h in stor_set:
+        installed = hh_map.get(h, 0.0)
+        inv = installed * c_inv.get(h, 0.0)
+        op  = installed * c_op.get(h, 0.0)
+        units_info[h] = {
+            "installed":  installed,
+            "p_max_kw":   p_max.get(h, 0.0),
+            "a_max_kwh":  a_max.get(h, 0.0),
+            "a_min_kwh":  a_min.get(h, 0.0),
+            "inv_cost":   inv,
+            "op_cost":    op,
+        }
+        total_inv += inv
+        total_op  += op
+
+    return {
+        "units":          units_info,
+        "total_inv_cost": total_inv,
+        "total_op_cost":  total_op,
+    }
+
+
 def calculate_total_costs(root: Path) -> Dict[str, float]:
     """
     Calcula todos los costos del sistema:
@@ -983,15 +1173,35 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     except Exception as ex:
         print(f"Advertencia al calcular costo por potencia: {ex}")
         power_cost = 0.0
-    
-    total_cost = investment_cost + energy_cost + power_cost + penalty_cost
-    
+
+    try:
+        gen_info = calculate_gen_costs(root)
+        gen_inv_cost = gen_info.get("total_inv_cost", 0.0)
+        gen_op_cost  = gen_info.get("total_op_cost",  0.0)
+    except Exception as ex:
+        print(f"Advertencia al calcular costos de generación: {ex}")
+        gen_inv_cost = gen_op_cost = 0.0
+
+    try:
+        bess_info    = calculate_bess_costs(root)
+        bess_inv_cost = bess_info.get("total_inv_cost", 0.0)
+        bess_op_cost  = bess_info.get("total_op_cost",  0.0)
+    except Exception as ex:
+        print(f"Advertencia al calcular costos de almacenamiento: {ex}")
+        bess_inv_cost = bess_op_cost = 0.0
+
+    total_cost = investment_cost + energy_cost + power_cost + penalty_cost + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost
+
     return {
-        "energy_cost": energy_cost,
+        "energy_cost":     energy_cost,
         "investment_cost": investment_cost,
-        "power_cost": power_cost,
-        "penalty_cost": penalty_cost,
-        "total_cost": total_cost,
+        "power_cost":      power_cost,
+        "penalty_cost":    penalty_cost,
+        "gen_inv_cost":    gen_inv_cost,
+        "gen_op_cost":     gen_op_cost,
+        "bess_inv_cost":   bess_inv_cost,
+        "bess_op_cost":    bess_op_cost,
+        "total_cost":      total_cost,
     }
 
 
