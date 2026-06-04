@@ -343,6 +343,12 @@ class OptModel(object):
             "M":        ["b", "j", "d"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "G_g":      ["g"],
+            "P_gen":    ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
         
         self._load_solution_warmstart_folder(init_solution_folder)

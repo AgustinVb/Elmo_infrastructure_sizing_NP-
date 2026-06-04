@@ -87,24 +87,20 @@ class OptSets(OptRules):
     def _get_pause_definitions(self):
         """Detenciones DCH (legacy): pauses as (start_time, end_time, pause_type) in HH:MM.
 
-        This is the original scheme (DCH) kept for backward compatibility.
+        The optimization horizon starts at 09:00.
+        Times strictly before 09:00 are interpreted as next day (e.g., 04:00).
+        If end_time is earlier than start_time, the pause crosses midnight (e.g., 22:00 -> 00:30).
         """
         pauses = [
-            # --- Shift 2 (in progress): 08:00 - 16:00 ---
-            # Shift change at 08:00 already happened before the horizon.
-            # Fuel delay + cleaning starts before horizon and overlaps from 09:00.
-            ("09:00", "10:12", "fuel_delay"),
+            # Mantenciones forzadas
+            ("10:04", "12:26", "maintenance"),
+            ("16:04", "17:34", "maintenance"),
+            ("22:04", "00:26", "maintenance"),
+            ("04:04", "05:34", "maintenance"),
 
-            # --- Shift 3: 16:00 - 00:00 ---
-            ("16:00", "17:04", "shift_change"),
-            ("17:04", "18:16", "fuel_delay"),
-
-            # --- Shift 1: 00:00 - 08:00 ---
-            ("00:00", "01:04", "shift_change"),
-            ("01:04", "02:16", "fuel_delay"),
-
-            # --- Shift 2 (next day): 08:00 - 16:00 ---
-            ("08:00", "09:04", "shift_change"),
+            # Colación común para todas las tecnologías: ~60 min (delta_t = 8 min)
+            ("14:04", "15:04", "meal"),
+            ("02:04", "03:04", "meal"),
         ]
 
         return pauses
@@ -118,15 +114,15 @@ class OptSets(OptRules):
             # --- Shift 2 (in progress): 08:00 - 16:00 ---
             # Shift change already started at 08:00, horizon captures from 09:00
             ("09:00", "09:40", "shift_change"),
-            ("10:28", "12:58", "stops"),
+            ("10:28", "12:58", "maintenance"),
 
             # --- Shift 3: 16:00 - 00:00 ---
             ("16:30", "17:40", "shift_change"),
-            ("19:28", "21:58", "stops"),
+            ("19:28", "21:58", "maintenance"),
 
             # --- Shift 1: 00:00 - 08:00 ---
             ("00:30", "01:40", "shift_change"),
-            ("03:28", "05:58", "stops"),
+            ("03:28", "05:58", "maintenance"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
             # Interpreted as next day since 08:30 < 09:00
@@ -387,6 +383,10 @@ class OptSets(OptRules):
 
         # Tramos de penalizaci�n para d�ficit F (piecewise lineal)
         model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
+        # Generadores renovables (vacío si no hay datos de generación)
+        model.gen_set = pyo.Set(initialize=self.mine_system.get_system_generators())
+        # Almacenamiento estacionario BESS (vacío si no hay hoja Storage)
+        model.storage_set = pyo.Set(initialize=self.mine_system.get_system_storage())
 
 
 class OptParameters(OptRules):
@@ -455,6 +455,62 @@ class OptParameters(OptRules):
         # Capacidad (longitud) de cada tramo
         model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 50, 2: 100, 3: 200, 4: 1000, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=4*500, mutable=True)
+
+        # Parámetros de generación renovable (solo si existen generadores)
+        if len(list(model.gen_set)) > 0:
+            gen = self.mine_system.generators
+            model.c_inv_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_c_inv(g) for g in model.gen_set},
+                mutable=False)
+            model.c_op_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_c_op(g) for g in model.gen_set},
+                mutable=False)
+            model.p_max_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_p_max(g) for g in model.gen_set},
+                mutable=False)
+            model.g_max_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_g_max(g) for g in model.gen_set},
+                mutable=False)
+            model.alpha_g = pyo.Param(
+                model.gen_set, model.days, model.time_intervals_set,
+                initialize={(g, d, t): self.time_series.get_alpha_g(g, d, t)
+                            for g in model.gen_set
+                            for d in model.days
+                            for t in model.time_intervals_set},
+                mutable=False)
+
+        # Parámetros de almacenamiento BESS (solo si existen unidades)
+        if len(list(model.storage_set)) > 0:
+            stor = self.mine_system.storage
+            model.c_inv_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_c_inv(h) for h in model.storage_set},
+                mutable=False)
+            model.c_op_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_c_op(h) for h in model.storage_set},
+                mutable=False)
+            model.p_max_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_p_max(h) for h in model.storage_set},
+                mutable=False)
+            model.eta_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_eta(h) for h in model.storage_set},
+                mutable=False)
+            model.a_min_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_a_min(h) for h in model.storage_set},
+                mutable=False)
+            model.a_max_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_a_max(h) for h in model.storage_set},
+                mutable=False)
+
 class BoundRules(OptRules):
 
     def Z(self, model, i, d, t):
@@ -547,10 +603,25 @@ class BoundRules(OptRules):
         model.P_pot = pyo.Var(domain=pyo.NonNegativeReals)
         #extracci�n total del equipo i en el d�a d.
         model.M = pyo.Var(model.slhd_set, model.nodes_set, model.days, domain=pyo.NonNegativeReals)
-        # Holgura producci�n 
+        # Holgura producci�n
         model.F = pyo.Var(model.nodes_set, model.days,domain=pyo.NonNegativeReals)
         # Descomposici�n de F en tramos para costo piecewise lineal
         model.F_seg = pyo.Var(model.nodes_set, model.days, model.F_SEG,domain=pyo.NonNegativeReals)
+        # Potencia comprada a la red en (d,t) [kW] — siempre presente
+        model.P_red = pyo.Var(model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
+        # Variables de generación renovable (solo si existen generadores)
+        if len(list(model.gen_set)) > 0:
+            model.G_g = pyo.Var(model.gen_set, domain=pyo.NonNegativeIntegers)
+            model.P_gen = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
+                                  domain=pyo.NonNegativeReals)
+        # Variables de almacenamiento BESS (solo si existen unidades)
+        if len(list(model.storage_set)) > 0:
+            model.H_h = pyo.Var(model.storage_set, domain=pyo.Binary)
+            model.P_bat = pyo.Var(model.storage_set, model.days, model.time_intervals_set,
+                                  domain=pyo.Reals)
+            model.A_h = pyo.Var(model.storage_set, model.days, model.time_intervals_set_zero,
+                                domain=pyo.NonNegativeReals)
+
 from src.optimization.functions import OptRules
 import pyomo.environ as pyo
 
@@ -993,6 +1064,61 @@ class ConstraintRules(OptRules):
     def n_swaps_limit_2(self, model, i, d):
         return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 3
 
+    # ==========================================================
+    # 7) Balance de potencia y generación renovable / BESS
+    # ==========================================================
+
+    def power_balance(self, model, d, t):
+        """Demanda de carga (estaciones) = red + generación local + BESS."""
+        demand = sum(
+            model.Sv[k, d, t, a] * model.p_charger
+            for k in model.stations_set
+            for a in model.time_intervals_set
+        )
+        gen = (sum(model.P_gen[g, d, t] for g in model.gen_set)
+               if len(list(model.gen_set)) > 0 else 0)
+        bess = (sum(model.P_bat[h, d, t] for h in model.storage_set)
+                if len(list(model.storage_set)) > 0 else 0)
+        return model.P_red[d, t] + gen + bess == demand
+
+    def grid_limit(self, model, d, t):
+        """Potencia de red acotada por capacidad de la subestación."""
+        return model.P_red[d, t] <= model.p_peak
+
+    def gen_limit(self, model, g, d, t):
+        """Potencia generada acotada por unidades instaladas y disponibilidad."""
+        return model.P_gen[g, d, t] <= model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t]
+
+    def gen_max_units(self, model, g):
+        """Cantidad máxima de unidades instalables por tecnología."""
+        return model.G_g[g] <= model.g_max_g[g]
+
+    def bess_power_upper(self, model, h, d, t):
+        """P_bat <= p_max_h * H_h (descarga máxima)."""
+        return model.P_bat[h, d, t] <= model.p_max_h[h] * model.H_h[h]
+
+    def bess_power_lower(self, model, h, d, t):
+        """P_bat >= -p_max_h * H_h (carga máxima)."""
+        return model.P_bat[h, d, t] >= -model.p_max_h[h] * model.H_h[h]
+
+    def bess_soc_balance(self, model, h, d, t):
+        """A_h,d,t = A_h,d,t-1 - (P_bat_h,d,t / eta_h) * delta_t."""
+        t0 = self.time_series.get_time_intervals()[0]
+        prev = model.A_h[h, d, 0] if t == t0 else model.A_h[h, d, t - 1]
+        return model.A_h[h, d, t] == prev - (model.P_bat[h, d, t] / model.eta_h[h]) * model.delta_t
+
+    def bess_soc_init(self, model, h, d):
+        """Estado de energía inicial = 0 al comienzo de cada día."""
+        return model.A_h[h, d, 0] == 0
+
+    def bess_soc_upper(self, model, h, d, t):
+        """A_h <= a_max_h * H_h."""
+        return model.A_h[h, d, t] <= model.a_max_h[h] * model.H_h[h]
+
+    def bess_soc_lower(self, model, h, d, t):
+        """A_h >= a_min_h * H_h."""
+        return model.A_h[h, d, t] >= model.a_min_h[h] * model.H_h[h]
+
 
     def build_all_constraints(self, model):
         # 1) Energ�a / SOC de bater�as del LHD (swap)
@@ -1185,34 +1311,47 @@ class ConstraintRules(OptRules):
         )
         #model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
-        # 7) Rotura simetr�a
-        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    rule=self.battery_boundary_break_simmetry_lhds_start,
-        #)
+        # 7) Balance de potencia y generación / BESS
+        model.power_balance = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_balance)
+        model.grid_limit    = pyo.Constraint(model.days, model.time_intervals_set, rule=self.grid_limit)
 
-        #model.swap_precedence_by_index = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.swap_precedence_by_index,
-        #)
+        if len(list(model.gen_set)) > 0:
+            model.gen_limit     = pyo.Constraint(model.gen_set, model.days, model.time_intervals_set, rule=self.gen_limit)
+            model.gen_max_units = pyo.Constraint(model.gen_set, rule=self.gen_max_units)
+
+        if len(list(model.storage_set)) > 0:
+            model.bess_power_upper = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_power_upper)
+            model.bess_power_lower = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_power_lower)
+            model.bess_soc_balance = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_balance)
+            model.bess_soc_init    = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_init)
+            model.bess_soc_upper   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_upper)
+            model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
+
+        # 8) Rotura simetr�a
+        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            rule=self.battery_boundary_break_simmetry_lhds_start,
+        )
+
+        model.swap_precedence_by_index = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            model.time_intervals_set,
+            rule=self.swap_precedence_by_index,
+        )
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
-        # Coste de cargar bater�as (electricidad) con tecnonolog�a BS
+        """Costo de electricidad comprada a la red (P_red * costo_electricidad)."""
         cost_el = sum(
-            model.costo_electricidad[d, t] * model.Sv[k, d, t, a] * model.p_charger * model.delta_t
-            for k in model.stations_set
+            model.P_red[d, t] * model.costo_electricidad[d, t] * model.delta_t
             for d in model.days
             for t in model.time_intervals_set
-            for a in model.time_intervals_set 
-        ) 
-        return cost_el  * model.scaling_factor_op_cost
+        )
+        return cost_el * model.scaling_factor_op_cost
 
     def penalization(self, model):
-        # Penalizaci�n por swap de bater�as
         F_penalty = sum(
             model.F_seg[j, d, s] * (model.Voll / model.F_penalty_div[s])
             for j in model.nodes_set
@@ -1220,48 +1359,50 @@ class ObjectiveRules(OptRules):
             for s in model.F_SEG
         )
         return F_penalty * model.scaling_factor_op_cost
-    
+
     def inversion_cost(self, model):
         cost_inv = sum(
-            model.station_cost_k[k] * model.X[k] + model.charger_cost * model.N_chargers[k] 
-            + model.battery_cost * model.N_batteries[k]  for k in model.stations_set 
-        ) 
-        return cost_inv
-    
-    def production_total(self, model, j):
-        def ntr(node,i):
-            return self.time_series.get_n_trips(node,i)
-        term_de = sum(model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-        for i in model.dlhd_set|model.slhd_set for t in model.time_intervals_set for d in model.days)
-        pen = sum(model.Z_pen[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
-        for i in model.slhd_set|model.slhd_set for t in model.time_intervals_set for d in model.days)
-        return (term_de - pen)*model.scaling_factor_op_cost
-    
-    def op_cost_total(self, model):
-        cost_el = sum(
-            model.costo_electricidad[d, t] * model.Sv[k, d, t, a] * model.p_charger * model.delta_t
-            for k in model.stations_set
-            for d in model.days
-            for t in model.time_intervals_set
-            for a in model.time_intervals_set 
-        ) 
-        F_penalty = sum(
-            model.F_seg[j, d, s] * (model.Voll / model.F_penalty_div[s])
-            for j in model.nodes_set
-            for d in model.days
-            for s in model.F_SEG
+            model.station_cost_k[k] * model.X[k] + model.charger_cost * model.N_chargers[k]
+            + model.battery_cost * model.N_batteries[k] for k in model.stations_set
         )
-        return cost_el + F_penalty
-    
+        return cost_inv
+
+    def gen_investment_cost(self, model):
+        if len(list(model.gen_set)) == 0:
+            return 0
+        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
+
+    def gen_op_cost(self, model):
+        if len(list(model.gen_set)) == 0:
+            return 0
+        return sum(model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
+
+    def bess_investment_cost(self, model):
+        if len(list(model.storage_set)) == 0:
+            return 0
+        return sum(model.H_h[h] * model.c_inv_h[h] for h in model.storage_set)
+
+    def bess_op_cost(self, model):
+        if len(list(model.storage_set)) == 0:
+            return 0
+        return sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
+
+    def peak_power_cost(self, model):
+        return model.P_pot * 12 * 10
+
     def total_cost(self, model):
-        return self.lhd_charge_cost_bs(model) + self.inversion_cost(model) + self.penalization(model) + self.peak_power_cost(model)
+        return (self.lhd_charge_cost_bs(model)
+                + self.inversion_cost(model)
+                + self.gen_investment_cost(model)
+                + self.gen_op_cost(model)
+                + self.bess_investment_cost(model)
+                + self.bess_op_cost(model)
+                + self.penalization(model)
+                + self.peak_power_cost(model))
 
     def max_min_extraction(self, model):
         """Maximiza la cota inferior L de la extracci�n en todos los puntos."""
         return model.L
-
-    def peak_power_cost(self, model):
-        return model.P_pot * 12 * 10
 
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)

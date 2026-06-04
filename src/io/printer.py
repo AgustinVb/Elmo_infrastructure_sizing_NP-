@@ -237,6 +237,12 @@ class Printer:
             "M":        ["b", "j", "d"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "G_g":      ["g"],
+            "P_gen":    ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["i", "d", "t"],
@@ -255,6 +261,12 @@ class Printer:
             "M":        ["b", "j", "d"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "G_g":      ["g"],
+            "P_gen":    ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
 
         # tolerancia para considerar "casi cero" como cero

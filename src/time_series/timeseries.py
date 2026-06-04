@@ -27,6 +27,8 @@ class Timeseries(object):
         self.mapper['Time_Intervals']  = self.get_time_intervals()
         self.mapper['NodeAssignment']  = self.sample_node_assignment(self.series['NodeAssignment'])
         self.mapper['StationAssignment']  = self.sample_station_assignment(self.series['StationAssignment'])
+        if 'GenProfiles' in self.series.container:
+            self.mapper['GenProfiles'] = self.sample_gen_profiles(self.series['GenProfiles'])
         #self.mapper['BatteryAssignment'] = self.sample_battery_assignment(self.series['BatteryAssignment'])
         #self.mapper['Misc'] = self.sample_misc(self.series['Misc'])
         return self.mapper['Time_Intervals']
@@ -496,4 +498,32 @@ class Timeseries(object):
     #def get_grid_power(self) -> float:
     #    """Devuelve el parámetro Pmine según Misc → 'Pmine'."""
     #    return self.mapper['Misc']['Pmine']
+
+    # ------------------------------------------------------------------ #
+    # Generación renovable
+    # ------------------------------------------------------------------ #
+
+    def sample_gen_profiles(self, gen_profiles: pd.DataFrame) -> pd.DataFrame:
+        """
+        Hoja GenProfiles: columnas ['name', 'day', 1, 2, ..., T]
+        Retorna DataFrame indexado por (name, day), columnas int = intervalos.
+        """
+        meta_cols = {'id', 'name', 'day'}
+        interval_cols = [c for c in gen_profiles.columns if str(c) not in meta_cols]
+        gp = gen_profiles[['name', 'day'] + interval_cols].copy()
+        gp['day'] = gp['day'].astype(int)
+        gp = gp.set_index(['name', 'day'])
+        gp.columns = [int(c) for c in gp.columns]
+        return gp
+
+    def get_alpha_g(self, gen_name: str, day: int, time_interval: int) -> float:
+        """Perfil de disponibilidad alpha[g, d, t] en [0, 1]. Retorna 0 si no existe."""
+        df = self.mapper.get('GenProfiles')
+        if df is None:
+            return 0.0
+        key = (gen_name, int(day))
+        t_hour = math.ceil(int(time_interval) * self.delta_t)
+        if key in df.index and t_hour in df.columns:
+            return float(df.loc[key, t_hour])
+        return 0.0
 
