@@ -41,24 +41,20 @@ class OptSets(OptRules):
     def _get_pause_definitions(self):
         """Detenciones DCH (legacy): pauses as (start_time, end_time, pause_type) in HH:MM.
 
-        This is the original scheme (DCH) kept for backward compatibility.
+        The optimization horizon starts at 09:00.
+        Times strictly before 09:00 are interpreted as next day (e.g., 04:00).
+        If end_time is earlier than start_time, the pause crosses midnight (e.g., 22:00 -> 00:30).
         """
         pauses = [
-            # --- Shift 2 (in progress): 08:00 - 16:00 ---
-            # Shift change at 08:00 already happened before the horizon.
-            # Fuel delay + cleaning starts before horizon and overlaps from 09:00.
-            ("09:00", "10:12", "maintenance"),
+            # Mantenciones forzadas
+            ("10:04", "12:26", "maintenance"),
+            ("16:04", "17:34", "maintenance"),
+            ("22:04", "00:26", "maintenance"),
+            ("04:04", "05:34", "maintenance"),
 
-            # --- Shift 3: 16:00 - 00:00 ---
-            ("16:00", "17:04", "shift_change"),
-            ("17:04", "18:16", "maintenance"),
-
-            # --- Shift 1: 00:00 - 08:00 ---
-            ("00:00", "01:04", "shift_change"),
-            ("01:04", "02:16", "maintenance"),
-
-            # --- Shift 2 (next day): 08:00 - 16:00 ---
-            ("08:00", "09:04", "shift_change"),
+            # Colación común para todas las tecnologías: ~60 min (delta_t = 8 min)
+            ("14:04", "15:04", "meal"),
+            ("02:04", "03:04", "meal"),
         ]
 
         return pauses
