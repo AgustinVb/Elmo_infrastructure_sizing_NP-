@@ -1335,7 +1335,9 @@ def calculate_grid_energy_cost(root: Path) -> float:
 
     delta_t        = float(params_data.get("delta_t", 0.0))
     scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
-    costo_electricidad = _unwrap_named_tree(params_data.get("costo_electricidad", {}))
+    costo_electricidad = _unwrap_named_tree(
+        params_data.get("costo_red", params_data.get("costo_electricidad", {}))
+    )
 
     cost_lookup: Dict[Tuple[str, str], float] = {}
     for path, cost_val in _iter_leaf_records(costo_electricidad):
