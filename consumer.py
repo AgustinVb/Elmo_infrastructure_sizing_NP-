@@ -752,6 +752,7 @@ def main() -> None:
         if costs:
             rows = [
                 ["Costo energía carga",         f"{costs['energy_cost']:.2f}"],
+                ["Costo energía red P_red",      f"{costs.get('grid_energy_cost', 0.0):.2f}"],
                 ["Costo inversión estaciones",   f"{costs['investment_cost']:.2f}"],
                 ["Costo inversión generación",   f"{costs['gen_inv_cost']:.2f}"],
                 ["Costo operación generación",   f"{costs['gen_op_cost']:.2f}"],
@@ -1019,6 +1020,61 @@ def calculate_power_cost(root: Path) -> float:
     return total_p_peak * 12.0 * 10.0
 
 
+def calculate_grid_energy_cost(root: Path) -> float:
+    """Costo de energía comprada a la red: sum(P_red[d,t] * costo_red[d,t] * delta_t).
+
+    Usa P_red.json y parameters.json.
+    Estructura P_red.json: {"d": {"1": {"t": {"1.0": val, ...}}}}
+    """
+    pred_path   = find_json_in_folder(root, "P_red.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not pred_path or not params_path:
+        raise ValueError("No se encontraron P_red.json o parameters.json")
+    if is_effectively_empty_json(pred_path) or is_effectively_empty_json(params_path):
+        raise ValueError("P_red.json o parameters.json están vacíos")
+
+    pred_data   = load_json(pred_path)
+    params_data = load_json(params_path)
+
+    delta_t        = float(params_data.get("delta_t", 0.0))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+
+    # Lookup costo_red[(d,t)]: estructura {"_1": {"d": {"_2": {"t": val}}}}
+    cost_lookup: Dict[Tuple[str, str], float] = {}
+    raw_ce = params_data.get("costo_red", params_data.get("costo_electricidad", {}))
+    inner_ce = raw_ce.get("_1", raw_ce) if isinstance(raw_ce, dict) else {}
+    if isinstance(inner_ce, dict):
+        for d_key, d_val in inner_ce.items():
+            if isinstance(d_val, dict):
+                t_block = d_val.get("_2", d_val)
+                if isinstance(t_block, dict):
+                    for t_key, cost_val in t_block.items():
+                        try:
+                            cost_lookup[(str(d_key), str(t_key))] = float(cost_val)
+                        except Exception:
+                            pass
+
+    # Iterar P_red: {"d": {"1": {"t": {"1.0": val}}}}
+    total_cost = 0.0
+    d_block = pred_data.get("d", pred_data)
+    if isinstance(d_block, dict):
+        for d_key, d_val in d_block.items():
+            if not isinstance(d_val, dict):
+                continue
+            t_block = d_val.get("t", d_val)
+            if not isinstance(t_block, dict):
+                continue
+            for t_key, pred_val in t_block.items():
+                cost_elec = cost_lookup.get((str(d_key), str(t_key)), 0.0)
+                try:
+                    total_cost += cost_elec * float(pred_val) * delta_t
+                except Exception:
+                    pass
+
+    return total_cost * scaling_factor
+
+
 def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     """
     Lee G_g.json y parameters.json para calcular por generador:
@@ -1043,7 +1099,12 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
         inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
         return {str(g): _as_float(v, 0.0) for g, v in inner.items()} if isinstance(inner, dict) else {}
 
-    gg_map = _extract_param({"_1": gg_data.get("_1", gg_data)}, "_1")
+    gg_raw = gg_data
+    for candidate in ("g", "_1"):
+        if isinstance(gg_raw, dict) and candidate in gg_raw:
+            gg_raw = gg_raw[candidate]
+            break
+    gg_map = {str(g): _as_float(v, 0.0) for g, v in gg_raw.items()} if isinstance(gg_raw, dict) else {}
     c_inv = _extract_param(params_data, "c_inv_g")
     c_op  = _extract_param(params_data, "c_op_g")
     p_max = _extract_param(params_data, "p_max_g")
@@ -1055,8 +1116,8 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
 
     for g in gen_set:
         units = gg_map.get(g, 0.0)
-        inv   = units * c_inv.get(g, 0.0)
-        op    = units * c_op.get(g, 0.0)
+        inv   = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0)
+        op    = units * c_op.get(g, 0.0)  * p_max.get(g, 0.0)
         power = units * p_max.get(g, 0.0)
         gens[g] = {
             "units":      units,
@@ -1175,6 +1236,12 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         power_cost = 0.0
 
     try:
+        grid_energy_cost = calculate_grid_energy_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de energía de red: {ex}")
+        grid_energy_cost = 0.0
+
+    try:
         gen_info = calculate_gen_costs(root)
         gen_inv_cost = gen_info.get("total_inv_cost", 0.0)
         gen_op_cost  = gen_info.get("total_op_cost",  0.0)
@@ -1190,18 +1257,19 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         print(f"Advertencia al calcular costos de almacenamiento: {ex}")
         bess_inv_cost = bess_op_cost = 0.0
 
-    total_cost = investment_cost + energy_cost + power_cost + penalty_cost + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost
+    total_cost = investment_cost + grid_energy_cost + power_cost + penalty_cost + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost
 
     return {
-        "energy_cost":     energy_cost,
-        "investment_cost": investment_cost,
-        "power_cost":      power_cost,
-        "penalty_cost":    penalty_cost,
-        "gen_inv_cost":    gen_inv_cost,
-        "gen_op_cost":     gen_op_cost,
-        "bess_inv_cost":   bess_inv_cost,
-        "bess_op_cost":    bess_op_cost,
-        "total_cost":      total_cost,
+        "energy_cost":      energy_cost,
+        "grid_energy_cost": grid_energy_cost,
+        "investment_cost":  investment_cost,
+        "power_cost":       power_cost,
+        "penalty_cost":     penalty_cost,
+        "gen_inv_cost":     gen_inv_cost,
+        "gen_op_cost":      gen_op_cost,
+        "bess_inv_cost":    bess_inv_cost,
+        "bess_op_cost":     bess_op_cost,
+        "total_cost":       total_cost,
     }
 
 
