@@ -1245,6 +1245,7 @@ def main() -> None:
         if costs:
             rows = [
                 ["Costo energía carga (USD)",       f"{costs['energy_cost']:.2f}"],
+                ["Costo energía red P_red (USD)",    f"{costs.get('grid_energy_cost', 0.0):.2f}"],
                 ["Costo energía carga real (USD)",   f"{costs.get('real_energy_cost', 0.0):.2f}"],
                 ["Costo potencia pico (USD)",        f"{costs.get('peak_power_cost', 0.0):.2f}"],
                 ["Costo inversión estaciones (USD)", f"{costs['investment_cost']:.2f}"],
@@ -1310,6 +1311,54 @@ def calculate_lhd_charge_cost(root: Path) -> float:
         cost_elec = cost_lookup.get((str(day_key), str(time_key)), 0.0)
         try:
             total_cost += cost_elec * float(sv_val) * p_charger * delta_t
+        except Exception:
+            continue
+
+    return total_cost * scaling_factor
+
+
+def calculate_grid_energy_cost(root: Path) -> float:
+    """Costo de energía comprada a la red: sum(P_red[d,t] * costo_electricidad[d,t] * delta_t).
+
+    Usa P_red.json y parameters.json.
+    """
+    pred_path   = find_json_in_folder(root, "P_red.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not pred_path or not params_path:
+        raise ValueError("No se encontraron P_red.json o parameters.json")
+    if is_effectively_empty_json(pred_path) or is_effectively_empty_json(params_path):
+        raise ValueError("P_red.json o parameters.json están vacíos")
+
+    pred_data   = load_json(pred_path)
+    params_data = load_json(params_path)
+
+    delta_t        = float(params_data.get("delta_t", 0.0))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+    costo_electricidad = _unwrap_named_tree(params_data.get("costo_electricidad", {}))
+
+    cost_lookup: Dict[Tuple[str, str], float] = {}
+    for path, cost_val in _iter_leaf_records(costo_electricidad):
+        axis_map = _axis_map_from_path(path)
+        day_key  = axis_map.get("d") or axis_map.get("day") or (path[0] if path else None)
+        time_key = axis_map.get("t") or axis_map.get("time") or (path[-1] if path else None)
+        if day_key is None or time_key is None:
+            continue
+        try:
+            cost_lookup[(str(day_key), str(time_key))] = float(cost_val)
+        except Exception:
+            continue
+
+    total_cost = 0.0
+    for path, pred_val in _iter_leaf_records(pred_data):
+        axis_map = _axis_map_from_path(path)
+        day_key  = axis_map.get("d") or axis_map.get("day")
+        time_key = axis_map.get("t") or axis_map.get("time")
+        if day_key is None or time_key is None:
+            continue
+        cost_elec = cost_lookup.get((str(day_key), str(time_key)), 0.0)
+        try:
+            total_cost += cost_elec * float(pred_val) * delta_t
         except Exception:
             continue
 
@@ -1474,7 +1523,11 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
         inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
         return {str(g): _as_float(v, 0.0) for g, v in inner.items()} if isinstance(inner, dict) else {}
 
-    gg_raw  = gg_data.get("_1", gg_data)
+    gg_raw = gg_data
+    for candidate in ("g", "_1"):
+        if isinstance(gg_raw, dict) and candidate in gg_raw:
+            gg_raw = gg_raw[candidate]
+            break
     gg_map  = {str(g): _as_float(v, 0.0) for g, v in gg_raw.items()} if isinstance(gg_raw, dict) else {}
     c_inv   = _extract_param(params_data, "c_inv_g")
     c_op    = _extract_param(params_data, "c_op_g")
@@ -1623,6 +1676,12 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         peak_power_cost = 0.0
 
     try:
+        grid_energy_cost = calculate_grid_energy_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de energía de red: {ex}")
+        grid_energy_cost = 0.0
+
+    try:
         gen_info     = calculate_gen_costs(root)
         gen_inv_cost = gen_info.get("total_inv_cost", 0.0)
         gen_op_cost  = gen_info.get("total_op_cost",  0.0)
@@ -1638,17 +1697,18 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         print(f"Advertencia al calcular costos de almacenamiento: {ex}")
         bess_inv_cost = bess_op_cost = 0.0
 
-    total_cost = (investment_cost + energy_cost + penalty_cost + peak_power_cost
+    total_cost = (investment_cost + grid_energy_cost + penalty_cost + peak_power_cost
                   + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost)
 
     return {
-        "energy_cost":     energy_cost,
+        "energy_cost":      energy_cost,
+        "grid_energy_cost": grid_energy_cost,
         "real_energy_cost": real_energy_cost,
-        "investment_cost": investment_cost,
-        "penalty_cost":    penalty_cost,
-        "peak_power_cost": peak_power_cost,
-        "gen_inv_cost":    gen_inv_cost,
-        "gen_op_cost":     gen_op_cost,
+        "investment_cost":  investment_cost,
+        "penalty_cost":     penalty_cost,
+        "peak_power_cost":  peak_power_cost,
+        "gen_inv_cost":     gen_inv_cost,
+        "gen_op_cost":      gen_op_cost,
         "bess_inv_cost":   bess_inv_cost,
         "bess_op_cost":    bess_op_cost,
         "total_cost":      total_cost,

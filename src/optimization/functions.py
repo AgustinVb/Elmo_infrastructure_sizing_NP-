@@ -894,11 +894,8 @@ class ConstraintRules(OptRules):
         return sum(model.Sv[k, d, t, a]*model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.p_peak
 
     def power_peak_limit(self, model, d, t):
-        """Demand-charge constraint: total instantaneous power at peak t
-        (sum over stations k and starts a of p_charger * Sv[k,d,t,a]) <= P_pot
-        Indexed over days and peak time intervals only (model.time_intervals_peak_set).
-        """
-        return sum(model.Sv[k, d, t, a] * model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.P_pot
+        """Demand-charge constraint: grid power during peak hours <= P_pot."""
+        return model.P_red[d, t] <= model.P_pot
 
     # ==========================================================
     # 5) Inventario de bater�as en estaciones
@@ -1328,18 +1325,18 @@ class ConstraintRules(OptRules):
             model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
 
         # 8) Rotura simetr�a
-        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            rule=self.battery_boundary_break_simmetry_lhds_start,
-        )
+        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    rule=self.battery_boundary_break_simmetry_lhds_start,
+        #)
 
-        model.swap_precedence_by_index = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_precedence_by_index,
-        )
+        #model.swap_precedence_by_index = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.swap_precedence_by_index,
+        #)
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
