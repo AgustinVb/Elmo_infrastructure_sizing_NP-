@@ -453,7 +453,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 50, 2: 100, 3: 200, 4: 1000, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=4*500, mutable=True)
 
         # Parámetros de generación renovable (solo si existen generadores)
@@ -1325,18 +1325,18 @@ class ConstraintRules(OptRules):
             model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
 
         # 8) Rotura simetr�a
-        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    rule=self.battery_boundary_break_simmetry_lhds_start,
-        #)
+        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            rule=self.battery_boundary_break_simmetry_lhds_start,
+        )
 
-        #model.swap_precedence_by_index = pyo.Constraint(
-        #    model.swap_precedence_pairs,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.swap_precedence_by_index,
-        #)
+        model.swap_precedence_by_index = pyo.Constraint(
+            model.swap_precedence_pairs,
+            model.days,
+            model.time_intervals_set,
+            rule=self.swap_precedence_by_index,
+        )
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
