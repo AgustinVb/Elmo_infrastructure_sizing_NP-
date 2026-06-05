@@ -1541,8 +1541,8 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
 
     for g in gen_set:
         units = gg_map.get(g, 0.0)
-        inv   = units * c_inv.get(g, 0.0)
-        op    = units * c_op.get(g, 0.0)
+        inv   = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0)
+        op    = units * c_op.get(g, 0.0)  * p_max.get(g, 0.0)
         power = units * p_max.get(g, 0.0)
         gens[g] = {"units": units, "p_max_unit": p_max.get(g, 0.0), "power_kw": power,
                    "inv_cost": inv, "op_cost": op}
