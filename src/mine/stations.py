@@ -19,17 +19,34 @@ class Stations(object):
             return self.data.loc[keys][col]
         return self.data[col]
 
+    def _get_optional(self, col, keys=None, default=0):
+        if col in self.data.columns:
+            return self.get(col, keys)
+        return default
+
     def get_station_name(self, keys=None):
         return self.get('station_name', keys)
 
     def get_station_cost(self, keys=None):
-        return self.get('station_cost', keys)
+        return self._get_optional('c_fixed', keys, default=self._get_optional('station_cost', keys, default=0))
+
+    def get_c_bays(self, keys=None):
+        return self._get_optional('c_bays', keys, default=0)
+
+    def get_c_charger_space(self, keys=None):
+        return self._get_optional('c_charger_space', keys, default=0)
     
     def get_distance_to_discharge_node(self, keys=None):
         return self.get('distance_to_dn', keys)
     
     def get_max_chargers(self, keys=None):
-        return self.get('max_chargers', keys)
+        return self._get_optional('max_chargers', keys, default=self._get_optional('max_chargers_per_bay', keys, default=0))
+
+    def get_max_bays(self, keys=None):
+        return self._get_optional('max_bays', keys, default=self.get_max_chargers(keys))
+
+    def get_max_chargers_per_bay(self, keys=None):
+        return self._get_optional('max_chargers_per_bay', keys, default=self.get_max_chargers(keys))
     
     def get_maneuvering_time(self, keys=None):
         return self.get('man_time', keys)

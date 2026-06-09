@@ -325,8 +325,12 @@ class OptParameters(OptRules):
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
         #Parametros estaciones de carga
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
+        model.c_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_bays(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
+        model.c_charger_space_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_charger_space(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.distance_to_dn_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_distance_to_discharge_node(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
-        model.max_chargers_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
+        model.max_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_bays(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
+        model.max_chargers_per_bay_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers_per_bay(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
+        model.max_chargers_k = pyo.Param(model.stations_set, initialize={k: value(model.max_bays_k[k]) * value(model.max_chargers_per_bay_k[k]) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
         model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
@@ -477,6 +481,8 @@ class BoundRules(OptRules):
         model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
         model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
+        #Cantidad de naves / bahías de carga
+        model.N_bays = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         #ElecciÃ³n estaciÃ³n de carga
         model.X = pyo.Var(model.stations_set, domain=pyo.Binary)
         #Inicio de una carga on-board
@@ -672,18 +678,30 @@ class ConstraintRules(OptRules):
         return model.F_seg[j, d, s] <= model.F_penalty_cap[s]
 
     # Estaciones de carga
-    #Cantidad mÃ¡xima de cargadores
+    #Cantidad máxima de naves de carga
+    def max_n_bays(self, model, k):
+        return model.N_bays[k] <= model.max_bays_k[k] * model.X[k]
+
+    # Cada nave necesita al menos un cargador
+    def bays_le_chargers(self, model, k):
+        return model.N_bays[k] <= model.N_chargers[k]
+
+    # Máximo de cargadores por nave
     def max_n_chargers(self, model, k):
-        return model.N_chargers[k] <= model.max_chargers_k[k] * model.X[k]
+        return model.N_chargers[k] <= model.max_chargers_per_bay_k[k] * model.N_bays[k]
     
     #Existencia de la estaciÃ³n
     def station_existence_constraint(self, model, k, i, d, t):
         return model.Z_charge[k,i, d, t] <= model.X[k]
     
-    #Limite de cargadores
+    #Limite de cargadores instalados
     def charger_limit(self, model,k, d, t):
         # Suma Z_charge solo sobre elhds vÃ¡lidos para esta estaciÃ³n
         return sum(model.Z_charge[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_chargers[k]
+
+    #Limite de naves ocupadas en simultaneo
+    def bay_limit(self, model, k, d, t):
+        return sum(model.Z_charge[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_bays[k]
     
     #Inicio y termino de una carga on-board
     def charge_state(self, model ,k, i, d, t):
@@ -862,9 +880,12 @@ class ConstraintRules(OptRules):
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
 
         #nuevas
+        model.max_n_bays                         = pyo.Constraint(model.stations_set, rule=self.max_n_bays)
+        model.bays_le_chargers                   = pyo.Constraint(model.stations_set, rule=self.bays_le_chargers)
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
         model.station_existence_constraint       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.station_existence_constraint)
         model.charger_limit                      = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
+        model.bay_limit                          = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.bay_limit)
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
@@ -928,7 +949,9 @@ class ObjectiveRules(OptRules):
 
     def inversion_cost(self, model):
         cost_inv = sum(
-            model.station_cost_k[k] * model.X[k] + model.charger_cost * model.N_chargers[k]
+            model.station_cost_k[k] * model.X[k]
+            + model.c_bays_k[k] * model.N_bays[k]
+            + (model.charger_cost + model.c_charger_space_k[k]) * model.N_chargers[k]
             for k in model.stations_set
         )
         return cost_inv
