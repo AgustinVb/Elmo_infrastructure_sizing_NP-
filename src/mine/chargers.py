@@ -42,3 +42,4 @@ class Chargers(object):
     
     def get_energy_cost(self, keys=None) -> float:
         return self._row1()['energy_cost']
+

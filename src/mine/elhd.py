@@ -255,6 +255,15 @@ class ELHD(object):
             "t_total": float(t_acc + t_const + t_dec),
         }
 
+    def _segment_accel_then_cruise_stop(self, distance_m, v_max, a):
+        """Compatibilidad con el nombre usado por la lógica de carga."""
+        return self._segment_accel_then_cruise_then_decel(
+            distance_m=distance_m,
+            v_max=v_max,
+            a_acc=a,
+            a_dec=a,
+        )
+
     @staticmethod
     def _integrals_decel(v_peak, decel, t_dec):
         v_peak = max(float(v_peak), 0.0)
@@ -420,36 +429,11 @@ class ELHD(object):
         wheel_energy_J = 0.0
 
         for _ in range(2):  # ida y vuelta
-            t_acc = seg["t_acc"]
-            t_const = seg["t_const"]
-            v_peak = seg["v_peak"]
-
-            wheel_energy_J += self._gravitational_work_segment(
-                tilt_effective=tilt,
-                t_acc=t_acc,
-                t_const=t_const,
-                v_peak=v_peak,
-                mass_kg=m,
-                elhd_name=elhd_name,
-            )
-
-            wheel_energy_J += self._aerodynamic_loss_segment(
-                elhd_name,
-                t_acc,
-                t_const,
-                v_peak,
-            )
-
-            wheel_energy_J += self._rolling_resistance_loss_segment(
-                elhd_name,
-                tilt,
-                t_acc,
-                t_const,
-                v_peak,
-                m,
-            )
+            wheel_energy_J += self._gravitational_work_segment(tilt, seg, m, elhd_name)
+            wheel_energy_J += self._aerodynamic_loss_segment(elhd_name, seg)
+            wheel_energy_J += self._rolling_resistance_loss_segment(elhd_name, tilt, seg, m)
             # Evento cinético (sin regeneración)
-            wheel_energy_J += self._delta_kinetic_event(m, v_peak)
+            wheel_energy_J += self._delta_kinetic_event(m, seg["v_peak"])
 
         # Energía auxiliar (J): solo tiempo de viaje
         aux_power_kW = float(self.get_aux_power(elhd_name))
