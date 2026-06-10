@@ -275,6 +275,29 @@ class OptSets(OptRules):
         model.meal_group1_set = pyo.Set(initialize=sorted(set(group1)))
         model.meal_group2_set = pyo.Set(initialize=sorted(set(group2)))
 
+        # Pares de precedencia por estación para rotura de simetría en SOC inicial.
+        # Dentro de cada estación, los ELHDs se ordenan por sufijo numérico ascendente.
+        # El de menor índice debe iniciar con menor o igual SOC (carga primero).
+        from collections import defaultdict
+        elhds_per_station = defaultdict(list)
+        for elhd in self.mine_system.get_electric_lhds():
+            for station in self.time_series.mapper['Stations_per_elhd'].get(elhd, []):
+                elhds_per_station[station].append(elhd)
+
+        def _sort_key(x):
+            s = self._extract_lhd_numeric_suffix(x)
+            return (s is None, s if s is not None else float("inf"), str(x))
+
+        charge_pairs = []
+        for elhds in elhds_per_station.values():
+            ordered = sorted(elhds, key=_sort_key)
+            for idx in range(len(ordered) - 1):
+                pair = (ordered[idx], ordered[idx + 1])
+                if pair not in charge_pairs:
+                    charge_pairs.append(pair)
+
+        model.charge_precedence_pairs = pyo.Set(dimen=2, initialize=charge_pairs)
+
 
 class OptParameters(OptRules):
 
@@ -481,8 +504,6 @@ class BoundRules(OptRules):
         model.B         = pyo.Var(model.elhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
         model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
-        #Cantidad de naves / bahías de carga
-        model.N_bays = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         #ElecciÃ³n estaciÃ³n de carga
         model.X = pyo.Var(model.stations_set, domain=pyo.Binary)
         #Inicio de una carga on-board
@@ -578,6 +599,12 @@ class ConstraintRules(OptRules):
     def battery_boundary(self, model, i, d):
         tf = self.time_series.get_time_intervals()[-1]
         return model.B[i, d, 0] == model.B[i, d, tf]
+
+    def battery_soc_break_symmetry(self, model, i_low, i_high, d):
+        """Rotura de simetría por estación: SOC inicial descendente con el índice.
+        El LHD de mayor índice inicia con menor o igual SOC → carga primero.
+        """
+        return model.B[i_high, d, 0] <= model.B[i_low, d, 0]
     
     
     def min_visits_per_node(self, model, j, d):
@@ -679,29 +706,17 @@ class ConstraintRules(OptRules):
 
     # Estaciones de carga
     #Cantidad máxima de naves de carga
-    def max_n_bays(self, model, k):
-        return model.N_bays[k] <= model.max_bays_k[k] * model.X[k]
-
-    # Cada nave necesita al menos un cargador
-    def bays_le_chargers(self, model, k):
-        return model.N_bays[k] <= model.N_chargers[k]
-
-    # Máximo de cargadores por nave
+    # N_chargers acotado por max_bays (N_bays = N_chargers)
     def max_n_chargers(self, model, k):
-        return model.N_chargers[k] <= model.max_chargers_per_bay_k[k] * model.N_bays[k]
-    
+        return model.N_chargers[k] <= model.max_bays_k[k] * model.X[k]
+
     #Existencia de la estaciÃ³n
     def station_existence_constraint(self, model, k, i, d, t):
         return model.Z_charge[k,i, d, t] <= model.X[k]
-    
-    #Limite de cargadores instalados
-    def charger_limit(self, model,k, d, t):
-        # Suma Z_charge solo sobre elhds vÃ¡lidos para esta estaciÃ³n
-        return sum(model.Z_charge[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_chargers[k]
 
-    #Limite de naves ocupadas en simultaneo
-    def bay_limit(self, model, k, d, t):
-        return sum(model.Z_charge[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_bays[k]
+    # Cargadores simultáneos acotados por N_chargers (= N_bays)
+    def charger_limit(self, model, k, d, t):
+        return sum(model.Z_charge[k, i, d, t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_chargers[k]
     
     #Inicio y termino de una carga on-board
     def charge_state(self, model ,k, i, d, t):
@@ -878,14 +893,12 @@ class ConstraintRules(OptRules):
         model.battery_lower =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
         model.battery_upper =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
+        model.battery_soc_break_symmetry        = pyo.Constraint(model.charge_precedence_pairs, model.days, rule=self.battery_soc_break_symmetry)
 
         #nuevas
-        model.max_n_bays                         = pyo.Constraint(model.stations_set, rule=self.max_n_bays)
-        model.bays_le_chargers                   = pyo.Constraint(model.stations_set, rule=self.bays_le_chargers)
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
         model.station_existence_constraint       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.station_existence_constraint)
         model.charger_limit                      = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
-        model.bay_limit                          = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.bay_limit)
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
@@ -921,10 +934,10 @@ class ConstraintRules(OptRules):
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         #Detenciones 
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        #model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
         #
         # 
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
@@ -950,8 +963,7 @@ class ObjectiveRules(OptRules):
     def inversion_cost(self, model):
         cost_inv = sum(
             model.station_cost_k[k] * model.X[k]
-            + model.c_bays_k[k] * model.N_bays[k]
-            + (model.charger_cost + model.c_charger_space_k[k]) * model.N_chargers[k]
+            + (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.N_chargers[k]
             for k in model.stations_set
         )
         return cost_inv
