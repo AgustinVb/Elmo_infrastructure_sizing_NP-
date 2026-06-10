@@ -341,7 +341,7 @@ class OptParameters(OptRules):
         # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
         model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
         # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
+        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
         model.Voll = pyo.Param(initialize=500, mutable=True)
 
         # Costo de energia de la red por (d,t): usa el primer ELHD como referencia del contrato
@@ -921,10 +921,10 @@ class ConstraintRules(OptRules):
         model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
 
         #Detenciones 
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
         #
         # 
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
