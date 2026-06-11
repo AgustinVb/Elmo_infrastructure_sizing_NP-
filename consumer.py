@@ -868,56 +868,71 @@ def calculate_lhd_charge_cost(root: Path) -> float:
 
 def calculate_investment_cost(root: Path) -> float:
     """
-    Calcula el costo de inversiÃ³n en estaciones y cargadores.
-    Usa X.json (estaciones instaladas), N_chargers.json (nÃºmero de cargadores)
-    y parameters.json (costos).
+    Costo de inversión en estaciones, idéntico a inversion_cost() de functions.py:
+
+      Σ_k  station_cost_k[k] * X[k]
+           + c_bays_k[k]         * N_bays[k]
+           + (charger_cost + c_charger_space_k[k]) * N_chargers[k]
+           + (battery_cost + c_battery_space_k[k]) * N_batteries[k]
+
+    Archivos requeridos: X.json, N_bays.json, N_chargers.json, N_batteries.json,
+                         parameters.json.
     """
-    x_path = find_json_in_folder(root, "X.json")
-    n_chargers_path = find_json_in_folder(root, "N_chargers.json")
-    params_path = find_json_in_folder(root, "parameters.json")
-    
-    if not params_path:
-        raise ValueError("No se encontrÃ³ parameters.json")
-    
-    if is_effectively_empty_json(params_path):
-        raise ValueError("parameters.json estÃ¡ vacÃ­o")
-    
-    params_data = load_json(params_path)
-    
-    total_cost = 0.0
-    
-    # Costo de estaciones
-    if x_path and not is_effectively_empty_json(x_path):
-        x_data = load_json(x_path)
-        station_costs = params_data.get("station_cost_k", {})
-        
-        # X.json tiene estructura {"k": {"station_1": 1, ...}}
-        if "k" in x_data and isinstance(x_data["k"], dict):
-            for station_id, value in x_data["k"].items():
-                try:
-                    if float(value) > 0.5:  # estaciÃ³n instalada
-                        # Buscar costo de la estaciÃ³n
-                        if "_1" in station_costs:
-                            cost = station_costs["_1"].get(station_id, 0.0)
-                            total_cost += float(cost)
-                except (ValueError, TypeError):
-                    continue
-    
-    # Costo de cargadores
-    if n_chargers_path and not is_effectively_empty_json(n_chargers_path):
-        n_chargers_data = load_json(n_chargers_path)
-        charger_cost = params_data.get("charger_cost", 0.0)
-        
-        # N_chargers.json tiene estructura {"k": {"station_1": 2, ...}}
-        if "k" in n_chargers_data and isinstance(n_chargers_data["k"], dict):
-            for station_id, value in n_chargers_data["k"].items():
-                try:
-                    n_chargers = float(value)
-                    total_cost += n_chargers * float(charger_cost)
-                except (ValueError, TypeError):
-                    continue
-    
-    return total_cost
+    x_path           = find_json_in_folder(root, "X.json")
+    n_bays_path      = find_json_in_folder(root, "N_bays.json")
+    n_chargers_path  = find_json_in_folder(root, "N_chargers.json")
+    n_batteries_path = find_json_in_folder(root, "N_batteries.json")
+    params_path      = find_json_in_folder(root, "parameters.json")
+
+    if not params_path or is_effectively_empty_json(params_path):
+        raise ValueError("No se encontró parameters.json")
+
+    params = load_json(params_path)
+
+    # Escalares globales
+    charger_cost = _as_float(params.get("charger_cost", 0.0))
+    battery_cost = _as_float(params.get("battery_cost", 0.0))
+
+    # Parámetros por estación: soporta {"_1": {k: v}} o directamente {k: v}
+    def _station_param(key: str) -> Dict[str, float]:
+        raw = params.get(key, {})
+        if isinstance(raw, dict) and "_1" in raw and isinstance(raw["_1"], dict):
+            raw = raw["_1"]
+        return {str(k): _as_float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+
+    p_station  = _station_param("station_cost_k")
+    p_bays     = _station_param("c_bays_k")
+    p_char_sp  = _station_param("c_charger_space_k")
+    p_bat_sp   = _station_param("c_battery_space_k")
+
+    # Variables de decisión por estación: soporta {"k": {k: v}} o {"_1": {k: v}}
+    def _station_vars(path: Optional[Path]) -> Dict[str, float]:
+        if not path or is_effectively_empty_json(path):
+            return {}
+        data = load_json(path)
+        if not isinstance(data, dict):
+            return {}
+        inner = data.get("k") or data.get("_1") or {}
+        if not isinstance(inner, dict):
+            return {}
+        return {str(k): _as_float(v) for k, v in inner.items()}
+
+    x_map    = _station_vars(x_path)
+    bays_map = _station_vars(n_bays_path)
+    char_map = _station_vars(n_chargers_path)
+    bat_map  = _station_vars(n_batteries_path)
+
+    stations = sorted(set(x_map) | set(bays_map) | set(char_map) | set(bat_map))
+
+    total = 0.0
+    for k in stations:
+        total += (
+            p_station.get(k, 0.0) * x_map.get(k, 0.0)
+            + p_bays.get(k, 0.0)  * bays_map.get(k, 0.0)
+            + (charger_cost + p_char_sp.get(k, 0.0)) * char_map.get(k, 0.0)
+            + (battery_cost + p_bat_sp.get(k, 0.0))  * bat_map.get(k, 0.0)
+        )
+    return total
 
 
 def calculate_penalty_cost(root: Path) -> float:
