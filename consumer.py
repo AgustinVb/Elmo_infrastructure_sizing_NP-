@@ -1405,65 +1405,70 @@ def calculate_peak_power_cost(root: Path) -> float:
 
 def calculate_investment_cost(root: Path) -> float:
     """
-    Calcula el costo de inversión en estaciones, cargadores y baterias.
-    Usa X.json (estaciones instaladas), N_chargers.json (número de cargadores),
-    N_batteries.json (número de baterías) y parameters.json (costos).
+    Calcula el costo de inversión en estaciones exactamente como la función objetivo:
+      Σ_k  station_cost_k[k] * X[k]
+           + c_bays_k[k] * N_bays[k]
+           + (charger_cost + c_charger_space_k[k]) * N_chargers[k]
+           + (battery_cost  + c_battery_space_k[k]) * N_batteries[k]
     """
-    x_path = find_json_in_folder(root, "X.json")
-    n_chargers_path = find_json_in_folder(root, "N_chargers.json")
+    x_path           = find_json_in_folder(root, "X.json")
+    n_bays_path      = find_json_in_folder(root, "N_bays.json")
+    n_chargers_path  = find_json_in_folder(root, "N_chargers.json")
     n_batteries_path = find_json_in_folder(root, "N_batteries.json")
-    params_path = find_json_in_folder(root, "parameters.json")
-    
-    if not params_path:
+    params_path      = find_json_in_folder(root, "parameters.json")
+
+    if not params_path or is_effectively_empty_json(params_path):
         raise ValueError("No se encontró parameters.json")
-    
-    if is_effectively_empty_json(params_path):
-        raise ValueError("parameters.json está vacío")
-    
+
     params_data = load_json(params_path)
-    
+
+    charger_cost    = _as_float(params_data.get("charger_cost", 0.0))
+    battery_cost    = _as_float(params_data.get("battery_cost", 0.0))
+    station_cost_k  = _unwrap_named_tree(params_data.get("station_cost_k",   {}))
+    c_bays_k        = _unwrap_named_tree(params_data.get("c_bays_k",         {}))
+    c_charger_space = _unwrap_named_tree(params_data.get("c_charger_space_k", {}))
+    c_battery_space = _unwrap_named_tree(params_data.get("c_battery_space_k", {}))
+
+    def _station_scalars(path: Optional[Path]) -> Dict[str, float]:
+        if not path or is_effectively_empty_json(path):
+            return {}
+        raw = _unwrap_named_tree(load_json(path))
+        if not isinstance(raw, dict):
+            return {}
+        out: Dict[str, float] = {}
+        for k, v in raw.items():
+            try:
+                out[str(k)] = float(v)
+            except Exception:
+                continue
+        return out
+
+    x_map           = _station_scalars(x_path)
+    n_bays_map      = _station_scalars(n_bays_path)
+    n_chargers_map  = _station_scalars(n_chargers_path)
+    n_batteries_map = _station_scalars(n_batteries_path)
+
+    stations = sorted(set(x_map) | set(n_bays_map) | set(n_chargers_map) | set(n_batteries_map))
+
     total_cost = 0.0
-    
-    # Costo de estaciones
-    if x_path and not is_effectively_empty_json(x_path):
-        x_data = load_json(x_path)
-        station_costs = _unwrap_named_tree(params_data.get("station_cost_k", {}))
-        station_dict = _unwrap_named_tree(x_data)
-        if isinstance(station_dict, dict) and isinstance(station_costs, dict):
-            for station_id, value in station_dict.items():
-                try:
-                    if float(value) > 0.5:
-                        total_cost += float(station_costs.get(station_id, 0.0))
-                except (ValueError, TypeError):
-                    continue
-    
-    # Costo de cargadores
-    if n_chargers_path and not is_effectively_empty_json(n_chargers_path):
-        n_chargers_data = load_json(n_chargers_path)
-        charger_cost = params_data.get("charger_cost", 0.0)
+    for k in stations:
+        x_k          = x_map.get(k, 0.0)
+        n_bays       = n_bays_map.get(k, 0.0)
+        n_chargers   = n_chargers_map.get(k, 0.0)
+        n_batteries  = n_batteries_map.get(k, 0.0)
+        c_station    = _as_float(station_cost_k.get(k, 0.0))  if isinstance(station_cost_k,  dict) else 0.0
+        c_bay        = _as_float(c_bays_k.get(k, 0.0))        if isinstance(c_bays_k,        dict) else 0.0
+        c_char_sp    = _as_float(c_charger_space.get(k, 0.0)) if isinstance(c_charger_space, dict) else 0.0
+        c_bat_sp     = _as_float(c_battery_space.get(k, 0.0)) if isinstance(c_battery_space, dict) else 0.0
 
-        station_dict = _unwrap_named_tree(n_chargers_data)
-        if isinstance(station_dict, dict):
-            for _, value in station_dict.items():
-                try:
-                    total_cost += float(value) * float(charger_cost)
-                except (ValueError, TypeError):
-                    continue
-    
-    # Costo de baterías
-    if n_batteries_path and not is_effectively_empty_json(n_batteries_path):
-        n_batteries_data = load_json(n_batteries_path)
-        battery_cost = params_data.get("battery_cost", 0.0)
+        total_cost += (
+            c_station * x_k
+            + c_bay   * n_bays
+            + (charger_cost + c_char_sp) * n_chargers
+            + (battery_cost + c_bat_sp)  * n_batteries
+        )
 
-        station_dict = _unwrap_named_tree(n_batteries_data)
-        if isinstance(station_dict, dict):
-            for _, value in station_dict.items():
-                try:
-                    total_cost += float(value) * float(battery_cost)
-                except (ValueError, TypeError):
-                    continue
-    
-    return total_cost   
+    return total_cost
 
 
 def calculate_penalty_cost(root: Path) -> float:
