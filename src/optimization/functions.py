@@ -585,78 +585,53 @@ class ConstraintRules(OptRules):
         return model.B[i_high, d, 0] <= model.B[i_low, d, 0]
     
     
-    def min_visits_per_node(self, model, j, d):
-        """Garantiza que cada nodo `j` en el dÃ­a `d` sea visitado al menos 2 intervalos.
-
-        Suma `Y[i,j,d,t]` sobre todas las tuplas existentes en `model.Y` para (j,d).
-        """
-        term_visits = sum(
-            model.Y[i2, j2, d2, t2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
-
-        return term_visits >= 1
-
-    def max_visits_node(self, model, j, d):
-        """Limita el número máximo de asignaciones (visitas) a un nodo `j` en el día `d`.
-
-        """
-        term_visits = sum(
-            model.Y[i2, j2, d2, t2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
-
-        return term_visits <= 4
-    
-    def production_max(self, model, d, j):
-        target = 400
-        # Solo sobre llaves EXISTENTES de Y para (d, j)
-        term_de = sum(
-            model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
-
-        return term_de <= target
-    
     
 
     def daily_production(self, model, d):
         """Production balance for the whole day d (sum over all nodes).
 
-        Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
+        Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] >= sum_j m_j[j,d]
         """
-        # Total target across all nodes
-        total_target = 32991
+        total_target = sum(model.m_j[j, d] for j in model.nodes_set)
 
-        # Sum production term over all Y tuples for day d
         term_de = sum(
             model.Y[i2, j2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
             for (i2, j2, d2, t2) in model.Y
             if d2 == d
         )
 
-
-        return  term_de >= total_target
+        return term_de >= total_target
     
     def production(self, model, d, j):
         """Production balance for node j on day d.
 
-        Enforces: sum_i,t Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + F[j,d] == m_j[j,d]
+        Enforces:
+            floor(m_j / prod_per_assign) <= sum_{i,t} Y[i,j,d,t] <= ceil(m_j / prod_per_assign)
+
+        where prod_per_assign = g_i * n_trips(j,i) * filling_factor[i].
+        All LHDs share the same model so n_trips is identical for all i at node j.
         """
-        # Target for node j on day d
-        target = model.m_j[j, d]
+        import math
+        from pyomo.environ import value as pyo_value
 
-        # Sum production term over all Y tuples for (d, j)
-        term_de = sum(
-            model.Y[i2, j, d, t2] * model.g_i[i2] * self.time_series.get_n_trips(j, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
+        # Collect valid (i, t) pairs assigned to node j on day d
+        y_pairs = [(i2, t2) for (i2, j2, d2, t2) in model.Y if j2 == j and d2 == d]
+        if not y_pairs:
+            return pyo.Constraint.Skip
 
-        return term_de >= target
+        # Production per single assignment interval (same for all LHDs at this node)
+        i_rep = y_pairs[0][0]
+        prod_per_assign = (pyo_value(model.g_i[i_rep])
+                           * self.time_series.get_n_trips(j, i_rep)
+                           * pyo_value(model.filling_factor[i_rep]))
+
+        target = pyo_value(model.m_j[j, d])
+        lb = math.floor(target / prod_per_assign)
+        ub = math.ceil(target / prod_per_assign)
+
+        visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
+
+        return pyo.inequality(lb, visits, ub)
 
 
     def interval_extraction_M(self, model, i, j, d, t):
@@ -896,31 +871,21 @@ class ConstraintRules(OptRules):
             model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
             model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_cyclic)
         
-        #ProducciÃ³n nuevas
-        #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
-        #model.min_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
-        #model.max_visits_per_node    = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
-        #model.production_max     = pyo.Constraint(model.days, model.nodes_set, rule=self.production_max)
-        #model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
+        #Producción nuevas
+        model.daily_production   = pyo.Constraint(model.days, rule=self.daily_production)
         model.production         = pyo.Constraint( model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
-        #Detenciones
+        #Detenciones DCH
         model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
         model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
         #
-        # 
+        #Detenciones DET
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
-        #fijar cantidad de cargadores
-        #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
-        
-        # Restricción: L <= extracción en cada punto-día (L es el mínimo)
-        #model.production_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.production_per_node)
-        #model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
-
+      
 class ObjectiveRules(OptRules):
 
     def lhd_charge_cost(self, model):
