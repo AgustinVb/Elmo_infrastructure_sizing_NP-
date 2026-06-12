@@ -381,8 +381,6 @@ class OptSets(OptRules):
             initialize=[(ordered_slhds[idx], ordered_slhds[idx + 1]) for idx in range(len(ordered_slhds) - 1)],
         )
 
-        # Tramos de penalizaci�n para d�ficit F (piecewise lineal)
-        model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
         # Generadores renovables (vacío si no hay datos de generación)
         model.gen_set = pyo.Set(initialize=self.mine_system.get_system_generators())
         # Almacenamiento estacionario BESS (vacío si no hay hoja Storage)
@@ -392,10 +390,6 @@ class OptSets(OptRules):
 class OptParameters(OptRules):
 
     def build_parameters(self, model):
-        max_extraction_goal = max(
-            (self.time_series.get_extraction_goal(j, d) for j in model.nodes_set for d in model.days),
-            default=0.0
-        )
         #Par�metros temporales
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
@@ -452,13 +446,6 @@ class OptParameters(OptRules):
         # Se usa solo el primer �ndice de slhd_set.
         first_slhd = next(iter(model.slhd_set), None)
         model.t_charge = pyo.Param(initialize=int(math.floor(((((value(model.bmax_b[first_slhd]) - value(model.bmax_b[first_slhd]) * value(model.bmin_b[first_slhd])) / value(model.p_charger)) / value(model.delta_t)) + 0.5))), mutable=False)
-
-        # ---- Penalizaci�n por tramos para F (d�ficit) ----
-        # Nota: para tramo 5 (100+) se usa Voll/0.1 (más caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
-        # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
-        model.Voll = pyo.Param(initialize=4*500, mutable=True)
 
         # Parámetros de generación renovable (solo si existen generadores)
         if len(list(model.gen_set)) > 0:
@@ -609,10 +596,6 @@ class BoundRules(OptRules):
         model.P_pot = pyo.Var(domain=pyo.NonNegativeReals)
         #extracci�n total del equipo i en el d�a d.
         model.M = pyo.Var(model.slhd_set, model.nodes_set, model.days, domain=pyo.NonNegativeReals)
-        # Holgura producci�n
-        model.F = pyo.Var(model.nodes_set, model.days,domain=pyo.NonNegativeReals)
-        # Descomposici�n de F en tramos para costo piecewise lineal
-        model.F_seg = pyo.Var(model.nodes_set, model.days, model.F_SEG,domain=pyo.NonNegativeReals)
         # Potencia comprada a la red en (d,t) [kW] — siempre presente
         model.P_red = pyo.Var(model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # Variables de generación renovable (solo si existen generadores)
@@ -758,7 +741,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de + model.F[j, d] >= target
+        return term_de >= target
     
     def production_swap_max(self, model, d, j):
         # M�nimo de 10 viajes efectivos por punto de extracci�n y d�a.
@@ -857,17 +840,6 @@ class ConstraintRules(OptRules):
         #    if i2 == i and d2 == d and j2 == j
         #)
         return model.M[i, j, d] == term #- pen
-
-    # --------------------------
-    # Penalizaci�n por tramos (piecewise) para F
-    # --------------------------
-    def F_piecewise_balance(self, model, j, d):
-        # Sumatoria de tramos debe reconstruir F
-        return sum(model.F_seg[j, d, s] for s in model.F_SEG) == model.F[j, d]
-
-    def F_piecewise_caps(self, model, j, d, s):
-        # Cada tramo tiene una "longitud" m�xima
-        return model.F_seg[j, d, s] <= model.F_penalty_cap[s]
 
     # ==========================================================
     # 4) Infraestructura de estaciones y red el�ctrica
@@ -1318,18 +1290,6 @@ class ConstraintRules(OptRules):
         #model.min_visits_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
         #model.max_visits_node = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
 
-        model.F_piecewise_balance = pyo.Constraint(
-            model.nodes_set,
-            model.days,
-            rule=self.F_piecewise_balance,
-        )
-        model.F_piecewise_caps = pyo.Constraint(
-            model.nodes_set,
-            model.days,
-            model.F_SEG,
-            rule=self.F_piecewise_caps,
-        )
-
         # 6) Pausas operacionales
         model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
@@ -1383,15 +1343,6 @@ class ObjectiveRules(OptRules):
         )
         return cost_el * model.scaling_factor_op_cost
 
-    def penalization(self, model):
-        F_penalty = sum(
-            model.F_seg[j, d, s] * (model.Voll / model.F_penalty_div[s])
-            for j in model.nodes_set
-            for d in model.days
-            for s in model.F_SEG
-        )
-        return F_penalty * model.scaling_factor_op_cost
-
     def inversion_cost(self, model):
         cost_inv = sum(
             model.station_cost_k[k] * model.X[k]
@@ -1432,7 +1383,6 @@ class ObjectiveRules(OptRules):
                 + self.gen_op_cost(model)
                 + self.bess_investment_cost(model)
                 + self.bess_op_cost(model)
-                + self.penalization(model)
                 + self.peak_power_cost(model))
 
     def max_min_extraction(self, model):
