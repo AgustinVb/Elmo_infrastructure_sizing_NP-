@@ -520,6 +520,9 @@ class BoundRules(OptRules):
             # Operacion: potencia generada por g en (d,t) [kW]
             model.P_gen = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
                                   domain=pyo.NonNegativeReals)
+            # Curtailment: potencia renovable vertida en (d,t) [kW] — ec. 3.47
+            model.Curt_g = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
+                                   domain=pyo.NonNegativeReals)
         # Potencia comprada a la red en (d,t) [kW] — siempre presente
         model.P_red = pyo.Var(model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
 
@@ -766,8 +769,9 @@ class ConstraintRules(OptRules):
         return model.P_red[d, t] <= model.p_peak
 
     def gen_limit(self, model, g, d, t):
-        """Potencia generada acotada por unidades instaladas y disponibilidad."""
-        return model.P_gen[g, d, t] <= model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t]
+        """Generación + curtailment = capacidad disponible — ec. 3.47."""
+        return (model.P_gen[g, d, t] + model.Curt_g[g, d, t]
+                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t])
 
     def gen_max_units(self, model, g):
         """Cantidad maxima de unidades instalables por tecnologia."""

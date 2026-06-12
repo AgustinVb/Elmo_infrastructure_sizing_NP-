@@ -201,6 +201,7 @@ class Printer:
             "F_seg":    ["j", "d", "seg"],
             "P_red":    ["d", "t"],
             "P_gen":    ["g", "d", "t"],
+            "Curt_g":   ["g", "d", "t"],
             "H_h":      ["h"],
             "P_bat":    ["h", "d", "t"],
             "A_h":      ["h", "d", "t"],

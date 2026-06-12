@@ -868,20 +868,22 @@ def calculate_lhd_charge_cost(root: Path) -> float:
 
 def calculate_investment_cost(root: Path) -> float:
     """
-    Costo de inversión en estaciones, idéntico a inversion_cost() de functions.py:
+    Costo de inversión en estaciones, idéntico a inversion_cost() de functions.py.
 
+    Detecta el tipo de escenario por la presencia de Sv.json o Z_swap.json:
+
+    Swap:
       Σ_k  station_cost_k[k] * X[k]
-           + c_bays_k[k]         * N_bays[k]
-           + (charger_cost + c_charger_space_k[k]) * N_chargers[k]
-           + (battery_cost + c_battery_space_k[k]) * N_batteries[k]
+           + c_bays_k[k]                              * N_bays[k]
+           + (charger_cost + c_charger_space_k[k])    * N_chargers[k]
+           + (battery_cost + c_battery_space_k[k])    * N_batteries[k]
 
-    Archivos requeridos: X.json, N_bays.json, N_chargers.json, N_batteries.json,
-                         parameters.json.
+    Carga on-board:
+      Σ_k  station_cost_k[k] * X[k]
+           + (c_bays_k[k] + charger_cost + c_charger_space_k[k]) * N_chargers[k]
     """
     x_path           = find_json_in_folder(root, "X.json")
-    n_bays_path      = find_json_in_folder(root, "N_bays.json")
     n_chargers_path  = find_json_in_folder(root, "N_chargers.json")
-    n_batteries_path = find_json_in_folder(root, "N_batteries.json")
     params_path      = find_json_in_folder(root, "parameters.json")
 
     if not params_path or is_effectively_empty_json(params_path):
@@ -889,9 +891,7 @@ def calculate_investment_cost(root: Path) -> float:
 
     params = load_json(params_path)
 
-    # Escalares globales
     charger_cost = _as_float(params.get("charger_cost", 0.0))
-    battery_cost = _as_float(params.get("battery_cost", 0.0))
 
     # Parámetros por estación: soporta {"_1": {k: v}} o directamente {k: v}
     def _station_param(key: str) -> Dict[str, float]:
@@ -899,11 +899,6 @@ def calculate_investment_cost(root: Path) -> float:
         if isinstance(raw, dict) and "_1" in raw and isinstance(raw["_1"], dict):
             raw = raw["_1"]
         return {str(k): _as_float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
-
-    p_station  = _station_param("station_cost_k")
-    p_bays     = _station_param("c_bays_k")
-    p_char_sp  = _station_param("c_charger_space_k")
-    p_bat_sp   = _station_param("c_battery_space_k")
 
     # Variables de decisión por estación: soporta {"k": {k: v}} o {"_1": {k: v}}
     def _station_vars(path: Optional[Path]) -> Dict[str, float]:
@@ -917,21 +912,46 @@ def calculate_investment_cost(root: Path) -> float:
             return {}
         return {str(k): _as_float(v) for k, v in inner.items()}
 
+    p_station = _station_param("station_cost_k")
+    p_bays    = _station_param("c_bays_k")
+    p_char_sp = _station_param("c_charger_space_k")
+
     x_map    = _station_vars(x_path)
-    bays_map = _station_vars(n_bays_path)
     char_map = _station_vars(n_chargers_path)
-    bat_map  = _station_vars(n_batteries_path)
+    stations = sorted(set(x_map) | set(char_map))
 
-    stations = sorted(set(x_map) | set(bays_map) | set(char_map) | set(bat_map))
+    # Detecta si es escenario swap (tiene Sv.json o Z_swap.json)
+    is_swap = (
+        find_json_in_folder(root, "Sv.json") is not None
+        or find_json_in_folder(root, "Z_swap.json") is not None
+    )
 
-    total = 0.0
-    for k in stations:
-        total += (
-            p_station.get(k, 0.0) * x_map.get(k, 0.0)
-            + p_bays.get(k, 0.0)  * bays_map.get(k, 0.0)
-            + (charger_cost + p_char_sp.get(k, 0.0)) * char_map.get(k, 0.0)
-            + (battery_cost + p_bat_sp.get(k, 0.0))  * bat_map.get(k, 0.0)
-        )
+    if is_swap:
+        battery_cost = _as_float(params.get("battery_cost", 0.0))
+        p_bat_sp  = _station_param("c_battery_space_k")
+        n_bays_path      = find_json_in_folder(root, "N_bays.json")
+        n_batteries_path = find_json_in_folder(root, "N_batteries.json")
+        bays_map = _station_vars(n_bays_path)
+        bat_map  = _station_vars(n_batteries_path)
+        stations = sorted(set(stations) | set(bays_map) | set(bat_map))
+
+        total = 0.0
+        for k in stations:
+            total += (
+                p_station.get(k, 0.0) * x_map.get(k, 0.0)
+                + p_bays.get(k, 0.0)                          * bays_map.get(k, 0.0)
+                + (charger_cost + p_char_sp.get(k, 0.0))      * char_map.get(k, 0.0)
+                + (battery_cost + p_bat_sp.get(k, 0.0))       * bat_map.get(k, 0.0)
+            )
+    else:
+        # Carga on-board: c_bays_k va agrupado con el costo por cargador
+        total = 0.0
+        for k in stations:
+            total += (
+                p_station.get(k, 0.0) * x_map.get(k, 0.0)
+                + (p_bays.get(k, 0.0) + charger_cost + p_char_sp.get(k, 0.0)) * char_map.get(k, 0.0)
+            )
+
     return total
 
 
