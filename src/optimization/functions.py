@@ -620,6 +620,9 @@ class BoundRules(OptRules):
             model.G_g = pyo.Var(model.gen_set, domain=pyo.NonNegativeIntegers)
             model.P_gen = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
                                   domain=pyo.NonNegativeReals)
+            # Curtailment: potencia renovable vertida en (d,t) [kW] — ec. 3.47
+            model.Curt_g = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
+                                   domain=pyo.NonNegativeReals)
         # Variables de almacenamiento BESS (solo si existen unidades)
         if len(list(model.storage_set)) > 0:
             model.H_h = pyo.Var(model.storage_set, domain=pyo.Binary)
@@ -1104,8 +1107,9 @@ class ConstraintRules(OptRules):
         return model.P_red[d, t] <= model.p_peak
 
     def gen_limit(self, model, g, d, t):
-        """Potencia generada acotada por unidades instaladas y disponibilidad."""
-        return model.P_gen[g, d, t] <= model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t]
+        """Generación + curtailment = capacidad disponible — ec. 3.47."""
+        return (model.P_gen[g, d, t] + model.Curt_g[g, d, t]
+                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t])
 
     def gen_max_units(self, model, g):
         """Cantidad máxima de unidades instalables por tecnología."""
