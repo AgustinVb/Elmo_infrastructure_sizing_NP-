@@ -731,75 +731,51 @@ class ConstraintRules(OptRules):
     # 3) Producci�n y penalizaciones operacionales
     # ==========================================================
 
-    # Producci�n m�nima
-    def production_swap(self, model, d, j):
-        target = model.m_j[j, d] 
-
-        term_de = sum(
-            model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)* model.g_i[i] * model.filling_factor[i]
-            for (i, j2, d2, t) in model.Y_INDEX
-            if j2 == j and d2 == d
-        )
-
-        return term_de >= target
-    
-    def production_swap_max(self, model, d, j):
-        # M�nimo de 10 viajes efectivos por punto de extracci�n y d�a.
-        target = 0
-
-        term_de = sum(
-            model.Y[i, j, d, t] * self.time_series.get_n_trips(j, i)
-            for (i, j2, d2, t) in model.Y_INDEX
-            if j2 == j and d2 == d
-        )
-
-        #pen = sum(model.Z_pen[i, j, d, t] * model.g_i[i] * ntr(j, i) * model.filling_factor[i] * (model.t_swap[i] / model.delta_t)
-        #          for (i, j2, d2, t) in model.Y_INDEX if j2 == j and d2 == d)
-
-        return term_de  >= target
-    
-    def min_visits_per_node(self, model, j, d):
-        """Garantiza que cada nodo `j` en el día `d` sea visitado al menos 1 intervalo.
-
-        Suma `Y[i,j,d,t]` sobre todas las tuplas existentes en `model.Y` para (j,d).
-        """
-        term_visits = sum(
-            model.Y[i2, j2, d2, t2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
-
-        return term_visits >= 1
-
-    def max_visits_node(self, model, j, d):
-        """Limita el n�mero m�ximo de asignaciones (visitas) a un nodo `j` en el d�a `d`.
-
-        """
-        term_visits = sum(
-            model.Y[i2, j2, d2, t2]
-            for (i2, j2, d2, t2) in model.Y
-            if j2 == j and d2 == d
-        )
-
-        return term_visits <= 4.
+    # Produccion
 
     def daily_production(self, model, d):
         """Production balance for the whole day d (sum over all nodes).
 
-        Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] + sum_j F[j,d] <= sum_j m_j[j,d]
+        Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] >= sum_j m_j[j,d]
         """
-        # Total target across all nodes
-        total_target = 25000
+        total_target = sum(model.m_j[j, d] for j in model.nodes_set)
 
-        # Sum production term over all Y tuples for day d
         term_de = sum(
             model.Y[i2, j2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
             for (i2, j2, d2, t2) in model.Y
             if d2 == d
         )
 
+        return term_de >= total_target
 
-        return  term_de <= total_target
+    def production(self, model, d, j):
+        """Production balance for node j on day d.
+
+        Enforces:
+            floor(m_j / prod_per_assign) <= sum_{i,t} Y[i,j,d,t] <= ceil(m_j / prod_per_assign)
+
+        where prod_per_assign = g_i * n_trips(j,i) * filling_factor[i].
+        All LHDs share the same model so n_trips is identical for all i at node j.
+        """
+        import math
+        from pyomo.environ import value as pyo_value
+
+        y_pairs = [(i2, t2) for (i2, j2, d2, t2) in model.Y if j2 == j and d2 == d]
+        if not y_pairs:
+            return pyo.Constraint.Skip
+
+        i_rep = y_pairs[0][0]
+        prod_per_assign = (pyo_value(model.g_i[i_rep])
+                           * self.time_series.get_n_trips(j, i_rep)
+                           * pyo_value(model.filling_factor[i_rep]))
+
+        target = pyo_value(model.m_j[j, d])
+        lb = math.floor(target / prod_per_assign)
+        ub = math.ceil(target / prod_per_assign)
+
+        visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
+
+        return pyo.inequality(lb, visits, ub)
 
     def aux_zpen_1(self, model, i, j, d, t):
         # Z_pen >= Z_swap + Y - 1  ?  fuerza Z_pen=1 cuando Y=1 y S Z_swap=1
@@ -1272,25 +1248,19 @@ class ConstraintRules(OptRules):
         )
 
         # 5) Producci�n y penalizaciones
-        model.production_swap = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap)
-        #model.production_swap_max = pyo.Constraint(model.days, model.nodes_set, rule=self.production_swap_max)
-        #model.aux_zpen_1 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_1)
-        #model.aux_zpen_2 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_2)
-        #model.aux_zpen_3 = pyo.Constraint(model.Y_INDEX, rule=self.aux_zpen_3)
-        #model.daily_extraction = pyo.Constraint(
-        #    model.days,
-        #    rule=self.daily_production,
-        #)
+        model.daily_extraction = pyo.Constraint(
+            model.days,
+            rule=self.daily_production,
+        )
+        model.production = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
         model.daily_extraction_M = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
             model.days,
             rule=self.daily_extraction_M,
         )
-        #model.min_visits_per_node = pyo.Constraint(model.nodes_set, model.days, rule=self.min_visits_per_node)
-        #model.max_visits_node = pyo.Constraint(model.nodes_set, model.days, rule=self.max_visits_node)
 
-        # 6) Pausas operacionales
+        # 6) Pausas operacionales DCH
         model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
@@ -1300,6 +1270,7 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.maint_stop_all,
         )
+        #Pausas DET
         #model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Balance de potencia y generación / BESS
