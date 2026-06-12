@@ -841,6 +841,12 @@ class ConstraintRules(OptRules):
         """A_h >= a_min_h * H_h — ec. 3.53."""
         return model.A_h[h, d, t] >= model.a_min_h[h] * model.H_h[h]
 
+    def bess_soc_cyclic(self, model, h, d):
+        """SOC del primer intervalo igual al del último — ec. 3.53."""
+        t_ini = self.time_series.get_time_intervals()[0]
+        t_fin = self.time_series.get_time_intervals()[-1]
+        return model.A_h[h, d, t_ini] == model.A_h[h, d, t_fin]
+
     # --------------------------
     # Pausas: MAINTENANCE
     # --------------------------
@@ -923,6 +929,7 @@ class ConstraintRules(OptRules):
             model.bess_soc_init    = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_init)
             model.bess_soc_upper   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_upper)
             model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
+            model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_cyclic)
         
         #ProducciÃ³n nuevas
         #model.production_min         = pyo.Constraint(model.days, model.nodes_set, rule=self.production_min)
