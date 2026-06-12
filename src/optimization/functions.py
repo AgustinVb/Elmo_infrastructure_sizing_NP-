@@ -189,8 +189,6 @@ class OptSets(OptRules):
             ]
         )
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
-        # Tramos de penalizaciÃ³n para dÃ©ficit F (piecewise lineal)
-        model.F_SEG = pyo.Set(initialize=[1, 2, 3, 4, 5])
         # Generadores renovables (vacio si no hay datos de generacion)
         model.gen_set = pyo.Set(initialize=self.mine_system.get_system_generators())
         # Almacenamiento estacionario BESS (vacio si no hay hoja Storage)
@@ -302,10 +300,6 @@ class OptSets(OptRules):
 class OptParameters(OptRules):
 
     def build_parameters(self, model):
-        max_extraction_goal = max(
-            (self.time_series.get_extraction_goal(j, d) for j in model.nodes_set for d in model.days),
-            default=0.0
-        )
         #ParÃ¡metros temporales
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
@@ -315,7 +309,6 @@ class OptParameters(OptRules):
             initialize={d: self.time_series.get_year_of_day(d) for d in model.days},
             mutable=False
         )
-        model.F_max_global = pyo.Param(initialize=max_extraction_goal, mutable=True)
         #ParÃ¡metros econÃ³micos
         model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
         model.costo_marginal = pyo.Param(model.elhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.elhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
@@ -357,15 +350,6 @@ class OptParameters(OptRules):
         model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
         model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
-
-         # ---- PenalizaciÃ³n por tramos para F (dÃ©ficit) ----
-        # Tramos: 0-5, 5-10, 10-50, 50-100, 100+
-        # Costo unitario por tramo: Voll / divisor
-        # Nota: para tramo 5 (100+) se usa Voll/0.1 (mÃ¡s caro).
-        model.F_penalty_div = pyo.Param(model.F_SEG,initialize={1: 5000, 2: 1000, 3: 200, 4: 50, 5: 10},mutable=True)
-        # Capacidad (longitud) de cada tramo
-        model.F_penalty_cap = pyo.Param(model.F_SEG,initialize={1: 5, 2: 0, 3: 0, 4: 0, 5: 0},mutable=True)
-        model.Voll = pyo.Param(initialize=500, mutable=True)
 
         # Costo de energia de la red por (d,t): usa el primer ELHD como referencia del contrato
         ref_elhd = list(model.elhd_set)[0]
@@ -460,9 +444,6 @@ class BoundRules(OptRules):
     def Bini(self, model, b, d):
         return (0, model.bmax_b[b])
     
-    def F(self, model, j, d):
-        return (0, model.F_max_global)
-
     def build_all_variables(self, model):
           # Ãndice esparso para carga: solo (station, elhd) vÃ¡lidas segÃºn StationAssignment
         def _init_ZCHARGE_INDEX(m):
@@ -539,12 +520,6 @@ class BoundRules(OptRules):
 
         # ExtracciÃ³n por intervalo, consistente con Y_INDEX.
         model.M = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
-        
-        # Holgura producciÃ³n 
-        model.F = pyo.Var(model.nodes_set, model.days, bounds=self.F)
-        
-        # DescomposiciÃ³n de F en tramos para costo piecewise lineal
-        model.F_seg = pyo.Var(model.nodes_set, model.days, model.F_SEG, domain=pyo.NonNegativeReals)
 
         #AsignaciÃ³n estaciÃ³n por macrobloque
         #model.U = pyo.Var(model.stations_set, model.elhd_set, domain=pyo.Binary)
@@ -681,7 +656,7 @@ class ConstraintRules(OptRules):
             if j2 == j and d2 == d
         )
 
-        return term_de + model.F[j, d] >= target
+        return term_de >= target
 
 
     def interval_extraction_M(self, model, i, j, d, t):
@@ -696,16 +671,6 @@ class ConstraintRules(OptRules):
             * self.time_series.get_n_trips(j, i)
             * model.filling_factor[i]
         )
-
-     # PenalizaciÃ³n por tramos (piecewise) para F
-    # --------------------------
-    def F_piecewise_balance(self, model, j, d):
-        # Sumatoria de tramos debe reconstruir F
-        return sum(model.F_seg[j, d, s] for s in model.F_SEG) == model.F[j, d]
-
-    def F_piecewise_caps(self, model, j, d, s):
-        # Cada tramo tiene una "longitud" mÃ¡xima
-        return model.F_seg[j, d, s] <= model.F_penalty_cap[s]
 
     # Estaciones de carga
     #Cantidad máxima de naves de carga
@@ -940,11 +905,7 @@ class ConstraintRules(OptRules):
         model.production         = pyo.Constraint( model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
-        # PenalizaciÃ³n por tramos para F (piecewise lineal)
-        model.F_piecewise_balance = pyo.Constraint(model.nodes_set, model.days, rule=self.F_piecewise_balance)
-        model.F_piecewise_caps = pyo.Constraint(model.nodes_set, model.days, model.F_SEG,rule=self.F_piecewise_caps)
-
-        #Detenciones 
+        #Detenciones
         model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
@@ -1004,15 +965,6 @@ class ObjectiveRules(OptRules):
     def power_cost(self, model):
         return sum(model.P_pot[y] * 12 * 10 for y in model.years)
 
-    def F_penalty_cost(self, model):
-        cost_F = sum(
-            model.F_seg[j, d, s] * (4 * model.Voll / model.F_penalty_div[s])
-            for j in model.nodes_set
-            for d in model.days
-            for s in model.F_SEG
-        )
-        return cost_F * model.scaling_factor_op_cost
-
     def total_cost(self, model):
         return (self.lhd_charge_cost(model)
                 + self.inversion_cost(model)
@@ -1020,12 +972,11 @@ class ObjectiveRules(OptRules):
                 + self.gen_op_cost(model)
                 + self.bess_investment_cost(model)
                 + self.bess_op_cost(model)
-                + self.F_penalty_cost(model)
                 + self.power_cost(model))
     
     def op_cost_total(self, model):
         # Coste operativo total (sin inversiÃ³n)
-        return (self.lhd_charge_cost(model) + 4*self.F_penalty_cost(model))/model.scaling_factor_op_cost
+        return self.lhd_charge_cost(model)/model.scaling_factor_op_cost
     
     def max_mineral(self, model):
         """Maximiza L: la extracción mínima garantizada en todos los puntos-días."""
