@@ -51,3 +51,6 @@ class Stations(object):
 
     def get_p_max_ssee(self, keys=None):
         return self.get('p_max_ssee', keys)
+
+    def get_c_crane(self, keys=None):
+        return self.get('c_crane', keys)
