@@ -230,6 +230,33 @@ def mean_consumption_kwhph(b_json_path: Path, delta_minutes: float, eps: float =
     )
 
 
+def peak_power_from_p(p_json_path: Path) -> float:
+    """Potencia peak de operación [kW]: max_{d,t} sum_{k,i} P[k,i,d,t]."""
+    data = load_json(p_json_path)
+    if not isinstance(data, dict) or "k" not in data or not isinstance(data["k"], dict):
+        raise ValueError("Estructura P.json inesperada")
+
+    power_by_dt: Dict[Tuple[str, str], float] = {}
+
+    for station_data in data["k"].values():
+        if not isinstance(station_data, dict):
+            continue
+        for lhd_data in station_data.get("i", {}).values():
+            if not isinstance(lhd_data, dict):
+                continue
+            for day_key, day_data in lhd_data.get("d", {}).items():
+                if not isinstance(day_data, dict):
+                    continue
+                for t_key, power in day_data.get("t", {}).items():
+                    key = (str(day_key), str(t_key))
+                    power_by_dt[key] = power_by_dt.get(key, 0.0) + _as_float(power, 0.0)
+
+    if not power_by_dt:
+        raise ValueError("No se encontraron valores en P.json")
+
+    return max(power_by_dt.values())
+
+
 # -----------------------------
 # M: extracciÃ³n total (sumar nÃºmeros)
 # -----------------------------
@@ -582,6 +609,12 @@ def main() -> None:
                 ["Series (bateria-dia)", str(int(s["n_series"]))],
                 ["Delta t usado", f"{s['delta_minutes']:.3f} min"],
             ]
+            if p_path and not is_effectively_empty_json(p_path):
+                try:
+                    p_peak = peak_power_from_p(p_path)
+                    rows.append(["P_peak operacion", f"{p_peak:.3f} kW"])
+                except Exception:
+                    pass
             print(make_table("B (ELÃ‰CTRICO)", ["MÃ©trica", "Valor"], rows))
             print()
             printed_any = True
