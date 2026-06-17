@@ -343,13 +343,9 @@ class OptParameters(OptRules):
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.c_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_bays(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.c_charger_space_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_charger_space(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
-        model.distance_to_dn_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_distance_to_discharge_node(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.max_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_bays(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.max_chargers_per_bay_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers_per_bay(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.max_chargers_k = pyo.Param(model.stations_set, initialize={k: value(model.max_bays_k[k]) * value(model.max_chargers_per_bay_k[k]) for k in model.stations_set}, mutable=False, within=pyo.Reals)
-        model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
-        model.pk_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.elhd_set}, mutable=False)
-        model.t_ttc_i   = pyo.Param( model.stations_set, model.elhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.elhd_set}, mutable=False)
 
         # Costo de energia de la red por (d,t): usa el primer ELHD como referencia del contrato
         ref_elhd = list(model.elhd_set)[0]
@@ -550,19 +546,16 @@ class ConstraintRules(OptRules):
     def battery_soc(self, model, i, d, t):
         t0 = self.time_series.get_time_intervals()[0]
         # Suma P solo sobre estaciones vÃ¡lidas para este elhd
-        charge = sum(model.P[k, i, d, t] * (model.delta_t-model.man_time_k[k]-model.t_ttc_i[k,i]) for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
+        charge = sum(model.P[k, i, d, t] * model.delta_t for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
         discharge = sum(
             model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
         )
-        # Suma StartCharge solo sobre estaciones vÃ¡lidas para este elhd
-        penalization_charge = 2*sum(model.StartCharge[k, i, d, t] * model.pk_i[k,i]*model.t_ttc_i[k,i] for (k, i2) in model.ZCHARGE_INDEX if i2 == i)
-        
 
         if t == t0:
-            return model.B[i, d, t] == model.B[i, d, 0] + charge - discharge - penalization_charge
+            return model.B[i, d, t] == model.B[i, d, 0] + charge - discharge
         else:
-            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge - penalization_charge
+            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge
         
      # (C8a) LÃ­mite inferior de SOC baterÃ­a
     def battery_lower(self, model, i, d, t):
@@ -583,8 +576,6 @@ class ConstraintRules(OptRules):
         El LHD de mayor índice inicia con menor o igual SOC → carga primero.
         """
         return model.B[i_high, d, 0] <= model.B[i_low, d, 0]
-    
-    
     
 
     def daily_production(self, model, d):
@@ -669,6 +660,13 @@ class ConstraintRules(OptRules):
        else:
            return model.Z_charge[k, i, d, t] == model.StartCharge[k, i, d, t]  - model.EndCharge[k, i, d, t]
        
+    # DuraciÃ³n mÃ­nima de carga: si se inicia una carga en t, debe mantenerse al menos 2 intervalos
+    def min_charge_duration(self, model, k, i, d, t):
+        t_fin = self.time_series.get_time_intervals()[-1]
+        if t == t_fin:
+            return pyo.Constraint.Skip
+        return model.Z_charge[k, i, d, t] + model.Z_charge[k, i, d, t + 1] >= 2 * model.StartCharge[k, i, d, t]
+
     #MÃ¡xima potencia de carga on-board solo si esta en estacion
     def max_power(self, model, k, i, d, t):
         return model.P[k, i, d, t]  <= model.Z_charge[k, i, d, t] * model.p_charger
@@ -850,6 +848,7 @@ class ConstraintRules(OptRules):
         model.station_existence_constraint       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.station_existence_constraint)
         model.charger_limit                      = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
+        model.min_charge_duration                = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)

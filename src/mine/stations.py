@@ -36,9 +36,6 @@ class Stations(object):
     def get_c_charger_space(self, keys=None):
         return self._get_optional('c_charger_space', keys, default=0)
     
-    def get_distance_to_discharge_node(self, keys=None):
-        return self.get('distance_to_dn', keys)
-    
     def get_max_chargers(self, keys=None):
         return self._get_optional('max_chargers', keys, default=self._get_optional('max_chargers_per_bay', keys, default=0))
 
@@ -48,8 +45,5 @@ class Stations(object):
     def get_max_chargers_per_bay(self, keys=None):
         return self._get_optional('max_chargers_per_bay', keys, default=self.get_max_chargers(keys))
     
-    def get_maneuvering_time(self, keys=None):
-        return self.get('man_time', keys)
-
     def get_p_max_ssee(self, keys=None):
         return self.get('p_max_ssee', keys)
