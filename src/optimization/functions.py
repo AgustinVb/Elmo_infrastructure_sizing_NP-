@@ -429,17 +429,13 @@ class OptParameters(OptRules):
         model.demand_charge_coef = pyo.Param(initialize=12 * 10, mutable=True)
         #Parametros estaciones de carga
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False)
-        model.distance_to_dn_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_distance_to_discharge_node(k) for k in model.stations_set}, mutable=False)
         model.c_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_bays(k) for k in model.stations_set}, mutable=False)
         model.c_charger_space_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_charger_space(k) for k in model.stations_set}, mutable=False)
         model.c_battery_space_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_battery_space(k) for k in model.stations_set}, mutable=False)
         model.max_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_bays(k) for k in model.stations_set}, mutable=False)
         model.max_batteries_per_bay_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries_per_bay(k) for k in model.stations_set}, mutable=False)
         model.max_chargers_per_bay_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers_per_bay(k) for k in model.stations_set}, mutable=False)
-        model.man_time_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_maneuvering_time(k) for k in model.stations_set}, mutable=False)
         model.c_crane_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_crane(k) for k in model.stations_set}, mutable=False)
-        model.pk_i   = pyo.Param( model.stations_set, model.slhd_set, initialize={(k,i):self.mine_system.elhd.engine_energy_charge_travel(self.mine_system.stations.get_distance_to_discharge_node(k),i,0) for k in model.stations_set for i in model.slhd_set}, mutable=False)
-        model.t_ttc_i   = pyo.Param( model.stations_set, model.slhd_set, initialize={(k,i):self.mine_system.elhd.time_charge_station(self.mine_system.stations.get_distance_to_discharge_node(k),i) for k in model.stations_set for i in model.slhd_set}, mutable=False)
         model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         #model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
         # t_charge en intervalos con delta_t en horas:
@@ -644,12 +640,9 @@ class ConstraintRules(OptRules):
         t0 = self.time_series.get_time_intervals()[0]
         discharge = sum(model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)])
-        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
-        penalization_charge = sum(model.Z_swap[k, i, d, t] * model.pk_i[k,i] for k in valid_k_list) * model.t_swap[i]
-        
         if t >= t0:
-            return model.B[i, d, t] ==  model.B_s[i, d, t-1] - discharge - penalization_charge
-        
+            return model.B[i, d, t] ==  model.B_s[i, d, t-1] - discharge
+
         else:
             return pyo.Constraint.Skip
 
