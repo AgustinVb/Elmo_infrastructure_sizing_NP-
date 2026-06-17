@@ -664,7 +664,7 @@ class ConstraintRules(OptRules):
     def min_charge_duration(self, model, k, i, d, t):
         t_fin = self.time_series.get_time_intervals()[-1]
         if t == t_fin:
-            return pyo.Constraint.Skip
+            return model.Z_charge[k,i,d,t] == 0
         return model.Z_charge[k, i, d, t] + model.Z_charge[k, i, d, t + 1] >= 2 * model.StartCharge[k, i, d, t]
 
     #MÃ¡xima potencia de carga on-board solo si esta en estacion
