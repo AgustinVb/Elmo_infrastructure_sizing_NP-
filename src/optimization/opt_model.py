@@ -45,19 +45,19 @@ class OptModel(object):
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
         self.var_index_order: Dict[str, List[str]] = {
-            "Z": ["i", "d", "t"],
-            "Z_charge": ["k", "i", "d", "t"],
-            "Y": ["i", "j", "d", "t"],
-            "P": ["k", "i", "d", "t"],
+            "Z": ["i", "y", "d", "t"],
+            "Z_charge": ["k", "i", "y", "d", "t"],
+            "Y": ["i", "j", "y", "d", "t"],
+            "P": ["k", "i", "y", "d", "t"],
             "P_pot": ["y"],
-            "B": ["i", "d", "t"],
+            "B": ["i", "y", "d", "t"],
             "N_chargers": ["k"],
             "X": ["k"],
-            "StartCharge": ["k", "i", "d", "t"],
-            "EndCharge": ["k", "i", "d", "t"],
-            "M": ["i", "j", "d", "t"],
-            "F": ["j", "d"],
-            "F_seg": ["j", "d", "seg"],
+            "StartCharge": ["k", "i", "y", "d", "t"],
+            "EndCharge": ["k", "i", "y", "d", "t"],
+            "M": ["i", "j", "y", "d", "t"],
+            "F": ["j", "y", "d"],
+            "F_seg": ["j", "y", "d", "seg"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)

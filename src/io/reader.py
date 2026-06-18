@@ -67,7 +67,7 @@ class Series(Reader):
                            Example: ['MarginalCost', 'Emissions']
 
         """
-        self.init = dict(MarginalCost=3, Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=5, StationAssignment=3, GenProfiles=3)
+        self.init = dict(MarginalCost=3, Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=3, StationAssignment=3, GenProfiles=3)
         self.save_sheets = save_sheets  # None = guardar todos, o lista de nombres
         self.conf, self.parser = 'series.ini', ConfigParser()
         self.dirname = dirname(location)

@@ -6,6 +6,7 @@
 import os
 import json
 import argparse
+import itertools
 from typing import Dict, Any, List, Tuple, Optional
 
 import numpy as np
@@ -83,25 +84,15 @@ def load_B_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, value in _collect_named_leaf_records(data):
         axes = {name: axis_value for name, axis_value in tokens}
         if {"i", "d", "t"}.issubset(axes):
-            # Si axes["d"] es string no-numérico, es el lhd (d=lhd, t=day, i=interval)
-            if isinstance(axes["d"], str):
-                rows.append({
-                    "lhd": str(axes["d"]),
-                    "day": _numeric_or_str(axes["t"]),
-                    "interval": _numeric_or_str(axes["i"]),
-                    "value": float(value),
-                })
+            yr, day, iv = _extract_ydt_simple(axes, key_h="i")
+            if isinstance(axes["i"], str):
+                rows.append({"year": yr, "lhd": str(axes["i"]), "day": day, "interval": iv, "value": float(value)})
             else:
-                rows.append({
-                    "lhd": axes["i"],
-                    "day": _numeric_or_str(axes["d"]),
-                    "interval": _numeric_or_str(axes["t"]),
-                    "value": float(value),
-                })
+                rows.append({"year": yr, "lhd": axes["i"], "day": day, "interval": iv, "value": float(value)})
 
     if rows:
         return (pd.DataFrame(rows)
-                .sort_values(["lhd", "day", "interval"])
+                .sort_values(["year", "lhd", "day", "interval"])
                 .reset_index(drop=True))
 
     d = data.get("d", {})
@@ -131,27 +122,19 @@ def load_binary_Y_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, value in _collect_named_leaf_records(data):
         axes = {name: axis_value for name, axis_value in tokens}
         if {"i", "j", "d", "t"}.issubset(axes):
-            # Si axes["d"] es string no-numérico, es el lhd (d=lhd, t=node, i=day, j=interval)
-            if isinstance(axes["d"], str):
-                rows.append({
-                    "lhd": str(axes["d"]),
-                    "node": str(axes["t"]),
-                    "day": _numeric_or_str(axes["i"]),
-                    "interval": _numeric_or_str(axes["j"]),
-                    "value": float(value),
-                })
-            else:
-                rows.append({
-                    "lhd": axes["i"],
-                    "node": str(axes["j"]),
-                    "day": _numeric_or_str(axes["d"]),
-                    "interval": _numeric_or_str(axes["t"]),
-                    "value": float(value),
-                })
+            yr, day, iv = _extract_ydt_simple(axes, key_h="i")
+            rows.append({
+                "year": yr,
+                "lhd": str(axes["i"]),
+                "node": str(axes["j"]),
+                "day": day,
+                "interval": iv,
+                "value": float(value),
+            })
 
     if rows:
         return (pd.DataFrame(rows)
-                .sort_values(["lhd", "node", "day", "interval"])
+                .sort_values(["year", "lhd", "node", "day", "interval"])
                 .reset_index(drop=True))
 
     d = data.get("d", {})
@@ -193,40 +176,16 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
         row: Dict[str, Any] = {"value": float(value)}
 
         if {"k", "i", "d", "t"}.issubset(axes):
-            row.update({
-                "station": str(axes["k"]),
-                "lhd": axes["i"],
-                "day": _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-            })
+            yr, day, iv = _extract_ydt_simple(axes, key_h="i")
+            row.update({"year": yr, "station": str(axes["k"]), "lhd": str(axes["i"]),
+                        "day": day, "interval": iv})
         elif {"i", "j", "d", "t"}.issubset(axes):
-            if isinstance(axes["d"], str):
-                row.update({
-                    "lhd": str(axes["d"]),
-                    "node": str(axes["t"]),
-                    "day": _numeric_or_str(axes["i"]),
-                    "interval": _numeric_or_str(axes["j"]),
-                })
-            else:
-                row.update({
-                    "lhd": axes["i"],
-                    "node": str(axes["j"]),
-                    "day": _numeric_or_str(axes["d"]),
-                    "interval": _numeric_or_str(axes["t"]),
-                })
+            yr, day, iv = _extract_ydt_simple(axes, key_h="i")
+            row.update({"year": yr, "lhd": str(axes["i"]), "node": str(axes["j"]),
+                        "day": day, "interval": iv})
         elif {"i", "d", "t"}.issubset(axes):
-            if isinstance(axes["d"], str):
-                row.update({
-                    "lhd": str(axes["d"]),
-                    "day": _numeric_or_str(axes["t"]),
-                    "interval": _numeric_or_str(axes["i"]),
-                })
-            else:
-                row.update({
-                    "lhd": axes["i"],
-                    "day": _numeric_or_str(axes["d"]),
-                    "interval": _numeric_or_str(axes["t"]),
-                })
+            yr, day, iv = _extract_ydt_simple(axes, key_h="i")
+            row.update({"year": yr, "lhd": str(axes["i"]), "day": day, "interval": iv})
         else:
             row = {}
 
@@ -235,7 +194,7 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
 
     if rows:
         df = pd.DataFrame(rows)
-        cols = [c for c in ["lhd", "station", "node", "j", "day", "interval", "value"] if c in df.columns]
+        cols = [c for c in ["year", "lhd", "station", "node", "j", "day", "interval", "value"] if c in df.columns]
         return df[cols].sort_values([c for c in cols if c != "value"]).reset_index(drop=True)
 
     def _find_interval_map(obj):
@@ -432,12 +391,32 @@ def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    cols = [c for c in ["lhd","station","node","j","day","interval","value"] if c in df.columns]
+    cols = [c for c in ["year","lhd","station","node","j","day","interval","value"] if c in df.columns]
     return df[cols].sort_values([c for c in cols if c!="value"]).reset_index(drop=True)
 
 
+def _has_broken_year(axes: dict) -> bool:
+    """Detecta formato roto: índice y estaba ausente en schema viejo → quedó como _3/_4/_5."""
+    return any(str(k).startswith("_") and str(k)[1:].isdigit() for k in axes)
+
+def _extract_ydt_simple(axes: dict, key_h: str = None):
+    """Extrae (year, day, interval) de axes en formato nuevo (y/d/t) o viejo roto (d/t/_N).
+    key_h: nombre del índice fijo extra (g, h, etc.) a ignorar en la detección.
+    """
+    if "y" in axes:
+        # Formato nuevo correcto: y, d, t presentes
+        return int(axes["y"]), _numeric_or_str(axes["d"]), _numeric_or_str(axes["t"])
+    # Formato viejo roto: d=year, t=day, _N=interval
+    broken_key = next((k for k in axes if str(k).startswith("_") and str(k)[1:].isdigit()), None)
+    if broken_key:
+        return int(axes["d"]), _numeric_or_str(axes["t"]), _numeric_or_str(axes[broken_key])
+    # Formato muy viejo: sin year, d=day, t=interval
+    return 1, _numeric_or_str(axes["d"]), _numeric_or_str(axes["t"])
+
+
 def load_p_red_df(path: str) -> Optional[pd.DataFrame]:
-    """Carga P_red.json → DataFrame con columnas [day, interval, value]."""
+    """Carga P_red.json → DataFrame con columnas [year, day, interval, value].
+    Soporta formato nuevo (y,d,t) y viejo roto (d,t,_3)."""
     data = _load_json(path)
     if not data:
         return None
@@ -445,16 +424,13 @@ def load_p_red_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, val in _collect_named_leaf_records(data):
         axes = {n: v for n, v in tokens}
         if {"d", "t"}.issubset(axes):
-            rows.append({
-                "day":      _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-                "value":    float(val),
-            })
-    return pd.DataFrame(rows).sort_values(["day", "interval"]).reset_index(drop=True) if rows else None
+            yr, day, iv = _extract_ydt_simple(axes)
+            rows.append({"year": yr, "day": day, "interval": iv, "value": float(val)})
+    return pd.DataFrame(rows).sort_values(["year", "day", "interval"]).reset_index(drop=True) if rows else None
 
 
 def load_p_gen_df(path: str) -> Optional[pd.DataFrame]:
-    """Carga P_gen.json → DataFrame con columnas [gen, day, interval, value]."""
+    """Carga P_gen.json → DataFrame con columnas [gen, year, day, interval, value]."""
     data = _load_json(path)
     if not data:
         return None
@@ -462,19 +438,13 @@ def load_p_gen_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, val in _collect_named_leaf_records(data):
         axes = {n: v for n, v in tokens}
         if {"g", "d", "t"}.issubset(axes):
-            rows.append({
-                "gen":      str(axes["g"]),
-                "day":      _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-                "value":    float(val),
-            })
-    return pd.DataFrame(rows).sort_values(["gen", "day", "interval"]).reset_index(drop=True) if rows else None
+            yr, day, iv = _extract_ydt_simple(axes, key_h="g")
+            rows.append({"gen": str(axes["g"]), "year": yr, "day": day, "interval": iv, "value": float(val)})
+    return pd.DataFrame(rows).sort_values(["gen", "year", "day", "interval"]).reset_index(drop=True) if rows else None
 
 
 def load_p_bat_df(path: str) -> Optional[pd.DataFrame]:
-    """Carga P_bat.json → DataFrame con columnas [storage, day, interval, value].
-    Valores positivos = descarga (inyecta a la red), negativos = carga (absorbe de la red).
-    """
+    """Carga P_bat.json → DataFrame con columnas [storage, year, day, interval, value]."""
     data = _load_json(path)
     if not data:
         return None
@@ -482,17 +452,13 @@ def load_p_bat_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, val in _collect_named_leaf_records(data):
         axes = {n: v for n, v in tokens}
         if {"h", "d", "t"}.issubset(axes):
-            rows.append({
-                "storage":  str(axes["h"]),
-                "day":      _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-                "value":    float(val),
-            })
-    return pd.DataFrame(rows).sort_values(["storage", "day", "interval"]).reset_index(drop=True) if rows else None
+            yr, day, iv = _extract_ydt_simple(axes, key_h="h")
+            rows.append({"storage": str(axes["h"]), "year": yr, "day": day, "interval": iv, "value": float(val)})
+    return pd.DataFrame(rows).sort_values(["storage", "year", "day", "interval"]).reset_index(drop=True) if rows else None
 
 
 def load_a_h_df(path: str) -> Optional[pd.DataFrame]:
-    """Carga A_h.json → DataFrame con columnas [storage, day, interval, value] en kWh."""
+    """Carga A_h.json → DataFrame con columnas [storage, year, day, interval, value] en kWh."""
     data = _load_json(path)
     if not data:
         return None
@@ -500,13 +466,9 @@ def load_a_h_df(path: str) -> Optional[pd.DataFrame]:
     for tokens, val in _collect_named_leaf_records(data):
         axes = {n: v for n, v in tokens}
         if {"h", "d", "t"}.issubset(axes):
-            rows.append({
-                "storage":  str(axes["h"]),
-                "day":      _numeric_or_str(axes["d"]),
-                "interval": _numeric_or_str(axes["t"]),
-                "value":    float(val),
-            })
-    return pd.DataFrame(rows).sort_values(["storage", "day", "interval"]).reset_index(drop=True) if rows else None
+            yr, day, iv = _extract_ydt_simple(axes, key_h="h")
+            rows.append({"storage": str(axes["h"]), "year": yr, "day": day, "interval": iv, "value": float(val)})
+    return pd.DataFrame(rows).sort_values(["storage", "year", "day", "interval"]).reset_index(drop=True) if rows else None
 
 
 # -------------------- Parámetros --------------------
@@ -546,26 +508,44 @@ class Parameters:
         self.ok = True
         self.delta_t = float(data.get("delta_t", 1.0))
 
-        # -------- m_j (demanda por nodo y día) --------
+        # -------- m_j (demanda por nodo y año): _1->node _2->year:value --------
         m_j = {}
         for pex, blk in data.get("m_j", {}).get("_1", {}).items():
             if not isinstance(blk, dict):
                 continue
-            for day, val in blk.get("_2", {}).items():
-                m_j.setdefault(pex, {})[_numeric_or_str(day)] = float(val)
+            for year, val in blk.get("_2", {}).items():
+                m_j.setdefault(pex, {})[_numeric_or_str(year)] = float(val)
         self.m_j = m_j if m_j else None
 
-        # -------- costo_marginal por LHD → día → intervalo --------
+        # -------- costo_marginal: _1->lhd _2->year _3->day _4->interval --------
         cm = []
         for lhd, blk1 in data.get("costo_marginal", {}).get("_1", {}).items():
-            for day, t_blk in blk1.get("_2", {}).items():
-                for interval, price in t_blk.get("_3", {}).items():
-                    cm.append({
-                        "lhd": lhd,
-                        "day": _numeric_or_str(day),
-                        "interval": _numeric_or_str(interval),
-                        "price": float(price) * self.energy_price_scale,
-                    })
+            for year_or_day, blk2 in blk1.get("_2", {}).items():
+                if not isinstance(blk2, dict):
+                    continue
+                blk3 = blk2.get("_3", {})
+                if blk3:
+                    # new format: _2=year, _3=day, _4=interval
+                    for day, blk4 in blk3.items():
+                        for interval, price in blk4.get("_4", {}).items():
+                            cm.append({
+                                "lhd": lhd,
+                                "year": _numeric_or_str(year_or_day),
+                                "day": _numeric_or_str(day),
+                                "interval": _numeric_or_str(interval),
+                                "price": float(price) * self.energy_price_scale,
+                            })
+                else:
+                    # legacy format: _2=day, values are intervals
+                    for interval, price in blk2.items():
+                        if not isinstance(price, dict):
+                            cm.append({
+                                "lhd": lhd,
+                                "year": 1,
+                                "day": _numeric_or_str(year_or_day),
+                                "interval": _numeric_or_str(interval),
+                                "price": float(price) * self.energy_price_scale,
+                            })
         self.costo_marginal = pd.DataFrame(cm) if cm else None
 
         # -------- emisiones por LHD (si existiese legacy key 'emisiones') --------
@@ -669,8 +649,25 @@ class JSONPlotter:
 
         # Dominio
         self.days = self._detect_days()
+        self.years = self._detect_years()
         self.intervals = self._detect_intervals()
         self.special_intervals = self._load_special_intervals()
+
+    def _filter_yd(self, df: pd.DataFrame, y: int, d: int) -> pd.DataFrame:
+        """Filtra un DataFrame por (year, day) usando índices booleanos.
+        Tolera DataFrames sin columna 'year' (datos generados antes del índice de año).
+        """
+        mask = df["day"] == d
+        if "year" in df.columns:
+            mask = mask & (df["year"] == y)
+        return df[mask]
+
+    def _detect_years(self) -> List[int]:
+        sources = []
+        for df in [self.df_B, self.df_Y, self.df_P, self.df_M, self.df_Pred]:
+            if df is not None and "year" in df.columns and not df.empty:
+                sources.append(sorted(df["year"].dropna().unique().tolist()))
+        return sorted({int(y) for lst in sources for y in lst}) if sources else [1]
 
     def _detect_days(self) -> List[int]:
         sources = []
@@ -893,8 +890,8 @@ class JSONPlotter:
         start_hour = 9.0
         dt = float(self.delta_t)
 
-        for d in self.days:
-            p_day = (self.df_P.query("day == @d")[["interval", "value"]]
+        for y, d in itertools.product(self.years, self.days):
+            p_day = (self._filter_yd(self.df_P, y, d)[["interval", "value"]]
                         .groupby("interval")["value"].sum()
                         .reindex(self.intervals).fillna(0.0))
 
@@ -982,7 +979,9 @@ class JSONPlotter:
             # Energy Price line on right axis
             price_line = None
             if self.params.costo_marginal is not None and not self.params.costo_marginal.empty:
-                cm = self.params.costo_marginal.query("day == @d") if "day" in self.params.costo_marginal.columns else self.params.costo_marginal
+                cm = self._filter_yd(self.params.costo_marginal, y, d) if "day" in self.params.costo_marginal.columns else self.params.costo_marginal
+                if cm.empty:
+                    cm = self.params.costo_marginal.query("day == @d") if "day" in self.params.costo_marginal.columns else self.params.costo_marginal
                 if not cm.empty:
                     price_by_interval = (cm.groupby("interval")["price"].mean()
                                          .reindex(self.intervals).ffill().bfill().fillna(0.0))
@@ -1052,7 +1051,7 @@ class JSONPlotter:
                     handles.insert(1, line_price)
 
             month = self._rep_day_label(d)
-            fig.suptitle(f"{month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
+            fig.suptitle(f"Y{y} {month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
 
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
                        ncol=len(handles), fontsize=legend_fs, frameon=True)
@@ -1061,7 +1060,7 @@ class JSONPlotter:
             fig.subplots_adjust(top=0.82)
 
             fig.savefig(
-                os.path.join(self.plot_dir, f"ChargePower_vs_price_{month}.png"),
+                os.path.join(self.plot_dir, f"ChargePower_vs_price_Y{y}_{month}.png"),
                 bbox_inches="tight", dpi=120
             )
             plt.close(fig)
@@ -1152,11 +1151,11 @@ class JSONPlotter:
         lhds = sorted(lhds)
 
         for lhd in lhds:
-            for day in self.days:
-                dfB_sel = (self.df_B.query("lhd == @lhd and day == @day")
-                           if (self.df_B is not None and not self.df_B.empty) else pd.DataFrame())
-                dfE_sel = (self.df_E.query("lhd == @lhd and day == @day")
-                           if (self.df_E is not None and not self.df_E.empty) else pd.DataFrame())
+            for y, day in itertools.product(self.years, self.days):
+                _b = self._filter_yd(self.df_B, y, day) if (self.df_B is not None and not self.df_B.empty) else pd.DataFrame()
+                dfB_sel = _b[_b["lhd"] == lhd] if not _b.empty else pd.DataFrame()
+                _e = self.df_E[self.df_E["day"] == day] if (self.df_E is not None and not self.df_E.empty) else pd.DataFrame()
+                dfE_sel = _e[_e["lhd"] == lhd] if not _e.empty else pd.DataFrame()
 
                 if dfB_sel.empty and dfE_sel.empty:
                     continue
@@ -1181,8 +1180,7 @@ class JSONPlotter:
                 ax_price = ax_main.twinx()
 
                 if is_electric:
-                    series = (dfB_sel[["interval", "value"]]
-                              .set_index("interval")["value"]
+                    series = (dfB_sel.groupby("interval")["value"].mean()
                               .reindex(self.intervals)
                               .ffill().bfill().fillna(0.0))
                     s0 = float(series.iloc[0]) if len(series) else 0.0
@@ -1193,8 +1191,7 @@ class JSONPlotter:
                     soc_color = palette["State-of-Charge"]
                     soc_name = "State-of-Charge"
                 else:
-                    series = (dfE_sel[["interval", "value"]]
-                              .set_index("interval")["value"]
+                    series = (dfE_sel.groupby("interval")["value"].mean()
                               .reindex(self.intervals)
                               .ffill().bfill().fillna(0.0))
                     s0 = float(series.iloc[0]) if len(series) else 0.0
@@ -1212,10 +1209,10 @@ class JSONPlotter:
                     path_effects.Normal(),
                 ])
 
-                price_day = (self.params.costo_marginal
-                             .query("lhd == @lhd and day == @day")[["interval", "price"]]
-                             .set_index("interval")
-                             .reindex(self.intervals)["price"]
+                price_day = (self.params.costo_marginal[
+                                 (self.params.costo_marginal["day"] == day) if "day" in self.params.costo_marginal.columns else slice(None)
+                             ].groupby("interval")["price"].mean()
+                             .reindex(self.intervals)
                              .ffill().bfill().fillna(0.0)
                              .to_numpy(dtype=float))
                 y_price = np.concatenate([[price_day[0] if len(price_day) else 0.0], price_day])
@@ -1229,10 +1226,10 @@ class JSONPlotter:
                     label="Energy Price",
                 )[0]
 
-                Y_filtered = (self.df_Y.query("lhd == @lhd and day == @day and value >= 0.5")
-                              if (self.df_Y is not None and not self.df_Y.empty) else pd.DataFrame())
-                P_filtered = (self.df_P.query("lhd == @lhd and day == @day")
-                              if (self.df_P is not None and not self.df_P.empty) else pd.DataFrame())
+                _y = self._filter_yd(self.df_Y, y, day) if (self.df_Y is not None and not self.df_Y.empty) else pd.DataFrame()
+                Y_filtered = _y[(_y["lhd"] == lhd) & (_y["value"] >= 0.5)] if not _y.empty else pd.DataFrame()
+                _p = self._filter_yd(self.df_P, y, day) if (self.df_P is not None and not self.df_P.empty) else pd.DataFrame()
+                P_filtered = _p[_p["lhd"] == lhd] if not _p.empty else pd.DataFrame()
 
                 states = []
                 for t in self.intervals:
@@ -1343,9 +1340,9 @@ class JSONPlotter:
                 ax_task.grid(False)
 
                 month = self._rep_day_label(day)
-                fig.suptitle(f"LHD {lhd} {month}", y=0.96, fontsize=18)
+                fig.suptitle(f"LHD {lhd} Y{y} {month}", y=0.96, fontsize=18)
 
-                fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_day-{day}.png"), dpi=150, bbox_inches="tight")
+                fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_Y{y}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
 
 
@@ -1358,12 +1355,11 @@ class JSONPlotter:
             return
 
 
-        for d in self.days:
+        for y, d in itertools.product(self.years, self.days):
 
-            e_day = (self.params.emissions_electric
-                    .query("day == @d")[["interval", "emission_rate"]]
-                    .set_index("interval")
-                    .reindex(self.intervals)["emission_rate"]
+            e_day = (self.params.emissions_electric[self.params.emissions_electric["day"] == d]
+                    .groupby("interval")["emission_rate"].mean()
+                    .reindex(self.intervals)
                     .ffill().bfill().fillna(0.0))
 
             if e_day.isna().all() or (e_day == 0).all():
@@ -1413,7 +1409,7 @@ class JSONPlotter:
 
             month = self._rep_day_label(d)
             fig.savefig(
-                        os.path.join(self.plot_dir, f"EmissionProfiles_{month}.png"),
+                        os.path.join(self.plot_dir, f"EmissionProfiles_Y{y}_{month}.png"),
                         bbox_inches="tight"
             )
             plt.close(fig)
@@ -1426,23 +1422,26 @@ class JSONPlotter:
         lhds = sorted(self.params.costo_marginal["lhd"].unique().tolist())
         costs = {l: 0.0 for l in lhds}
 
+        cm = self.params.costo_marginal
         if self.df_P is not None and not self.df_P.empty:
             for lhd in lhds:
-                for d in self.days:
-                    price = (self.params.costo_marginal
-                             .query("lhd == @lhd and day == @d")[["interval","price"]].set_index("interval"))
-                    p = (self.df_P.query("day == @d and lhd == @lhd")[["interval","value"]].set_index("interval"))
+                for y, d in itertools.product(self.years, self.days):
+                    _cm = cm[cm["day"] == d] if "day" in cm.columns else cm
+                    price = _cm.groupby("interval")["price"].mean()
+                    _pp = self._filter_yd(self.df_P, y, d)
+                    p = _pp[_pp["lhd"] == lhd].groupby("interval")["value"].mean()
                     if not p.empty and not price.empty:
-                        merged = p.join(price, how="inner")
+                        merged = pd.concat([p.rename("value"), price], axis=1).dropna()
                         costs[lhd] += float((merged["value"] * merged["price"] * self.delta_t).sum())
         elif self.df_E is not None and not self.df_E.empty:
             for lhd in lhds:
-                for d in self.days:
-                    price = (self.params.costo_marginal
-                             .query("lhd == @lhd and day == @d")[["interval","price"]].set_index("interval"))
-                    e = (self.df_E.query("day == @d and lhd == @lhd")[["interval","value"]].set_index("interval"))
+                for y, d in itertools.product(self.years, self.days):
+                    _cm = cm[cm["day"] == d] if "day" in cm.columns else cm
+                    price = _cm.groupby("interval")["price"].mean()
+                    _e = self.df_E[self.df_E["day"] == d] if "day" in self.df_E.columns else self.df_E
+                    e = _e[_e["lhd"] == lhd].groupby("interval")["value"].mean()
                     if not e.empty and not price.empty:
-                        merged = e.join(price, how="inner")
+                        merged = pd.concat([e.rename("value"), price], axis=1).dropna()
                         costs[lhd] += float((merged["value"] * merged["price"]).sum())
 
         if any(v != 0 for v in costs.values()):
@@ -1484,9 +1483,9 @@ class JSONPlotter:
 
         mj = self.params.m_j or {}
 
-        for d in self.days:
+        for y, d in itertools.product(self.years, self.days):
             # Filtrar datos del dia
-            df_day = self.df_M.query("day == @d")
+            df_day = self._filter_yd(self.df_M, y, d)
             if df_day.empty:
                 continue
 
@@ -1520,14 +1519,14 @@ class JSONPlotter:
             ax.set_xlabel("Extraction Point (j)", fontsize=12)
             
             month_label = self._rep_day_label(d)
-            ax.set_title(f"Material Extraction - All Nodes - {month_label}", 
+            ax.set_title(f"Material Extraction - All Nodes - Y{y} {month_label}",
                         fontsize=14, pad=15)
-            
+
             ax.grid(axis='y', linestyle=':', alpha=0.6)
             ax.legend(loc="upper right", fontsize=11, frameon=True).get_frame().set_edgecolor("#cccccc")
-            
+
             fig.tight_layout()
-            filename = f"Material_Extraction_M_AllNodes_{month_label.replace(' ', '_')}.png"
+            filename = f"Material_Extraction_M_AllNodes_Y{y}_{month_label.replace(' ', '_')}.png"
             save_path = os.path.join(self.plot_dir, filename)
             fig.savefig(save_path, dpi=120, bbox_inches='tight')
             plt.close(fig)
@@ -1552,14 +1551,14 @@ class JSONPlotter:
             ax.set_ylabel("Total Material [t]", fontsize=13)
             ax.set_xlabel("Extraction Point (j)", fontsize=13)
             
-            ax.set_title(f"Material Extraction - Top {top_n} Nodes - {month_label}", 
+            ax.set_title(f"Material Extraction - Top {top_n} Nodes - Y{y} {month_label}",
                         fontsize=15, pad=15)
-            
+
             ax.grid(axis='y', linestyle=':', alpha=0.6)
             ax.legend(loc="upper right", fontsize=12, frameon=True).get_frame().set_edgecolor("#cccccc")
-            
+
             fig.tight_layout()
-            filename = f"Material_Extraction_M_Top{top_n}_{month_label.replace(' ', '_')}.png"
+            filename = f"Material_Extraction_M_Top{top_n}_Y{y}_{month_label.replace(' ', '_')}.png"
             save_path = os.path.join(self.plot_dir, filename)
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             plt.close(fig)
@@ -1589,7 +1588,8 @@ class JSONPlotter:
         p_max_inner = p_max_raw.get("_1", p_max_raw) if isinstance(p_max_raw, dict) else {}
         p_max: Dict[str, float] = {str(g): float(v) for g, v in p_max_inner.items()} if isinstance(p_max_inner, dict) else {}
 
-        # alpha_g: _1 → gen → _2 → str(day) → _3 → str(float(t)) → value
+        # alpha_g nuevo: _1→gen→_2→year→_3→day→_4→interval:value
+        # alpha_g legacy: _1→gen→_2→day→_3→interval:value
         alpha_root = params_data.get("alpha_g", {}).get("_1", {})
 
         gen_set = [str(g) for g in params_data.get("gen_set", list(gg.keys()))]
@@ -1616,7 +1616,7 @@ class JSONPlotter:
         def _step(arr: np.ndarray) -> np.ndarray:
             return np.append(arr, arr[-1])
 
-        for d in self.days:
+        for y, d in itertools.product(self.years, self.days):
             fig, ax = plt.subplots(figsize=(14, 5))
             handles = []
 
@@ -1625,18 +1625,24 @@ class JSONPlotter:
                 pmax  = p_max.get(g, 0.0)
                 cap_total = units * pmax   # kW máximos instalados
 
-                # Obtener alpha para (g, day)
-                alpha_day_raw = (
-                    alpha_root
-                    .get(g, {})
-                    .get("_2", {})
-                    .get(str(d), {})
-                    .get("_3", {})
-                )
-                capacity = np.array([
-                    cap_total * float(alpha_day_raw.get(f"{float(t)}", alpha_day_raw.get(str(t), 0.0)))
-                    for t in self.intervals
-                ])
+                # Obtener alpha para (g, y, day) — soporta formato nuevo y legacy
+                g_block = alpha_root.get(g, {})
+                _2 = g_block.get("_2", {})
+                # Formato nuevo: _2→year→_3→day→_4→interval
+                _year_block = _2.get(str(y), {})
+                _3_new = _year_block.get("_3", {})
+                _day_block_new = _3_new.get(str(d), {})
+                alpha_day_raw = _day_block_new.get("_4", {})
+                if not alpha_day_raw:
+                    # Formato legacy: _2→day→_3→interval
+                    _day_block_old = _2.get(str(d), {})
+                    alpha_day_raw = _day_block_old.get("_3", {})
+
+                def _get_alpha(t):
+                    v = alpha_day_raw.get(f"{float(t)}", alpha_day_raw.get(str(t), 0.0))
+                    return float(v) if not isinstance(v, dict) else 0.0
+
+                capacity = np.array([cap_total * _get_alpha(t) for t in self.intervals])
 
                 color = gen_colors[g]
                 # Área rellena = capacidad disponible
@@ -1649,8 +1655,8 @@ class JSONPlotter:
                 # Despacho real (P_gen) como línea discontinua
                 if self.df_Pgen is not None and not self.df_Pgen.empty:
                     gen_day = (
-                        self.df_Pgen.query("day == @d and gen == @g")[["interval", "value"]]
-                        .set_index("interval")["value"]
+                        self._filter_yd(self.df_Pgen, y, d).pipe(lambda df: df[df["gen"] == g])
+                        .groupby("interval")["value"].mean()
                         .reindex(self.intervals)
                         .fillna(0.0)
                         .values
@@ -1663,7 +1669,7 @@ class JSONPlotter:
                     )
 
             month = self._rep_day_label(d)
-            ax.set_title(f"Perfil de capacidad solar disponible — {month}", fontsize=14)
+            ax.set_title(f"Perfil de capacidad solar disponible — Y{y} {month}", fontsize=14)
             ax.set_xlabel("Hora", fontsize=12)
             ax.set_ylabel("Potencia [kW]", fontsize=12)
             ax.set_xlim(0, 24)
@@ -1682,7 +1688,7 @@ class JSONPlotter:
                     va="bottom", ha="left", fontsize=8, color="gray", transform=ax.get_yaxis_transform())
 
             fig.tight_layout()
-            fname = f"GenCapacityProfile_{month.replace(' ', '_')}.png"
+            fname = f"GenCapacityProfile_Y{y}_{month.replace(' ', '_')}.png"
             fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
             plt.close(fig)
 
@@ -1723,10 +1729,10 @@ class JSONPlotter:
             if g not in gen_colors:
                 gen_colors[g] = fallback_colors[color_idx % len(fallback_colors)]
 
-        for d in self.days:
+        for y, d in itertools.product(self.years, self.days):
             p_red_day = (
-                self.df_Pred.query("day == @d")[["interval", "value"]]
-                .set_index("interval")["value"]
+                self._filter_yd(self.df_Pred, y, d)
+                .groupby("interval")["value"].mean()
                 .reindex(self.intervals)
                 .fillna(0.0)
             )
@@ -1746,8 +1752,8 @@ class JSONPlotter:
             for g in gen_names:
                 if self.df_Pgen is not None and not self.df_Pgen.empty:
                     gen_day = (
-                        self.df_Pgen.query("day == @d and gen == @g")[["interval", "value"]]
-                        .set_index("interval")["value"]
+                        self._filter_yd(self.df_Pgen, y, d).pipe(lambda df: df[df["gen"] == g])
+                        .groupby("interval")["value"].mean()
                         .reindex(self.intervals)
                         .fillna(0.0)
                         .values
@@ -1765,8 +1771,8 @@ class JSONPlotter:
             bess_added = False
             for h in storage_names:
                 p_bat_raw = (
-                    self.df_Pbat.query("day == @d and storage == @h")[["interval", "value"]]
-                    .set_index("interval")["value"]
+                    self._filter_yd(self.df_Pbat, y, d).pipe(lambda df: df[df["storage"] == h])
+                    .groupby("interval")["value"].mean()
                     .reindex(self.intervals)
                     .fillna(0.0)
                     .values
@@ -1802,7 +1808,7 @@ class JSONPlotter:
 
             # --- decoracion ---
             month = self._rep_day_label(d)
-            ax.set_title(f"Despacho de potencia — {month}", fontsize=14)
+            ax.set_title(f"Despacho de potencia — Y{y} {month}", fontsize=14)
             ax.set_xlabel("Hora", fontsize=12)
             ax.set_ylabel("Potencia [kW]", fontsize=12)
             ax.set_xlim(0, 24)
@@ -1815,7 +1821,7 @@ class JSONPlotter:
             ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
 
             fig.tight_layout()
-            fname = f"PowerDispatch_{month.replace(' ', '_')}.png"
+            fname = f"PowerDispatch_Y{y}_{month.replace(' ', '_')}.png"
             fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
             plt.close(fig)
 
@@ -1835,10 +1841,10 @@ class JSONPlotter:
         storage_names = sorted(self.df_Ah["storage"].unique().tolist())
 
         for h in storage_names:
-            for d in self.days:
+            for y, d in itertools.product(self.years, self.days):
                 a_day = (
-                    self.df_Ah.query("day == @d and storage == @h")[["interval", "value"]]
-                    .set_index("interval")["value"]
+                    self._filter_yd(self.df_Ah, y, d).pipe(lambda df: df[df["storage"] == h])
+                    .groupby("interval")["value"].mean()
                     .reindex(self.intervals)
                     .fillna(0.0)
                 )
@@ -1860,8 +1866,8 @@ class JSONPlotter:
                 # Potencia BESS (si existe)
                 if self.df_Pbat is not None and not self.df_Pbat.empty:
                     p_bat = (
-                        self.df_Pbat.query("day == @d and storage == @h")[["interval", "value"]]
-                        .set_index("interval")["value"]
+                        self._filter_yd(self.df_Pbat, y, d).pipe(lambda df: df[df["storage"] == h])
+                        .groupby("interval")["value"].mean()
                         .reindex(self.intervals)
                         .fillna(0.0)
                     )
@@ -1874,7 +1880,7 @@ class JSONPlotter:
                     ax2.tick_params(axis="y", labelcolor=charge_color, labelsize=10)
 
                 month = self._rep_day_label(d)
-                ax1.set_title(f"Estado de energía BESS — {h} — {month}", fontsize=14)
+                ax1.set_title(f"Estado de energía BESS — {h} — Y{y} {month}", fontsize=14)
                 ax1.set_xlabel("Hora", fontsize=12)
                 ax1.set_ylabel("Energía almacenada [kWh]", fontsize=12, color=bess_color)
                 ax1.tick_params(axis="y", labelcolor=bess_color, labelsize=10)
@@ -1893,7 +1899,7 @@ class JSONPlotter:
                            fontsize=10, framealpha=0.85)
 
                 fig.tight_layout()
-                fname = f"BESS_EnergyState_{h}_{month.replace(' ', '_')}.png"
+                fname = f"BESS_EnergyState_{h}_Y{y}_{month.replace(' ', '_')}.png"
                 fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
                 plt.close(fig)
 

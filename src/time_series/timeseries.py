@@ -12,11 +12,11 @@ class Timeseries(object):
         self.series = series
         self.days = sorted(days)
         self.delta_t = delta_t
-        self.scaling_factor_op_cost = 365 / len(self.days)
-        # Conservamos el diccionario 'time' de tu cÃ³digo original por compatibilidad
         self.time, self.mapper = dict(hourly=1, daily=24, weekly=168), {}
         self.day_to_year = {int(day): self.get_year_of_day(day) for day in self.days}
         self.years = sorted(set(self.day_to_year.values()))
+        self.days_within_year = sorted(set(((int(d) - 1) % 365) + 1 for d in self.days))
+        self.scaling_factor_op_cost = 365 / len(self.days_within_year)
         self.day_weights = self._build_day_weights()
         self.time_intervals = self.build_mappers()
         self.shifts = self.get_shifts()
@@ -38,8 +38,9 @@ class Timeseries(object):
         return self.mapper['Time_Intervals']
     
     def _hours_of_day(self, day: int):
-        """Horas absolutas del aÃ±o (1..8760) que pertenecen al dÃ­a 'day'."""
-        start = (int(day) - 1) * 24 + 1
+        """Horas del año 1 (1..8760) que corresponden al día 'day'. Cicla para años 2+."""
+        day_in_year1 = ((int(day) - 1) % 365) + 1
+        start = (day_in_year1 - 1) * 24 + 1
         return list(range(start, start + 24))
 
     def _load_marginal_cost_alpha(self) -> float:
@@ -147,10 +148,10 @@ class Timeseries(object):
         Respeta delta_t (mapea intervalos sub-horarios al Ã­ndice horario por 'ceil').
         """
         import math
-        hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
+        day_in_year1 = ((int(day) - 1) % 365) + 1
+        hour_of_year = math.ceil((day_in_year1 - 1) * 24 + time_interval * self.delta_t)
         scaled_day = self._scaled_day_marginal_cost(location_name, day, alpha=alpha)
 
-        # Si por alguna razÃ³n el hour_of_year no estÃ¡ (no deberÃ­a), cae al valor original
         if hour_of_year in scaled_day.index:
             return float(scaled_day.loc[hour_of_year])
         else:
@@ -191,19 +192,28 @@ class Timeseries(object):
 
     def sample_node_assignment(self, node_assignment: pd.DataFrame) -> pd.DataFrame:
         """
-        Toma la hoja 'NodeAssignment' con las columnas
-          ['shift_name_start', 'shift_name_end', 'elhd_name', 'ex_node_name'].
-        Agrega las columnas:
-          - start_day, end_day
-          - start_interval, end_interval
-        Igual que en el original, pero sin modificar la lÃ³gica.
+        Hoja 'NodeAssignment': columnas ['id', 'elhd_name', 'ex_node_name', 'year 1', 'year 2', ...]
+        donde cada columna de año vale 1 si el LHD puede visitar ese nodo ese año, 0 si no.
+        Funciona con nombres 'year 1'/'year 2' (Excel directo) o 1/2 (carga desde .npy).
+        Devuelve DataFrame con ['elhd_name', 'node_name', 'year'] solo para combinaciones activas.
         """
-        na = node_assignment[['shift_name_start', 'shift_name_end', 'elhd_name', 'ex_node_name']].copy()
-        na['start_day'] = [self.get_shift_day_start(s) for s in na['shift_name_start']]
-        na['end_day'] = [self.get_shift_day_end(s) for s in na['shift_name_end']]
-        na['start_interval'] = [self.get_shift_start_interval(s) for s in na['shift_name_start']]
-        na['end_interval'] = [self.get_shift_end_interval(s) for s in na['shift_name_end']]
-        return na
+        meta = {'id', 'elhd_name', 'ex_node_name'}
+        year_cols = [c for c in node_assignment.columns if str(c) not in meta]
+
+        def _parse_year(col) -> int:
+            # 'year 1' -> 1,  '1' -> 1,  1 -> 1
+            return int(str(col).strip().split()[-1])
+
+        melted = node_assignment[['elhd_name', 'ex_node_name'] + year_cols].melt(
+            id_vars=['elhd_name', 'ex_node_name'],
+            value_vars=year_cols,
+            var_name='year_col',
+            value_name='active'
+        )
+        na = melted[melted['active'] == 1][['elhd_name', 'ex_node_name', 'year_col']].copy()
+        na = na.rename(columns={'ex_node_name': 'node_name'})
+        na['year'] = na['year_col'].apply(_parse_year)
+        return na[['elhd_name', 'node_name', 'year']].reset_index(drop=True)
 
     def sample_battery_assignment(self, battery_assignment: pd.DataFrame) -> pd.DataFrame:
         """
@@ -223,8 +233,7 @@ class Timeseries(object):
 
     def sample_marginal_cost(self, marginal_cost: pd.DataFrame) -> pd.DataFrame:
         marginal_cost = marginal_cost.set_index('name')
-        hours_selected = np.arange((self.days[0] - 1) * 24 + 1,
-                                   (self.days[len(self.days) - 1]) * 24 + 1)
+        hours_selected = np.arange(1, 8761)  # siempre año 1; _hours_of_day cicla para años 2+
         return marginal_cost[hours_selected]
 
     def sample_emissions(self, emissions: pd.DataFrame) -> pd.DataFrame:
@@ -264,9 +273,8 @@ class Timeseries(object):
         hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
         return self.mapper['Emissions'].loc[tipo, hour_of_year]
 
-    def get_extraction_goal(self, node_name: str, day: int) -> float:
-        year = self.day_to_year[int(day)]
-        representative_day = self.get_representative_day_of_year(year)
+    def get_extraction_goal(self, node_name: str, year: int) -> float:
+        representative_day = self.get_representative_day_of_year(int(year))
         return self.mapper['ExtractionGoal'].loc[node_name, representative_day]
 
     def get_shift_start_interval(self, shift_name: str) -> float:
@@ -313,7 +321,8 @@ class Timeseries(object):
 
     def get_shifts(self) -> list:
         shifts = self.series['Shifts']
-        shifts = shifts[shifts['day_start'].isin(self.days)]
+        days_year1 = set(((d - 1) % 365) + 1 for d in self.days)
+        shifts = shifts[shifts['day_start'].isin(days_year1)]
         shifts = shifts.set_index(['name', 'id'])
         return list(shifts.index.get_level_values('name'))
 
@@ -361,36 +370,33 @@ class Timeseries(object):
         self.mapper['elhd_per_station'] = elhd_per_station
         return 0
 
-    def get_nodes_assigned_to_elhd(self, day: int, interval: int, elhd_name: str) -> list:
-        if interval != -1:
-            na = self.mapper['NodeAssignment']
-            na_elhd = na[na["elhd_name"] == elhd_name]
-            na_filt = na_elhd[(na_elhd["start_day"] <= day) & (na_elhd["end_day"] >= day) &
-                              (na_elhd["start_interval"] <= interval) & (na_elhd["end_interval"] >= interval)]
-            return list(na_filt['ex_node_name'])
-        else:
-            return []
+    def _nodes_for_elhd_year(self, elhd_name: str, year: int) -> list:
+        na = self.mapper['NodeAssignment']
+        return list(na.loc[(na['elhd_name'] == elhd_name) & (na['year'] == year), 'node_name'])
+
+    def get_nodes_assigned_to_elhd(self, year: int, day: int, interval: int, elhd_name: str) -> list:
+        return self.mapper['Nodes_assigned_at_interval'].get((year, day, interval, elhd_name), [])
 
     def get_node_assignment(self, elhds: list) -> int:
-        intervals = self.time_intervals
         node_assign_dict = {}
-        for day in self.days:
-            for interval in intervals:
-                for elhd in elhds:
-                    node_list = self.get_nodes_assigned_to_elhd(day, interval, elhd)
-                    node_assign_dict[(day, interval, elhd)] = node_list
+        for year in self.years:
+            for day in self.days_within_year:
+                for interval in self.time_intervals:
+                    for elhd in elhds:
+                        node_assign_dict[(year, day, interval, elhd)] = self._nodes_for_elhd_year(elhd, year)
         self.mapper['Nodes_assigned_at_interval'] = node_assign_dict
         return 0
 
     def get_elhd_at_node(self, nodes: list) -> int:
         elhd_dict = {}
-        for d in self.days:
-            for t in self.time_intervals:
-                for node in nodes:
-                    elhd_dict[(node, d, t)] = []
-        for (d, t, elhd) in self.mapper['Nodes_assigned_at_interval']:
-            for node in self.mapper['Nodes_assigned_at_interval'][(d, t, elhd)]:
-                elhd_dict[(node, d, t)].append(elhd)
+        for y in self.years:
+            for d in self.days_within_year:
+                for t in self.time_intervals:
+                    for node in nodes:
+                        elhd_dict[(node, y, d, t)] = []
+        for (y, d, t, elhd) in self.mapper['Nodes_assigned_at_interval']:
+            for node in self.mapper['Nodes_assigned_at_interval'][(y, d, t, elhd)]:
+                elhd_dict[(node, y, d, t)].append(elhd)
         self.mapper['elhd_at_node'] = elhd_dict
         return 0
 
@@ -581,18 +587,19 @@ class Timeseries(object):
         gp['day'] = gp['day'].astype(int)
         gp = gp.set_index(['name', 'day'])
         gp.columns = [int(c) for c in gp.columns]
-        return gp
+        return gp.sort_index()
 
     def get_alpha_g(self, gen_name: str, day: int, time_interval: int) -> float:
         """Perfil de disponibilidad alpha[g, d, t] en [0, 1]. Retorna 0 si no existe."""
         df = self.mapper.get('GenProfiles')
         if df is None:
             return 0.0
-        key = (gen_name, int(day))
-        # Mapea intervalo sub-horario al índice horario del perfil (igual que get_marginal_cost)
+        day_in_year1 = ((int(day) - 1) % 365) + 1
+        key = (gen_name, day_in_year1)
         t_hour = math.ceil(int(time_interval) * self.delta_t)
         if key in df.index and t_hour in df.columns:
-            return float(df.loc[key, t_hour])
+            val = df.loc[key, t_hour]
+            return float(val.iloc[0]) if hasattr(val, 'iloc') else float(val)
         return 0.0
 
 
