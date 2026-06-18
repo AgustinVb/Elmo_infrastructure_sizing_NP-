@@ -816,8 +816,6 @@ class ConstraintRules(OptRules):
         # Solo aplica en los dias representativos entre abril y septiembre (meses de punta)
         if not (91 <= d <= 244):
             return pyo.Constraint.Skip
-        if t not in model.time_intervals_peak_set:
-            return pyo.Constraint.Skip
         return model.P_red[d, t] <= model.P_pot[model.year_of_day[d]]
 
     # ------------------------------------------------------------------
@@ -1021,7 +1019,7 @@ class ConstraintRules(OptRules):
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance                      = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_balance)
         model.grid_limit                         = pyo.Constraint(model.days, model.time_intervals_set, rule=self.grid_limit)
-        model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_cost_peak_limit)
+        model.power_cost_peak_limit              = pyo.Constraint(model.days, model.time_intervals_peak_set, rule=self.power_cost_peak_limit)
         # Restricciones de generacion renovable (solo si gen_set no vacio)
         if len(list(model.gen_set)) > 0:
             model.gen_limit      = pyo.Constraint(model.gen_set, model.days, model.time_intervals_set, rule=self.gen_limit)
