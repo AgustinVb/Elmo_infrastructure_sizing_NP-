@@ -282,6 +282,7 @@ class OptSets(OptRules):
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
         model.days = pyo.Set(initialize=self.time_series.days)
+        model.years = pyo.Set(initialize=self.time_series.years)
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
@@ -394,6 +395,11 @@ class OptParameters(OptRules):
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
+        model.year_of_day = pyo.Param(
+            model.days,
+            initialize={d: self.time_series.get_year_of_day(d) for d in model.days},
+            mutable=False
+        )
         #Par�metros econ�micos
         model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
         #model.costo_marginal = pyo.Param(model.slhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.slhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
@@ -593,8 +599,8 @@ class BoundRules(OptRules):
         model.X_ini = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # Demanda de bater�as en el intervalo t en la estaci�n k
         model.W = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
-        # Variable de potencia pico contratada / demand charge
-        model.P_pot = pyo.Var(domain=pyo.NonNegativeReals)
+        # Variable de potencia pico contratada / demand charge, por anio
+        model.P_pot = pyo.Var(model.years, domain=pyo.NonNegativeReals)
         #extracci�n total del equipo i en el d�a d.
         model.M = pyo.Var(model.slhd_set, model.nodes_set, model.days, domain=pyo.NonNegativeReals)
         # Potencia comprada a la red en (d,t) [kW] — siempre presente
@@ -872,7 +878,7 @@ class ConstraintRules(OptRules):
         Solo aplica entre abril y septiembre (meses de punta segun tarifa)."""
         if not (91 <= d <= 244):
             return pyo.Constraint.Skip
-        return model.P_red[d, t] <= model.P_pot
+        return model.P_red[d, t] <= model.P_pot[model.year_of_day[d]]
 
     # ==========================================================
     # 5) Inventario de bater�as en estaciones
@@ -1351,7 +1357,7 @@ class ObjectiveRules(OptRules):
         return sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
 
     def peak_power_cost(self, model):
-        return model.P_pot * 12 * 10
+        return sum(model.P_pot[y] * 12 * 10 for y in model.years)
 
     def total_cost(self, model):
         return (self.lhd_charge_cost_bs(model)

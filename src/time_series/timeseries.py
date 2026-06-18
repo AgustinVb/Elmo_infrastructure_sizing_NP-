@@ -14,6 +14,8 @@ class Timeseries(object):
         self.scaling_factor_op_cost = 365/(len(self.days))
         # Conservamos el diccionario 'time' de tu código original por compatibilidad
         self.time, self.mapper = dict(hourly=1, daily=24, weekly=168), {}
+        self.day_to_year = {int(day): self.get_year_of_day(day) for day in self.days}
+        self.years = sorted(set(self.day_to_year.values()))
         self.time_intervals = self.build_mappers()
         self.shifts = self.get_shifts()
         self._mc_scaled_cache = {}
@@ -37,6 +39,19 @@ class Timeseries(object):
         """Horas absolutas del año (1..8760) que pertenecen al día 'day'."""
         start = (int(day) - 1) * 24 + 1
         return list(range(start, start + 24))
+
+    def get_year_of_day(self, day: int) -> int:
+        """
+        Mapea un día absoluto del horizonte a su año correspondiente.
+        Convención:
+        - 1..365 -> año 1
+        - 366..730 -> año 2
+        - etc.
+        """
+        day_int = int(day)
+        if day_int <= 0:
+            raise ValueError(f"day must be positive, got {day}")
+        return ((day_int - 1) // 365) + 1
 
     def _load_marginal_cost_alpha(self) -> float:
         """Lee alpha desde la fila Profile_fixed de MarginalCost si existe."""
