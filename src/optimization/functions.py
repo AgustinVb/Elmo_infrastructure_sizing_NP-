@@ -860,7 +860,11 @@ class ConstraintRules(OptRules):
         return sum(model.Sv[k, d, t, a]*model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.p_peak
 
     def power_peak_limit(self, model, d, t):
-        """Demand-charge constraint: grid power during peak hours <= P_pot."""
+        """Demand-charge constraint: grid power during peak hours <= P_pot.
+
+        Solo aplica entre abril y septiembre (meses de punta segun tarifa)."""
+        if not (91 <= d <= 244):
+            return pyo.Constraint.Skip
         return model.P_red[d, t] <= model.P_pot
 
     # ==========================================================
