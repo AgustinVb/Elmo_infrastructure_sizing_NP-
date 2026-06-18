@@ -685,6 +685,9 @@ class ConstraintRules(OptRules):
 
     def power_cost_peak_limit(self, model, d, t):
         # Potencia peak facturable = lo que se toma de la red en horas punta
+        # Solo aplica en los dias representativos entre abril y septiembre (meses de punta)
+        if not (91 <= d <= 244):
+            return pyo.Constraint.Skip
         if t not in model.time_intervals_peak_set:
             return pyo.Constraint.Skip
         return model.P_red[d, t] <= model.P_pot[model.year_of_day[d]]
