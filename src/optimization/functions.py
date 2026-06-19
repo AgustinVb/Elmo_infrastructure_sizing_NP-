@@ -281,7 +281,8 @@ class OptSets(OptRules):
         model.slhd_set = pyo.Set(initialize=self.mine_system.get_swap_lhds())
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
-        model.days = pyo.Set(initialize=self.time_series.days)
+        model.days = pyo.Set(initialize=self.time_series.days_within_year)
+        model.years = pyo.Set(initialize=self.time_series.years)
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
@@ -395,9 +396,8 @@ class OptParameters(OptRules):
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
         #Par�metros econ�micos
-        model.m_j = pyo.Param(model.nodes_set,model.days, initialize={(j, d): self.time_series.get_extraction_goal(j, d)for j in model.nodes_set for d in model.days},mutable=True)
-        #model.costo_marginal = pyo.Param(model.slhd_set, model.days, model.time_intervals_set, initialize={(b, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.elhd.get_energy_cost(b), d, t) for b in model.slhd_set for d in model.days for t in model.time_intervals_set}, mutable=True)
-        model.costo_electricidad = pyo.Param(model.days, model.time_intervals_set, initialize={(d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.chargers.get_energy_cost(), d, t) for d in model.days for t in model.time_intervals_set}, mutable=True)
+        model.m_j = pyo.Param(model.nodes_set, model.years, initialize={(j, y): self.time_series.get_extraction_goal(j, y) for j in model.nodes_set for y in model.years}, mutable=True)
+        model.costo_electricidad = pyo.Param(model.years, model.days, model.time_intervals_set, initialize={(y, d, t): self.time_series.get_marginal_cost_scaled(self.mine_system.chargers.get_energy_cost(), d, t) for y in model.years for d in model.days for t in model.time_intervals_set}, mutable=True)
         #Par�metros LHD
         # Par�metros de viaje por nodo
         model.d_i    = pyo.Param(model.lhd_set, model.nodes_set, initialize={(i,j): self.time_series.get_n_intervals_trip(j,i)       for i in model.lhd_set for j in model.nodes_set}, mutable=False)
@@ -464,9 +464,10 @@ class OptParameters(OptRules):
                 initialize={g: gen.get_g_max(g) for g in model.gen_set},
                 mutable=False)
             model.alpha_g = pyo.Param(
-                model.gen_set, model.days, model.time_intervals_set,
-                initialize={(g, d, t): self.time_series.get_alpha_g(g, d, t)
+                model.gen_set, model.years, model.days, model.time_intervals_set,
+                initialize={(g, y, d, t): self.time_series.get_alpha_g(g, d, t)
                             for g in model.gen_set
+                            for y in model.years
                             for d in model.days
                             for t in model.time_intervals_set},
                 mutable=False)
@@ -501,27 +502,13 @@ class OptParameters(OptRules):
 
 class BoundRules(OptRules):
 
-    def Z(self, model, i, d, t):
+    def Z(self, model, i, y, d, t):
         return 0, 1
-    
-    def Z_charge(self, model, k, i, d, t):
+
+    def Z_charge(self, model, k, i, y, d, t):
         return 0, 1
-    
-    def Y(self, model, i, j, d, t):
-        node_list=self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
-        assigned = j in node_list
-        if(assigned):
-            return 0, 1
-        else:
-            return 0, 0
 
-    def P(self, model, k, i, d, t):
-        return (0, model.pmax_b[i])
-
-    def B(self, model, b, d, t):
-        return (0, model.bmax_b[b])
-
-    def Bini(self, model, b, d):
+    def B(self, model, b, y, d, t):
         return (0, model.bmax_b[b])
 
     def build_all_variables(self, model):
@@ -534,19 +521,21 @@ class BoundRules(OptRules):
         model.ZSWAP_INDEX = pyo.Set(dimen=2, initialize=_init_ZSWAP_INDEX)
         def _ZSWAP_DAYS_TIME(m):
             for (k,i) in m.ZSWAP_INDEX:
+                for y in m.years:
+                    for d in m.days:
+                        for t in m.time_intervals_set:
+                            yield (k, i, y, d, t)
+        model.ZSWAP_DAYS_TIME = pyo.Set(dimen=5, initialize=_ZSWAP_DAYS_TIME)
+        def _init_Y_INDEX(m):
+            for y in m.years:
                 for d in m.days:
                     for t in m.time_intervals_set:
-                        yield (k, i, d, t)
-        model.ZSWAP_DAYS_TIME = pyo.Set(dimen=4, initialize=_ZSWAP_DAYS_TIME)
-        def _init_Y_INDEX(m):
-            for d in m.days:
-                for t in m.time_intervals_set:
-                    for i in m.lhd_set:
-                        node_list = self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
-                        for j in node_list:
-                            yield (i, j, d, t)
+                        for i in m.lhd_set:
+                            node_list = self.time_series.mapper['Nodes_assigned_at_interval'][(y, d, t, i)]
+                            for j in node_list:
+                                yield (i, j, y, d, t)
         # Sets de �ndices (solo contienen tuplas v�lidas)
-        model.Y_INDEX  = pyo.Set(dimen=4, initialize=_init_Y_INDEX)
+        model.Y_INDEX = pyo.Set(dimen=5, initialize=_init_Y_INDEX)
         # Peak intervals set (for demand-charge constraints)
         def _init_peak_set(m):
             return tuple(self._get_peak_intervals())
@@ -554,17 +543,17 @@ class BoundRules(OptRules):
         # Variable binaria que indica si hay penalidad en la producci�n por swap
         #model.Z_pen = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
         #Viaje completo de LHD i al nodo j en (d,t)
-        model.Y = pyo.Var(model.Y_INDEX, bounds=self.Y, domain=pyo.Binary)
+        model.Y = pyo.Var(model.Y_INDEX, domain=pyo.Binary)
         # Variable binaria que indica si el LHD esta inactivo o no
-        model.Z         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set,bounds=self.Z, domain=pyo.Binary)
+        model.Z         = pyo.Var(model.lhd_set, model.years, model.days, model.time_intervals_set, bounds=self.Z, domain=pyo.Binary)
         # Variable binaria que indica si el LHD est� cargando
         #model.Z_charge  = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set,                          bounds=self.Z_charge, domain=pyo.Binary)
         # Variable binaria que indica si el LHD reliza un swap 
-        model.Z_swap   = pyo.Var(model.ZSWAP_DAYS_TIME,domain=pyo.Binary)
+        model.Z_swap    = pyo.Var(model.ZSWAP_DAYS_TIME, domain=pyo.Binary)
         # Potencia de carga de bater�a b en (d,t)
         #model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de bater�a b al final de (d,t)
-        model.B         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
+        model.B         = pyo.Var(model.lhd_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         #Cantidad de cargadores
         model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers, bounds= (1, 12))
         # Naves de carga (bahías para swap simultáneo)
@@ -578,37 +567,37 @@ class BoundRules(OptRules):
         # Cantidad de bater�as en estaci�n
         model.N_batteries = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers, bounds=(1, 12))
         # Variable que actualiza el estado de carga de la bater�a del LHD
-        model.B_s = pyo.Var(model.slhd_set, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
+        model.B_s = pyo.Var(model.slhd_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         # N�mero de bater�as cargadas en el intervalo t en la estaci�n k
-        model.S = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        model.S = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # N�mero de bater�as que comienzan a cargar en a y siguen conectadas en t en la estaci�n k
-        model.Sv = pyo.Var(model.stations_set, model.days, model.time_intervals_set,  model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        model.Sv = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # N�mero de bater�as descargadas en el intervalo t en la estaci�n k
-        model.X_dch = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        model.X_dch = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # N�mero de bater�as que comienzan a cargar al inicio del intervalo t en la estaci�n k
-        model.X_ini = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        model.X_ini = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # Demanda de bater�as en el intervalo t en la estaci�n k
-        model.W = pyo.Var(model.stations_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        model.W = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # Variable de potencia pico contratada / demand charge
-        model.P_pot = pyo.Var(domain=pyo.NonNegativeReals)
+        model.P_pot = pyo.Var(model.years, domain=pyo.NonNegativeReals)
         #extracci�n total del equipo i en el d�a d.
-        model.M = pyo.Var(model.slhd_set, model.nodes_set, model.days, domain=pyo.NonNegativeReals)
+        model.M = pyo.Var(model.slhd_set, model.nodes_set, model.years, model.days, domain=pyo.NonNegativeReals)
         # Potencia comprada a la red en (d,t) [kW] — siempre presente
-        model.P_red = pyo.Var(model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
+        model.P_red = pyo.Var(model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # Variables de generación renovable (solo si existen generadores)
         if len(list(model.gen_set)) > 0:
             model.G_g = pyo.Var(model.gen_set, domain=pyo.NonNegativeIntegers)
-            model.P_gen = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
+            model.P_gen = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set,
                                   domain=pyo.NonNegativeReals)
             # Curtailment: potencia renovable vertida en (d,t) [kW] — ec. 3.47
-            model.Curt_g = pyo.Var(model.gen_set, model.days, model.time_intervals_set,
+            model.Curt_g = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set,
                                    domain=pyo.NonNegativeReals)
         # Variables de almacenamiento BESS (solo si existen unidades)
         if len(list(model.storage_set)) > 0:
             model.H_h = pyo.Var(model.storage_set, domain=pyo.Binary)
-            model.P_bat = pyo.Var(model.storage_set, model.days, model.time_intervals_set,
+            model.P_bat = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set,
                                   domain=pyo.Reals)
-            model.A_h = pyo.Var(model.storage_set, model.days, model.time_intervals_set_zero,
+            model.A_h = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero,
                                 domain=pyo.NonNegativeReals)
 
 from src.optimization.functions import OptRules
@@ -620,28 +609,28 @@ class ConstraintRules(OptRules):
     # 1) Estado operacional del LHD (swap)
     # ==========================================================
 
-    def state_unique_elhd_swap(self, model, i, d, t):
-        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+    def state_unique_elhd_swap(self, model, i, y, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not nodes:
             return pyo.Constraint.Skip
-        return model.Z[i, d, t] + sum(model.Y[i, j, d, t] for j in nodes) + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
+        return model.Z[i, y, d, t] + sum(model.Y[i, j, y, d, t] for j in nodes) + sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list) == 1
 
-    def between_shifts_elhd_swap(self, model, i, d, t):
+    def between_shifts_elhd_swap(self, model, i, y, d, t):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
-        return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
+        return model.Z[i, y, d, t] + sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list) == 1
 
     # ==========================================================
     # 2) Energ�a y SOC de bater�a (swap)
     # ==========================================================
 
     # Estado de energ�a considerando swap de bater�as
-    def battery_soc_swap(self, model, i, d, t):
+    def battery_soc_swap(self, model, i, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
-        discharge = sum(model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
-            for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)])
+        discharge = sum(model.Y[i, j, y, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
+            for j in self.time_series.mapper['Nodes_assigned_at_interval'][(y, d, t, i)])
         if t >= t0:
-            return model.B[i, d, t] ==  model.B_s[i, d, t-1] - discharge
+            return model.B[i, y, d, t] == model.B_s[i, y, d, t-1] - discharge
 
         else:
             return pyo.Constraint.Skip
@@ -656,35 +645,35 @@ class ConstraintRules(OptRules):
     #   (3) B_s <= U                    (unconditional upper limit)
     #   (4) B_s >= L + (U - L) * z_agg  (dynamic lower limit: when z=0: B_s >= L impossible unless B >= L)
     
-    def battery_soc_swap_update_1(self, model, i, d, t):
+    def battery_soc_swap_update_1(self, model, i, y, d, t):
         """Convex-hull upper bound: B_s <= B + (U - L) * z_agg"""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
         U = model.bmax_b[i]
         L = model.bmin_b[i] * model.bmax_b[i]
-        z_agg = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
-        return model.B_s[i, d, t-1] <= model.B[i, d, t-1] + (U - L) * z_agg
+        z_agg = sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
+        return model.B_s[i, y, d, t-1] <= model.B[i, y, d, t-1] + (U - L) * z_agg
 
-    def battery_soc_swap_update_2(self, model, i, d, t):
+    def battery_soc_swap_update_2(self, model, i, y, d, t):
         """Convex-hull lower bound (sharpened): B_s >= B"""
-        return model.B_s[i, d, t-1] >= model.B[i, d, t-1]
+        return model.B_s[i, y, d, t-1] >= model.B[i, y, d, t-1]
     
-    def battery_soc_swap_update_3(self, model, i, d, t):
+    def battery_soc_swap_update_3(self, model, i, y, d, t):
         """Unconditional upper limit: B_s <= U"""
-        return model.B_s[i, d, t-1] <= model.bmax_b[i]
+        return model.B_s[i, y, d, t-1] <= model.bmax_b[i]
 
-    def battery_soc_swap_update_4(self, model, i, d, t):
+    def battery_soc_swap_update_4(self, model, i, y, d, t):
         """Convex-hull lower limit (dynamic): B_s >= L + (U - L) * z_agg"""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
         U = model.bmax_b[i]
         L = model.bmin_b[i] * model.bmax_b[i]
-        z_agg = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
-        return model.B_s[i, d, t-1] >= L + (U - L) * z_agg
+        z_agg = sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
+        return model.B_s[i, y, d, t-1] >= L + (U - L) * z_agg
 
-    def swap_soc_limit_30(self, model, i, d, t):
+    def swap_soc_limit_30(self, model, i, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
         if t < t0:
             return pyo.Constraint.Skip
@@ -696,29 +685,29 @@ class ConstraintRules(OptRules):
         # Tight Big-M: if swap_flag=1 => B <= 0.30*U; if swap_flag=0 => B <= U.
         # This uses M = U-0.30*U = 0.70*U (stronger than M = U in LP relaxation).
         U = model.bmax_b[i]
-        swap_flag = sum(model.Z_swap[k, i, d, t] for k in valid_k_list)
-        return model.B[i, d, t-1] <= U - 0.70 * U * swap_flag
+        swap_flag = sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
+        return model.B[i, y, d, t-1] <= U - 0.70 * U * swap_flag
 
     # L�mite inferior de SOC bater�a
-    def battery_lower(self, model, i, d, t):
-        return model.B[i, d, t] >= model.bmin_b[i] * model.bmax_b[i]
+    def battery_lower(self, model, i, y, d, t):
+        return model.B[i, y, d, t] >= model.bmin_b[i] * model.bmax_b[i]
 
     # L�mite superior de SOC bater�a
-    def battery_upper(self, model, i, d, t):
-        return model.B[i, d, t] <= model.bmax_b[i]
+    def battery_upper(self, model, i, y, d, t):
+        return model.B[i, y, d, t] <= model.bmax_b[i]
 
     # Condici�n de borde SOC bater�a
-    def battery_boundary_swap(self, model, i, d):
+    def battery_boundary_swap(self, model, i, y, d):
         tf = self.time_series.get_time_intervals()[-1]
-        return model.B_s[i, d, 0] == model.B[i, d, 0]
+        return model.B_s[i, y, d, 0] == model.B[i, y, d, 0]
     
-    def battery_energy_conservation(self, model, i, d):
+    def battery_energy_conservation(self, model, i, y, d):
         # Use interval 0 (initial pre-interval) to enforce cycle with final interval
         tf = self.time_series.get_time_intervals()[-1]
-        return model.B[i, d, 0] == model.B[i, d, tf]
+        return model.B[i, y, d, 0] == model.B[i, y, d, tf]
 
-    def battery_boundary_break_simmetry_lhds_start(self, model, i_low, i_high, d):
-        return model.B[i_low, d, 0] <= model.B[i_high, d, 0]
+    def battery_boundary_break_simmetry_lhds_start(self, model, i_low, i_high, y, d):
+        return model.B[i_low, y, d, 0] <= model.B[i_high, y, d, 0]
 
 
     # ==========================================================
@@ -727,22 +716,22 @@ class ConstraintRules(OptRules):
 
     # Produccion
 
-    def daily_production(self, model, d):
+    def daily_production(self, model, y, d):
         """Production balance for the whole day d (sum over all nodes).
 
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] >= sum_j m_j[j,d]
         """
-        total_target = sum(model.m_j[j, d] for j in model.nodes_set)
+        total_target = sum(model.m_j[j, y] for j in model.nodes_set)
 
         term_de = sum(
-            model.Y[i2, j2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y
-            if d2 == d
+            model.Y[i2, j2, y2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
+            for (i2, j2, y2, d2, t2) in model.Y
+            if y2 == y and d2 == d
         )
 
         return term_de >= total_target
 
-    def production(self, model, d, j):
+    def production(self, model, y, d, j):
         """Production balance for node j on day d.
 
         Enforces:
@@ -754,7 +743,7 @@ class ConstraintRules(OptRules):
         import math
         from pyomo.environ import value as pyo_value
 
-        y_pairs = [(i2, t2) for (i2, j2, d2, t2) in model.Y if j2 == j and d2 == d]
+        y_pairs = [(i2, t2) for (i2, j2, y2, d2, t2) in model.Y if j2 == j and y2 == y and d2 == d]
         if not y_pairs:
             return pyo.Constraint.Skip
 
@@ -763,11 +752,11 @@ class ConstraintRules(OptRules):
                            * self.time_series.get_n_trips(j, i_rep)
                            * pyo_value(model.filling_factor[i_rep]))
 
-        target = pyo_value(model.m_j[j, d])
+        target = pyo_value(model.m_j[j, y])
         lb = math.floor(target / prod_per_assign)
         ub = math.ceil(target / prod_per_assign)
 
-        visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
+        visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
 
         return pyo.inequality(lb, visits, ub)
 
@@ -790,17 +779,17 @@ class ConstraintRules(OptRules):
         return model.Z_pen[i, j ,d, t] <= model.Y[i, j ,d, t]    
  
 
-    def daily_extraction_M(self, model, i, j, d):
+    def daily_extraction_M(self, model, i, j, y, d):
         """
         M[i,j,d] = extracci�n total del equipo i al nodo j en el d�a d,
         descontando la producci�n perdida por swaps simult�neos (Z_pen).
         Misma unidad que el t�rmino de producci�n (g_i * n_trips * f_i).
         """
         term = sum(
-            model.Y[i2, j2, d2, t2] * model.g_i[i2]
+            model.Y[i2, j2, y2, d2, t2] * model.g_i[i2]
             * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-            for (i2, j2, d2, t2) in model.Y_INDEX
-            if i2 == i and d2 == d and j2 == j
+            for (i2, j2, y2, d2, t2) in model.Y_INDEX
+            if i2 == i and y2 == y and d2 == d and j2 == j
         )
         #pen = sum(
         #    model.Z_pen[i2, j2, d2, t2] * model.g_i[i2]
@@ -809,7 +798,7 @@ class ConstraintRules(OptRules):
         #    for (i2, j2, d2, t2) in model.Y_INDEX
         #    if i2 == i and d2 == d and j2 == j
         #)
-        return model.M[i, j, d] == term #- pen
+        return model.M[i, j, y, d] == term #- pen
 
     # ==========================================================
     # 4) Infraestructura de estaciones y red el�ctrica
@@ -820,11 +809,11 @@ class ConstraintRules(OptRules):
         return model.N_bays[k] <= model.max_bays_k[k] * model.X[k]
 
     # Swaps simultáneos no pueden superar las naves disponibles
-    def bays_limit_swap(self, model, k, d, t):
+    def bays_limit_swap(self, model, k, y, d, t):
         valid_i = [i for (k2, i) in model.ZSWAP_INDEX if k2 == k]
         if not valid_i:
             return pyo.Constraint.Skip
-        return sum(model.Z_swap[k, i, d, t] for i in valid_i) <= model.N_bays[k]
+        return sum(model.Z_swap[k, i, y, d, t] for i in valid_i) <= model.N_bays[k]
 
     # Naves necesitan al menos un cargador cada una
     def bays_le_chargers(self, model, k):
@@ -844,47 +833,47 @@ class ConstraintRules(OptRules):
 
 
     # Existencia de la estaci�n
-    def station_existence_constraint_swap(self, model, k, i, d, t):
-        return model.Z_swap[k,i, d, t] <= model.X[k]
+    def station_existence_constraint_swap(self, model, k, i, y, d, t):
+        return model.Z_swap[k, i, y, d, t] <= model.X[k]
     
-    def charger_limit_swap(self, model, k, d, t):
+    def charger_limit_swap(self, model, k, y, d, t):
         # Para cada estaci�n k, d�a d y intervalo t, la suma de bater�as
         # conectadas (para todos los inicios a) en t no puede exceder los cargadores
-        return sum(model.Sv[k, d, t, a] for a in model.time_intervals_set) <= model.N_chargers[k]
+        return sum(model.Sv[k, y, d, t, a] for a in model.time_intervals_set) <= model.N_chargers[k]
     
     #  Sistemas distribuci�n 
-    def max_installed_capacity_swap(self, model, k, d, t):
-        return sum(model.Sv[k, d, t, a]*model.p_charger for a in model.time_intervals_set)  <= model.p_max_k[k]
+    def max_installed_capacity_swap(self, model, k, y, d, t):
+        return sum(model.Sv[k, y, d, t, a]*model.p_charger for a in model.time_intervals_set) <= model.p_max_k[k]
     
-    def peak_power_swap(self, model, d, t):
-        return sum(model.Sv[k, d, t, a]*model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.p_peak
+    def peak_power_swap(self, model, y, d, t):
+        return sum(model.Sv[k, y, d, t, a]*model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.p_peak
 
-    def power_peak_limit(self, model, d, t):
+    def power_peak_limit(self, model, y, d, t):
         """Demand-charge constraint: grid power during peak hours <= P_pot.
 
         Solo aplica entre abril y septiembre (meses de punta segun tarifa)."""
         if not (91 <= d <= 244):
             return pyo.Constraint.Skip
-        return model.P_red[d, t] <= model.P_pot
+        return model.P_red[y, d, t] <= model.P_pot[y]
 
     # ==========================================================
     # 5) Inventario de bater�as en estaciones
     # ==========================================================
 
     # Demanda por swaps (bater�as requeridas)
-    def total_swaps(self, model, k, d, t):
+    def total_swaps(self, model, k, y, d, t):
         valid_i_list = [i for (k2, i) in model.ZSWAP_INDEX if k2 == k]
         if not valid_i_list:
             return pyo.Constraint.Skip
-        return model.W[k, d, t] == sum(model.Z_swap[k, i ,d, t] for i in valid_i_list)
+        return model.W[k, y, d, t] == sum(model.Z_swap[k, i, y, d, t] for i in valid_i_list)
     
-    def max_swaps(self, model, i, d, t):
+    def max_swaps(self, model, i, y, d, t):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        return sum(model.Z_swap[k, i ,d, t] for k in valid_k_list) <= 1
+        return sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list) <= 1
 
-    def swap_precedence_by_index(self, model, i_low, i_high, d, t):
+    def swap_precedence_by_index(self, model, i_low, i_high, y, d, t):
         """Forces cumulative swaps of lower-index LHDs to be >= higher-index LHDs at each time t."""
         valid_k_low = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i_low]
         valid_k_high = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i_high]
@@ -892,13 +881,13 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
 
         cumulative_low = sum(
-            model.Z_swap[k, i_low, d, tau]
+            model.Z_swap[k, i_low, y, d, tau]
             for k in valid_k_low
             for tau in model.time_intervals_set
             if tau <= t
         )
         cumulative_high = sum(
-            model.Z_swap[k, i_high, d, tau]
+            model.Z_swap[k, i_high, y, d, tau]
             for k in valid_k_high
             for tau in model.time_intervals_set
             if tau <= t
@@ -906,58 +895,58 @@ class ConstraintRules(OptRules):
         return cumulative_low >= cumulative_high
     
     # Inventario de bater�as descargadas
-    def inventory_discharged_batteries_rule(self, model, k, d, t):
+    def inventory_discharged_batteries_rule(self, model, k, y, d, t):
         t0= self.time_series.get_time_intervals()[0]
         if t == t0:
             return pyo.Constraint.Skip
         else:
-            return model.X_dch[k, d, t] == model.X_dch[k, d, t-1] - model.X_ini[k, d, t-1] + model.W[k, d, t]
+            return model.X_dch[k, y, d, t] == model.X_dch[k, y, d, t-1] - model.X_ini[k, y, d, t-1] + model.W[k, y, d, t]
 
     # Inventario de bater�as cargadas
-    def inventory_charged_batteries_rule(self, model, k, d, t):
+    def inventory_charged_batteries_rule(self, model, k, y, d, t):
         t0= self.time_series.get_time_intervals()[0]
         tf = self.time_series.get_time_intervals()[-1]
         if t == tf: 
             return pyo.Constraint.Skip
         if t - (model.t_charge - 1) >= t0:
-            return model.S[k, d, t+1] == model.S[k, d, t] + model.Sv[k, d, t, t - (model.t_charge - 1)] - model.W[k, d, t+1]
+            return model.S[k, y, d, t+1] == model.S[k, y, d, t] + model.Sv[k, y, d, t, t - (model.t_charge - 1)] - model.W[k, y, d, t+1]
         elif t >= 0:
-            return model.S[k, d, t+1] == model.S[k, d, t] - model.W[k, d, t+1]
+            return model.S[k, y, d, t+1] == model.S[k, y, d, t] - model.W[k, y, d, t+1]
         return pyo.Constraint.Skip
 
     # 4. Duraci�n de la carga (L�gica interna del cargador)
-    def charging_duration_rule(self, model, k, d, t, a):
+    def charging_duration_rule(self, model, k, y, d, t, a):
         tf = self.time_series.get_time_intervals()[-1]
         if t == tf:
             return pyo.Constraint.Skip
         # Caso 1: La carga ya termin� (o no deber�a haber nada)
         if a <= t - model.t_charge + 1:
-            return model.Sv[k, d, t+1, a] == 0
+            return model.Sv[k, y, d, t+1, a] == 0
         
         # Caso 2: La carga est� en proceso (se mantiene el valor anterior)
         elif (t - model.t_charge + 1) <= a <= (t - 1):
-            return model.Sv[k, d, t+1, a] == model.Sv[k, d, t, a]
+            return model.Sv[k, y, d, t+1, a] == model.Sv[k, y, d, t, a]
         
         # Caso 3: La carga acaba de iniciar en este instante t (a==t)
         elif t == a:
-            return model.Sv[k, d, t+1, a] == model.X_ini[k, d, t]
+            return model.Sv[k, y, d, t+1, a] == model.X_ini[k, y, d, t]
             
         return pyo.Constraint.Skip
 
     # Condiciones de inventario c�clico
-    def CI_S(self, model, k, d, t):
+    def CI_S(self, model, k, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
         tf = self.time_series.get_time_intervals()[-1]
-        return model.S[k, d, t0] == model.S[k, d, tf]
+        return model.S[k, y, d, t0] == model.S[k, y, d, tf]
     
-    def CI_X_dch(self, model, k, d, t):
+    def CI_X_dch(self, model, k, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
         tf = self.time_series.get_time_intervals()[-1]
-        return model.X_dch[k, d, t0] == model.X_dch[k, d, tf]
+        return model.X_dch[k, y, d, t0] == model.X_dch[k, y, d, tf]
     
-    def CB_general(self, model, k, d, t):
+    def CB_general(self, model, k, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
-        return model.S[k, d, t0] + model.X_dch[k, d, t0] == model.N_batteries[k]
+        return model.S[k, y, d, t0] + model.X_dch[k, y, d, t0] == model.N_batteries[k]
     
 
     # ==========================================================
@@ -966,40 +955,40 @@ class ConstraintRules(OptRules):
 
     # Pausas: MEAL
     # --------------------------
-    def meal_g1_no_travel_group1(self, model, i, d, t):
+    def meal_g1_no_travel_group1(self, model, i, y, d, t):
         """En meal_g1 el Grupo 1 no puede viajar."""
         if t not in model.time_intervals_meal_g1_set:
             return pyo.Constraint.Skip
         if i not in model.meal_group1_set:
             return pyo.Constraint.Skip
 
-        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
         if not nodes:
             return pyo.Constraint.Skip
-        return sum(model.Y[i, j, d, t] for j in nodes) == 0
+        return sum(model.Y[i, j, y, d, t] for j in nodes) == 0
 
-    def meal_g2_no_travel_group2(self, model, i, d, t):
+    def meal_g2_no_travel_group2(self, model, i, y, d, t):
         """En meal_g2 el Grupo 2 no puede viajar."""
         if t not in model.time_intervals_meal_g2_set:
             return pyo.Constraint.Skip
         if i not in model.meal_group2_set:
             return pyo.Constraint.Skip
 
-        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
         if not nodes:
             return pyo.Constraint.Skip
-        return sum(model.Y[i, j, d, t] for j in nodes) == 0
+        return sum(model.Y[i, j, y, d, t] for j in nodes) == 0
 
 
     # Pausas: MAINTENANCE
-    def maint_stop_all(self, model, i, d, t):
+    def maint_stop_all(self, model, i, y, d, t):
         """En intervalos de mantenimiento TODOS los LHD deben
         estar estacionados (Z = 1). En mantenimiento los ELHD no pueden estar cargando."""
         if t not in model.time_intervals_maintenance_set:
             return pyo.Constraint.Skip
-        return model.Z[i, d, t] == 1
+        return model.Z[i, y, d, t] == 1
     
-    def det_stop_all(self, model, i, d, t):
+    def det_stop_all(self, model, i, y, d, t):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if t not in model.time_intervals_det_set:
@@ -1025,103 +1014,108 @@ class ConstraintRules(OptRules):
             return model.N_batteries[k] == 2
         
     #FORTALECIMIENTO 
-    def n_swaps_limit_1(self, model, i, d):
-        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 5
+    def n_swaps_limit_1(self, model, i, y, d):
+        return sum(model.Z_swap[k, i, y, d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) <= 5
     
-    def n_swaps_limit_2(self, model, i, d):
-        return sum(model.Z_swap[k, i ,d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 3
+    def n_swaps_limit_2(self, model, i, y, d):
+        return sum(model.Z_swap[k, i, y, d, t] for (k, i2) in model.ZSWAP_INDEX if i2 == i for t in model.time_intervals_set) >= 3
 
     # ==========================================================
     # 7) Balance de potencia y generación renovable / BESS
     # ==========================================================
 
-    def power_balance(self, model, d, t):
+    def power_balance(self, model, y, d, t):
         """Demanda de carga (estaciones) = red + generación local + BESS."""
         demand = sum(
-            model.Sv[k, d, t, a] * model.p_charger
+            model.Sv[k, y, d, t, a] * model.p_charger
             for k in model.stations_set
             for a in model.time_intervals_set
         )
-        gen = (sum(model.P_gen[g, d, t] for g in model.gen_set)
+        gen = (sum(model.P_gen[g, y, d, t] for g in model.gen_set)
                if len(list(model.gen_set)) > 0 else 0)
-        bess = (sum(model.P_bat[h, d, t] for h in model.storage_set)
+        bess = (sum(model.P_bat[h, y, d, t] for h in model.storage_set)
                 if len(list(model.storage_set)) > 0 else 0)
-        return model.P_red[d, t] + gen + bess == demand
+        return model.P_red[y, d, t] + gen + bess == demand
 
-    def grid_limit(self, model, d, t):
+    def grid_limit(self, model, y, d, t):
         """Potencia de red acotada por capacidad de la subestación."""
-        return model.P_red[d, t] <= model.p_peak
+        return model.P_red[y, d, t] <= model.p_peak
 
-    def gen_limit(self, model, g, d, t):
+    def gen_limit(self, model, g, y, d, t):
         """Generación + curtailment = capacidad disponible — ec. 3.47."""
-        return (model.P_gen[g, d, t] + model.Curt_g[g, d, t]
-                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, d, t])
+        return (model.P_gen[g, y, d, t] + model.Curt_g[g, y, d, t]
+                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g, y, d, t])
 
     def gen_max_units(self, model, g):
         """Cantidad máxima de unidades instalables por tecnología."""
         return model.G_g[g] <= model.g_max_g[g]
 
-    def bess_power_upper(self, model, h, d, t):
+    def bess_power_upper(self, model, h, y, d, t):
         """P_bat <= p_max_h * H_h (descarga máxima)."""
-        return model.P_bat[h, d, t] <= model.p_max_h[h] * model.H_h[h]
+        return model.P_bat[h, y, d, t] <= model.p_max_h[h] * model.H_h[h]
 
-    def bess_power_lower(self, model, h, d, t):
+    def bess_power_lower(self, model, h, y, d, t):
         """P_bat >= -p_max_h * H_h (carga máxima)."""
-        return model.P_bat[h, d, t] >= -model.p_max_h[h] * model.H_h[h]
+        return model.P_bat[h, y, d, t] >= -model.p_max_h[h] * model.H_h[h]
 
-    def bess_soc_balance(self, model, h, d, t):
+    def bess_soc_balance(self, model, h, y, d, t):
         """A_h,d,t = A_h,d,t-1 - (P_bat_h,d,t / eta_h) * delta_t."""
         t0 = self.time_series.get_time_intervals()[0]
-        prev = model.A_h[h, d, 0] if t == t0 else model.A_h[h, d, t - 1]
-        return model.A_h[h, d, t] == prev - (model.P_bat[h, d, t] / model.eta_h[h]) * model.delta_t
+        prev = model.A_h[h, y, d, 0] if t == t0 else model.A_h[h, y, d, t - 1]
+        return model.A_h[h, y, d, t] == prev - (model.P_bat[h, y, d, t] / model.eta_h[h]) * model.delta_t
 
-    def bess_soc_init(self, model, h, d):
+    def bess_soc_init(self, model, h, y, d):
         """Estado de energía inicial = 0 al comienzo de cada día."""
-        return model.A_h[h, d, 0] == 0
+        return model.A_h[h, y, d, 0] == 0
 
-    def bess_soc_upper(self, model, h, d, t):
+    def bess_soc_upper(self, model, h, y, d, t):
         """A_h <= a_max_h * H_h."""
-        return model.A_h[h, d, t] <= model.a_max_h[h] * model.H_h[h]
+        return model.A_h[h, y, d, t] <= model.a_max_h[h] * model.H_h[h]
 
-    def bess_soc_lower(self, model, h, d, t):
+    def bess_soc_lower(self, model, h, y, d, t):
         """A_h >= a_min_h * H_h."""
-        return model.A_h[h, d, t] >= model.a_min_h[h] * model.H_h[h]
+        return model.A_h[h, y, d, t] >= model.a_min_h[h] * model.H_h[h]
 
-    def bess_soc_cyclic(self, model, h, d):
+    def bess_soc_cyclic(self, model, h, y, d):
         """SOC del primer intervalo igual al del último — ec. 3.53."""
         t_ini = self.time_series.get_time_intervals()[0]
         t_fin = self.time_series.get_time_intervals()[-1]
-        return model.A_h[h, d, t_ini] == model.A_h[h, d, t_fin]
+        return model.A_h[h, y, d, t_ini] == model.A_h[h, y, d, t_fin]
 
 
     def build_all_constraints(self, model):
         # 1) Energ�a / SOC de bater�as del LHD (swap)
         model.battery_soc_swap = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_soc_swap,
         )
         model.battery_soc_swap_update_1 = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_1,
         )
         model.battery_soc_swap_update_2 = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_2,
         )
         model.battery_soc_swap_update_3 = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_3,
         )
         model.battery_soc_swap_update_4 = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_4,
@@ -1134,22 +1128,24 @@ class ConstraintRules(OptRules):
         #)
         model.battery_lower = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_lower,
         )
         model.battery_upper = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.battery_upper,
         )
-        model.battery_boundary_swap = pyo.Constraint(model.slhd_set, model.days, rule=self.battery_boundary_swap)
-        model.batter_energy_conservation = pyo.Constraint(model.slhd_set, model.days, rule=self.battery_energy_conservation)
+        model.battery_boundary_swap = pyo.Constraint(model.slhd_set, model.years, model.days, rule=self.battery_boundary_swap)
+        model.batter_energy_conservation = pyo.Constraint(model.slhd_set, model.years, model.days, rule=self.battery_energy_conservation)
 
         # 2) Infraestructura de estaciones y capacidad el�ctrica
         model.max_n_bays = pyo.Constraint(model.stations_set, rule=self.max_n_bays)
-        model.bays_limit_swap = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.bays_limit_swap)
+        model.bays_limit_swap = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.bays_limit_swap)
         model.bays_le_chargers = pyo.Constraint(model.stations_set, rule=self.bays_le_chargers)
         model.max_chargers_per_bay_constr = pyo.Constraint(model.stations_set, rule=self.max_chargers_per_bay_constr)
         model.max_batteries_per_bay_constr = pyo.Constraint(model.stations_set, rule=self.max_batteries_per_bay_constr)
@@ -1163,40 +1159,46 @@ class ConstraintRules(OptRules):
         )
         model.max_installed_capacity = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.max_installed_capacity_swap,
         )
         model.charger_limit_swap = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.charger_limit_swap,
         )
-        model.peak_power_swap = pyo.Constraint(model.days, model.time_intervals_set, rule=self.peak_power_swap)
-        model.power_peak_limit = pyo.Constraint(model.days, model.time_intervals_peak_set, rule=self.power_peak_limit)
+        model.peak_power_swap = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.peak_power_swap)
+        model.power_peak_limit = pyo.Constraint(model.years, model.days, model.time_intervals_peak_set, rule=self.power_peak_limit)
 
         # 3) Operaci�n de LHD (estado, viajes y swaps)
         model.state_unique_elhd_swap = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
         model.between_shifts_elhd_swap = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_between_shifts_set,
             rule=self.between_shifts_elhd_swap,
         )
         model.total_swaps = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.total_swaps,
         )
         model.max_swaps = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.max_swaps,
@@ -1215,18 +1217,21 @@ class ConstraintRules(OptRules):
         # 4) Inventario de bater�as en estaciones
         model.inventory_discharged_batteries = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.inventory_discharged_batteries_rule,
         )
         model.inventory_charged_batteries = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.inventory_charged_batteries_rule,
         )
         model.charging_duration = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             model.time_intervals_set,
@@ -1234,12 +1239,14 @@ class ConstraintRules(OptRules):
         )
         model.CI_X_dch = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.CI_X_dch,
         )
         model.CB_general = pyo.Constraint(
             model.stations_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.CB_general,
@@ -1247,23 +1254,26 @@ class ConstraintRules(OptRules):
 
         # 5) Producci�n y penalizaciones
         model.daily_extraction = pyo.Constraint(
+            model.years,
             model.days,
             rule=self.daily_production,
         )
-        model.production = pyo.Constraint(model.days, model.nodes_set, rule=self.production)
+        model.production = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
         model.daily_extraction_M = pyo.Constraint(
             model.slhd_set,
             model.nodes_set,
+            model.years,
             model.days,
             rule=self.daily_extraction_M,
         )
 
         # 6) Pausas operacionales DCH
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
         model.maintenance_stop_all = pyo.Constraint(
             model.slhd_set,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.maint_stop_all,
@@ -1272,31 +1282,33 @@ class ConstraintRules(OptRules):
         #model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Balance de potencia y generación / BESS
-        model.power_balance = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_balance)
-        model.grid_limit    = pyo.Constraint(model.days, model.time_intervals_set, rule=self.grid_limit)
+        model.power_balance = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
+        model.grid_limit    = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.grid_limit)
 
         if len(list(model.gen_set)) > 0:
-            model.gen_limit     = pyo.Constraint(model.gen_set, model.days, model.time_intervals_set, rule=self.gen_limit)
+            model.gen_limit     = pyo.Constraint(model.gen_set, model.years, model.days, model.time_intervals_set, rule=self.gen_limit)
             model.gen_max_units = pyo.Constraint(model.gen_set, rule=self.gen_max_units)
 
         if len(list(model.storage_set)) > 0:
-            model.bess_power_upper = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_power_upper)
-            model.bess_power_lower = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_power_lower)
-            model.bess_soc_balance = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_balance)
-            model.bess_soc_init    = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_init)
-            model.bess_soc_upper   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_upper)
-            model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
-            model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_cyclic)
+            model.bess_power_upper = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_upper)
+            model.bess_power_lower = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_lower)
+            model.bess_soc_balance = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_balance)
+            model.bess_soc_init    = pyo.Constraint(model.storage_set, model.years, model.days, rule=self.bess_soc_init)
+            model.bess_soc_upper   = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_upper)
+            model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
+            model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.years, model.days, rule=self.bess_soc_cyclic)
 
         # 8) Rotura simetr�a
         model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
             model.swap_precedence_pairs,
+            model.years,
             model.days,
             rule=self.battery_boundary_break_simmetry_lhds_start,
         )
 
         model.swap_precedence_by_index = pyo.Constraint(
             model.swap_precedence_pairs,
+            model.years,
             model.days,
             model.time_intervals_set,
             rule=self.swap_precedence_by_index,
@@ -1306,7 +1318,8 @@ class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
         """Costo de electricidad comprada a la red (P_red * costo_electricidad)."""
         cost_el = sum(
-            model.P_red[d, t] * model.costo_electricidad[d, t] * model.delta_t
+            model.P_red[y, d, t] * model.costo_electricidad[y, d, t] * model.delta_t
+            for y in model.years
             for d in model.days
             for t in model.time_intervals_set
         )
@@ -1344,7 +1357,7 @@ class ObjectiveRules(OptRules):
         return sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
 
     def peak_power_cost(self, model):
-        return model.P_pot * 12 * 10
+        return sum(model.P_pot[y] * 12 * 10 for y in model.years)
 
     def total_cost(self, model):
         return (self.lhd_charge_cost_bs(model)
