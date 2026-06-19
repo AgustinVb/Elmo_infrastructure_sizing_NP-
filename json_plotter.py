@@ -457,6 +457,27 @@ def load_p_bat_df(path: str) -> Optional[pd.DataFrame]:
     return pd.DataFrame(rows).sort_values(["storage", "year", "day", "interval"]).reset_index(drop=True) if rows else None
 
 
+def load_sv_df(path: str) -> Optional[pd.DataFrame]:
+    """Carga Sv.json → DataFrame [station, year, day, interval, a, value].
+    Sv[k,y,d,t,a] = baterías conectadas en t que iniciaron en a."""
+    data = _load_json(path)
+    if not data:
+        return None
+    rows = []
+    for tokens, val in _collect_named_leaf_records(data):
+        axes = {n: v for n, v in tokens}
+        if {"k", "d", "t", "a"}.issubset(axes):
+            rows.append({
+                "station":  str(axes["k"]),
+                "year":     int(axes["y"]) if "y" in axes else 1,
+                "day":      _numeric_or_str(axes["d"]),
+                "interval": _numeric_or_str(axes["t"]),
+                "a":        _numeric_or_str(axes["a"]),
+                "value":    float(val),
+            })
+    return pd.DataFrame(rows).sort_values(["year", "day", "interval"]).reset_index(drop=True) if rows else None
+
+
 def load_a_h_df(path: str) -> Optional[pd.DataFrame]:
     """Carga A_h.json → DataFrame con columnas [storage, year, day, interval, value] en kWh."""
     data = _load_json(path)
@@ -548,6 +569,27 @@ class Parameters:
                             })
         self.costo_marginal = pd.DataFrame(cm) if cm else None
 
+        # -------- costo_electricidad (battery swap): _1->year _2->day _3->interval --------
+        ce = []
+        for year_str, blk1 in data.get("costo_electricidad", {}).get("_1", {}).items():
+            for day_str, blk2 in blk1.get("_2", {}).items():
+                for interval_str, price in blk2.get("_3", {}).items():
+                    ce.append({
+                        "year":     _numeric_or_str(year_str),
+                        "day":      _numeric_or_str(day_str),
+                        "interval": _numeric_or_str(interval_str),
+                        "price":    float(price) * self.energy_price_scale,
+                    })
+        self.costo_electricidad = pd.DataFrame(ce) if ce else None
+
+        # Si no hay costo_marginal pero sí costo_electricidad, construir proxy sin eje lhd
+        if self.costo_marginal is None and self.costo_electricidad is not None:
+            self.costo_marginal = self.costo_electricidad.copy()
+            self.costo_marginal["lhd"] = "all"
+
+        # -------- p_charger (potencia por cargador, kW) --------
+        self.p_charger = float(data.get("p_charger", 0) or 0)
+
         # -------- emisiones por LHD (si existiese legacy key 'emisiones') --------
         em = []
         if "emisiones" in data:
@@ -632,12 +674,14 @@ class JSONPlotter:
         os.makedirs(self.plot_dir, exist_ok=True)
 
         # Variables
-        self.df_B   = load_B_df(os.path.join(json_dir, "B.json"))
-        self.df_Y   = load_binary_Y_df(os.path.join(json_dir, "Y.json"))
-        self.df_P   = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
-        self.df_C   = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
-        self.df_E   = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
-        self.df_M   = load_generic_variable_df(os.path.join(json_dir, "M.json"), "M")
+        self.df_B    = load_B_df(os.path.join(json_dir, "B.json"))
+        self.df_Y    = load_binary_Y_df(os.path.join(json_dir, "Y.json"))
+        self.df_P    = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
+        self.df_Sv   = load_sv_df(os.path.join(json_dir, "Sv.json"))          # battery swap
+        self.df_Zswap = load_generic_variable_df(os.path.join(json_dir, "Z_swap.json"), "Z_swap")
+        self.df_C    = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
+        self.df_E    = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
+        self.df_M    = load_generic_variable_df(os.path.join(json_dir, "M.json"), "M")
         self.df_Pred = load_p_red_df(os.path.join(json_dir, "P_red.json"))
         self.df_Pgen = load_p_gen_df(os.path.join(json_dir, "P_gen.json"))
         self.df_Pbat = load_p_bat_df(os.path.join(json_dir, "P_bat.json"))
@@ -664,7 +708,7 @@ class JSONPlotter:
 
     def _detect_years(self) -> List[int]:
         sources = []
-        for df in [self.df_B, self.df_Y, self.df_P, self.df_M, self.df_Pred]:
+        for df in [self.df_B, self.df_Y, self.df_P, self.df_Sv, self.df_M, self.df_Pred]:
             if df is not None and "year" in df.columns and not df.empty:
                 sources.append(sorted(df["year"].dropna().unique().tolist()))
         return sorted({int(y) for lst in sources for y in lst}) if sources else [1]
