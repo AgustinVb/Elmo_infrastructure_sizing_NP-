@@ -1,0 +1,114 @@
+
+Gurobi 12.0.3 (win64) logging started Wed Jun 17 13:32:12 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_fijo\Swap_320kW\ELMO_log.txt"
+Set parameter Threads to value 24
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 24 threads
+
+Non-default parameters:
+TimeLimit  172800
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  24
+
+Optimize a model with 81598 rows, 159769 columns and 1095039 nonzeros
+Model fingerprint: 0x9a72e759
+Variable types: 8269 continuous, 151500 integer (52131 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [5e+00, 8e+04]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 4e+04]
+Presolve removed 71068 rows and 129736 columns
+Presolve time: 2.05s
+Presolved: 10530 rows, 30033 columns, 146026 nonzeros
+Variable types: 2404 continuous, 27629 integer (25326 binary)
+Root relaxation presolved: 10530 rows, 30033 columns, 146026 nonzeros
+
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing primal log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   33979    9.9879649e+05   0.000000e+00   6.873788e+06      5s
+   43326    9.6919034e+05   0.000000e+00   0.000000e+00      7s
+Concurrent spin time: 0.00s
+
+Solved with primal simplex
+   43326    9.6919034e+05   0.000000e+00   0.000000e+00      7s
+
+Root relaxation: objective 9.691903e+05, 43326 iterations, 4.51 seconds (6.03 work units)
+Total elapsed time = 10.16s (DegenMoves)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 969366.163    0  868          - 969366.163      -     -   11s
+     0     0 969621.693    0  833          - 969621.693      -     -   17s
+     0     0 969724.891    0 1332          - 969724.891      -     -   18s
+     0     0 969724.891    0 1398          - 969724.891      -     -   19s
+     0     0 970277.056    0  859          - 970277.056      -     -   27s
+     0     0 971397.016    0 1231          - 971397.016      -     -   29s
+     0     0 978687.992    0  814          - 978687.992      -     -   38s
+     0     0 978687.992    0 1501          - 978687.992      -     -   41s
+     0     0 978687.992    0 1059          - 978687.992      -     -   57s
+     0     0 978687.992    0 1348          - 978687.992      -     -   58s
+     0     0 978687.992    0  884          - 978687.992      -     -   69s
+     0     0 978687.992    0 1300          - 978687.992      -     -   71s
+     0     0 978687.992    0 1070          - 978687.992      -     -   81s
+     0     0 978687.992    0 1323          - 978687.992      -     -   83s
+     0     0 978687.992    0 1064          - 978687.992      -     -   93s
+     0     0 978687.992    0  947          - 978687.992      -     -   98s
+     0     2 978687.992    0  683          - 978687.992      -     -  125s
+     3     8 978687.992    2 1598          - 978687.992      -  9804  131s
+     7    16 978687.992    3 1663          - 978687.992      -  8024  139s
+    11    16 978687.992    3 1483          - 978687.992      -  9236  140s
+    15    27 1031144.24    4 1722          - 978687.992      - 11468  152s
+    26    49 1059860.67    4 1741          - 978687.992      - 16875  159s
+    50    76 978687.992    5 1609          - 978687.992      - 11567  175s
+    81   129 979217.149    6 1631          - 978687.992      - 10823  191s
+   143   146 1028183.11    7 1658          - 978687.992      -  7715  220s
+   161   202 978687.992   10 1742          - 978687.992      -  8524  238s
+   219   203 1062077.00    9 1137          - 978687.992      -  7430  444s
+   220   204 978687.996   13 1117          - 978687.992      -  7500  620s
+   221   231 980764.056   11 1534          - 978687.992      -  7584  641s
+   248   232 978687.996   10 1125          - 978687.992      -  7347 1248s
+   249   233 981608.745   19 1610          - 978687.992      -  7408 1302s
+   250   234 978980.278   11 1603          - 978687.992      -  7489 1328s
+   251   243 978687.996   13 1440          - 978687.992      -  7525 1359s
+   260   249 978687.996   16 1031          - 978687.992      -  7803 1388s
+   266   251 978687.996   17  926          - 978687.992      -  7735 1445s
+   268   252 979158.908   17 1481          - 978687.992      -  7833 1465s
+
+Cutting planes:
+  Gomory: 54
+  Lift-and-project: 5
+  Cover: 2
+  Implied bound: 5
+  MIR: 357
+  Mixing: 16
+  StrongCG: 1
+  Flow cover: 2557
+  Zero half: 3708
+  RLT: 70
+  Relax-and-lift: 6
+
+Explored 269 nodes (2385645 simplex iterations) in 1465.88 seconds (1772.58 work units)
+Thread count was 24 (of 32 available processors)
+
+Solution count 0
+
+Solve interrupted
+Best objective -, best bound 9.786879915893e+05, gap -

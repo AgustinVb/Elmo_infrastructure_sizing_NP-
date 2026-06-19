@@ -237,6 +237,13 @@ class Printer:
             "M":        ["b", "j", "d"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "G_g":      ["g"],
+            "P_gen":    ["g", "d", "t"],
+            "Curt_g":   ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["i", "d", "t"],
@@ -255,6 +262,13 @@ class Printer:
             "M":        ["b", "j", "d"],
             "F":        ["j", "d"],
             "F_seg":    ["j", "d", "seg"],
+            "P_red":    ["d", "t"],
+            "G_g":      ["g"],
+            "P_gen":    ["g", "d", "t"],
+            "Curt_g":   ["g", "d", "t"],
+            "H_h":      ["h"],
+            "P_bat":    ["h", "d", "t"],
+            "A_h":      ["h", "d", "t"],
         }
 
         # tolerancia para considerar "casi cero" como cero
@@ -428,8 +442,8 @@ class Printer:
             "time_intervals_shift_change_det_set",
             "time_intervals_shift_change_set",
         )
-        payload["time_intervals_forced_detention_set"] = _export_set_values(
-            "time_intervals_forced_detention_set",
+        payload["time_intervals_stops_set"] = _export_set_values(
+            "time_intervals_stops_set",
             "time_intervals_fuel_delay_set",
         )
         payload["time_intervals_det_set"] = _export_set_values(

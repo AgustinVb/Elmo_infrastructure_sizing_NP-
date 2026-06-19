@@ -23,22 +23,28 @@ class Stations(object):
         return self.get('station_name', keys)
 
     def get_station_cost(self, keys=None):
-        return self.get('station_cost', keys)
-    
-    def get_distance_to_discharge_node(self, keys=None):
-        return self.get('distance_to_dn', keys)
-    
-    def get_max_chargers(self, keys=None):
-        return self.get('max_chargers', keys)
-    
-    def get_maneuvering_time(self, keys=None):
-        return self.get('man_time', keys)
-    
-    def get_max_batteries(self, keys=None):
-        return self.get('max_batteries', keys)
-    
-    def get_battery_cost(self, keys=None):
-        return self.get('battery_cost', keys)
-    
+        return self.get('c_fixed', keys)
+
+    def get_c_bays(self, keys=None):
+        return self.get('c_bays', keys)
+
+    def get_c_charger_space(self, keys=None):
+        return self.get('c_charger_space', keys)
+
+    def get_c_battery_space(self, keys=None):
+        return self.get('c_battery_space', keys)
+
+    def get_max_bays(self, keys=None):
+        return self.get('max_bays', keys)
+
+    def get_max_batteries_per_bay(self, keys=None):
+        return self.get('max_batteries_per_bay', keys)
+
+    def get_max_chargers_per_bay(self, keys=None):
+        return self.get('max_chargers_per_bay', keys)
+
     def get_p_max_ssee(self, keys=None):
         return self.get('p_max_ssee', keys)
+
+    def get_c_crane(self, keys=None):
+        return self.get('c_crane', keys)
