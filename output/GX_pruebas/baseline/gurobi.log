@@ -1,0 +1,85 @@
+
+Gurobi 10.0.0 (win64) logging started Tue Jun  2 22:41:28 2026
+
+Set parameter LogFile to value "output\Gx_pruebas\baseline\gurobi.log"
+Set parameter Threads to value 32
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 172800
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 32 threads
+
+Warning: Thread count (32) is larger than processor count (8)
+         Reduce the value of the Threads parameter to improve performance
+
+
+Optimize a model with 68581 rows, 119867 columns and 335745 nonzeros
+Model fingerprint: 0x7f65d5c1
+Variable types: 54770 continuous, 65097 integer (65092 binary)
+Coefficient statistics:
+  Matrix range     [6e-02, 4e+03]
+  Objective range  [5e+00, 2e+05]
+  Bounds range     [1e+00, 1e+02]
+  RHS range        [1e+00, 3e+04]
+Presolve removed 59048 rows and 75892 columns
+Presolve time: 1.85s
+Presolved: 9533 rows, 43975 columns, 165331 nonzeros
+Variable types: 3661 continuous, 40314 integer (40275 binary)
+Root relaxation presolved: 9533 rows, 43975 columns, 165331 nonzeros
+
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing first log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   24104    1.5358320e+06   0.000000e+00   3.964084e+07      5s
+   32784    1.3340881e+06   0.000000e+00   2.400475e+07     10s
+   40462    1.2104415e+06   0.000000e+00   3.147410e+06     15s
+   52614    1.1791662e+06   0.000000e+00   6.907108e+05     20s
+   64149    1.1726571e+06   0.000000e+00   2.541628e+06     25s
+   78538    1.0192756e+06   0.000000e+00   1.154413e+06     30s
+   89698    9.4983940e+05   0.000000e+00   1.400806e+08     35s
+Concurrent spin time: 0.00s
+
+Solved with dual simplex
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   50205    9.3400085e+05   0.000000e+00   0.000000e+00     38s
+
+Root relaxation: objective 9.340008e+05, 50205 iterations, 35.92 seconds (17.31 work units)
+Total elapsed time = 42.61s
+Total elapsed time = 52.26s
+Total elapsed time = 57.90s
+Total elapsed time = 61.77s
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 1051869.43    0 2797          - 1051869.43      -     -   64s
+     0     0 1072653.80    0 2800          - 1072653.80      -     -  108s
+     0     0 1289018.10    0 2879          - 1289018.10      -     -  121s
+     0     0 1294362.03    0 2922          - 1294362.03      -     -  188s
+
+Cutting planes:
+  Gomory: 3
+  Lift-and-project: 11
+  Implied bound: 167
+  MIR: 43
+  Flow cover: 270
+  Relax-and-lift: 17
+
+Explored 1 nodes (160159 simplex iterations) in 188.51 seconds (78.46 work units)
+Thread count was 32 (of 8 available processors)
+
+Solution count 0
+
+Solve interrupted
+Best objective -, best bound 1.294362025254e+06, gap -
