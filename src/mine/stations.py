@@ -43,12 +43,6 @@ class Stations(object):
     def get_max_chargers_per_bay(self, keys=None):
         return self.get('max_chargers_per_bay', keys)
 
-    def get_distance_to_discharge_node(self, keys=None):
-        return self.get('distance_to_dn', keys)
-
-    def get_maneuvering_time(self, keys=None):
-        return self.get('man_time', keys)
-
     def get_p_max_ssee(self, keys=None):
         return self.get('p_max_ssee', keys)
 

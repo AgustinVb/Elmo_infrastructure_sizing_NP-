@@ -255,15 +255,6 @@ class ELHD(object):
             "t_total": float(t_acc + t_const + t_dec),
         }
 
-    def _segment_accel_then_cruise_stop(self, distance_m, v_max, a):
-        """Compatibilidad con el nombre usado por la lógica de carga."""
-        return self._segment_accel_then_cruise_then_decel(
-            distance_m=distance_m,
-            v_max=v_max,
-            a_acc=a,
-            a_dec=a,
-        )
-
     @staticmethod
     def _integrals_decel(v_peak, decel, t_dec):
         v_peak = max(float(v_peak), 0.0)
@@ -401,69 +392,3 @@ class ELHD(object):
 
         total_J = (wheel_energy_J / (eng_eff * tr_eff)) + ((aux_energy_J + hydraulic_energy_J) / tr_eff)
         return total_J / (1000.0 * 3600.0)
-    
-    def engine_energy_charge_travel(self, distance, elhd_name, tilt):
-        """
-        Energía [kWh] para ir y volver a estación de carga (sin carga),
-         usando modelo con STOP instantáneo.
-        """
-        distance = float(distance)
-        if distance <= 0.0:
-            return 0.0
-
-        # Parámetros
-        v_max = float(self.get_speed(elhd_name)) * (1000.0 / 3600.0)
-        a = max(float(self.get_acceleration(elhd_name)), 1e-9)
-
-        # Masa (sin carga)
-        m = float(self.get_weight(elhd_name)) * 1000.0
-
-        # Segmento ida y vuelta (mismo perfil)
-        seg = self._segment_accel_then_cruise_stop(
-            distance_m=distance,
-            v_max=v_max,
-            a=a,
-        )
-
-        # Energía en ruedas (J)
-        wheel_energy_J = 0.0
-
-        for _ in range(2):  # ida y vuelta
-            wheel_energy_J += self._gravitational_work_segment(tilt, seg, m, elhd_name)
-            wheel_energy_J += self._aerodynamic_loss_segment(elhd_name, seg)
-            wheel_energy_J += self._rolling_resistance_loss_segment(elhd_name, tilt, seg, m)
-            # Evento cinético (sin regeneración)
-            wheel_energy_J += self._delta_kinetic_event(m, seg["v_peak"])
-
-        # Energía auxiliar (J): solo tiempo de viaje
-        aux_power_kW = float(self.get_aux_power(elhd_name))
-        travel_time_s = 2.0 * seg["t_total"]
-        aux_energy_J = 1000.0 * aux_power_kW * travel_time_s
-
-        # Eficiencias
-        eng_eff = max(float(self.get_engine_efficiency(elhd_name)), 1e-9)
-        tr_eff = max(float(self.get_transmission_efficiency(elhd_name)), 1e-9)
-
-        total_J = (wheel_energy_J / (eng_eff * tr_eff)) + (aux_energy_J / tr_eff)
-
-        return total_J / (1000.0 * 3600.0)
-    
-    def time_charge_station(self, distance, elhd_name):
-        """
-        Tiempo [h] para ir a estación de carga (solo ida),
-        usando modelo con STOP instantáneo.
-        """
-        distance = float(distance)
-        if distance <= 0.0:
-            return 0.0
-
-        v_max = float(self.get_speed(elhd_name)) * (1000.0 / 3600.0)
-        a = max(float(self.get_acceleration(elhd_name)), 1e-9)
-        seg = self._segment_accel_then_cruise_stop(
-            distance_m=distance,
-            v_max=v_max,
-            a=a,
-        )
-
-        # segundos -> horas
-        return seg["t_total"] / 3600.0
