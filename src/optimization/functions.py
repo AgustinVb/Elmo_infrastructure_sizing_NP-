@@ -1023,19 +1023,19 @@ class ConstraintRules(OptRules):
     # Fijar baterias y cargadores
     def fix_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_2":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         else:
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         
     def fix_n_batteries(self, model, k):
         if k == "station_1":
-            return model.N_batteries[k] == 2
+            return model.N_batteries[k] == 1
         elif k == "station_2":
-            return model.N_batteries[k] == 2
+            return model.N_batteries[k] == 1
         else:
-            return model.N_batteries[k] == 2
+            return model.N_batteries[k] == 1
         
     #FORTALECIMIENTO 
     def n_swaps_limit_1(self, model, i, d):
@@ -1168,8 +1168,8 @@ class ConstraintRules(OptRules):
         model.max_batteries_per_bay_constr = pyo.Constraint(model.stations_set, rule=self.max_batteries_per_bay_constr)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,

@@ -25,8 +25,8 @@ def build_mine(args):
     model = Reader(join(args.data_folder, args.model), start_in=1)
     series = Series(join(args.data_folder, args.series))
     #time_series = timeseries.Timeseries(series, [1,91,181,271], 8/60)
-    #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60) #12 dias significativos
-    time_series = timeseries.Timeseries(series, [1], 8/60)
+    time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60) #12 dias significativos
+    #time_series = timeseries.Timeseries(series, [1], 8/60)
     mine_system = mine.Mine(model)
     time_series.mapper['Trips'] = time_series.get_trips(mine_system)
     return series, mine_system, time_series
@@ -53,6 +53,11 @@ def main():
         help='Carpeta opcional con JSONs de variables (<VarName>.json) para warm start completo',
     )
     parser.add_argument(
+        '--warmstart_hard_only',
+        action='store_true',
+        help='Si se usa junto a --init_solution_folder, solo carga las variables binarias/enteras de decision (Y, Z, Z_swap, X, N_chargers, N_bays, N_batteries) en lugar de todas las variables',
+    )
+    parser.add_argument(
         '--relax_integrality',
         action='store_true',
         help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
@@ -74,6 +79,7 @@ def main():
         y_init_path=y_init_path,
         init_solution_folder=init_solution_folder,
         relax_integrality=args.relax_integrality,
+        warmstart_hard_only=args.warmstart_hard_only,
     )
 
 

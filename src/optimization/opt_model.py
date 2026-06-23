@@ -25,6 +25,11 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
+    # Variables binarias/enteras de decisión: el resto del modelo (estados de
+    # carga, inventarios, potencias) se deriva de estas vía restricciones de
+    # igualdad, así que basta con darle el warm start a estas.
+    HARD_VARS = {"Y", "Z", "Z_swap", "X", "N_chargers", "N_bays", "N_batteries"}
+
     @staticmethod
     def _flatten_nested_solution_tree(tree, var_axis_order: List[str] = None):
         """
@@ -95,10 +100,15 @@ class OptModel(object):
             pass
         return token
 
-    def _load_solution_warmstart_folder(self, init_solution_folder):
+    def _load_solution_warmstart_folder(self, init_solution_folder, hard_vars_only=False):
         """
         Loads initial values for model variables from a folder containing
         JSON files named like <VarName>.json (Printer export format).
+
+        If hard_vars_only is True, only the discrete decision variables in
+        HARD_VARS are loaded; the rest of the model (SOC, inventarios,
+        potencias) queda libre para que el solver lo derive sin choques de
+        factibilidad con la solución anterior.
         """
         if not init_solution_folder:
             return
@@ -113,6 +123,8 @@ class OptModel(object):
 
         for var_comp in self.model.component_objects(pyo.Var, active=True):
             var_name = str(var_comp.name)
+            if hard_vars_only and var_name not in self.HARD_VARS:
+                continue
             json_path = os.path.join(folder, f"{var_name}.json")
             if not os.path.exists(json_path):
                 continue
@@ -151,6 +163,8 @@ class OptModel(object):
             for idx_tokens, val in records:
                 try:
                     v = float(val)
+                    if hard_vars_only:
+                        v = round(v)
                 except Exception:
                     skipped += 1
                     continue
@@ -308,7 +322,8 @@ class OptModel(object):
             except Exception as e:
                 print("⚠️ Could not read log file for summary:", e)
 
-    def __init__(self, mine_system, time_series, output_folder, y_init_path=None, init_solution_folder=None):
+    def __init__(self, mine_system, time_series, output_folder, y_init_path=None, init_solution_folder=None,
+                 warmstart_hard_only=False):
         self.output_folder   = output_folder
         self.time_series     = time_series
         self.mine_system     = mine_system
@@ -351,7 +366,7 @@ class OptModel(object):
             "A_h":      ["h", "d", "t"],
         }
         
-        self._load_solution_warmstart_folder(init_solution_folder)
+        self._load_solution_warmstart_folder(init_solution_folder, hard_vars_only=warmstart_hard_only)
         self._load_y_warmstart(y_init_path)
 
     def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
