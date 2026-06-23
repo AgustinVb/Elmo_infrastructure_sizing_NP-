@@ -816,11 +816,11 @@ class ConstraintRules(OptRules):
     # Fijar cantidad de cargadores 
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
-            return model.N_chargers[k] == 4
+            return model.N_chargers[k] == 1
         elif k == "station_2":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         elif k == "station_3":
-            return model.N_chargers[k] == 2
+            return model.N_chargers[k] == 1
         
      # --------------------------
     # Metas de extracción por punto
@@ -886,7 +886,8 @@ class ConstraintRules(OptRules):
         #
         #Detenciones DET
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
-
+         
+        model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
       
 class ObjectiveRules(OptRules):
 

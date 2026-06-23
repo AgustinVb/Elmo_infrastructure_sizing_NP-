@@ -49,6 +49,7 @@ class OptModel(object):
             "Z_charge": ["k", "i", "d", "t"],
             "Y": ["i", "j", "d", "t"],
             "P": ["k", "i", "d", "t"],
+            "P_red": ["d", "t"],
             "P_pot": ["y"],
             "B": ["i", "d", "t"],
             "N_chargers": ["k"],
@@ -58,6 +59,12 @@ class OptModel(object):
             "M": ["i", "j", "d", "t"],
             "F": ["j", "d"],
             "F_seg": ["j", "d", "seg"],
+            "P_gen": ["g", "d", "t"],
+            "Curt_g": ["g", "d", "t"],
+            "G_g": ["g"],
+            "H_h": ["h"],
+            "P_bat": ["h", "d", "t"],
+            "A_h": ["h", "d", "t"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)
@@ -148,6 +155,15 @@ class OptModel(object):
             if not os.path.exists(json_path):
                 continue
 
+            # Solo nos interesan variables binarias/enteras (las continuas no se cargan).
+            try:
+                representative = next(iter(var_comp.values())) if var_comp.is_indexed() else var_comp
+                is_discrete = representative.is_binary() or representative.is_integer()
+            except StopIteration:
+                is_discrete = False
+            if not is_discrete:
+                continue
+
             try:
                 with open(json_path, "r", encoding="utf-8") as f:
                     payload = json.load(f)
@@ -166,6 +182,7 @@ class OptModel(object):
 
                 axis_order = self.var_index_order.get(var_name)
                 records = self._flatten_nested_solution_tree(payload)
+                touched_idx = set()
                 for tokens, raw_value in records:
                     if not axis_order:
                         skipped += 1
@@ -180,22 +197,32 @@ class OptModel(object):
                         skipped += 1
                         continue
                     try:
-                        vardata = var_comp[index_lookup[normalized_tokens]]
-                        value_to_set = float(raw_value)
-                        if vardata.is_binary() or vardata.is_integer():
-                            value_to_set = int(round(value_to_set))
+                        idx = index_lookup[normalized_tokens]
+                        vardata = var_comp[idx]
+                        value_to_set = int(round(float(raw_value)))
                         vardata.set_value(value_to_set, skip_validation=True)
+                        touched_idx.add(idx)
                         count += 1
                     except Exception:
                         skipped += 1
                         continue
+
+                # Las binarias exportan solo los valores en 1 (los 0 se omiten al guardar).
+                # Cualquier indice del dominio actual que no aparecio en el archivo se fija
+                # explicitamente en 0 para que el MIP start quede completo.
+                if representative.is_binary():
+                    for idx in var_comp:
+                        if idx in touched_idx:
+                            continue
+                        try:
+                            var_comp[idx].set_value(0, skip_validation=True)
+                            count += 1
+                        except Exception:
+                            continue
             else:
                 try:
-                    value_to_set = float(payload)
-                    vardata = var_comp
-                    if vardata.is_binary() or vardata.is_integer():
-                        value_to_set = int(round(value_to_set))
-                    vardata.set_value(value_to_set, skip_validation=True)
+                    value_to_set = int(round(float(payload)))
+                    var_comp.set_value(value_to_set, skip_validation=True)
                     count = 1
                 except Exception:
                     count = 0
