@@ -1205,11 +1205,15 @@ class JSONPlotter:
                     continue
                 is_electric = not dfB_sel.empty
 
+                is_swap = self.df_Zswap is not None and not self.df_Zswap.empty
+                charging_label = "Battery Swapping" if is_swap else "Charging"
+
                 palette = {
                     "State-of-Charge": "#f78c11",
                     "Fuel": "#4169E1",
                     "Energy Price": "#3366CC",
                     "Charging": "#3366CC",
+                    "Battery Swapping": "#3366CC",
                     "Inactive": "#B0B0B0",
                     "In-Transit": "#F0BF57",
                 }
@@ -1274,6 +1278,8 @@ class JSONPlotter:
                 Y_filtered = _y[(_y["lhd"] == lhd) & (_y["value"] >= 0.5)] if not _y.empty else pd.DataFrame()
                 _p = self._filter_yd(self.df_P, y, day) if (self.df_P is not None and not self.df_P.empty) else pd.DataFrame()
                 P_filtered = _p[_p["lhd"] == lhd] if not _p.empty else pd.DataFrame()
+                _z = self._filter_yd(self.df_Zswap, y, day) if is_swap else pd.DataFrame()
+                Z_filtered = _z[(_z["lhd"] == lhd) & (_z["value"] >= 0.5)] if not _z.empty else pd.DataFrame()
 
                 states = []
                 for t in self.intervals:
@@ -1282,13 +1288,16 @@ class JSONPlotter:
                         is_traveling = not Y_filtered.query("interval == @t").empty
 
                     is_charging = False
-                    if is_electric and not P_filtered.empty and {"interval", "value"}.issubset(P_filtered.columns):
+                    if is_swap:
+                        if not Z_filtered.empty and "interval" in Z_filtered.columns:
+                            is_charging = not Z_filtered.query("interval == @t").empty
+                    elif is_electric and not P_filtered.empty and {"interval", "value"}.issubset(P_filtered.columns):
                         is_charging = not P_filtered.query("interval == @t and value > 1").empty
 
                     if is_traveling:
                         states.append("In-Transit")
                     elif is_charging:
-                        states.append("Charging")
+                        states.append(charging_label)
                     else:
                         states.append("Inactive")
 
@@ -1317,7 +1326,7 @@ class JSONPlotter:
                         )
 
                 row1_names = [soc_name, "Energy Price"]
-                row2_names = ["Charging", "Inactive", "In-Transit"]
+                row2_names = [charging_label, "Inactive", "In-Transit"]
                 row1_handles = [
                     plt.Line2D([0], [0], color=palette[name], lw=4, label=name)
                     for name in row1_names
