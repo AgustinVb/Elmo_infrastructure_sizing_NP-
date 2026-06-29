@@ -215,32 +215,33 @@ class OptModel(object):
             print(f"⚠️ No se pudo leer warm start Y: {e}")
             return
 
-        d_root = data.get("d", {}) if isinstance(data, dict) else {}
-        if not isinstance(d_root, dict):
-            print("⚠️ Warm start Y con formato no soportado (falta raíz 'd').")
+        i_root = data.get("i", {}) if isinstance(data, dict) else {}
+        if not isinstance(i_root, dict):
+            print("⚠️ Warm start Y con formato no soportado (falta raíz 'i').")
             return
 
         loaded = 0
         skipped = 0
+        set_indices = set()
 
-        for lhd, lhd_block in d_root.items():
+        for lhd, lhd_block in i_root.items():
             if not isinstance(lhd_block, dict):
                 continue
-            t_nodes = lhd_block.get("t", {})
-            if not isinstance(t_nodes, dict):
+            j_nodes = lhd_block.get("j", {})
+            if not isinstance(j_nodes, dict):
                 continue
 
-            for node, node_block in t_nodes.items():
+            for node, node_block in j_nodes.items():
                 if not isinstance(node_block, dict):
                     continue
-                day_map = node_block.get("i", {})
+                day_map = node_block.get("d", {})
                 if not isinstance(day_map, dict):
                     continue
 
                 for day_key, day_block in day_map.items():
                     if not isinstance(day_block, dict):
                         continue
-                    interval_map = day_block.get("j", {})
+                    interval_map = day_block.get("t", {})
                     if not isinstance(interval_map, dict):
                         continue
 
@@ -264,11 +265,24 @@ class OptModel(object):
                         idx = (lhd, str(node), day, t)
                         if idx in self.model.Y:
                             self.model.Y[idx].value = 1.0
+                            set_indices.add(idx)
                             loaded += 1
                         else:
                             skipped += 1
 
-        print(f"✔ Warm start Y cargado desde '{y_init_path}': {loaded} valores, {skipped} omitidos")
+        # El exportador omite los 0 en variables binarias, así que cualquier
+        # índice no presente en el JSON era 0 en la solución previa: se fija
+        # explícitamente para entregar un MIP start completo.
+        completed = 0
+        for idx in self.model.Y:
+            if idx not in set_indices:
+                self.model.Y[idx].value = 0.0
+                completed += 1
+
+        print(
+            f"✔ Warm start Y cargado desde '{y_init_path}': {loaded} valores, "
+            f"{skipped} omitidos, {completed} completados en 0"
+        )
 
     def build_model(self):
         model = pyo.ConcreteModel()
