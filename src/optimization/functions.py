@@ -8,9 +8,14 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system,  time_series):
+    def __init__(self, mine_system, time_series, daily_target_override=None):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Override opcional del target agregado de daily_production por dia,
+        # calculado por el problema maestro (ver run_macrobloques_decomposicion.py)
+        # para repartir el target global de produccion entre macrobloques en
+        # vez de exigirle a cada uno la suma de sus propios m_j. {d: target}
+        self.daily_target_override = daily_target_override
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -583,7 +588,10 @@ class ConstraintRules(OptRules):
 
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] >= sum_j m_j[j,d]
         """
-        total_target = sum(model.m_j[j, d] for j in model.nodes_set)
+        if self.daily_target_override and d in self.daily_target_override:
+            total_target = self.daily_target_override[d]
+        else:
+            total_target = sum(model.m_j[j, d] for j in model.nodes_set)
 
         term_de = sum(
             model.Y[i2, j2, d2, t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
@@ -813,15 +821,6 @@ class ConstraintRules(OptRules):
             # return sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i) == 0
         return model.Z[i, d, t] + sum(model.Z_charge[k,i,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i) == 1
     
-    # Fijar cantidad de cargadores 
-    def fixed_n_chargers(self, model, k):
-        if k == "station_1":
-            return model.N_chargers[k] == 1
-        elif k == "station_2":
-            return model.N_chargers[k] == 1
-        elif k == "station_3":
-            return model.N_chargers[k] == 1
-        
      # --------------------------
     # Metas de extracción por punto
     # --------------------------
@@ -886,9 +885,7 @@ class ConstraintRules(OptRules):
         #
         #Detenciones DET
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
-         
-        model.fixed_n_chargers = pyo.Constraint(model.stations_set, rule=self.fixed_n_chargers)
-      
+
 class ObjectiveRules(OptRules):
 
     def lhd_charge_cost(self, model):

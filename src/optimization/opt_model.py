@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, fixed_infra=None, daily_target_override=None):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -40,10 +40,11 @@ class OptModel(object):
         self.set_builder      = OptSets(mine_system, time_series)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        self._apply_fixed_infra(fixed_infra)
         self.var_index_order: Dict[str, List[str]] = {
             "Z": ["i", "d", "t"],
             "Z_charge": ["k", "i", "d", "t"],
@@ -95,6 +96,22 @@ class OptModel(object):
         self.objective_rules.build_objective(model)
 
         return model
+
+    def _apply_fixed_infra(self, fixed_infra):
+        """Fija N_chargers[k]/X[k] a un valor dado (usado por la Fase 2 de
+        run_macrobloques_decomposicion.py: infraestructura ya decidida en la
+        agregacion de la Fase 1, no se vuelve a optimizar).
+
+        fixed_infra: dict {'N_chargers': v, 'X': v} aplicado a todas las
+        estaciones del modelo (cada macrobloque solo tiene una), o None.
+        """
+        if not fixed_infra:
+            return
+        for k in self.model.stations_set:
+            if 'X' in fixed_infra:
+                self.model.X[k].fix(fixed_infra['X'])
+            if 'N_chargers' in fixed_infra:
+                self.model.N_chargers[k].fix(fixed_infra['N_chargers'])
 
     @staticmethod
     def _flatten_nested_solution_tree(tree):
@@ -316,7 +333,7 @@ class OptModel(object):
         logger.addHandler(handler)
         return logger, handler
 
-    def _configure_solver(self, solvername, gap, timelimit, log_file):
+    def _configure_solver(self, solvername, gap, timelimit, log_file, threads=32):
         if solvername == 'glpk':
             solverpath_folder = 'C:\\glpk\\w64'
             if solverpath_folder not in sys.path:
@@ -332,7 +349,7 @@ class OptModel(object):
             opt.options['LogToConsole'] = 1
             opt.options['MIPGap'] = gap
             opt.options['LogFile'] = log_file
-            opt.options['Threads'] = 32
+            opt.options['Threads'] = threads
             opt.options['Heuristics'] = 0.5
             opt.options['MIPFocus'] = 3
             opt.options['Presolve'] = 2
@@ -390,7 +407,7 @@ class OptModel(object):
             except Exception as e:
                 print("WARN Could not read log file for summary:", e)
 
-    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
+    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False, threads=32):
         log_file = self.gurobi_log_path
         if os.path.exists(log_file):
             os.remove(log_file)
@@ -404,7 +421,7 @@ class OptModel(object):
             self.relaxed_model = model_to_solve
             self.model = model_to_solve
 
-        opt = self._configure_solver(solvername, gap, timelimit, log_file)
+        opt = self._configure_solver(solvername, gap, timelimit, log_file, threads=threads)
 
         print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
         start_time = time.time()
