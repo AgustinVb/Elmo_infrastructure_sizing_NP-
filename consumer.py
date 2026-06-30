@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple, Optional
 
@@ -960,27 +961,429 @@ def calculate_daily_charged_energy(root: Path) -> Dict[str, float]:
 
 
 # -----------------------------
+# Soporte para problema desacoplado por macrobloque
+# -----------------------------
+def find_macrobloque_subfolders(root: Path) -> List[Path]:
+    """Detecta subcarpetas inmediatas de `root` que contienen su propio
+    parameters.json (cada una es la salida completa de un macrobloque/estacion
+    resuelto por separado, ej. output/MB_test/station_1, station_2, station_3).
+
+    Devuelve [] si `root` ya tiene parameters.json directamente (carpeta de
+    una sola corrida, no desacoplada).
+    """
+    if (root / "parameters.json").exists():
+        return []
+
+    subfolders = []
+    for child in sorted(root.iterdir()):
+        if child.name == "combined" or child.name.endswith("_stage1"):
+            continue
+        if child.is_dir() and (child / "parameters.json").exists():
+            subfolders.append(child)
+    return subfolders
+
+
+def _peak_clock_interval_set(delta_t: float, max_t: int, start_hour: int = 9,
+                              windows=(("18:00", "22:00"),)) -> set:
+    """Replica _build_intervals_from_clock_windows de functions.py: convierte
+    ventanas horarias (HH:MM) a indices de intervalo, dado que el horizonte
+    operativo arranca en `start_hour` (09:00 por defecto)."""
+    dt_minutes = int(round(delta_t * 60))
+    if dt_minutes <= 0:
+        return set()
+    base_minutes = start_hour * 60
+
+    def _parse_hhmm(s):
+        hh, mm = s.strip().split(":")
+        return int(hh) * 60 + int(mm)
+
+    out = set()
+    for start_str, end_str in windows:
+        a = _parse_hhmm(start_str)
+        b = _parse_hhmm(end_str)
+        if a < base_minutes:
+            a += 24 * 60
+        if b < base_minutes:
+            b += 24 * 60
+        if b <= a:
+            b += 24 * 60
+        a_rel = a - base_minutes
+        b_rel = b - base_minutes
+        for t in range(1, max_t + 1):
+            s = (t - 1) * dt_minutes
+            e = t * dt_minutes
+            if max(s, a_rel) < min(e, b_rel):
+                out.add(t)
+    return out
+
+
+def _year_of_day(day: int) -> int:
+    return ((int(day) - 1) // 365) + 1
+
+
+_STATION_DAY_RE = re.compile(r"^(.+)_d(\d+)$")
+
+
+def group_by_station(subfolders: List[Path]) -> Optional[Dict[str, List[Path]]]:
+    """Si las subcarpetas siguen el patron <estacion>_d<dia> (salida de
+    run_macrobloques_decomposicion.py --parallel_days), agrupa por estacion.
+    Devuelve None si alguna subcarpeta no sigue ese patron."""
+    groups: Dict[str, List[Path]] = {}
+    for sub in subfolders:
+        m = _STATION_DAY_RE.match(sub.name)
+        if not m:
+            return None
+        station = m.group(1)
+        groups.setdefault(station, []).append(sub)
+    return groups
+
+
+def calculate_peak_charging_power(subfolders: List[Path]) -> Tuple[float, Dict[str, float]]:
+    """Potencia pico de carga = max_intervalo(sum_k_a Sv[k,d,t,a]) * p_charger.
+
+    Combina los Sv.json de todas las subcarpetas (estaciones) para el mismo
+    (d,t) antes de buscar el maximo, ya que las estaciones cargan en paralelo.
+    """
+    combined: Dict[Tuple[int, int], float] = {}
+    p_charger = None
+
+    for sub in subfolders:
+        sv_path = find_json_in_folder(sub, "Sv.json")
+        params_path = find_json_in_folder(sub, "parameters.json")
+        if not sv_path or not params_path:
+            continue
+        if is_effectively_empty_json(sv_path) or is_effectively_empty_json(params_path):
+            continue
+
+        if p_charger is None:
+            params_data = load_json(params_path)
+            p_charger = _as_float(params_data.get("p_charger", 0.0))
+
+        sv_data = load_json(sv_path)
+        for path, sv_val in _iter_leaf_records(sv_data):
+            axis_map = _axis_map_from_path(path)
+            day_key = axis_map.get("d") or axis_map.get("day")
+            time_key = axis_map.get("t") or axis_map.get("time")
+            if day_key is None or time_key is None:
+                continue
+            try:
+                d = int(float(day_key))
+                t = int(float(time_key))
+                v = float(sv_val)
+            except Exception:
+                continue
+            key = (d, t)
+            combined[key] = combined.get(key, 0.0) + v
+
+    if not combined or not p_charger:
+        return 0.0, {"note": "No se pudo calcular (faltan Sv.json o p_charger)"}
+
+    max_sv = max(combined.values())
+    peak_power_kw = max_sv * p_charger
+    best_key = max(combined, key=lambda k: combined[k])
+    meta = {
+        "max_baterias_cargando": max_sv,
+        "p_charger_kw": p_charger,
+        "peak_power_kw": peak_power_kw,
+        "dia_pico": best_key[0],
+        "intervalo_pico": best_key[1],
+    }
+    return peak_power_kw, meta
+
+
+def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, Dict[str, float]]:
+    """Costo por potencia pico 'ex post', calculado con la demanda REAL
+    combinada (suma de P_red de todos los macrobloques en cada dia/intervalo),
+    en vez de sumar el P_pot de cada macrobloque por separado (que sale 0
+    porque cada uno ve solo su propia demanda aislada).
+
+    Replica la logica de power_peak_limit (functions.py): solo cuenta
+    demanda en dias de temporada de punta (91<=d<=244) y en el rango horario
+    18:00-22:00 (con el horizonte operativo arrancando a las 09:00).
+    """
+    combined: Dict[int, Dict[int, float]] = {}
+    delta_t = None
+    demand_charge_coef = 12 * 10
+
+    for sub in subfolders:
+        pred_path = find_json_in_folder(sub, "P_red.json")
+        params_path = find_json_in_folder(sub, "parameters.json")
+        if not pred_path or not params_path:
+            continue
+        if is_effectively_empty_json(pred_path) or is_effectively_empty_json(params_path):
+            continue
+
+        params_data = load_json(params_path)
+        if delta_t is None:
+            delta_t = _as_float(params_data.get("delta_t", 0.0))
+            try:
+                demand_charge_coef = float(params_data.get("demand_charge_coef", 12 * 10))
+            except Exception:
+                demand_charge_coef = 12 * 10
+
+        pred_data = load_json(pred_path)
+        for path, value in _iter_leaf_records(pred_data):
+            axis_map = _axis_map_from_path(path)
+            day_key = axis_map.get("d") or axis_map.get("day")
+            time_key = axis_map.get("t") or axis_map.get("time")
+            if day_key is None or time_key is None:
+                continue
+            try:
+                day = int(float(day_key))
+                t = int(float(time_key))
+                v = float(value)
+            except Exception:
+                continue
+            combined.setdefault(day, {})[t] = combined.get(day, {}).get(t, 0.0) + v
+
+    if not combined or not delta_t:
+        return 0.0, {"note": "No se pudo calcular (faltan P_red.json/parameters.json)"}
+
+    max_t = max(t for day_map in combined.values() for t in day_map)
+    peak_t_set = _peak_clock_interval_set(delta_t, max_t)
+
+    p_pot_ex_post: Dict[int, float] = {}
+    for day, t_map in combined.items():
+        if not (91 <= day <= 244):
+            continue
+        year = _year_of_day(day)
+        for t, v in t_map.items():
+            if t not in peak_t_set:
+                continue
+            p_pot_ex_post[year] = max(p_pot_ex_post.get(year, 0.0), v)
+
+    total_cost = sum(v * demand_charge_coef for v in p_pot_ex_post.values())
+    meta = {f"P_pot_ex_post_year_{y}": v for y, v in p_pot_ex_post.items()}
+    meta["demand_charge_coef"] = demand_charge_coef
+    return total_cost, meta
+
+
+def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
+    """Corre el analisis de costos/metricas de cada macrobloque por separado
+    y agrega (suma) los resultados, ya que cada subcarpeta es un subproblema
+    independiente (mismo p_peak global, pero resuelto sin acoplar estaciones).
+    """
+    summary_only = getattr(args, "summary_only", False)
+    station_groups = group_by_station(subfolders)
+    is_day_decomposed = bool(station_groups) and any(len(v) > 1 for v in station_groups.values())
+
+    header_rows = [["Carpeta raiz", str(root)]]
+    if is_day_decomposed:
+        header_rows.append(["Macrobloques (estaciones)", str(len(station_groups))])
+        header_rows.append(["Subproblemas (estacion x dia)", str(len(subfolders))])
+    else:
+        header_rows.append(["Macrobloques detectados", str(len(subfolders))])
+    if not summary_only:
+        header_rows.append(["Subcarpetas", ", ".join(p.name for p in subfolders)])
+    print(make_table("MODO DESACOPLADO", ["Campo", "Valor"], header_rows))
+    print()
+
+    per_station_costs: Dict[str, Dict[str, float]] = {}
+    per_station_extraction: Dict[str, float] = {}
+    per_station_energy: Dict[str, float] = {}
+    per_station_consumed: Dict[str, float] = {}
+    per_station_real_charged: Dict[str, float] = {}
+
+    for sub in subfolders:
+        if not summary_only:
+            print("=" * 70)
+            print(f"SUBPROBLEMA: {sub.name}")
+            print("=" * 70)
+        try:
+            costs = calculate_total_costs(sub)
+        except Exception as ex:
+            costs = {}
+            if not summary_only:
+                print(f"  (No se pudieron calcular costos para {sub.name}: {ex})")
+        per_station_costs[sub.name] = costs
+
+        m_path = find_json_in_folder(sub, "M.json")
+        if m_path and not is_effectively_empty_json(m_path):
+            try:
+                tot, _ = total_extraction(m_path)
+                per_station_extraction[sub.name] = tot
+            except Exception:
+                per_station_extraction[sub.name] = 0.0
+        else:
+            per_station_extraction[sub.name] = 0.0
+
+        try:
+            energy_daily = calculate_daily_charged_energy(sub)
+            per_station_energy[sub.name] = sum(energy_daily.values())
+        except Exception:
+            per_station_energy[sub.name] = 0.0
+
+        try:
+            consumed_kwh, _ = consumed_energy_swap_travel(sub)
+            per_station_consumed[sub.name] = consumed_kwh
+        except Exception:
+            per_station_consumed[sub.name] = 0.0
+
+        try:
+            real_charged_kwh, _, _ = calculate_real_charged_energy_from_swaps(sub)
+            per_station_real_charged[sub.name] = real_charged_kwh
+        except Exception:
+            per_station_real_charged[sub.name] = 0.0
+
+        if not summary_only:
+            if costs:
+                rows = [[k, f"{v:.2f}"] for k, v in costs.items()]
+                print(make_table(f"COSTOS ({sub.name})", ["Concepto", "Valor"], rows))
+            print(f"Extraccion total ({sub.name}): {per_station_extraction[sub.name]:.2f}")
+            print(f"Energia cargada total ({sub.name}): {per_station_energy[sub.name]:.2f} kWh")
+            print()
+
+    cost_keys: List[str] = []
+    for costs in per_station_costs.values():
+        for k in costs:
+            if k not in cost_keys:
+                cost_keys.append(k)
+
+    if not summary_only:
+        rows = []
+        for k in cost_keys:
+            row = [k] + [f"{per_station_costs[s.name].get(k, 0.0):.2f}" for s in subfolders]
+            row.append(f"{sum(per_station_costs[s.name].get(k, 0.0) for s in subfolders):.2f}")
+            rows.append(row)
+
+        headers = ["Concepto"] + [s.name for s in subfolders] + ["TOTAL"]
+        print(make_table("COSTOS COMBINADOS (suma ingenua de macrobloques)", headers, rows))
+        print()
+
+    # El peak_power_cost de cada macrobloque sale 0 porque cada uno ve solo
+    # su propia demanda aislada. El valor real (ex post) se calcula con la
+    # demanda combinada de los 3 macrobloques en el mismo dia/intervalo.
+    combined_peak_cost, peak_meta = calculate_combined_peak_power_cost(subfolders)
+    peak_charging_kw, peak_charging_meta = calculate_peak_charging_power(subfolders)
+    naive_total = sum(per_station_costs[s.name].get("total_cost", 0.0) for s in subfolders)
+    naive_peak = sum(per_station_costs[s.name].get("peak_power_cost", 0.0) for s in subfolders)
+    corrected_total = naive_total - naive_peak + combined_peak_cost
+
+    if not summary_only:
+        peak_rows = [[k, f"{v:.2f}" if isinstance(v, (int, float)) else str(v)] for k, v in peak_meta.items()]
+        peak_rows.append(["Costo potencia pico ex post (combinado)", f"{combined_peak_cost:.2f}"])
+        peak_rows.append(["Costo potencia pico (suma ingenua de macrobloques)", f"{naive_peak:.2f}"])
+        peak_rows.append(["COSTO TOTAL (suma ingenua)", f"{naive_total:.2f}"])
+        peak_rows.append(["COSTO TOTAL (corregido con peak ex post)", f"{corrected_total:.2f}"])
+        print(make_table("COSTO POTENCIA PICO EX POST Y TOTAL CORREGIDO", ["Concepto", "Valor"], peak_rows))
+        print()
+
+    # Si las subcarpetas vienen de --parallel_days (<estacion>_d<dia>), cada
+    # (estacion,dia) re-incluye el costo de inversion COMPLETO (es CAPEX, no
+    # depende del dia) -> sumarlo por cada dia lo infla N veces (N = dias por
+    # estacion). Hay que contarlo una sola vez por estacion.
+    if is_day_decomposed:
+        # Solo los componentes que realmente entran en total_cost (ver
+        # calculate_total_costs): energy_cost/real_energy_cost son medidas
+        # diagnosticas alternativas, no se suman al total.
+        opex_keys = ("grid_energy_cost", "penalty_cost", "gen_op_cost", "bess_op_cost")
+
+        capex_total = 0.0
+        opex_total = 0.0
+        real_energy_cost_total = 0.0
+        dedup_rows = []
+        for station, subs_for_station in station_groups.items():
+            capex_value = per_station_costs[subs_for_station[0].name].get("investment_cost", 0.0) \
+                + per_station_costs[subs_for_station[0].name].get("gen_inv_cost", 0.0) \
+                + per_station_costs[subs_for_station[0].name].get("bess_inv_cost", 0.0)
+            opex_value = sum(
+                per_station_costs[s.name].get(k, 0.0)
+                for s in subs_for_station for k in opex_keys
+            )
+            real_ec_value = sum(
+                per_station_costs[s.name].get("real_energy_cost", 0.0)
+                for s in subs_for_station
+            )
+            capex_total += capex_value
+            opex_total += opex_value
+            real_energy_cost_total += real_ec_value
+            dedup_rows.append([station, str(len(subs_for_station)), f"{capex_value:.2f}", f"{opex_value:.2f}", f"{real_ec_value:.2f}"])
+
+        if not summary_only:
+            dedup_rows_display = dedup_rows + [["TOTAL", str(len(subfolders)), f"{capex_total:.2f}", f"{opex_total:.2f}", f"{real_energy_cost_total:.2f}"]]
+            print(make_table(
+                "COSTOS DEDUPLICADOS POR ESTACION (inversion contada 1 vez, no por dia)",
+                ["Estacion", "N dias", "Inversion (1 vez)", "Operacion (suma dias)", "Costo carga real (suma dias)"],
+                dedup_rows_display,
+            ))
+            print()
+
+        dedup_total = capex_total + opex_total + combined_peak_cost
+        real_total_with_real_ec = capex_total + real_energy_cost_total + sum(
+            per_station_costs[s.name].get(k, 0.0)
+            for s in subfolders for k in ("penalty_cost", "gen_op_cost", "bess_op_cost")
+        ) + combined_peak_cost
+        print(make_table(
+            "COSTO TOTAL FINAL (deduplicado, 3 estaciones, todos los dias)",
+            ["Concepto", "Valor"],
+            [
+                ["Inversion (1 vez por estacion)", f"{capex_total:.2f}"],
+                ["Operacion (suma de todos los dias)", f"{opex_total:.2f}"],
+                ["Potencia pico ex post (combinado)", f"{combined_peak_cost:.2f}"],
+                ["COSTO TOTAL", f"{dedup_total:.2f}"],
+                ["--- alternativo (costo carga real) ---", ""],
+                ["Costo carga real (bmax-B_llegada, suma dias)", f"{real_energy_cost_total:.2f}"],
+                ["COSTO TOTAL (con costo carga real)", f"{real_total_with_real_ec:.2f}"],
+            ],
+        ))
+        print()
+    elif summary_only:
+        # Carpeta plana (station_1/2/3, sin dia): el total corregido ya no
+        # tiene el problema de duplicar inversion por dia.
+        real_energy_cost_total = sum(
+            per_station_costs[s.name].get("real_energy_cost", 0.0) for s in subfolders
+        )
+        print(make_table(
+            "COSTO TOTAL FINAL (3 estaciones)",
+            ["Concepto", "Valor"],
+            [
+                ["Potencia pico ex post (combinado)", f"{combined_peak_cost:.2f}"],
+                ["COSTO TOTAL", f"{corrected_total:.2f}"],
+                ["--- alternativo (costo carga real) ---", ""],
+                ["Costo carga real (bmax-B_llegada)", f"{real_energy_cost_total:.2f}"],
+            ],
+        ))
+        print()
+
+    extraction_total = sum(per_station_extraction.values())
+    energy_total = sum(per_station_energy.values())
+    consumed_total = sum(per_station_consumed.values())
+    real_charged_total = sum(per_station_real_charged.values())
+    peak_charging_str = (
+        f"{peak_charging_kw:.2f} kW  "
+        f"(max {peak_charging_meta.get('max_baterias_cargando', 0):.0f} bat x "
+        f"{peak_charging_meta.get('p_charger_kw', 0):.0f} kW, "
+        f"dia {peak_charging_meta.get('dia_pico', '?')} t={peak_charging_meta.get('intervalo_pico', '?')})"
+    )
+    if summary_only:
+        print(make_table(
+            "METRICAS COMBINADAS (3 estaciones, todos los dias)",
+            ["Concepto", "Valor"],
+            [
+                ["Extraccion total combinada", f"{extraction_total:.2f}"],
+                ["Energia cargada total combinada (Sv) [kWh]", f"{energy_total:.2f}"],
+                ["Energia cargada real (bmax-B_llegada) [kWh]", f"{real_charged_total:.2f}"],
+                ["Energia consumida por vehiculos (B_s-B) [kWh]", f"{consumed_total:.2f}"],
+                ["Potencia pico de carga (combinada)", peak_charging_str],
+            ],
+        ))
+    else:
+        headers = ["Concepto"] + [s.name for s in subfolders] + ["TOTAL"]
+        summary_rows = [
+            ["Extraccion total combinada"] + [f"{per_station_extraction[s.name]:.2f}" for s in subfolders] + [f"{extraction_total:.2f}"],
+            ["Energia cargada total combinada (Sv) [kWh]"] + [f"{per_station_energy[s.name]:.2f}" for s in subfolders] + [f"{energy_total:.2f}"],
+            ["Energia cargada real (bmax-B_llegada) [kWh]"] + [f"{per_station_real_charged[s.name]:.2f}" for s in subfolders] + [f"{real_charged_total:.2f}"],
+            ["Energia consumida por vehiculos (B_s-B) [kWh]"] + [f"{per_station_consumed[s.name]:.2f}" for s in subfolders] + [f"{consumed_total:.2f}"],
+            ["Potencia pico de carga (combinada) [kW]"] + ["" for s in subfolders] + [peak_charging_str],
+        ]
+        print(make_table("METRICAS COMBINADAS", headers, summary_rows))
+    print()
+
+
+# -----------------------------
 # CLI principal
 # -----------------------------
-def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Analiza outputs desde una carpeta: E (L/h), B (kWh/h) y M (extracción total). "
-                    "Omite automáticamente JSON faltantes o vacíos."
-    )
-    ap.add_argument("folder", help="Ruta de la carpeta que contiene los JSON (búsqueda recursiva).")
-    ap.add_argument(
-        "--delta-minutes",
-        type=float,
-        default=DEFAULT_DELTA_MINUTES,
-        help=f"Delta t manual (minutos) para E/B (default: {DEFAULT_DELTA_MINUTES})",
-    )
-    ap.add_argument("--eps", type=float, default=1e-9, help="Umbral para considerar descenso (default: 1e-9)")
-    args = ap.parse_args()
-
-    root = Path(args.folder).expanduser()
-    if not root.exists() or not root.is_dir():
-        raise SystemExit(f"Carpeta no válida: {root}")
-
+def analyze_single_folder(root: Path, args) -> None:
     e_path = find_json_in_folder(root, "E.json")
     b_path = find_json_in_folder(root, "B.json")
     m_path = find_json_in_folder(root, "M.json")
@@ -1408,6 +1811,7 @@ def calculate_investment_cost(root: Path) -> float:
     Calcula el costo de inversión en estaciones exactamente como la función objetivo:
       Σ_k  station_cost_k[k] * X[k]
            + c_bays_k[k] * N_bays[k]
+           + c_crane_k[k] * N_bays[k]
            + (charger_cost + c_charger_space_k[k]) * N_chargers[k]
            + (battery_cost  + c_battery_space_k[k]) * N_batteries[k]
     """
@@ -1426,6 +1830,7 @@ def calculate_investment_cost(root: Path) -> float:
     battery_cost    = _as_float(params_data.get("battery_cost", 0.0))
     station_cost_k  = _unwrap_named_tree(params_data.get("station_cost_k",   {}))
     c_bays_k        = _unwrap_named_tree(params_data.get("c_bays_k",         {}))
+    c_crane_k       = _unwrap_named_tree(params_data.get("c_crane_k",        {}))
     c_charger_space = _unwrap_named_tree(params_data.get("c_charger_space_k", {}))
     c_battery_space = _unwrap_named_tree(params_data.get("c_battery_space_k", {}))
 
@@ -1458,12 +1863,14 @@ def calculate_investment_cost(root: Path) -> float:
         n_batteries  = n_batteries_map.get(k, 0.0)
         c_station    = _as_float(station_cost_k.get(k, 0.0))  if isinstance(station_cost_k,  dict) else 0.0
         c_bay        = _as_float(c_bays_k.get(k, 0.0))        if isinstance(c_bays_k,        dict) else 0.0
+        c_crane      = _as_float(c_crane_k.get(k, 0.0))       if isinstance(c_crane_k,       dict) else 0.0
         c_char_sp    = _as_float(c_charger_space.get(k, 0.0)) if isinstance(c_charger_space, dict) else 0.0
         c_bat_sp     = _as_float(c_battery_space.get(k, 0.0)) if isinstance(c_battery_space, dict) else 0.0
 
         total_cost += (
             c_station * x_k
             + c_bay   * n_bays
+            + c_crane * n_bays
             + (charger_cost + c_char_sp) * n_chargers
             + (battery_cost + c_bat_sp)  * n_batteries
         )
@@ -1656,10 +2063,17 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         energy_cost_profile = str(params_data.get("energy_cost", "")).strip()
 
         if energy_cost_profile == "Profile_fixed":
+            # Costo fijo: real_cost = energia_real * precio_unico * escala
             real_energy_cost = float(real_swap_energy_kwh) * c_min * scaling_factor
         else:
-            delta_energy_kwh = sv_energy_total_kwh - float(real_swap_energy_kwh)
-            real_energy_cost = max(0.0, float(energy_cost) - delta_energy_kwh * c_min * scaling_factor)
+            # Costo variable: escala el costo del modelo proporcionalmente a la
+            # energia real vs la energia que Sv realmente cargo.
+            # real_cost = energy_cost * (real_energy / sv_energy)
+            # => usa el precio promedio ponderado real del modelo, sin asumir c_min.
+            if sv_energy_total_kwh > 0:
+                real_energy_cost = float(energy_cost) * (float(real_swap_energy_kwh) / sv_energy_total_kwh)
+            else:
+                real_energy_cost = 0.0
     except Exception as ex:
         print(f"Advertencia al calcular costo de energía real: {ex}")
         real_energy_cost = 0.0
@@ -1720,6 +2134,39 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         "bess_op_cost":    bess_op_cost,
         "total_cost":      total_cost,
     }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="Analiza outputs desde una carpeta: E (L/h), B (kWh/h), M (extracción total) y costos. "
+                    "Si la carpeta no tiene parameters.json pero sus subcarpetas si (ej. salida de la "
+                    "descomposicion por macrobloque), agrega automaticamente los resultados de cada una. "
+                    "Omite automáticamente JSON faltantes o vacíos."
+    )
+    ap.add_argument("folder", help="Ruta de la carpeta que contiene los JSON (búsqueda recursiva).")
+    ap.add_argument(
+        "--delta-minutes",
+        type=float,
+        default=DEFAULT_DELTA_MINUTES,
+        help=f"Delta t manual (minutos) para E/B (default: {DEFAULT_DELTA_MINUTES})",
+    )
+    ap.add_argument("--eps", type=float, default=1e-9, help="Umbral para considerar descenso (default: 1e-9)")
+    ap.add_argument(
+        "--summary_only", action="store_true",
+        help="En modo desacoplado (macrobloques), muestra solo el total agregado final "
+             "(3 estaciones, todos los dias), sin el detalle por subproblema.",
+    )
+    args = ap.parse_args()
+
+    root = Path(args.folder).expanduser()
+    if not root.exists() or not root.is_dir():
+        raise SystemExit(f"Carpeta no válida: {root}")
+
+    subfolders = find_macrobloque_subfolders(root)
+    if subfolders:
+        analyze_macrobloques(root, subfolders, args)
+    else:
+        analyze_single_folder(root, args)
 
 
 if __name__ == "__main__":

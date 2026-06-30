@@ -1,0 +1,125 @@
+
+Gurobi 12.0.3 (win64) logging started Mon Jun 29 19:13:06 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\530kW_Desc_12dias_par\station_1_d91\ELMO_log.txt"
+Set parameter Threads to value 4
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 4 threads
+
+Non-default parameters:
+TimeLimit  3600
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  4
+
+Optimize a model with 26684 rows, 52267 columns and 339327 nonzeros
+Model fingerprint: 0xf52a3576
+Variable types: 2099 continuous, 50168 integer (17045 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 5e+02]
+  Objective range  [1e-02, 1e+02]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 1e+04]
+
+Warning: Completing partial solution with 50164 unfixed non-continuous variables out of 50168
+Processing user MIP start: 119 nodes explored in subMIP, total elapsed time 5s
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 6.92 seconds (17.41 work units)
+
+Presolve removed 23484 rows and 42547 columns
+Presolve time: 0.66s
+Presolved: 3200 rows, 9720 columns, 50101 nonzeros
+Variable types: 798 continuous, 8922 integer (8577 binary)
+Root relaxation presolved: 3200 rows, 9720 columns, 50101 nonzeros
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    2.4947200e+05   3.258750e+02   0.000000e+00      8s
+   14855    2.4965378e+05   1.400711e+05   0.000000e+00     10s
+Warning: Markowitz tolerance tightened to 0.03125
+   23016    2.5110080e+05   0.000000e+00   0.000000e+00     11s
+   23016    2.5110080e+05   0.000000e+00   0.000000e+00     11s
+
+Root relaxation: objective 2.511008e+05, 23016 iterations, 3.46 seconds (4.62 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 251100.795    0  318          - 251100.795      -     -   12s
+Another try with MIP start
+     0     0 251341.294    0  307          - 251341.294      -     -   13s
+     0     0 251395.344    0  511          - 251395.344      -     -   13s
+     0     0 251424.762    0  526          - 251424.762      -     -   13s
+     0     0 251500.325    0  482          - 251500.325      -     -   15s
+     0     0 251500.325    0  528          - 251500.325      -     -   15s
+     0     0 251500.325    0  533          - 251500.325      -     -   15s
+     0     0 251686.116    0  469          - 251686.116      -     -   16s
+     0     0 251686.883    0  457          - 251686.883      -     -   18s
+     0     2 251686.883    0  457          - 251686.883      -     -   23s
+    34    33 251763.418    7  449          - 251763.418      -  1090   25s
+   469   481 252323.258   18  383          - 252187.823      -   619   30s
+   842   841 254976.281   13  364          - 252231.604      -   685   35s
+  1046  1012 252281.968   15  252          - 252253.104      -   666   44s
+  1047  1013 252858.857   26  267          - 252253.104      -   666   47s
+  1050  1015 252576.665   25  489          - 252253.104      -   664   54s
+  1054  1018 252719.350   21  509          - 252253.104      -   661   57s
+  1056  1019 252774.683   27  482          - 252253.104      -   660   61s
+H 1056   967                    455848.05149 252253.104  44.7%   660   70s
+H 1056   919                    328648.05149 252253.104  23.2%   660   70s
+H 1056   873                    328364.48072 252253.104  23.2%   660   70s
+H 1056   829                    328154.86510 252253.104  23.1%   660   70s
+H 1056   787                    326999.56351 252253.104  22.9%   660   70s
+H 1056   747                    325944.53915 252253.104  22.6%   660   70s
+H 1056   710                    325176.34703 252253.104  22.4%   660   70s
+H 1056   674                    324121.32267 252253.104  22.2%   660   70s
+H 1056   640                    322615.08427 252253.104  21.8%   660   70s
+H 1056   608                    319889.44881 252253.104  21.1%   660   70s
+H 1056   577                    319631.00172 252253.104  21.1%   660   71s
+H 1056   548                    257548.74048 252253.104  2.06%   660   71s
+H 1056   521                    256657.02031 252253.104  1.72%   660   71s
+H 1056   494                    256556.50460 252253.104  1.68%   660   71s
+H 1056   469                    256359.84322 252253.104  1.60%   660   71s
+  1068   489 252253.104   18  448 256359.843 252253.104  1.60%   728   76s
+  1117   518 252399.202   22  405 256359.843 252253.104  1.60%   769   80s
+H 1128   501                    256197.85654 252253.104  1.54%   785   82s
+  1165   520 252363.335   25  438 256197.857 252253.104  1.54%   801   85s
+H 1177   508                    255070.04373 252257.283  1.10%   818   88s
+  1201   552 252387.809   26  491 255070.044 252312.690  1.08%   836   92s
+  1264   584 252602.543   24  282 255070.044 252330.745  1.07%   855   95s
+  1333   612 252442.490   26  430 255070.044 252343.677  1.07%   885  100s
+  1384   656 253023.591   26  393 255070.044 252370.960  1.06%   920  105s
+  1454   698 254667.265   22  329 255070.044 252402.626  1.05%   950  110s
+  1525   741 252554.767   27  379 255070.044 252434.491  1.03%   975  115s
+  1598   800 253103.188   27  424 255070.044 252459.427  1.02%  1019  120s
+H 1605   738                    254160.73559 252459.946  0.67%  1025  120s
+
+Cutting planes:
+  Gomory: 17
+  Lift-and-project: 21
+  Cover: 2
+  Projected implied bound: 1
+  MIR: 97
+  Flow cover: 315
+  Inf proof: 1
+  Zero half: 102
+  RLT: 3
+  Relax-and-lift: 25
+
+Explored 1626 nodes (1700476 simplex iterations) in 120.63 seconds (263.82 work units)
+Thread count was 4 (of 32 available processors)
+
+Solution count 10: 254161 255070 256198 ... 322615
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 2.541607355897e+05, best bound 2.524622800057e+05, gap 0.6683%

@@ -1,0 +1,93 @@
+
+Gurobi 12.0.3 (win64) logging started Tue Jun 30 12:57:21 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\142kW_Desc_12dias_par\station_1_d91\ELMO_log.txt"
+Set parameter Threads to value 4
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 4 threads
+
+Non-default parameters:
+TimeLimit  3600
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  4
+
+Optimize a model with 26684 rows, 52267 columns and 341197 nonzeros
+Model fingerprint: 0xf3e96d1c
+Variable types: 2099 continuous, 50168 integer (17045 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [1e-02, 1e+02]
+  Bounds range     [1e+00, 2e+00]
+  RHS range        [1e+00, 1e+04]
+
+Warning: Completing partial solution with 50164 unfixed non-continuous variables out of 50168
+Processing user MIP start: 56 nodes explored in subMIP, total elapsed time 5s
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 5.81 seconds (9.98 work units)
+
+Presolve removed 23520 rows and 42411 columns
+Presolve time: 0.80s
+Presolved: 3164 rows, 9856 columns, 52112 nonzeros
+Variable types: 798 continuous, 9058 integer (8393 binary)
+Root relaxation presolved: 3164 rows, 9856 columns, 52112 nonzeros
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    3.0625000e+05   3.256250e+02   0.000000e+00      7s
+Warning: Markowitz tolerance tightened to 0.03125
+   12222    3.1080681e+05   0.000000e+00   0.000000e+00     10s
+   12222    3.1080681e+05   0.000000e+00   0.000000e+00     10s
+
+Root relaxation: objective 3.108068e+05, 12222 iterations, 2.77 seconds (2.77 work units)
+Total elapsed time = 10.43s (DegenMoves)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 310812.830    0  229          - 310812.830      -     -   11s
+Another try with MIP start
+     0     0 311728.380    0  122          - 311728.380      -     -   14s
+     0     0 311728.380    0  245          - 311728.380      -     -   14s
+     0     0 311728.380    0  141          - 311728.380      -     -   17s
+     0     0 311728.380    0  161          - 311728.380      -     -   18s
+     0     0 311728.380    0  109          - 311728.380      -     -   20s
+     0     0 311728.380    0  136          - 311728.380      -     -   20s
+     0     0 311728.380    0  148          - 311728.380      -     -   23s
+     0     0 311728.380    0  151          - 311728.380      -     -   23s
+     0     0 311728.380    0   91          - 311728.380      -     -   25s
+     0     0 311728.380    0   91          - 311728.380      -     -   25s
+     0     0 311728.380    0  123          - 311728.380      -     -   26s
+     0     0 311728.380    0  123          - 311728.380      -     -   27s
+     0     2 311728.380    0  123          - 311728.380      -     -   32s
+   661  1069 311728.380   72   16          - 311728.380      -  65.7   35s
+  1072  1072 311728.380   34  101          - 311728.380      -  60.1   40s
+H 1075  1020                    311728.38141 311728.380  0.00%  59.9   46s
+
+Cutting planes:
+  Gomory: 11
+  Lift-and-project: 36
+  Projected implied bound: 1
+  MIR: 4
+  Flow cover: 22
+  Zero half: 16
+  RLT: 3
+
+Explored 1075 nodes (132905 simplex iterations) in 46.86 seconds (47.57 work units)
+Thread count was 4 (of 32 available processors)
+
+Solution count 1: 311728 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 3.117283814070e+05, best bound 3.117283804915e+05, gap 0.0000%

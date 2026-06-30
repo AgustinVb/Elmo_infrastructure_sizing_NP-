@@ -1,0 +1,95 @@
+
+Gurobi 12.0.3 (win64) logging started Tue Jun 30 12:57:21 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\142kW_Desc_12dias_par\station_1_d182\ELMO_log.txt"
+Set parameter Threads to value 4
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 4 threads
+
+Non-default parameters:
+TimeLimit  3600
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  4
+
+Optimize a model with 26684 rows, 52267 columns and 341197 nonzeros
+Model fingerprint: 0x26acfb5a
+Variable types: 2099 continuous, 50168 integer (17045 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [1e-02, 1e+02]
+  Bounds range     [1e+00, 2e+00]
+  RHS range        [1e+00, 1e+04]
+
+Warning: Completing partial solution with 50164 unfixed non-continuous variables out of 50168
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 5s
+Processing user MIP start: 31 nodes explored in subMIP, total elapsed time 10s
+Processing user MIP start: 198 nodes explored in subMIP, total elapsed time 15s
+Processing user MIP start: 198 nodes explored in subMIP, total elapsed time 20s
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 21.73 seconds (37.37 work units)
+
+Presolve removed 23520 rows and 42411 columns
+Presolve time: 1.48s
+Presolved: 3164 rows, 9856 columns, 52112 nonzeros
+Variable types: 798 continuous, 9058 integer (8393 binary)
+Root relaxation presolved: 3164 rows, 9856 columns, 52112 nonzeros
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    3.0625000e+05   3.256250e+02   0.000000e+00     24s
+Warning: Markowitz tolerance tightened to 0.03125
+    6376    3.1090971e+05   2.807328e+03   0.000000e+00     25s
+   13137    3.1094779e+05   0.000000e+00   0.000000e+00     27s
+   13137    3.1094779e+05   0.000000e+00   0.000000e+00     27s
+
+Root relaxation: objective 3.109478e+05, 13137 iterations, 3.93 seconds (2.82 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 310954.587    0  247          - 310954.587      -     -   28s
+Another try with MIP start
+     0     0 311987.311    0  167          - 311987.311      -     -   30s
+     0     0 311987.311    0  312          - 311987.311      -     -   30s
+     0     0 311987.317    0  332          - 311987.317      -     -   33s
+     0     0 311987.398    0  479          - 311987.398      -     -   33s
+     0     0 311987.733    0  369          - 311987.733      -     -   34s
+     0     0 311987.734    0  404          - 311987.734      -     -   34s
+     0     0 311987.791    0  270          - 311987.791      -     -   36s
+     0     0 311987.850    0  267          - 311987.850      -     -   36s
+     0     2 311987.850    0  267          - 311987.850      -     -   45s
+    51    87 311989.032    6  286          - 311989.032      -  1175   51s
+    91   278 312099.690    9  409          - 311989.032      -  1138   56s
+   286   519 311989.032   12  401          - 311989.032      -   783   61s
+   544   862 311990.327   14  403          - 311989.032      -   656   66s
+H  689   837                    315011.45577 311989.032  0.96%   640   66s
+
+Cutting planes:
+  Gomory: 21
+  Cover: 5
+  MIR: 37
+  Mixing: 1
+  Flow cover: 358
+  Inf proof: 2
+  Zero half: 168
+  RLT: 20
+
+Explored 896 nodes (516039 simplex iterations) in 67.06 seconds (98.84 work units)
+Thread count was 4 (of 32 available processors)
+
+Solution count 1: 315011 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 3.150114557659e+05, best bound 3.119890320526e+05, gap 0.9595%

@@ -1,0 +1,85 @@
+
+Gurobi 12.0.3 (win64) logging started Mon Jun 29 01:10:43 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\320kW_Desc_12dias_par\station_1_d305_stage1\ELMO_log.txt"
+Set parameter Threads to value 4
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 4 threads
+
+Non-default parameters:
+TimeLimit  3600
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  4
+
+Optimize a model with 26653 rows, 52267 columns and 341059 nonzeros
+Model fingerprint: 0x4b26b66c
+Variable types: 2099 continuous, 50168 integer (17045 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [1e-01, 8e+04]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 1e+04]
+Presolve removed 23500 rows and 42556 columns
+Presolve time: 0.58s
+Presolved: 3153 rows, 9711 columns, 50478 nonzeros
+Variable types: 798 continuous, 8913 integer (8573 binary)
+Root relaxation presolved: 3153 rows, 9711 columns, 50478 nonzeros
+
+
+Root relaxation: objective 2.277091e+05, 11563 iterations, 1.56 seconds (2.30 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 227720.041    0  185          - 227720.041      -     -    3s
+     0     0 228250.741    0  157          - 228250.741      -     -    5s
+     0     0 228250.741    0  165          - 228250.741      -     -    5s
+     0     0 228250.741    0   41          - 228250.741      -     -    6s
+     0     0 228250.741    0   86          - 228250.741      -     -    6s
+     0     0 228250.741    0  148          - 228250.741      -     -    7s
+     0     0 228250.741    0  134          - 228250.741      -     -    7s
+     0     0 228250.741    0  155          - 228250.741      -     -    8s
+     0     0 228250.741    0  176          - 228250.741      -     -    8s
+     0     0 228250.741    0  143          - 228250.741      -     -   10s
+     0     0 228250.741    0  143          - 228250.741      -     -   10s
+     0     2 228250.741    0  143          - 228250.741      -     -   19s
+     2     4 228250.741    1  148          - 228250.741      -  1392   20s
+   385   420 228250.741   25   70          - 228250.741      -   313   26s
+   528   579 228250.741   56  101          - 228250.741      -   442   31s
+   656   756 228250.741   44   98          - 228250.741      -   524   35s
+   833   958 228250.741   43  179          - 228250.741      -   571   40s
+  1288  1286 228807.742   33  136          - 228250.741      -   479   48s
+  1289  1287 228250.741   28   88          - 228250.741      -   479   50s
+  1292  1289 228250.741   70  133          - 228250.741      -   478   55s
+  1294  1290 228250.741   34  107          - 228250.741      -   477   60s
+  1298  1293 228258.917   72   79          - 228250.741      -   476   65s
+  1303  1296 228250.741   65  104          - 228250.741      -   474   70s
+H 1308  1234                    235216.42146 228250.741  2.96%   472   79s
+H 1308  1172                    234932.80029 228250.741  2.84%   472   79s
+H 1308  1113                    232132.19839 228250.741  1.67%   472   80s
+H 1308  1057                    232031.77152 228250.741  1.63%   472   80s
+H 1308  1004                    228719.15183 228250.741  0.20%   472   80s
+
+Cutting planes:
+  Gomory: 11
+  Lift-and-project: 4
+  Flow cover: 20
+  Zero half: 6
+
+Explored 1308 nodes (709549 simplex iterations) in 80.24 seconds (131.85 work units)
+Thread count was 4 (of 32 available processors)
+
+Solution count 5: 228719 232032 232132 ... 235216
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 2.287191518341e+05, best bound 2.282507414214e+05, gap 0.2048%

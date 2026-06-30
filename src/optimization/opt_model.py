@@ -284,6 +284,27 @@ class OptModel(object):
             f"{skipped} omitidos, {completed} completados en 0"
         )
 
+    def _apply_fixed_infra(self, fixed_infra):
+        """Fija las variables de infraestructura (N_chargers, N_bays,
+        N_batteries, X) a valores ya decididos (Fase 1), para que la Fase 2
+        (agendamiento por dia) no las vuelva a optimizar por separado.
+
+        fixed_infra: dict {'N_chargers': v, 'N_bays': v, 'N_batteries': v, 'X': v}
+        Se aplica a todas las estaciones del modelo (pensado para subproblemas
+        de una sola estacion, donde stations_set tiene un unico elemento).
+        """
+        if not fixed_infra:
+            return
+        for k in self.model.stations_set:
+            if 'X' in fixed_infra:
+                self.model.X[k].fix(fixed_infra['X'])
+            if 'N_chargers' in fixed_infra:
+                self.model.N_chargers[k].fix(fixed_infra['N_chargers'])
+            if 'N_bays' in fixed_infra:
+                self.model.N_bays[k].fix(fixed_infra['N_bays'])
+            if 'N_batteries' in fixed_infra:
+                self.model.N_batteries[k].fix(fixed_infra['N_batteries'])
+
     def build_model(self):
         model = pyo.ConcreteModel()
 
@@ -337,17 +358,18 @@ class OptModel(object):
                 print("⚠️ Could not read log file for summary:", e)
 
     def __init__(self, mine_system, time_series, output_folder, y_init_path=None, init_solution_folder=None,
-                 warmstart_hard_only=False):
+                 warmstart_hard_only=False, fixed_infra=None, daily_target_override=None):
         self.output_folder   = output_folder
         self.time_series     = time_series
         self.mine_system     = mine_system
         self.set_builder      = OptSets(mine_system, time_series)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        self._apply_fixed_infra(fixed_infra)
         
         # Variable axis ordering (must match printer.py var_axis_order)
         # CRITICAL: Order must match variable definition in functions.py
@@ -383,7 +405,7 @@ class OptModel(object):
         self._load_solution_warmstart_folder(init_solution_folder, hard_vars_only=warmstart_hard_only)
         self._load_y_warmstart(y_init_path)
 
-    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
+    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False, threads=24):
         # Log file now in output folder to avoid conflicts
         # Normalize output_folder path to avoid double backslashes
         output_folder_normalized = os.path.normpath(self.output_folder)
@@ -415,7 +437,7 @@ class OptModel(object):
             opt.options['MIPGap']       = gap
             opt.options['TimeLimit']    = timelimit
             opt.options['LogFile']      = log_file
-            opt.options['Threads']      = 24
+            opt.options['Threads']      = threads
             opt.options['Heuristics']   = 0.5
             opt.options['MIPFocus']     = 3      
             opt.options['Presolve']     = 2      

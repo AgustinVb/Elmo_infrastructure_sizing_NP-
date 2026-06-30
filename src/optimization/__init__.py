@@ -8,7 +8,10 @@ class OptimizationModel(object):
                  solver_name, output_folder, timelimit=172800, y_init_path=None,
                  init_solution_folder=None,
                  relax_integrality=False,
-                 warmstart_hard_only=False):
+                 warmstart_hard_only=False,
+                 fixed_infra=None,
+                 threads=24,
+                 daily_target_override=None):
 
         t0 = time.time()
 
@@ -20,9 +23,11 @@ class OptimizationModel(object):
             y_init_path=y_init_path,
             init_solution_folder=init_solution_folder,
             warmstart_hard_only=warmstart_hard_only,
+            fixed_infra=fixed_infra,
+            daily_target_override=daily_target_override,
         )
         print('formulation time:', time.time() - t0)
-        self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
+        self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality, threads=threads)
 
         # 2) Exporta CSV y genera gráficos
         printer = Printer(self.opt_model,      

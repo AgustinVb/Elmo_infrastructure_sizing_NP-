@@ -1,0 +1,90 @@
+
+Gurobi 12.0.3 (win64) logging started Mon Jun 29 01:08:24 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\320kW_Desc_12dias_par\station_1_d213_stage1\ELMO_log.txt"
+Set parameter Threads to value 4
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 4 threads
+
+Non-default parameters:
+TimeLimit  3600
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  4
+
+Optimize a model with 26684 rows, 52267 columns and 341121 nonzeros
+Model fingerprint: 0x8b876320
+Variable types: 2099 continuous, 50168 integer (17045 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [8e-03, 8e+04]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 1e+04]
+Presolve removed 23531 rows and 42555 columns
+Presolve time: 0.39s
+Presolved: 3153 rows, 9712 columns, 50509 nonzeros
+Variable types: 798 continuous, 8914 integer (8574 binary)
+Root relaxation presolved: 3153 rows, 9712 columns, 50509 nonzeros
+
+
+Root relaxation: objective 2.271946e+05, 12170 iterations, 1.65 seconds (2.63 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 227210.567    0  165          - 227210.567      -     -    3s
+     0     0 227985.202    0  182          - 227985.202      -     -    5s
+     0     0 227985.202    0  193          - 227985.202      -     -    5s
+     0     0 227985.202    0  198          - 227985.202      -     -    5s
+     0     0 227985.202    0  106          - 227985.202      -     -    7s
+     0     0 227985.202    0  107          - 227985.202      -     -    7s
+     0     0 227985.202    0  194          - 227985.202      -     -    9s
+     0     0 227985.202    0   27          - 227985.202      -     -   11s
+     0     0 227985.202    0  122          - 227985.202      -     -   11s
+     0     0 227985.202    0   38          - 227985.202      -     -   12s
+     0     0 227985.202    0   61          - 227985.202      -     -   12s
+     0     0 227985.202    0   38          - 227985.202      -     -   12s
+     0     0 227985.202    0   38          - 227985.202      -     -   13s
+     0     2 227985.202    0   38          - 227985.202      -     -   17s
+    51   129 227985.202    6  147          - 227985.202      -  1156   20s
+  1599  1600 227985.202   72   38          - 227985.202      -  81.4   25s
+  1602  1602 227985.202  113  101          - 227985.202      -  81.2   30s
+  1604  1603 229297.758   22   92          - 227985.202      -  81.1   35s
+  1609  1607 227994.335    9  179          - 227985.202      -  80.8   40s
+  1617  1612 227985.202   77  159          - 227985.202      -  80.4   45s
+H 1621  1533                    273333.68575 227985.202  16.6%  80.3   57s
+H 1621  1456                    273288.28974 227985.202  16.6%  80.3   57s
+H 1621  1383                    273136.82627 227985.202  16.5%  80.3   57s
+H 1621  1314                    273037.25537 227985.202  16.5%  80.3   57s
+H 1621  1248                    268060.12779 227985.202  14.9%  80.3   57s
+H 1621  1185                    267919.80497 227985.202  14.9%  80.3   57s
+  1633  1226 227985.202   17   63 267919.805 227985.202  14.9%   119   60s
+H 1666  1185                    266400.29256 227985.202  14.4%   126   61s
+  1808  1316 227987.236   20  163 266400.293 227985.202  14.4%   164   66s
+  1883  1487 227985.202   29   93 266400.293 227985.202  14.4%   182   70s
+H 2076  1343                    229182.53281 227985.202  0.52%   191   70s
+
+Cutting planes:
+  Gomory: 10
+  Lift-and-project: 6
+  MIR: 3
+  Flow cover: 54
+  Zero half: 6
+  RLT: 1
+
+Explored 2091 nodes (441329 simplex iterations) in 70.32 seconds (110.72 work units)
+Thread count was 4 (of 32 available processors)
+
+Solution count 8: 229183 266400 267920 ... 273334
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 2.291825328138e+05, best bound 2.279852020932e+05, gap 0.5224%
