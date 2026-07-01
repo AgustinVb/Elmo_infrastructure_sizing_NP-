@@ -708,9 +708,9 @@ class JSONPlotter:
         if self.days and max(self.days) <= 12:
             return self.MONTH_LABELS.get(di, f"Month {di}")
 
-        # No asumimos que min(self.days) == 1 de enero
-        min_day = min(self.days) if self.days else 1
-        day_of_year = ((di - min_day) % 365) + 1
+        # d es el numero absoluto de dia del año (1=1 enero, 32=1 feb, etc.)
+        # Para escenarios multi-año: 366..730 = año 2, etc.
+        day_of_year = ((di - 1) % 365) + 1
 
         month_lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
         cum = 0
@@ -735,8 +735,7 @@ class JSONPlotter:
         if self.days and max(self.days) <= 12:
             month = di
         else:
-            min_day = min(self.days) if self.days else 1
-            day_of_year = ((di - min_day) % 365) + 1
+            day_of_year = ((di - 1) % 365) + 1
             month_lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
             cum = 0
             month = 1
