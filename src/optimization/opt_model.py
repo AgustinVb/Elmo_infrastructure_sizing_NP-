@@ -58,6 +58,17 @@ class OptModel(object):
             "M": ["i", "j", "y", "d", "t"],
             "F": ["j", "y", "d"],
             "F_seg": ["j", "y", "d", "seg"],
+            "P_red": ["y", "d", "t"],
+            "P_gen": ["g", "y", "d", "t"],
+            "Curt_g": ["g", "y", "d", "t"],
+            "G_g": ["g"],
+            "H_h": ["h"],
+            "P_bat": ["h", "y", "d", "t"],
+            "A_h": ["h", "y", "d", "t"],
+            "R": ["y"],
+            "b_bar": ["y"],
+            "N_ciclos": ["y"],
+            "CumEFC": ["y"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)

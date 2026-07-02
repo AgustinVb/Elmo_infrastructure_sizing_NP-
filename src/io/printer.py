@@ -205,6 +205,10 @@ class Printer:
             "H_h":      ["h"],
             "P_bat":    ["h", "y", "d", "t"],
             "A_h":      ["h", "y", "d", "t"],
+            "R":        ["y"],
+            "b_bar":    ["y"],
+            "N_ciclos": ["y"],
+            "CumEFC":   ["y"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":        ["i", "y", "d", "t"],
@@ -225,6 +229,10 @@ class Printer:
             "H_h":      ["h"],
             "P_bat":    ["h", "y", "d", "t"],
             "A_h":      ["h", "y", "d", "t"],
+            "R":        ["y"],
+            "b_bar":    ["y"],
+            "N_ciclos": ["y"],
+            "CumEFC":   ["y"],
         }
 
         self.float_tol: float = 1e-9

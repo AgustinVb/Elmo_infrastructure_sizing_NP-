@@ -18,6 +18,18 @@ class OptRules(object):
 
 
 
+    def year_position(self, y: int) -> int:
+        """Posicion 1-indexada de y dentro del horizonte modelado (1, 2, 3, ...),
+        para exponente de descuento — desacoplado del valor real de y."""
+        return sorted(self.time_series.years).index(y) + 1
+
+    def annuity_factor_expr(self, model):
+        """AF(r,Y) = sum_{k=1..Y} 1/(1+r)^k. Escalar (expresion en model.discount_rate)
+        para convertir un costo anualizado recurrente en su NPV sobre el horizonte."""
+        Y = len(self.time_series.years)
+        r = model.discount_rate
+        return sum(1 / (1 + r) ** k for k in range(1, Y + 1))
+
     def create_pyo_object(self, object_type, model, object_name, sets, rule, domain=pyo.Reals):
         start = time.time()
         if object_type == "Var":
@@ -407,6 +419,27 @@ class OptParameters(OptRules):
                 initialize={h: stor.get_a_max(h) for h in model.storage_set},
                 mutable=False)
 
+        # Degradación de batería on-board (fleet-wide, solo si la hoja existe)
+        bd = self.mine_system.battery_degradation
+        if bd is not None:
+            model.gamma_coef = pyo.Param(initialize=bd.get_gamma_coef(), mutable=True)
+            model.c_bat_replace = pyo.Param(initialize=bd.get_c_bat_replace(), mutable=True)
+            model.min_capacity_fraction = pyo.Param(initialize=bd.get_min_capacity_fraction(), mutable=True)
+
+            # Fleet-wide: todos los ELHD deben compartir la misma capacidad nominal,
+            # porque b_bar/R se modelan una vez para toda la flota, no por LHD.
+            bmax_values = {round(float(self.mine_system.elhd.get_e_max(b)), 6) for b in model.elhd_set}
+            if len(bmax_values) > 1:
+                raise ValueError(
+                    "Degradación de batería (fleet-wide) requiere que todos los ELHD "
+                    f"compartan la misma capacidad nominal (e_max); valores encontrados: {bmax_values}"
+                )
+            model.b_max_fleet = pyo.Param(initialize=next(iter(bmax_values)), mutable=False)
+
+        # Tasa de descuento: 0.0 (sin descuento, comportamiento actual) si no hay
+        # datos de degradación cargados o si la hoja no trae la columna.
+        model.discount_rate = pyo.Param(initialize=(bd.get_discount_rate() if bd is not None else 0.0), mutable=True)
+
 
 class BoundRules(OptRules):
 
@@ -473,6 +506,39 @@ class BoundRules(OptRules):
             model.P_bat = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set, domain=pyo.Reals)
             model.A_h   = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
 
+        # Degradación de batería on-board (fleet-wide, solo si hay datos cargados)
+        # Modelo de fade lineal: b_bar[y] = b_max - gamma_coef * CumEFC[y], donde
+        # CumEFC[y] son los ciclos equivalentes (EFC) acumulados desde el último
+        # reemplazo. El único binario x continuo a linealizar es (1-R[y])*CumEFC[y-1]
+        # (big-M estándar, exacto) — no hace falta discretizar N_ciclos.
+        if self.mine_system.battery_degradation is not None:
+            b_max_val = value(model.b_max_fleet)
+            min_frac_val = value(model.min_capacity_fraction)
+            n_elhd = len(model.elhd_set)
+
+            # Cota de EFC anualizado por batería alcanzable en un año: energía máxima
+            # cargable (todas las combinaciones estación-LHD-día-intervalo a potencia
+            # nominal del cargador), escalada a año completo y promediada por batería.
+            n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
+            max_energy_per_year = n_slots_per_year * value(model.p_charger) * value(model.delta_t)
+            efc_max_per_year = max_energy_per_year * value(model.scaling_factor_op_cost) / (n_elhd * b_max_val)
+            cum_efc_max = efc_max_per_year * len(model.years)
+
+            model.R        = pyo.Var(model.years, domain=pyo.Binary)
+            model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals,
+                                      bounds=(min_frac_val * b_max_val, b_max_val))
+            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, efc_max_per_year))
+            model.CumEFC   = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+            model.cum_efc_max = pyo.Param(initialize=cum_efc_max, mutable=False)
+
+            years_sorted = sorted(model.years)
+            later_years = years_sorted[1:]
+            if later_years:
+                model.later_years_set = pyo.Set(initialize=later_years, within=model.years)
+                # W[y] = (1-R[y]) * CumEFC[y_prev]: si se reemplaza (R[y]=1) el
+                # arrastre de ciclos previos se anula; si no, se conserva integro.
+                model.W = pyo.Var(model.later_years_set, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+
         model.M = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
 
         #AsignaciÃ³n estaciÃ³n por macrobloque
@@ -512,10 +578,12 @@ class ConstraintRules(OptRules):
             return model.B[i,y,d,t] == model.B[i,y,d,t-1] + charge - discharge
 
     def battery_lower(self, model, i, y, d, t):
-        return model.B[i,y,d,t] >= model.bmin_b[i] * model.bmax_b[i]
+        cap = model.b_bar[y] if self.mine_system.battery_degradation is not None else model.bmax_b[i]
+        return model.B[i,y,d,t] >= model.bmin_b[i] * cap
 
     def battery_upper(self, model, i, y, d, t):
-        return model.B[i,y,d,t] <= model.bmax_b[i]
+        cap = model.b_bar[y] if self.mine_system.battery_degradation is not None else model.bmax_b[i]
+        return model.B[i,y,d,t] <= cap
 
     def battery_boundary(self, model, i, y, d):
         tf = self.time_series.get_time_intervals()[-1]
@@ -679,6 +747,46 @@ class ConstraintRules(OptRules):
         elif k == "station_3":
             return model.N_chargers[k] == 2
 
+    # ------------------------------------------------------------------ #
+    # Degradación de batería on-board (fleet-wide)
+    # ------------------------------------------------------------------ #
+    def _prev_year(self, y):
+        years_sorted = sorted(self.time_series.years)
+        return years_sorted[years_sorted.index(y) - 1]
+
+    def n_ciclos_def(self, model, y):
+        """N_ciclos[y] = EFC (equivalent full cycles) anualizado por batería:
+        energía cargada acumulada por toda la flota en el/los día(s) representativo(s),
+        escalada a año completo y promediada por batería (flota simétrica), sobre
+        la capacidad nominal."""
+        energy_repr_day = sum(
+            model.P[k, i, y2, d, t] * model.delta_t
+            for (k, i, y2, d, t) in model.ZCHARGE_DAYS_TIME_INDEX if y2 == y
+        )
+        n_elhd = len(model.elhd_set)
+        return model.N_ciclos[y] == energy_repr_day * model.scaling_factor_op_cost / (n_elhd * model.b_max_fleet)
+
+    def w_upper_R(self, model, y):
+        return model.W[y] <= model.cum_efc_max * (1 - model.R[y])
+
+    def w_upper_cum(self, model, y):
+        return model.W[y] <= model.CumEFC[self._prev_year(y)]
+
+    def w_lower(self, model, y):
+        return model.W[y] >= model.CumEFC[self._prev_year(y)] - model.cum_efc_max * model.R[y]
+
+    def cum_efc_def(self, model, y):
+        """CumEFC[y] = ciclos equivalentes acumulados desde el último reemplazo:
+        (1-R[y])*CumEFC[y_prev] + N_ciclos[y]. En el primer año no hay arrastre."""
+        first_year = sorted(self.time_series.years)[0]
+        if y == first_year:
+            return model.CumEFC[y] == model.N_ciclos[y]
+        return model.CumEFC[y] == model.W[y] + model.N_ciclos[y]
+
+    def b_bar_fade(self, model, y):
+        """Fade lineal: b_bar[y] = b_max - gamma_coef * CumEFC[y]."""
+        return model.b_bar[y] == value(model.b_max_fleet) - model.gamma_coef * model.CumEFC[y]
+
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
         model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
@@ -713,6 +821,15 @@ class ConstraintRules(OptRules):
             model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
             model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.years, model.days, rule=self.bess_soc_cyclic)
 
+        if self.mine_system.battery_degradation is not None:
+            model.n_ciclos_def = pyo.Constraint(model.years, rule=self.n_ciclos_def)
+            model.cum_efc_def  = pyo.Constraint(model.years, rule=self.cum_efc_def)
+            model.b_bar_fade   = pyo.Constraint(model.years, rule=self.b_bar_fade)
+            if hasattr(model, 'later_years_set'):
+                model.w_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_upper_R)
+                model.w_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_upper_cum)
+                model.w_lower     = pyo.Constraint(model.later_years_set, rule=self.w_lower)
+
         model.daily_production      = pyo.Constraint(model.years, model.days, rule=self.daily_production)
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, y, d, t: self.interval_extraction_M(m, i, j, y, d, t))
@@ -726,9 +843,16 @@ class ConstraintRules(OptRules):
       
 class ObjectiveRules(OptRules):
 
+    def _discount_factor(self, model, y):
+        """1/(1+r)^pos(y) si hay datos de degradación/descuento cargados, si no 1
+        (preserva el comportamiento original para escenarios sin esa hoja)."""
+        if self.mine_system.battery_degradation is None:
+            return 1
+        return 1 / (1 + model.discount_rate) ** self.year_position(y)
+
     def lhd_charge_cost(self, model):
         cost_el = sum(
-            model.P_red[y, d, t] * model.costo_red[y, d, t]
+            model.P_red[y, d, t] * model.costo_red[y, d, t] * self._discount_factor(model, y)
             for y in model.years
             for d in model.days
             for t in model.time_intervals_set
@@ -741,32 +865,56 @@ class ObjectiveRules(OptRules):
             + (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.N_chargers[k]
             for k in model.stations_set
         )
+        if self.mine_system.battery_degradation is not None:
+            cost_inv = cost_inv * self.annuity_factor_expr(model)
         return cost_inv
 
     def gen_investment_cost(self, model):
         if len(list(model.gen_set)) == 0:
             return 0
-        return sum(model.G_g[g] * model.c_inv_g[g]* model.p_max_g[g] for g in model.gen_set)
+        cost = sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def gen_op_cost(self, model):
         if len(list(model.gen_set)) == 0:
             return 0
-        return sum(model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
+        cost = sum(model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def bess_investment_cost(self, model):
         """Costo de inversión BESS: sum_h c_inv_h * H_h — ec. 3.1."""
         if len(list(model.storage_set)) == 0:
             return 0
-        return sum(model.H_h[h] * model.c_inv_h[h] for h in model.storage_set)
+        cost = sum(model.H_h[h] * model.c_inv_h[h] for h in model.storage_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def bess_op_cost(self, model):
         """Costo de O&M anual BESS: sum_h c_op_h * H_h — ec. 3.1."""
         if len(list(model.storage_set)) == 0:
             return 0
-        return sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
+        cost = sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def power_cost(self, model):
-        return sum(model.P_pot[y] * 12 * 10 for y in model.years)
+        return sum(model.P_pot[y] * 12 * 10 * self._discount_factor(model, y) for y in model.years)
+
+    def battery_replace_cost(self, model):
+        """Costo de reemplazo de batería: evento puntual del año y (no una
+        anualidad recurrente, por eso no usa annuity_factor_expr)."""
+        if self.mine_system.battery_degradation is None:
+            return 0
+        return sum(
+            model.R[y] * model.c_bat_replace * self._discount_factor(model, y)
+            for y in model.years
+        )
 
     def total_cost(self, model):
         return (self.lhd_charge_cost(model)
@@ -775,7 +923,8 @@ class ObjectiveRules(OptRules):
                 + self.gen_op_cost(model)
                 + self.bess_investment_cost(model)
                 + self.bess_op_cost(model)
-                + self.power_cost(model))
+                + self.power_cost(model)
+                + self.battery_replace_cost(model))
     
     def op_cost_total(self, model):
         # Coste operativo total (sin inversiÃ³n)
