@@ -24,8 +24,8 @@ def build_mine(args):
 
     model = Reader(args.data_folder+args.model, start_in=1)
     series = Series(args.data_folder+args.series)
-    time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)  # 5 años, 4 día representativo/año
-    #time_series = timeseries.Timeseries(series, [15, 380, 745, 1200, 1475], 8/60)  # 5 años, 1 día representativo/año
+    #time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)  # 5 años, 4 día representativo/año
+    time_series = timeseries.Timeseries(series, [15, 380, 745, 1200, 1475], 8/60)  # 5 años, 1 día representativo/año
     #time_series = timeseries.Timeseries(series, [1,366], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60)
     #time_series = timeseries.Timeseries(series, [1], 8/60)
