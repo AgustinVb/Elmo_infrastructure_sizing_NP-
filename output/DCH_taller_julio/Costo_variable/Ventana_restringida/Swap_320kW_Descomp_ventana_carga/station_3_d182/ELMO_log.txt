@@ -1,0 +1,93 @@
+
+Gurobi 12.0.3 (win64) logging started Tue Jul  7 13:03:07 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\Ventana_restringida\Swap_320kW_Descomp_ventana_carga\station_3_d182\ELMO_log.txt"
+Set parameter Threads to value 5
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 5 threads
+
+Non-default parameters:
+TimeLimit  172800
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  5
+
+Optimize a model with 27218 rows, 52267 columns and 340385 nonzeros
+Model fingerprint: 0x5495223f
+Variable types: 2099 continuous, 50168 integer (17045 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [1e-02, 1e+02]
+  Bounds range     [1e+00, 2e+00]
+  RHS range        [1e+00, 1e+04]
+
+Warning: Completing partial solution with 50164 unfixed non-continuous variables out of 50168
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 2.33 seconds (4.11 work units)
+
+Presolve removed 25804 rows and 43781 columns
+Presolve time: 0.28s
+Presolved: 1414 rows, 8486 columns, 33131 nonzeros
+Variable types: 220 continuous, 8266 integer (8173 binary)
+Root relaxation presolved: 1414 rows, 8486 columns, 33131 nonzeros
+
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root relaxation: objective 3.143222e+05, 4231 iterations, 0.09 seconds (0.11 work units)
+Another try with MIP start
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 314322.250    0   46          - 314322.250      -     -    3s
+     0     0 315023.559    0   57          - 315023.559      -     -    3s
+     0     0 315023.559    0   64          - 315023.559      -     -    3s
+     0     0 315023.559    0   96          - 315023.559      -     -    3s
+     0     0 315023.559    0   33          - 315023.559      -     -    4s
+     0     0 315023.559    0   72          - 315023.559      -     -    4s
+     0     0 315023.559    0   30          - 315023.559      -     -    4s
+     0     0 315023.559    0   43          - 315023.559      -     -    4s
+     0     0 315023.559    0   45          - 315023.559      -     -    5s
+     0     0 315023.559    0   61          - 315023.559      -     -    5s
+     0     0 315023.559    0   54          - 315023.559      -     -    5s
+     0     0 315023.559    0   53          - 315023.559      -     -    5s
+     0     0 315023.559    0   41          - 315023.559      -     -    6s
+     0     0 315023.559    0   40          - 315023.559      -     -    6s
+H    0     0                    352619.24249 315023.559  10.7%     -   10s
+H    0     0                    352540.49909 315023.559  10.6%     -   10s
+H    0     0                    352540.00318 315023.559  10.6%     -   10s
+H    0     2                    352525.69043 315023.559  10.6%     -   10s
+     0     2 315023.559    0   40 352525.690 315023.559  10.6%     -   10s
+H    7    13                    352517.84123 315023.559  10.6%   564   10s
+H   52    58                    352068.34864 315023.559  10.5%   215   11s
+H  150   192                    315023.56010 315023.559  0.00%  92.7   11s
+
+Cutting planes:
+  Gomory: 5
+  Lift-and-project: 2
+  Cover: 2
+  Projected implied bound: 1
+  MIR: 18
+  Mixing: 1
+  Flow cover: 162
+  Zero half: 28
+  RLT: 20
+  Relax-and-lift: 6
+
+Explored 191 nodes (38639 simplex iterations) in 11.75 seconds (16.90 work units)
+Thread count was 5 (of 32 available processors)
+
+Solution count 7: 315024 352068 352518 ... 352619
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 3.150235600965e+05, best bound 3.150235593952e+05, gap 0.0000%

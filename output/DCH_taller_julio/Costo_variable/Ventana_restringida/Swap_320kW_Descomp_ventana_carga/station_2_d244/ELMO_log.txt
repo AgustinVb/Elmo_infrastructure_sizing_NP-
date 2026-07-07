@@ -1,0 +1,76 @@
+
+Gurobi 12.0.3 (win64) logging started Tue Jul  7 13:02:26 2026
+
+Set parameter LogFile to value "output\DCH_taller_julio\Costo_variable\Ventana_restringida\Swap_320kW_Descomp_ventana_carga\station_2_d244\ELMO_log.txt"
+Set parameter Threads to value 5
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 5 threads
+
+Non-default parameters:
+TimeLimit  172800
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  5
+
+Optimize a model with 27248 rows, 53293 columns and 345443 nonzeros
+Model fingerprint: 0x4be4e0ce
+Variable types: 2129 continuous, 51164 integer (18041 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+02]
+  Objective range  [8e-03, 1e+02]
+  Bounds range     [1e+00, 2e+00]
+  RHS range        [1e+00, 1e+04]
+
+Warning: Completing partial solution with 51160 unfixed non-continuous variables out of 51164
+User MIP start produced solution with objective 352142 (3.64s)
+User MIP start produced solution with objective 352080 (3.71s)
+User MIP start produced solution with objective 352028 (3.71s)
+Loaded user MIP start with objective 352028
+Processed MIP start in 3.72 seconds (8.88 work units)
+
+Presolve removed 25796 rows and 44278 columns
+Presolve time: 0.22s
+Presolved: 1452 rows, 9015 columns, 34268 nonzeros
+Variable types: 220 continuous, 8795 integer (8703 binary)
+Root relaxation presolved: 1452 rows, 9015 columns, 34268 nonzeros
+
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root relaxation: objective 3.156155e+05, 4843 iterations, 0.11 seconds (0.16 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 315615.500    0   70 352028.339 315615.500  10.3%     -    4s
+H    0     0                    351557.44738 315615.500  10.2%     -    4s
+H    0     0                    351531.55382 315615.500  10.2%     -    4s
+H    0     0                    351144.87608 350005.576  0.32%     -    4s
+     0     0 350247.279    0   89 351144.876 350247.279  0.26%     -    4s
+
+Cutting planes:
+  Gomory: 14
+  Cover: 2
+  Projected implied bound: 2
+  MIR: 2
+  Flow cover: 59
+  Zero half: 11
+  RLT: 3
+  Relax-and-lift: 1
+
+Explored 1 nodes (11305 simplex iterations) in 4.83 seconds (10.58 work units)
+Thread count was 5 (of 32 available processors)
+
+Solution count 6: 351145 351532 351557 ... 352142
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 3.511448760802e+05, best bound 3.502472785471e+05, gap 0.2556%

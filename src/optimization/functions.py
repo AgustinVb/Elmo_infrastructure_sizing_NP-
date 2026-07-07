@@ -1021,6 +1021,12 @@ class ConstraintRules(OptRules):
             #return pyo.Constraint.Skip
         return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
     
+    def swap_only_meal_or_between_shifts(self, model, k, i, d, t):
+        """Solo se permite hacer swap (Z_swap = 1) durante colación o entre turnos."""
+        if t in model.time_intervals_meal_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip
+        return model.Z_swap[k, i, d, t] == 0
+
     # Fijar baterias y cargadores
     def fix_n_chargers(self, model, k):
         if k == "station_1":
@@ -1169,8 +1175,8 @@ class ConstraintRules(OptRules):
         model.max_batteries_per_bay_constr = pyo.Constraint(model.stations_set, rule=self.max_batteries_per_bay_constr)
         model.chargers_le_batteries = pyo.Constraint(model.stations_set, rule=self.chargers_le_batteries)
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
-        model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
-        model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
+        #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
+        #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -1284,6 +1290,9 @@ class ConstraintRules(OptRules):
         )
         #Pausas DET
         #model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.swap_only_meal_or_between_shifts = pyo.Constraint(
+            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        )
 
         # 7) Balance de potencia y generación / BESS
         model.power_balance = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_balance)
