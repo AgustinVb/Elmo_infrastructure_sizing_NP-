@@ -814,6 +814,16 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z_charge[k, i, d, t] == 0
 
+    def charge_only_meal_or_between_shifts(self, model, k, i, d, t):
+        """Solo se permite cargar (Z_charge = 1) durante colación o entre turnos.
+
+        Fuera de esas ventanas (time_intervals_meal_set / time_intervals_between_shifts_set)
+        la carga queda prohibida, sin importar si el equipo está detenido o no.
+        """
+        if t in model.time_intervals_meal_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip
+        return model.Z_charge[k, i, d, t] == 0
+
     def det_stop_all(self, model, i, d, t):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         if t not in model.time_intervals_det_set:
@@ -882,6 +892,7 @@ class ConstraintRules(OptRules):
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
         model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
         model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        model.charge_only_meal_or_between_shifts = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts)
         #
         #Detenciones DET
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)

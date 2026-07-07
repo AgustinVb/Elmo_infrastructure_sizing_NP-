@@ -729,6 +729,46 @@ def calculate_peak_charging_power(subfolders: List[Path]) -> Tuple[float, Dict[s
     return peak_power_kw, meta
 
 
+def read_total_n_chargers(
+    subfolders: List[Path],
+    station_groups: Optional[Dict[str, List[Path]]],
+    is_day_decomposed: bool,
+) -> float:
+    """Suma N_chargers de todas las estaciones.
+
+    N_chargers es infraestructura fija por estacion (no depende del dia), asi
+    que si hay descomposicion por dia se cuenta una sola vez por estacion
+    (se usa la primera subcarpeta-dia disponible de cada una)."""
+    reps = [subs[0] for subs in station_groups.values()] if (is_day_decomposed and station_groups) else subfolders
+
+    total = 0.0
+    for sub in reps:
+        n_path = find_json_in_folder(sub, "N_chargers.json")
+        if not n_path or is_effectively_empty_json(n_path):
+            continue
+        data = load_json(n_path)
+        inner = data.get("k", data) if isinstance(data, dict) else {}
+        if not isinstance(inner, dict):
+            continue
+        total += sum(_as_float(v, 0.0) for v in inner.values())
+    return total
+
+
+def read_scaling_factor_op_cost(subfolders: List[Path]) -> Optional[float]:
+    """Lee scaling_factor_op_cost (365 / dias significativos) desde el primer
+    parameters.json disponible; es el mismo valor para todas las subcarpetas
+    de una misma corrida (ver `run_macrobloques_decomposicion.solve_macrobloque_day`,
+    que lo fija explicitamente a 365/total_n_days en cada subproblema)."""
+    for sub in subfolders:
+        params_path = find_json_in_folder(sub, "parameters.json")
+        if params_path and not is_effectively_empty_json(params_path):
+            params_data = load_json(params_path)
+            val = params_data.get("scaling_factor_op_cost")
+            if val is not None:
+                return _as_float(val, None)
+    return None
+
+
 def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
     """Corre el analisis de costos/metricas de cada macrobloque por separado
     y agrega (suma) los resultados, ya que cada subcarpeta es un subproblema
@@ -893,22 +933,34 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
         f"{peak_charging_kw:.2f} kW "
         f"(dia {peak_charging_meta.get('dia_pico', '?')} t={peak_charging_meta.get('intervalo_pico', '?')})"
     )
+
+    total_n_chargers = read_total_n_chargers(subfolders, station_groups, is_day_decomposed)
+    scaling_factor = read_scaling_factor_op_cost(subfolders)
+    extraction_annual_str = f"{extraction_total * scaling_factor:.2f}" if scaling_factor else "N/D"
+    energy_annual_str = f"{energy_total * scaling_factor:.2f}" if scaling_factor else "N/D"
+
     if summary_only:
         print(make_table(
             "METRICAS COMBINADAS (todas las estaciones, todos los dias)",
             ["Concepto", "Valor"],
             [
-                ["Extraccion total combinada", f"{extraction_total:.2f}"],
-                ["Energia cargada total combinada (P) [kWh]", f"{energy_total:.2f}"],
+                ["Extraccion total combinada (dias significativos)", f"{extraction_total:.2f}"],
+                ["Extraccion total anualizada", extraction_annual_str],
+                ["Energia cargada total combinada (P) [kWh] (dias significativos)", f"{energy_total:.2f}"],
+                ["Energia cargada total anualizada [kWh]", energy_annual_str],
                 ["Potencia pico de carga (combinada)", peak_charging_str],
+                ["Cargadores totales (todas las estaciones)", f"{total_n_chargers:.0f}"],
             ],
         ))
     else:
         headers = ["Concepto"] + [s.name for s in subfolders] + ["TOTAL"]
         summary_rows = [
-            ["Extraccion total combinada"] + [f"{per_station_extraction[s.name]:.2f}" for s in subfolders] + [f"{extraction_total:.2f}"],
-            ["Energia cargada total combinada (P) [kWh]"] + [f"{per_station_energy[s.name]:.2f}" for s in subfolders] + [f"{energy_total:.2f}"],
+            ["Extraccion total combinada (dias significativos)"] + [f"{per_station_extraction[s.name]:.2f}" for s in subfolders] + [f"{extraction_total:.2f}"],
+            ["Extraccion total anualizada"] + ["" for _ in subfolders] + [extraction_annual_str],
+            ["Energia cargada total combinada (P) [kWh] (dias significativos)"] + [f"{per_station_energy[s.name]:.2f}" for s in subfolders] + [f"{energy_total:.2f}"],
+            ["Energia cargada total anualizada [kWh]"] + ["" for _ in subfolders] + [energy_annual_str],
             ["Potencia pico de carga (combinada) [kW]"] + ["" for _ in subfolders] + [peak_charging_str],
+            ["Cargadores totales (todas las estaciones)"] + ["" for _ in subfolders] + [f"{total_n_chargers:.0f}"],
         ]
         print(make_table("METRICAS COMBINADAS", headers, summary_rows))
     print()

@@ -1,0 +1,79 @@
+
+Gurobi 12.0.3 (win64) logging started Tue Jul  7 00:57:57 2026
+
+Set parameter LogFile to value "output/DCH_taller_julio/Costo_fijo/Ventana_restringida/Carga_on_board_1000kW_Descomp_ventana_carga/station_2_d213\gurobi.log"
+Set parameter Threads to value 5
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 172800
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 5 threads
+
+Non-default parameters:
+TimeLimit  172800
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  5
+
+Optimize a model with 24331 rows, 37807 columns and 116466 nonzeros
+Model fingerprint: 0x8dbe8f15
+Variable types: 18325 continuous, 19482 integer (19481 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 1e+03]
+  Objective range  [4e-01, 1e+02]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 1e+04]
+Presolve removed 23237 rows and 28786 columns
+Presolve time: 0.08s
+Presolved: 1094 rows, 9021 columns, 27101 nonzeros
+Variable types: 245 continuous, 8776 integer (8776 binary)
+Root relaxation presolved: 1094 rows, 9021 columns, 27101 nonzeros
+
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root relaxation: objective 3.669002e+05, 3041 iterations, 0.03 seconds (0.04 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 366900.160    0  100          - 366900.160      -     -    0s
+H    0     0                    384480.59667 366900.160  4.57%     -    0s
+H    0     0                    379988.27344 366900.160  3.44%     -    0s
+H    0     0                    376968.12066 366900.160  2.67%     -    0s
+H    0     0                    376928.00573 366900.160  2.66%     -    0s
+H    0     0                    375498.13406 366900.160  2.29%     -    0s
+H    0     0                    374167.44654 366900.160  1.94%     -    0s
+H    0     0                    373985.78753 366900.160  1.89%     -    0s
+H    0     0                    373965.79408 366900.160  1.89%     -    0s
+H    0     0                    373214.04000 366900.160  1.69%     -    0s
+H    0     0                    373210.30757 366900.160  1.69%     -    0s
+H    0     0                    372306.57627 366900.160  1.45%     -    0s
+H    0     0                    371810.76095 367243.381  1.23%     -    0s
+H    0     0                    371796.03007 367243.381  1.22%     -    1s
+     0     0 367243.381    0   96 371796.030 367243.381  1.22%     -    1s
+H    0     0                    370882.97568 367243.381  0.98%     -    1s
+
+Cutting planes:
+  Gomory: 7
+  Lift-and-project: 1
+  Cover: 1
+  Implied bound: 10
+  MIR: 1
+  Flow cover: 14
+  RLT: 2
+
+Explored 1 nodes (13437 simplex iterations) in 1.30 seconds (1.56 work units)
+Thread count was 5 (of 32 available processors)
+
+Solution count 10: 370883 371796 371811 ... 375498
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 3.708829756847e+05, best bound 3.672433807452e+05, gap 0.9813%
