@@ -1,0 +1,96 @@
+
+Gurobi 12.0.3 (win64) logging started Wed Jul  8 01:18:48 2026
+
+Set parameter LogFile to value "output/GX_pruebas/P320kW/gurobi.log"
+Set parameter Threads to value 32
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 172800
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
+
+Non-default parameters:
+TimeLimit  172800
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  32
+
+Optimize a model with 136890 rows, 204829 columns and 972256 nonzeros
+Model fingerprint: 0x62a465c3
+Variable types: 98619 continuous, 106210 integer (106207 binary)
+Coefficient statistics:
+  Matrix range     [2e-02, 4e+04]
+  Objective range  [3e+00, 1e+06]
+  Bounds range     [1e+00, 4e+04]
+  RHS range        [1e+00, 4e+04]
+Presolve removed 117447 rows and 155206 columns
+Presolve time: 0.83s
+Presolved: 19443 rows, 49623 columns, 309214 nonzeros
+Variable types: 5284 continuous, 44339 integer (44336 binary)
+Root relaxation presolve removed 870 rows and 0 columns
+Root relaxation presolved: 18573 rows, 49623 columns, 306939 nonzeros
+
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing primal log only...
+
+Concurrent spin time: 0.19s (can be avoided by choosing Method=3)
+
+Solved with dual simplex
+
+Root relaxation: objective 1.085737e+06, 20726 iterations, 1.95 seconds (4.48 work units)
+Total elapsed time = 5.01s (DegenMoves)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 1085736.51    0  875          - 1085736.51      -     -    6s
+     0     0 1686583.44    0  895          - 1686583.44      -     -   12s
+     0     0 1871184.10    0  995          - 1871184.10      -     -   13s
+     0     0 1871184.10    0  988          - 1871184.10      -     -   13s
+     0     0 1871184.10    0  903          - 1871184.10      -     -   20s
+     0     0 1871184.10    0 1018          - 1871184.10      -     -   22s
+     0     0 1871184.10    0 1022          - 1871184.10      -     -   22s
+     0     0 1871184.10    0  980          - 1871184.10      -     -   29s
+     0     0 1871184.10    0 1015          - 1871184.10      -     -   29s
+     0     0 1871184.10    0 1044          - 1871184.10      -     -   29s
+     0     0 1871184.10    0 1038          - 1871184.10      -     -   39s
+     0     0 1871184.10    0 1063          - 1871184.10      -     -   39s
+     0     0 1871184.10    0 1027          - 1871184.10      -     -   45s
+     0     0 1871184.10    0 1027          - 1871184.10      -     -   47s
+     0     2 1871184.10    0 1027          - 1871184.10      -     -   61s
+    59    88 1871184.10    7  246          - 1871184.10      -  1046   65s
+   164   476 1871184.10   10  138          - 1871184.10      -   529   71s
+   479   988 1871184.10   18  112          - 1871184.10      -   215   78s
+H  991  1326                    1952872.5076 1871184.10  4.18%   112  116s
+  1329  7282 1871184.10   36   87 1952872.51 1871184.10  4.18%  87.3  149s
+H 6821  7282                    1871184.0983 1871184.10  0.00%  32.6  149s
+
+Cutting planes:
+  Gomory: 9
+  Cover: 440
+  Implied bound: 14
+  Clique: 11
+  MIR: 370
+  Mixing: 1
+  StrongCG: 1
+  Flow cover: 579
+  GUB cover: 213
+  Zero half: 3231
+  RLT: 10
+  Relax-and-lift: 229
+
+Explored 7391 nodes (400017 simplex iterations) in 150.48 seconds (149.17 work units)
+Thread count was 32 (of 32 available processors)
+
+Solution count 2: 1.87118e+06 1.95287e+06 
+
+Optimal solution found (tolerance 1.00e-02)
+Warning: max constraint violation (8.6999e-06) exceeds tolerance
+Best objective 1.871184098323e+06, best bound 1.871184098323e+06, gap 0.0000%

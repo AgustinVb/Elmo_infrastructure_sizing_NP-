@@ -24,7 +24,9 @@ class BatteryDegradation(object):
         return float(self._row1()['gamma_coef'])
 
     def get_c_bat_replace(self) -> float:
-        """Costo de reemplazar la bateria de la flota [USD]."""
+        """Costo total de reemplazar UNA bateria (por LHD) [USD]. Se escala
+        por la cantidad de LHD electricos al calcular el costo de flota
+        completa (ver ObjectiveRules.battery_replace_cost)."""
         return float(self._row1()['c_bat_replace'])
 
     def get_min_capacity_fraction(self) -> float:

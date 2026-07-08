@@ -494,6 +494,9 @@ class BoundRules(OptRules):
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
         model.EndCharge   = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
+        model.StartAssign = pyo.Var(model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
+        model.EndAssign   = pyo.Var(model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
+
         if len(list(model.gen_set)) > 0:
             model.G_g    = pyo.Var(model.gen_set, domain=pyo.NonNegativeIntegers)
             model.P_gen  = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
@@ -644,6 +647,36 @@ class ConstraintRules(OptRules):
             return model.Z_charge[k,i,y,d,t] == 0
         return model.Z_charge[k,i,y,d,t] + model.Z_charge[k,i,y,d,t+1] >= 2 * model.StartCharge[k,i,y,d,t]
 
+    # AnÃ¡logo a charge_state, pero para el estado agregado "asignado a extracciÃ³n"
+    # (Assign = suma de Y sobre todos los nodos j asignables al LHD i en (y,d,t)).
+    def assign_state(self, model, i, y, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        assign_sum = sum(model.Y[i,j,y,d,t] for j in nodes)
+        t0 = self.time_series.get_time_intervals()[0]
+        if t > t0:
+            nodes_prev = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t-1, i), [])
+            assign_sum_prev = sum(model.Y[i,j,y,d,t-1] for j in nodes_prev)
+            return assign_sum - assign_sum_prev == model.StartAssign[i,y,d,t] - model.EndAssign[i,y,d,t]
+        else:
+            return assign_sum == model.StartAssign[i,y,d,t] - model.EndAssign[i,y,d,t]
+
+    # AnÃ¡logo a min_charge_duration: si el LHD i arranca una asignaciÃ³n a
+    # extracciÃ³n (a cualquier nodo j) en t, debe mantenerse asignado (a algÃºn
+    # nodo, no necesariamente el mismo) en t+1.
+    def min_assign_duration(self, model, i, y, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        t_fin = self.time_series.get_time_intervals()[-1]
+        assign_sum_t = sum(model.Y[i,j,y,d,t] for j in nodes)
+        if t == t_fin:
+            return assign_sum_t == 0
+        nodes_next = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t+1, i), [])
+        assign_sum_next = sum(model.Y[i,j,y,d,t+1] for j in nodes_next)
+        return assign_sum_t + assign_sum_next >= 2 * model.StartAssign[i,y,d,t]
+
     def max_power(self, model, k, i, y, d, t):
         return model.P[k,i,y,d,t] <= model.Z_charge[k,i,y,d,t] * model.p_charger
 
@@ -734,6 +767,11 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z_charge[k,i,y,d,t] == 0
 
+    def charge_only_meal_or_shift_change(self, model, k, i, y, d, t):
+        if t in model.time_intervals_meal_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip
+        return model.Z_charge[k,i,y,d,t] == 0
+
     def det_stop_all(self, model, i, y, d, t):
         if t not in model.time_intervals_det_set:
             return pyo.Constraint.Skip
@@ -802,6 +840,8 @@ class ConstraintRules(OptRules):
         model.charger_limit             = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
+        model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
+        model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                 = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
         model.max_installed_capacity    = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance             = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
@@ -838,6 +878,7 @@ class ConstraintRules(OptRules):
         model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
         model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
         model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
       
@@ -908,11 +949,15 @@ class ObjectiveRules(OptRules):
 
     def battery_replace_cost(self, model):
         """Costo de reemplazo de batería: evento puntual del año y (no una
-        anualidad recurrente, por eso no usa annuity_factor_expr)."""
+        anualidad recurrente, por eso no usa annuity_factor_expr). c_bat_replace
+        es el costo TOTAL de UNA sola batería, por lo que se escala por la
+        cantidad de LHD eléctricos (una batería por LHD) para obtener el costo
+        de reemplazar la flota completa."""
         if self.mine_system.battery_degradation is None:
             return 0
+        n_elhd = len(model.elhd_set)
         return sum(
-            model.R[y] * model.c_bat_replace * self._discount_factor(model, y)
+            n_elhd * model.R[y] * model.c_bat_replace * self._discount_factor(model, y)
             for y in model.years
         )
 
