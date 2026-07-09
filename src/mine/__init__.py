@@ -5,6 +5,7 @@ from src.mine.stations import Stations
 from src.mine.chargers import Chargers
 from src.mine.generators import Generators
 from src.mine.storage import StorageSystems
+from src.mine.degradation import BatteryDegradation
 
 
 class Mine(object):
@@ -52,6 +53,13 @@ class Mine(object):
             self.storage = StorageSystems(model['Storage'], 'name')
         else:
             self.storage = None
+
+        # 8) Degradacion/reemplazo de baterias del pool de swap: opcional —
+        # solo si la hoja 'BatteryDegradation' existe en el Excel
+        if 'BatteryDegradation' in model.container:
+            self.battery_degradation = BatteryDegradation(model['BatteryDegradation'])
+        else:
+            self.battery_degradation = None
 
     # ------------------------------------------------------------------ #
     # Nodo / Layout

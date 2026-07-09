@@ -80,18 +80,6 @@ class Timeseries(object):
             raise ValueError(f"day must be positive, got {day}")
         return ((day_int - 1) // 365) + 1
 
-    def get_representative_day_of_year(self, year: int) -> int:
-        """
-        Retorna el dÃ­a absoluto representativo del aÃ±o.
-        ConvenciÃ³n:
-        - aÃ±o 1 -> dÃ­a 1
-        - aÃ±o 2 -> dÃ­a 366
-        - etc.
-        """
-        year_int = int(year)
-        if year_int <= 0:
-            raise ValueError(f"year must be positive, got {year}")
-        return 1 + (year_int - 1) * 365
 
     def _build_day_weights(self) -> dict:
         """
@@ -246,24 +234,29 @@ class Timeseries(object):
         return self.mapper['Time_Intervals'].loc[day, :]['interval'].values
 
     def sample_extraction_goal(self, extraction_goal: pd.DataFrame) -> pd.DataFrame:
+        """
+        Hoja 'ExtractionGoal': una columna por AÑO (encabezado = número de año,
+        ej. 1, 2, 3...). El valor es la meta de extracción DIARIA de ese año,
+        aplicada a cualquier día simulado que pertenezca a ese año sin importar
+        cuántos días (estaciones) se muestreen dentro de él.
+        """
         extraction_goal = extraction_goal.set_index('name')
-        day_columns = {}
+        year_columns = {}
         for col in extraction_goal.columns:
             try:
-                day_columns[col] = int(col)
+                year_columns[col] = int(col)
             except (TypeError, ValueError):
                 continue
 
-        extraction_goal = extraction_goal[list(day_columns.keys())].copy()
-        extraction_goal.columns = [day_columns[col] for col in extraction_goal.columns]
-        representative_days = [self.get_representative_day_of_year(year) for year in self.years]
-        missing_days = [day for day in representative_days if day not in extraction_goal.columns]
-        if missing_days:
+        extraction_goal = extraction_goal[list(year_columns.keys())].copy()
+        extraction_goal.columns = [year_columns[col] for col in extraction_goal.columns]
+        missing_years = [y for y in self.years if y not in extraction_goal.columns]
+        if missing_years:
             raise KeyError(
-                "Missing representative day columns in ExtractionGoal for years in horizon: "
-                f"{missing_days}"
+                "Missing year columns in ExtractionGoal for years in horizon: "
+                f"{missing_years}"
             )
-        return extraction_goal[representative_days]
+        return extraction_goal[self.years]
 
     def get_marginal_cost(self, location_name: str, day: int, time_interval: int) -> float:
         hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
@@ -274,8 +267,7 @@ class Timeseries(object):
         return self.mapper['Emissions'].loc[tipo, hour_of_year]
 
     def get_extraction_goal(self, node_name: str, year: int) -> float:
-        representative_day = self.get_representative_day_of_year(int(year))
-        return self.mapper['ExtractionGoal'].loc[node_name, representative_day]
+        return self.mapper['ExtractionGoal'].loc[node_name, int(year)]
 
     def get_shift_start_interval(self, shift_name: str) -> float:
         h_start = self.mapper['Shifts'].loc[shift_name, :]['hour_start'].iloc[0]
@@ -320,9 +312,18 @@ class Timeseries(object):
         return -1
 
     def get_shifts(self) -> list:
+        """Turnos activos para los días simulados: un turno con [day_start,day_end]
+        se incluye si su rango de validez cubre alguno de los días simulados
+        (no si day_start coincide exactamente con un día simulado — un turno con
+        day_start=1, day_end=365 es válido todo el año, sin importar qué día
+        represente cada muestra)."""
         shifts = self.series['Shifts']
         days_year1 = set(((d - 1) % 365) + 1 for d in self.days)
-        shifts = shifts[shifts['day_start'].isin(days_year1)]
+        mask = shifts.apply(
+            lambda row: any(row['day_start'] <= d <= row['day_end'] for d in days_year1),
+            axis=1,
+        )
+        shifts = shifts[mask]
         shifts = shifts.set_index(['name', 'id'])
         return list(shifts.index.get_level_values('name'))
 

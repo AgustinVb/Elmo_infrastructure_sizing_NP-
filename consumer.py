@@ -1239,6 +1239,44 @@ def main() -> None:
                          [["OMITIDO", f"No se pudo calcular: {ex}"]]))
         print()
 
+    # ---- Degradación batería pool swap
+    try:
+        deg_info = calculate_battery_degradation_metrics(root)
+        if deg_info and deg_info.get("years"):
+            rows = []
+            for y, info in deg_info["years"].items():
+                rows.append([
+                    y,
+                    f"{info['b_bar_kwh']:.1f}",
+                    f"{info['b_bar_pct']:.1f}%",
+                    f"{info['n_ciclos']:.1f}",
+                    f"{info['cum_efc']:.1f}",
+                    "SI" if info["replaced"] else "NO",
+                    f"{info['replace_cost']:.2f}",
+                ])
+            print(make_table(
+                "DEGRADACION BATERIA POOL SWAP",
+                ["Año", "b_bar [kWh]", "% b_max", "EFC año", "EFC acum.", "Reemplazo", "Costo reemplazo"],
+                rows,
+            ))
+            print()
+            print(make_table(
+                "DEGRADACION BATERIA - RESUMEN",
+                ["Métrica", "Valor"],
+                [
+                    ["Capacidad nominal b_max_pool [kWh]", f"{deg_info['b_max_pool_kwh']:.1f}"],
+                    ["Piso de degradación",                 f"{deg_info['min_capacity_pct']:.0f}% de b_max_pool"],
+                    ["N_batteries_total (pool)",             f"{deg_info['n_batteries_total']:.0f}"],
+                    ["N° de reemplazos",                     f"{deg_info['n_replacements']}"],
+                    ["Costo total reemplazos (USD)",         f"{deg_info['total_replace_cost']:.2f}"],
+                ],
+            ))
+            print()
+    except Exception as ex:
+        print(make_table("DEGRADACION BATERIA POOL SWAP", ["Estado", "Detalle"],
+                         [["OMITIDO", f"No se pudo calcular: {ex}"]]))
+        print()
+
     # ---- Cost
     try:
         costs = calculate_total_costs(root)
@@ -1253,6 +1291,7 @@ def main() -> None:
                 ["Costo operación generación (USD)", f"{costs.get('gen_op_cost', 0.0):.2f}"],
                 ["Costo inversión BESS (USD)",       f"{costs.get('bess_inv_cost', 0.0):.2f}"],
                 ["Costo operación BESS (USD)",       f"{costs.get('bess_op_cost', 0.0):.2f}"],
+                ["Costo reemplazo batería (USD)",    f"{costs.get('battery_replace_cost', 0.0):.2f}"],
                 ["Costo penalidad (USD)",            f"{costs['penalty_cost']:.2f}"],
                 ["COSTO TOTAL (USD)",                f"{costs['total_cost']:.2f}"],
             ]
@@ -1266,51 +1305,95 @@ def main() -> None:
 # -----------------------------
 # Módulo de cálculo de costos
 # -----------------------------
+
+def _get_discount_rate(params: Dict) -> float:
+    return _as_float(params.get("discount_rate"), 0.0)
+
+
+def _get_years_sorted(params: Dict) -> List[int]:
+    """Años del horizonte, leídos desde costo_electricidad (_1=year), siempre presente."""
+    raw = params.get("costo_electricidad", {})
+    inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
+    years = sorted(int(y) for y in inner.keys()) if isinstance(inner, dict) else []
+    return years or [1]
+
+
+def _has_degradation_data(params: Dict) -> bool:
+    """Proxy de si la hoja BatteryDegradation existía al formular el modelo —
+    misma condición que gatilla el descuento en ObjectiveRules (functions.py)."""
+    return "gamma_coef" in params
+
+
+def _annuity_factor(r: float, years: int) -> float:
+    """AF(r,Y) = sum_{k=1..Y} 1/(1+r)^k — igual a annuity_factor_expr en functions.py."""
+    if years <= 0:
+        return 0.0
+    if r == 0:
+        return float(years)
+    return sum(1.0 / (1.0 + r) ** k for k in range(1, years + 1))
+
+
+def _year_discount_factor(r: float, year: Any, years_sorted: List[int]) -> float:
+    """1/(1+r)^pos(year) — igual a _discount_factor en ObjectiveRules (functions.py)."""
+    if r == 0:
+        return 1.0
+    pos = years_sorted.index(int(year)) + 1 if int(year) in years_sorted else 1
+    return 1.0 / (1.0 + r) ** pos
+
+
 def calculate_lhd_charge_cost(root: Path) -> float:
     """
     Calcula el costo de carga de los LHD eléctricos con battery swap.
-    Usa Sv.json (baterías conectadas) y parameters.json (costo electricidad, p_charger, delta_t).
-    Fórmula: sum(costo_electricidad[d,t] * Sv[k,d,t,a] * p_charger * delta_t)
+    Usa Sv.json (baterías conectadas, ejes k,y,d,t,a) y parameters.json
+    (costo_electricidad indexado por año/día/intervalo, p_charger, delta_t).
+    Fórmula: sum(Sv[k,y,d,t,a] * p_charger * costo_electricidad[y,d,t] * delta_t * discount_factor(y))
     """
     sv_path = find_json_in_folder(root, "Sv.json")
     params_path = find_json_in_folder(root, "parameters.json")
-    
+
     if not sv_path or not params_path:
         raise ValueError("No se encontraron Sv.json o parameters.json")
-    
+
     if is_effectively_empty_json(sv_path) or is_effectively_empty_json(params_path):
         raise ValueError("Sv.json o parameters.json están vacíos")
-    
+
     sv_data = load_json(sv_path)
     params_data = load_json(params_path)
 
     delta_t = float(params_data.get("delta_t", 0.0))
     p_charger = float(params_data.get("p_charger", 0.0))
     scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
-    costo_electricidad = _unwrap_named_tree(params_data.get("costo_electricidad", {}))
+    costo_electricidad = params_data.get("costo_electricidad", {})
 
-    cost_lookup: Dict[Tuple[str, str], float] = {}
-    for path, cost_val in _iter_leaf_records(costo_electricidad):
-        axis_map = _axis_map_from_path(path)
-        day_key = axis_map.get("d") or axis_map.get("day") or (path[0] if len(path) >= 1 else None)
-        time_key = axis_map.get("t") or axis_map.get("time") or (path[-1] if len(path) >= 1 else None)
-        if day_key is None or time_key is None:
-            continue
-        try:
-            cost_lookup[(str(day_key), str(time_key))] = float(cost_val)
-        except Exception:
-            continue
+    discount_r = _get_discount_rate(params_data) if _has_degradation_data(params_data) else 0.0
+    years_sorted = _get_years_sorted(params_data)
+
+    def _cost_lookup(year_key, day_key, t_key) -> float:
+        """costo_electricidad: _1=year -> _2=day -> _3=interval."""
+        if "_1" not in costo_electricidad:
+            return 0.0
+        cm_year = costo_electricidad["_1"].get(str(year_key), {})
+        cm_2 = cm_year.get("_2", {}) if isinstance(cm_year, dict) else {}
+        cm_day = cm_2.get(str(day_key), {})
+        if isinstance(cm_day, dict) and "_3" in cm_day:
+            try:
+                return float(cm_day["_3"].get(str(t_key), 0.0))
+            except Exception:
+                return 0.0
+        return 0.0
 
     total_cost = 0.0
     for path, sv_val in _iter_leaf_records(sv_data):
         axis_map = _axis_map_from_path(path)
-        day_key = axis_map.get("d") or axis_map.get("day")
-        time_key = axis_map.get("t") or axis_map.get("time")
-        if day_key is None or time_key is None:
+        y_key = axis_map.get("y")
+        day_key = axis_map.get("d")
+        time_key = axis_map.get("t")
+        if y_key is None or day_key is None or time_key is None:
             continue
-        cost_elec = cost_lookup.get((str(day_key), str(time_key)), 0.0)
         try:
-            total_cost += cost_elec * float(sv_val) * p_charger * delta_t
+            cost_elec = _cost_lookup(y_key, day_key, time_key)
+            disc = _year_discount_factor(discount_r, y_key, years_sorted)
+            total_cost += cost_elec * float(sv_val) * p_charger * delta_t * disc
         except Exception:
             continue
 
@@ -1318,9 +1401,9 @@ def calculate_lhd_charge_cost(root: Path) -> float:
 
 
 def calculate_grid_energy_cost(root: Path) -> float:
-    """Costo de energía comprada a la red: sum(P_red[d,t] * costo_electricidad[d,t] * delta_t).
+    """Costo de energía comprada a la red: sum(P_red[y,d,t] * costo_electricidad[y,d,t] * delta_t * discount_factor(y)).
 
-    Usa P_red.json y parameters.json.
+    Usa P_red.json (ejes y,d,t) y parameters.json.
     """
     pred_path   = find_json_in_folder(root, "P_red.json")
     params_path = find_json_in_folder(root, "parameters.json")
@@ -1335,32 +1418,36 @@ def calculate_grid_energy_cost(root: Path) -> float:
 
     delta_t        = float(params_data.get("delta_t", 0.0))
     scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
-    costo_electricidad = _unwrap_named_tree(
-        params_data.get("costo_red", params_data.get("costo_electricidad", {}))
-    )
+    costo_electricidad = params_data.get("costo_red", params_data.get("costo_electricidad", {}))
 
-    cost_lookup: Dict[Tuple[str, str], float] = {}
-    for path, cost_val in _iter_leaf_records(costo_electricidad):
-        axis_map = _axis_map_from_path(path)
-        day_key  = axis_map.get("d") or axis_map.get("day") or (path[0] if path else None)
-        time_key = axis_map.get("t") or axis_map.get("time") or (path[-1] if path else None)
-        if day_key is None or time_key is None:
-            continue
-        try:
-            cost_lookup[(str(day_key), str(time_key))] = float(cost_val)
-        except Exception:
-            continue
+    discount_r = _get_discount_rate(params_data) if _has_degradation_data(params_data) else 0.0
+    years_sorted = _get_years_sorted(params_data)
+
+    # Lookup costo_electricidad[(y,d,t)]: _1=year -> _2=day -> _3=interval.
+    cost_lookup: Dict[Tuple[str, str, str], float] = {}
+    if "_1" in costo_electricidad:
+        for y_key, y_val in costo_electricidad["_1"].items():
+            d_block = y_val.get("_2", {}) if isinstance(y_val, dict) else {}
+            for d_key, d_val in d_block.items():
+                t_block = d_val.get("_3", {}) if isinstance(d_val, dict) else {}
+                for t_key, cost_val in t_block.items():
+                    try:
+                        cost_lookup[(str(y_key), str(d_key), str(t_key))] = float(cost_val)
+                    except Exception:
+                        continue
 
     total_cost = 0.0
     for path, pred_val in _iter_leaf_records(pred_data):
         axis_map = _axis_map_from_path(path)
-        day_key  = axis_map.get("d") or axis_map.get("day")
-        time_key = axis_map.get("t") or axis_map.get("time")
-        if day_key is None or time_key is None:
+        y_key    = axis_map.get("y")
+        day_key  = axis_map.get("d")
+        time_key = axis_map.get("t")
+        if y_key is None or day_key is None or time_key is None:
             continue
-        cost_elec = cost_lookup.get((str(day_key), str(time_key)), 0.0)
+        cost_elec = cost_lookup.get((str(y_key), str(day_key), str(time_key)), 0.0)
         try:
-            total_cost += cost_elec * float(pred_val) * delta_t
+            disc = _year_discount_factor(discount_r, y_key, years_sorted)
+            total_cost += cost_elec * float(pred_val) * delta_t * disc
         except Exception:
             continue
 
@@ -1368,7 +1455,11 @@ def calculate_grid_energy_cost(root: Path) -> float:
 
 
 def calculate_peak_power_cost(root: Path) -> float:
-    """Calcula el costo por potencia pico usando P_pot.json y el coeficiente de demanda."""
+    """Calcula el costo por potencia pico: sum(P_pot[y] * demand_charge_coef * discount_factor(y)).
+
+    P_pot.json está indexado por año ({"y": {"1": val1, "2": val2, ...}}) — no
+    es un escalar, aunque el escenario tenga un solo año en el horizonte.
+    """
     ppot_path = find_json_in_folder(root, "P_pot.json")
     params_path = find_json_in_folder(root, "parameters.json")
 
@@ -1381,26 +1472,32 @@ def calculate_peak_power_cost(root: Path) -> float:
     params_data = load_json(params_path)
 
     try:
-        if isinstance(ppot_data, dict):
-            ppot_value = None
-            if "P_pot" in ppot_data:
-                ppot_value = ppot_data.get("P_pot")
-            elif "value" in ppot_data:
-                ppot_value = ppot_data.get("value")
-            elif ppot_data:
-                ppot_value = next(iter(ppot_data.values()))
-            ppot = float(ppot_value)
-        else:
-            ppot = float(ppot_data)
-    except Exception:
-        return 0.0
-
-    try:
         demand_charge_coef = float(params_data.get("demand_charge_coef", 12 * 10))
     except Exception:
         demand_charge_coef = 12 * 10
 
-    return ppot * demand_charge_coef
+    discount_r = _get_discount_rate(params_data) if _has_degradation_data(params_data) else 0.0
+    years_sorted = _get_years_sorted(params_data)
+
+    y_block = ppot_data.get("y", ppot_data) if isinstance(ppot_data, dict) else ppot_data
+
+    total = 0.0
+    if isinstance(y_block, dict):
+        for y_key, val in y_block.items():
+            if isinstance(val, dict):
+                continue
+            disc = _year_discount_factor(discount_r, y_key, years_sorted)
+            try:
+                total += float(val) * demand_charge_coef * disc
+            except (TypeError, ValueError):
+                continue
+    else:
+        try:
+            total = float(y_block) * demand_charge_coef
+        except Exception:
+            total = 0.0
+
+    return total
 
 
 def calculate_investment_cost(root: Path) -> float:
@@ -1467,6 +1564,11 @@ def calculate_investment_cost(root: Path) -> float:
             + (charger_cost + c_char_sp) * n_chargers
             + (battery_cost + c_bat_sp)  * n_batteries
         )
+
+    if _has_degradation_data(params_data):
+        r = _get_discount_rate(params_data)
+        af = _annuity_factor(r, len(_get_years_sorted(params_data)))
+        total_cost = total_cost * af
 
     return total_cost
 
@@ -1541,13 +1643,17 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     p_max   = _extract_param(params_data, "p_max_g")
     gen_set = [str(g) for g in params_data.get("gen_set", list(gg_map.keys()))]
 
+    af = 1.0
+    if _has_degradation_data(params_data):
+        af = _annuity_factor(_get_discount_rate(params_data), len(_get_years_sorted(params_data)))
+
     gens: Dict[str, Dict[str, float]] = {}
     total_inv = total_op = total_power = 0.0
 
     for g in gen_set:
         units = gg_map.get(g, 0.0)
-        inv   = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0)
-        op    = units * c_op.get(g, 0.0)  * p_max.get(g, 0.0)
+        inv   = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0) * af
+        op    = units * c_op.get(g, 0.0)  * p_max.get(g, 0.0) * af
         power = units * p_max.get(g, 0.0)
         gens[g] = {"units": units, "p_max_unit": p_max.get(g, 0.0), "power_kw": power,
                    "inv_cost": inv, "op_cost": op}
@@ -1594,13 +1700,17 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
     a_min    = _extract_param(params_data, "a_min_h")
     stor_set = [str(h) for h in params_data.get("storage_set", list(hh_map.keys()))]
 
+    af = 1.0
+    if _has_degradation_data(params_data):
+        af = _annuity_factor(_get_discount_rate(params_data), len(_get_years_sorted(params_data)))
+
     units_info: Dict[str, Dict[str, float]] = {}
     total_inv = total_op = 0.0
 
     for h in stor_set:
         installed = hh_map.get(h, 0.0)
-        inv = installed * c_inv.get(h, 0.0)
-        op  = installed * c_op.get(h, 0.0)
+        inv = installed * c_inv.get(h, 0.0) * af
+        op  = installed * c_op.get(h, 0.0) * af
         units_info[h] = {"installed": installed, "p_max_kw": p_max.get(h, 0.0),
                          "a_max_kwh": a_max.get(h, 0.0), "a_min_kwh": a_min.get(h, 0.0),
                          "inv_cost": inv, "op_cost": op}
@@ -1608,6 +1718,118 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
         total_op  += op
 
     return {"units": units_info, "total_inv_cost": total_inv, "total_op_cost": total_op}
+
+
+def calculate_battery_degradation_metrics(root: Path) -> Dict[str, Any]:
+    """
+    Lee R.json, b_bar.json, N_ciclos.json, CumEFC.json, N_batteries_total.json
+    y parameters.json para reportar, por año, la degradación del pool de
+    baterías de swap (global, fleet-wide):
+    - Capacidad b_bar [kWh] y % de la nominal (b_max_pool)
+    - Ciclos equivalentes (EFC) del año y acumulados desde el último reemplazo
+    - Si hubo reemplazo (R=1) ese año y su costo (c_bat_replace * N_batteries_total)
+    """
+    b_bar_path = find_json_in_folder(root, "b_bar.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not b_bar_path or not params_path:
+        return {}
+    if is_effectively_empty_json(b_bar_path) or is_effectively_empty_json(params_path):
+        return {}
+
+    params_data = load_json(params_path)
+
+    def _year_value_map(filename: str) -> Dict[str, float]:
+        p = find_json_in_folder(root, filename)
+        if not p or is_effectively_empty_json(p):
+            return {}
+        data = load_json(p)
+        out: Dict[str, float] = {}
+        for path, val in _iter_leaf_records(data):
+            if not path:
+                continue
+            try:
+                out[str(path[-1])] = float(val)
+            except Exception:
+                continue
+        return out
+
+    b_bar_map    = _year_value_map("b_bar.json")
+    r_map        = _year_value_map("R.json")
+    n_ciclos_map = _year_value_map("N_ciclos.json")
+    cum_efc_map  = _year_value_map("CumEFC.json")
+
+    # b_max_pool, min_capacity_fraction, c_bat_replace, discount_rate son
+    # parametros globales (no indexados), escritos como escalar en
+    # parameters.json.
+    b_max_pool    = _as_float(params_data.get("b_max_pool"), 0.0)
+    min_frac      = _as_float(params_data.get("min_capacity_fraction"), 0.0)
+    # c_bat_replace es el costo TOTAL de UNA sola bateria del pool; se
+    # escala por N_batteries_total (tamano total del pool en el optimo,
+    # constante en el horizonte) para obtener el costo de reemplazar el
+    # pool completo, igual que en ObjectiveRules.battery_replace_cost.
+    c_bat_replace = _as_float(params_data.get("c_bat_replace"), 0.0)
+    discount_r    = _as_float(params_data.get("discount_rate"), 0.0)
+
+    n_batt_total_path = find_json_in_folder(root, "N_batteries_total.json")
+    n_batteries_total = 0.0
+    if n_batt_total_path and not is_effectively_empty_json(n_batt_total_path):
+        try:
+            n_batteries_total = float(load_json(n_batt_total_path))
+        except Exception:
+            n_batteries_total = 0.0
+
+    # Total de baterías FÍSICAS del sistema: no solo el pool de la estación
+    # (N_batteries_total), también las que están siempre instaladas en los
+    # LHD de swap (slhd_set) — igual criterio que ObjectiveRules.battery_replace_cost
+    # (n_battery_fleet = N_batteries_total + n_slhd, ver n_battery_fleet_def).
+    # Preferimos leer n_battery_fleet.json directo (variable propia del
+    # modelo) y solo recalculamos si no está disponible.
+    n_slhd = len(params_data.get("slhd_set", []) or [])
+    n_fleet_path = find_json_in_folder(root, "n_battery_fleet.json")
+    if n_fleet_path and not is_effectively_empty_json(n_fleet_path):
+        try:
+            n_batteries_fleet = float(load_json(n_fleet_path))
+        except Exception:
+            n_batteries_fleet = n_batteries_total + n_slhd
+    else:
+        n_batteries_fleet = n_batteries_total + n_slhd
+
+    years = sorted(b_bar_map.keys(), key=lambda y: float(y))
+    years_sorted_int = _get_years_sorted(params_data)
+
+    years_info: Dict[str, Dict[str, Any]] = {}
+    total_replace_cost = 0.0
+    n_replacements = 0
+
+    for y in years:
+        b_bar = b_bar_map.get(y, 0.0)
+        # R=0 no se exporta (binarias solo guardan valores en 1) -> default 0.0
+        replaced = r_map.get(y, 0.0) >= 0.5
+        disc = _year_discount_factor(discount_r, y, years_sorted_int)
+        cost_y = n_batteries_fleet * c_bat_replace * disc if replaced else 0.0
+        total_replace_cost += cost_y
+        if replaced:
+            n_replacements += 1
+        years_info[y] = {
+            "b_bar_kwh":    b_bar,
+            "b_bar_pct":    (b_bar / b_max_pool * 100.0) if b_max_pool else 0.0,
+            "n_ciclos":     n_ciclos_map.get(y, 0.0),
+            "cum_efc":      cum_efc_map.get(y, 0.0),
+            "replaced":     replaced,
+            "replace_cost": cost_y,
+        }
+
+    return {
+        "years":              years_info,
+        "b_max_pool_kwh":     b_max_pool,
+        "min_capacity_pct":   min_frac * 100.0 if min_frac else 0.0,
+        "n_batteries_total":  n_batteries_total,
+        "n_slhd":             n_slhd,
+        "n_batteries_fleet":  n_batteries_fleet,
+        "n_replacements":     n_replacements,
+        "total_replace_cost": total_replace_cost,
+    }
 
 
 def calculate_total_costs(root: Path) -> Dict[str, float]:
@@ -1704,21 +1926,35 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         print(f"Advertencia al calcular costos de almacenamiento: {ex}")
         bess_inv_cost = bess_op_cost = 0.0
 
+    try:
+        degradation_info    = calculate_battery_degradation_metrics(root)
+        battery_replace_cost = degradation_info.get("total_replace_cost", 0.0)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de reemplazo de batería: {ex}")
+        battery_replace_cost = 0.0
+
+    # Todas las componentes (investment_cost, peak_power_cost, gen_*, bess_*,
+    # grid_energy_cost, battery_replace_cost) aplican el mismo descuento NPV
+    # (annuity_factor_expr/_discount_factor) que usa la función objetivo
+    # cuando hay datos de BatteryDegradation cargados, así que este
+    # total_cost debería coincidir con el objetivo reportado por Gurobi.
     total_cost = (investment_cost + grid_energy_cost + penalty_cost + peak_power_cost
-                  + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost)
+                  + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost
+                  + battery_replace_cost)
 
     return {
-        "energy_cost":      energy_cost,
-        "grid_energy_cost": grid_energy_cost,
-        "real_energy_cost": real_energy_cost,
-        "investment_cost":  investment_cost,
-        "penalty_cost":     penalty_cost,
-        "peak_power_cost":  peak_power_cost,
-        "gen_inv_cost":     gen_inv_cost,
-        "gen_op_cost":      gen_op_cost,
-        "bess_inv_cost":   bess_inv_cost,
-        "bess_op_cost":    bess_op_cost,
-        "total_cost":      total_cost,
+        "energy_cost":          energy_cost,
+        "grid_energy_cost":     grid_energy_cost,
+        "real_energy_cost":     real_energy_cost,
+        "investment_cost":      investment_cost,
+        "penalty_cost":         penalty_cost,
+        "peak_power_cost":      peak_power_cost,
+        "gen_inv_cost":         gen_inv_cost,
+        "gen_op_cost":          gen_op_cost,
+        "bess_inv_cost":        bess_inv_cost,
+        "bess_op_cost":         bess_op_cost,
+        "battery_replace_cost": battery_replace_cost,
+        "total_cost":           total_cost,
     }
 
 

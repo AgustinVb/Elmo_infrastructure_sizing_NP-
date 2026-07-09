@@ -436,7 +436,6 @@ class OptParameters(OptRules):
         model.max_batteries_per_bay_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_batteries_per_bay(k) for k in model.stations_set}, mutable=False)
         model.max_chargers_per_bay_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_chargers_per_bay(k) for k in model.stations_set}, mutable=False)
         model.c_crane_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_crane(k) for k in model.stations_set}, mutable=False)
-        model.t_swap = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_swap_time(i) for i in model.lhd_set}, mutable=False)
         #model.t_charge = pyo.Param(model.lhd_set, initialize={i: self.mine_system.elhd.get_charge_time(i) for i in model.lhd_set}, mutable=False)
         # t_charge en intervalos con delta_t en horas:
         # ((model.bmax_b - model.bmax_b*model.bmin_b)/model.p_charger)/model.delta_t
@@ -500,6 +499,30 @@ class OptParameters(OptRules):
                 initialize={h: stor.get_a_max(h) for h in model.storage_set},
                 mutable=False)
 
+        # Degradacion/reemplazo de baterias del pool de swap (global, solo
+        # si la hoja BatteryDegradation existe)
+        bd = self.mine_system.battery_degradation
+        if bd is not None:
+            model.gamma_coef = pyo.Param(initialize=bd.get_gamma_coef(), mutable=True)
+            model.c_bat_replace = pyo.Param(initialize=bd.get_c_bat_replace(), mutable=True)
+            model.min_capacity_fraction = pyo.Param(initialize=bd.get_min_capacity_fraction(), mutable=True)
+
+            # Capacidad de referencia del pool: todas las baterias de swap
+            # (slhd_set) deben compartir la misma capacidad nominal, porque
+            # b_bar/R se modelan una vez para todo el pool, no por LHD/estacion.
+            bmax_values = {round(float(self.mine_system.elhd.get_e_max(b)), 6) for b in model.slhd_set}
+            if len(bmax_values) > 1:
+                raise ValueError(
+                    "Degradacion de bateria (pool global) requiere que todas las "
+                    f"baterias de swap compartan la misma capacidad nominal (e_max); "
+                    f"valores encontrados: {bmax_values}"
+                )
+            model.b_max_pool = pyo.Param(initialize=next(iter(bmax_values)), mutable=False)
+
+        # Tasa de descuento: 0.0 (sin descuento, comportamiento actual) si no
+        # hay datos de degradacion cargados o si la hoja no trae la columna.
+        model.discount_rate = pyo.Param(initialize=(bd.get_discount_rate() if bd is not None else 0.0), mutable=True)
+
 class BoundRules(OptRules):
 
     def Z(self, model, i, y, d, t):
@@ -548,8 +571,12 @@ class BoundRules(OptRules):
         model.Z         = pyo.Var(model.lhd_set, model.years, model.days, model.time_intervals_set, bounds=self.Z, domain=pyo.Binary)
         # Variable binaria que indica si el LHD est� cargando
         #model.Z_charge  = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set,                          bounds=self.Z_charge, domain=pyo.Binary)
-        # Variable binaria que indica si el LHD reliza un swap 
+        # Variable binaria que indica si el LHD reliza un swap
         model.Z_swap    = pyo.Var(model.ZSWAP_DAYS_TIME, domain=pyo.Binary)
+        # Inicio/fin de una asignacion a extraccion (Y agregado sobre nodos),
+        # para exigir minimo 2 intervalos consecutivos asignado a extraccion.
+        model.StartAssign = pyo.Var(model.slhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
+        model.EndAssign   = pyo.Var(model.slhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
         # Potencia de carga de bater�a b en (d,t)
         #model.P         = pyo.Var(model.stations_set,model.elhd_set, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # SOC de bater�a b al final de (d,t)
@@ -600,10 +627,108 @@ class BoundRules(OptRules):
             model.A_h = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero,
                                 domain=pyo.NonNegativeReals)
 
+        # Degradación de batería del pool de swap (global, fleet-wide), solo
+        # si hay datos de degradación cargados.
+        if self.mine_system.battery_degradation is not None:
+            n_stations = len(list(model.stations_set))
+            n_elhd = len(list(model.slhd_set))
+            N_min = n_stations          # N_batteries[k] >= 1 por estación
+            N_max = 12 * n_stations     # N_batteries[k] <= 12 por estación
+
+            # N_batteries_total = tamaño del pool en estación (suma de
+            # N_batteries por estación) — NO es el total de baterías físicas:
+            # cada LHD swap tiene además su propia batería instalada en todo
+            # momento (n_elhd, constante). La flota física completa a
+            # degradar/reemplazar es n_battery_fleet = N_batteries_total + n_elhd.
+            model.N_batteries_total = pyo.Var(domain=pyo.NonNegativeIntegers, bounds=(N_min, N_max))
+
+            NF_min = N_min + n_elhd
+            NF_max = N_max + n_elhd
+            model.n_battery_fleet = pyo.Var(domain=pyo.NonNegativeIntegers, bounds=(NF_min, NF_max))
+
+            # Encoding one-hot exacto de n_battery_fleet (rango pequeño de
+            # enteros), reusado para linealizar EnergyConsumed/n_battery_fleet
+            # y R[y]*n_battery_fleet sin productos variable×variable.
+            model.n_fleet_range = pyo.RangeSet(NF_min, NF_max)
+            model.delta_nfleet = pyo.Var(model.n_fleet_range, domain=pyo.Binary)
+            model.NF_max_param = pyo.Param(initialize=NF_max, mutable=False)
+
+            b_max_val = value(model.b_max_pool)
+            min_frac_val = value(model.min_capacity_fraction)
+
+            # Cota superior de EFC anualizado de la flota: energía máxima
+            # cargable (todas las estaciones a N_batteries=12 CADA UNA, todos
+            # los días representativos del año, a potencia nominal del
+            # cargador), normalizada por la capacidad de una batería y por
+            # la flota más chica posible (cota conservadora, no ajustada).
+            # OJO: se usa el tope POR ESTACIÓN (12), no N_max (que es el tope
+            # del pool TOTAL, ya multiplicado por n_stations) — usar N_max acá
+            # infla la cota en un factor extra de n_stations y debilita mucho
+            # la relajación LP de las linealizaciones Big-M de más abajo.
+            max_batteries_per_station = 12
+            n_slots_per_year = len(model.stations_set) * max_batteries_per_station * len(model.days) * len(model.time_intervals_set)
+            max_energy_per_year = n_slots_per_year * value(model.p_charger) * value(model.delta_t)
+            efc_max_per_year = max_energy_per_year * value(model.scaling_factor_op_cost) / (NF_min * b_max_val)
+            cum_efc_max = efc_max_per_year * len(model.years)
+
+            # Energía CONSUMIDA por los LHD (descarga real, misma expresión
+            # que el término "discharge" de battery_soc_swap) en el año y, y
+            # su linealización exacta contra el one-hot de n_battery_fleet
+            # (Z_energy_per_batt[y,n] = EnergyConsumed[y] si delta_nfleet[n]=1,
+            # si no 0 — mismo patrón big-M que Z_repl). Evita el producto
+            # variable×variable EnergyConsumed*(1/n_battery_fleet).
+            # Se usa consumo (descarga) en vez de energía cargada en estación
+            # (Sv) porque el cargado en estación puede quedar desfasado del
+            # consumo real dentro de un mismo día representativo (una batería
+            # swapeada tarde en el día puede no terminar de cargar ese mismo
+            # día), lo que subestimaba el desgaste — además así es comparable
+            # con on-board, que mide energía en la misma batería que descarga.
+            model.EnergyConsumed = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, max_energy_per_year))
+            model.Z_energy_per_batt = pyo.Var(model.years, model.n_fleet_range, domain=pyo.NonNegativeReals, bounds=(0, max_energy_per_year))
+            model.max_energy_per_year_param = pyo.Param(initialize=max_energy_per_year, mutable=False)
+
+            model.R        = pyo.Var(model.years, domain=pyo.Binary)
+            model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals,
+                                      bounds=(min_frac_val * b_max_val, b_max_val))
+
+            # Linealización exacta (big-M) de P_bbar_zagg[i,y,d,t] = b_bar[y] *
+            # z_agg (z_agg = suma de Z_swap para el LHD i en (y,d,t)) — evita
+            # el producto variable×variable b_bar[y]*z_agg dentro de las
+            # fórmulas Big-M de battery_soc_swap_update_1/4 (y swap_soc_limit_30).
+            model.P_bbar_zagg = pyo.Var(model.slhd_set, model.years, model.days, model.time_intervals_set,
+                                         domain=pyo.NonNegativeReals, bounds=(0, b_max_val))
+
+            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, efc_max_per_year))
+            model.CumEFC   = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+            model.cum_efc_max = pyo.Param(initialize=cum_efc_max, mutable=False)
+
+            years_sorted = sorted(model.years)
+            later_years = years_sorted[1:]
+            if later_years:
+                model.later_years_set = pyo.Set(initialize=later_years, within=model.years)
+                # W_cum[y] = (1-R[y]) * CumEFC[y_prev]: si se reemplaza
+                # (R[y]=1) el arrastre de ciclos previos se anula. Nombrada
+                # W_cum (no W) porque model.W ya existe (demanda de swaps).
+                model.W_cum = pyo.Var(model.later_years_set, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+
+            # Z_repl[y] = R[y] * n_battery_fleet (linealización big-M del
+            # producto binario x entero, para el costo de reemplazo de TODA
+            # la flota física: pool en estación + una batería por LHD).
+            model.Z_repl = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, NF_max))
+
 from src.optimization.functions import OptRules
 import pyomo.environ as pyo
 
 class ConstraintRules(OptRules):
+
+    def _pool_capacity(self, model, i, y):
+        """Capacidad de referencia de la batería del LHD/pool en el año y:
+        b_bar[y] si hay datos de degradación cargados (capacidad que se
+        degrada año a año), si no la capacidad fija bmax_b[i] (comportamiento
+        original, sin degradación)."""
+        if self.mine_system.battery_degradation is not None:
+            return model.b_bar[y]
+        return model.bmax_b[i]
 
     # ==========================================================
     # 1) Estado operacional del LHD (swap)
@@ -619,6 +744,43 @@ class ConstraintRules(OptRules):
     def between_shifts_elhd_swap(self, model, i, y, d, t):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         return model.Z[i, y, d, t] + sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list) == 1
+
+    def swap_only_meal_or_between_shifts(self, model, k, i, y, d, t):
+        """Solo se permite hacer swap (Z_swap = 1) durante colación o entre turnos."""
+        if t in model.time_intervals_meal_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip
+        return model.Z_swap[k, i, y, d, t] == 0
+
+    # Análogo a charge_state/min_charge_duration de la rama on-board, pero
+    # para el estado agregado "asignado a extracción" (Assign = suma de Y
+    # sobre todos los nodos j asignables al LHD i en (y,d,t)).
+    def assign_state(self, model, i, y, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        assign_sum = sum(model.Y[i, j, y, d, t] for j in nodes)
+        t0 = self.time_series.get_time_intervals()[0]
+        if t > t0:
+            nodes_prev = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t-1, i), [])
+            assign_sum_prev = sum(model.Y[i, j, y, d, t-1] for j in nodes_prev)
+            return assign_sum - assign_sum_prev == model.StartAssign[i, y, d, t] - model.EndAssign[i, y, d, t]
+        else:
+            return assign_sum == model.StartAssign[i, y, d, t] - model.EndAssign[i, y, d, t]
+
+    # Si el LHD i arranca una asignación a extracción (a cualquier nodo j) en
+    # t, debe mantenerse asignado (a algún nodo, no necesariamente el mismo)
+    # en t+1 — mínimo 2 intervalos consecutivos.
+    def min_assign_duration(self, model, i, y, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        t_fin = self.time_series.get_time_intervals()[-1]
+        assign_sum_t = sum(model.Y[i, j, y, d, t] for j in nodes)
+        if t == t_fin:
+            return assign_sum_t == 0
+        nodes_next = self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t+1, i), [])
+        assign_sum_next = sum(model.Y[i, j, y, d, t+1] for j in nodes_next)
+        return assign_sum_t + assign_sum_next >= 2 * model.StartAssign[i, y, d, t]
 
     # ==========================================================
     # 2) Energ�a y SOC de bater�a (swap)
@@ -645,33 +807,75 @@ class ConstraintRules(OptRules):
     #   (3) B_s <= U                    (unconditional upper limit)
     #   (4) B_s >= L + (U - L) * z_agg  (dynamic lower limit: when z=0: B_s >= L impossible unless B >= L)
     
-    def battery_soc_swap_update_1(self, model, i, y, d, t):
-        """Convex-hull upper bound: B_s <= B + (U - L) * z_agg"""
+    def _z_agg_swap(self, model, i, y, d, t):
+        """z_agg = suma de Z_swap sobre las estaciones válidas para el LHD i
+        en (y,d,t). Efectivamente 0/1 (max_swaps limita la suma a <= 1)."""
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
+        return sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
+
+    # P_bbar_zagg[i,y,d,t] = b_bar[y] * z_agg, linealización big-M exacta
+    # (b_bar[y] acotada en [0, b_max_pool], z_agg efectivamente binaria).
+    # Solo se registran cuando hay degradación cargada (b_bar existe).
+    def p_bbar_zagg_upper1(self, model, i, y, d, t):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        U = model.bmax_b[i]
-        L = model.bmin_b[i] * model.bmax_b[i]
-        z_agg = sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
-        return model.B_s[i, y, d, t-1] <= model.B[i, y, d, t-1] + (U - L) * z_agg
+        return model.P_bbar_zagg[i, y, d, t] <= model.b_bar[y]
+
+    def p_bbar_zagg_upper2(self, model, i, y, d, t):
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
+        if not valid_k_list:
+            return pyo.Constraint.Skip
+        z_agg = self._z_agg_swap(model, i, y, d, t)
+        return model.P_bbar_zagg[i, y, d, t] <= value(model.b_max_pool) * z_agg
+
+    def p_bbar_zagg_lower(self, model, i, y, d, t):
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
+        if not valid_k_list:
+            return pyo.Constraint.Skip
+        z_agg = self._z_agg_swap(model, i, y, d, t)
+        return model.P_bbar_zagg[i, y, d, t] >= model.b_bar[y] - value(model.b_max_pool) * (1 - z_agg)
+
+    def battery_soc_swap_update_1(self, model, i, y, d, t):
+        """Convex-hull upper bound: B_s <= B + (U - L) * z_agg.
+        Si hay degradación, U=b_bar[y] es variable: (U-L)*z_agg =
+        (1-bmin_b[i]) * P_bbar_zagg (linealizado, ver p_bbar_zagg_*)."""
+        valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
+        if not valid_k_list:
+            return pyo.Constraint.Skip
+        if self.mine_system.battery_degradation is not None:
+            term = (1 - model.bmin_b[i]) * model.P_bbar_zagg[i, y, d, t]
+        else:
+            U = model.bmax_b[i]
+            L = model.bmin_b[i] * U
+            z_agg = self._z_agg_swap(model, i, y, d, t)
+            term = (U - L) * z_agg
+        return model.B_s[i, y, d, t-1] <= model.B[i, y, d, t-1] + term
 
     def battery_soc_swap_update_2(self, model, i, y, d, t):
         """Convex-hull lower bound (sharpened): B_s >= B"""
         return model.B_s[i, y, d, t-1] >= model.B[i, y, d, t-1]
-    
+
     def battery_soc_swap_update_3(self, model, i, y, d, t):
         """Unconditional upper limit: B_s <= U"""
-        return model.B_s[i, y, d, t-1] <= model.bmax_b[i]
+        return model.B_s[i, y, d, t-1] <= self._pool_capacity(model, i, y)
 
     def battery_soc_swap_update_4(self, model, i, y, d, t):
-        """Convex-hull lower limit (dynamic): B_s >= L + (U - L) * z_agg"""
+        """Convex-hull lower limit (dynamic): B_s >= L + (U - L) * z_agg.
+        Misma linealización que battery_soc_swap_update_1 cuando hay
+        degradación (U=b_bar[y] variable)."""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if not valid_k_list:
             return pyo.Constraint.Skip
-        U = model.bmax_b[i]
-        L = model.bmin_b[i] * model.bmax_b[i]
-        z_agg = sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
-        return model.B_s[i, y, d, t-1] >= L + (U - L) * z_agg
+        if self.mine_system.battery_degradation is not None:
+            L = model.bmin_b[i] * model.b_bar[y]
+            term = (1 - model.bmin_b[i]) * model.P_bbar_zagg[i, y, d, t]
+            return model.B_s[i, y, d, t-1] >= L + term
+        else:
+            U = model.bmax_b[i]
+            L = model.bmin_b[i] * U
+            z_agg = self._z_agg_swap(model, i, y, d, t)
+            return model.B_s[i, y, d, t-1] >= L + (U - L) * z_agg
 
     def swap_soc_limit_30(self, model, i, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -684,17 +888,23 @@ class ConstraintRules(OptRules):
 
         # Tight Big-M: if swap_flag=1 => B <= 0.30*U; if swap_flag=0 => B <= U.
         # This uses M = U-0.30*U = 0.70*U (stronger than M = U in LP relaxation).
-        U = model.bmax_b[i]
-        swap_flag = sum(model.Z_swap[k, i, y, d, t] for k in valid_k_list)
-        return model.B[i, y, d, t-1] <= U - 0.70 * U * swap_flag
+        # Si hay degradación, U=b_bar[y] es variable: U*swap_flag se
+        # linealiza vía P_bbar_zagg (ver p_bbar_zagg_*).
+        if self.mine_system.battery_degradation is not None:
+            return model.B[i, y, d, t-1] <= model.b_bar[y] - 0.70 * model.P_bbar_zagg[i, y, d, t]
+        else:
+            U = model.bmax_b[i]
+            swap_flag = self._z_agg_swap(model, i, y, d, t)
+            return model.B[i, y, d, t-1] <= U - 0.70 * U * swap_flag
 
     # L�mite inferior de SOC bater�a
     def battery_lower(self, model, i, y, d, t):
-        return model.B[i, y, d, t] >= model.bmin_b[i] * model.bmax_b[i]
+        cap = self._pool_capacity(model, i, y)
+        return model.B[i, y, d, t] >= model.bmin_b[i] * cap
 
     # L�mite superior de SOC bater�a
     def battery_upper(self, model, i, y, d, t):
-        return model.B[i, y, d, t] <= model.bmax_b[i]
+        return model.B[i, y, d, t] <= self._pool_capacity(model, i, y)
 
     # Condici�n de borde SOC bater�a
     def battery_boundary_swap(self, model, i, y, d):
@@ -794,7 +1004,6 @@ class ConstraintRules(OptRules):
         #pen = sum(
         #    model.Z_pen[i2, j2, d2, t2] * model.g_i[i2]
         #    * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-        #    * (model.t_swap[i2] / model.delta_t)
         #    for (i2, j2, d2, t2) in model.Y_INDEX
         #    if i2 == i and d2 == d and j2 == j
         #)
@@ -1082,6 +1291,107 @@ class ConstraintRules(OptRules):
         t_fin = self.time_series.get_time_intervals()[-1]
         return model.A_h[h, y, d, t_ini] == model.A_h[h, y, d, t_fin]
 
+    # ==========================================================
+    # Degradación de batería del pool de swap
+    # ==========================================================
+
+    def _prev_year(self, y):
+        years_sorted = sorted(self.time_series.years)
+        return years_sorted[years_sorted.index(y) - 1]
+
+    def n_batteries_total_def(self, model):
+        """N_batteries_total = suma de N_batteries por estación (tamaño del
+        pool en estación — NO es la flota física completa, ver n_battery_fleet_def)."""
+        return model.N_batteries_total == sum(model.N_batteries[k] for k in model.stations_set)
+
+    def n_battery_fleet_def(self, model):
+        """n_battery_fleet = N_batteries_total (pool en estación) + una
+        batería instalada en cada LHD swap (constante, siempre hay una
+        puesta) = flota física total a degradar/reemplazar."""
+        return model.n_battery_fleet == model.N_batteries_total + len(model.slhd_set)
+
+    def one_hot_select(self, model):
+        """Exactamente un delta_nfleet[n] activo (encoding one-hot de n_battery_fleet)."""
+        return sum(model.delta_nfleet[n] for n in model.n_fleet_range) == 1
+
+    def one_hot_value(self, model):
+        """n_battery_fleet == n seleccionado por el one-hot."""
+        return model.n_battery_fleet == sum(n * model.delta_nfleet[n] for n in model.n_fleet_range)
+
+    def energy_consumed_def(self, model, y):
+        """EnergyConsumed[y] = energía consumida (descarga real) por todos
+        los LHD de swap en el/los día(s) representativo(s) del año y — misma
+        expresión que el término "discharge" de battery_soc_swap. Se usa el
+        consumo de los vehículos en vez de la energía cargada en estación
+        (Sv) porque esta última puede quedar desfasada del consumo real
+        dentro de un mismo día representativo (una batería swapeada tarde en
+        el día puede no terminar de cargar ese mismo día), lo que subestimaba
+        el desgaste — y así queda comparable con on-board, que mide sobre la
+        misma batería que descarga. Expresión lineal (suma de variables por
+        constantes)."""
+        return model.EnergyConsumed[y] == sum(
+            model.Y[i, j, y, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
+            for i in model.slhd_set
+            for d in model.days
+            for t in model.time_intervals_set
+            for j in self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
+        )
+
+    # Linealización exacta (big-M) de Z_energy_per_batt[y,n] = EnergyConsumed[y]
+    # si delta_nfleet[n]=1, si no 0 — evita el producto variable×variable
+    # EnergyConsumed[y] * (1/n_battery_fleet).
+    def z_energy_upper1(self, model, y, n):
+        return model.Z_energy_per_batt[y, n] <= model.EnergyConsumed[y]
+
+    def z_energy_upper2(self, model, y, n):
+        return model.Z_energy_per_batt[y, n] <= model.max_energy_per_year_param * model.delta_nfleet[n]
+
+    def z_energy_lower(self, model, y, n):
+        return model.Z_energy_per_batt[y, n] >= model.EnergyConsumed[y] - model.max_energy_per_year_param * (1 - model.delta_nfleet[n])
+
+    def n_ciclos_def(self, model, y):
+        """N_ciclos[y] = EFC (equivalent full cycles) anualizado, normalizado
+        por el total de baterías FÍSICAS del sistema (n_battery_fleet) — no
+        solo el pool de la estación (N_batteries_total), sino también las que
+        están puestas en los LHD de swap en todo momento (una por LHD).
+        EnergyConsumed[y]/n_battery_fleet vía Z_energy_per_batt (exacto),
+        escalada a año completo y normalizada por la capacidad nominal de
+        una batería del pool."""
+        energy_per_battery = sum((1.0 / n) * model.Z_energy_per_batt[y, n] for n in model.n_fleet_range)
+        return model.N_ciclos[y] == energy_per_battery * model.scaling_factor_op_cost / value(model.b_max_pool)
+
+    def w_upper_R(self, model, y):
+        return model.W_cum[y] <= model.cum_efc_max * (1 - model.R[y])
+
+    def w_upper_cum(self, model, y):
+        return model.W_cum[y] <= model.CumEFC[self._prev_year(y)]
+
+    def w_lower(self, model, y):
+        return model.W_cum[y] >= model.CumEFC[self._prev_year(y)] - model.cum_efc_max * model.R[y]
+
+    def cum_efc_def(self, model, y):
+        """CumEFC[y] = ciclos equivalentes acumulados desde el último
+        reemplazo: (1-R[y])*CumEFC[y_prev] + N_ciclos[y]. En el primer año
+        no hay arrastre."""
+        first_year = sorted(self.time_series.years)[0]
+        if y == first_year:
+            return model.CumEFC[y] == model.N_ciclos[y]
+        return model.CumEFC[y] == model.W_cum[y] + model.N_ciclos[y]
+
+    def b_bar_fade(self, model, y):
+        """Fade lineal: b_bar[y] = b_max_pool - gamma_coef * CumEFC[y]."""
+        return model.b_bar[y] == value(model.b_max_pool) - model.gamma_coef * model.CumEFC[y]
+
+    def z_repl_upper1(self, model, y):
+        """Z_repl[y] = R[y] * n_battery_fleet (linealización big-M) — al
+        reemplazar se reemplaza TODA la flota física (pool + instaladas)."""
+        return model.Z_repl[y] <= model.n_battery_fleet
+
+    def z_repl_upper2(self, model, y):
+        return model.Z_repl[y] <= model.NF_max_param * model.R[y]
+
+    def z_repl_lower(self, model, y):
+        return model.Z_repl[y] >= model.n_battery_fleet - model.NF_max_param * (1 - model.R[y])
 
     def build_all_constraints(self, model):
         # 1) Energ�a / SOC de bater�as del LHD (swap)
@@ -1188,6 +1498,23 @@ class ConstraintRules(OptRules):
             model.days,
             model.time_intervals_between_shifts_set,
             rule=self.between_shifts_elhd_swap,
+        )
+        model.swap_only_meal_or_between_shifts = pyo.Constraint(
+            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        )
+        model.assign_state = pyo.Constraint(
+            model.slhd_set,
+            model.years,
+            model.days,
+            model.time_intervals_set,
+            rule=self.assign_state,
+        )
+        model.min_assign_duration = pyo.Constraint(
+            model.slhd_set,
+            model.years,
+            model.days,
+            model.time_intervals_set,
+            rule=self.min_assign_duration,
         )
         model.total_swaps = pyo.Constraint(
             model.stations_set,
@@ -1314,11 +1641,67 @@ class ConstraintRules(OptRules):
             rule=self.swap_precedence_by_index,
         )
 
+        # 9) Degradación de batería del pool de swap (solo si hay datos cargados)
+        if self.mine_system.battery_degradation is not None:
+            model.n_batteries_total_def = pyo.Constraint(rule=self.n_batteries_total_def)
+            model.n_battery_fleet_def = pyo.Constraint(rule=self.n_battery_fleet_def)
+            model.one_hot_select = pyo.Constraint(rule=self.one_hot_select)
+            model.one_hot_value  = pyo.Constraint(rule=self.one_hot_value)
+
+            model.energy_consumed_def = pyo.Constraint(model.years, rule=self.energy_consumed_def)
+            model.z_energy_upper1 = pyo.Constraint(model.years, model.n_fleet_range, rule=self.z_energy_upper1)
+            model.z_energy_upper2 = pyo.Constraint(model.years, model.n_fleet_range, rule=self.z_energy_upper2)
+            model.z_energy_lower  = pyo.Constraint(model.years, model.n_fleet_range, rule=self.z_energy_lower)
+
+            model.n_ciclos_def = pyo.Constraint(model.years, rule=self.n_ciclos_def)
+            model.cum_efc_def  = pyo.Constraint(model.years, rule=self.cum_efc_def)
+            model.b_bar_fade   = pyo.Constraint(model.years, rule=self.b_bar_fade)
+            if hasattr(model, 'later_years_set'):
+                model.w_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_upper_R)
+                model.w_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_upper_cum)
+                model.w_lower     = pyo.Constraint(model.later_years_set, rule=self.w_lower)
+
+            model.z_repl_upper1 = pyo.Constraint(model.years, rule=self.z_repl_upper1)
+            model.z_repl_upper2 = pyo.Constraint(model.years, rule=self.z_repl_upper2)
+            model.z_repl_lower  = pyo.Constraint(model.years, rule=self.z_repl_lower)
+
+            model.p_bbar_zagg_upper1 = pyo.Constraint(
+                model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.p_bbar_zagg_upper1
+            )
+            model.p_bbar_zagg_upper2 = pyo.Constraint(
+                model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.p_bbar_zagg_upper2
+            )
+            model.p_bbar_zagg_lower = pyo.Constraint(
+                model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.p_bbar_zagg_lower
+            )
+
 class ObjectiveRules(OptRules):
+
+    def year_position(self, y: int) -> int:
+        """Posicion 1-indexada de y dentro del horizonte modelado (1, 2, 3, ...)."""
+        return sorted(self.time_series.years).index(y) + 1
+
+    def annuity_factor_expr(self, model):
+        """AF(r,Y) = sum_{k=1..Y} 1/(1+r)^k. Escalar (expresion en model.discount_rate)
+        para convertir un costo de inversion (decidido una sola vez, al inicio)
+        en su NPV sobre el horizonte."""
+        Y = len(self.time_series.years)
+        r = model.discount_rate
+        return sum(1 / (1 + r) ** k for k in range(1, Y + 1))
+
+    def _discount_factor(self, model, y):
+        """1/(1+r)^pos(y) si hay datos de degradacion/descuento cargados, si no 1
+        (preserva el comportamiento original para escenarios sin esa hoja)."""
+        if self.mine_system.battery_degradation is None:
+            return 1
+        return 1 / (1 + model.discount_rate) ** self.year_position(y)
+
     def lhd_charge_cost_bs(self, model):
-        """Costo de electricidad comprada a la red (P_red * costo_electricidad)."""
+        """Costo de electricidad comprada a la red (P_red * costo_electricidad),
+        descontado a valor presente por año."""
         cost_el = sum(
             model.P_red[y, d, t] * model.costo_electricidad[y, d, t] * model.delta_t
+            * self._discount_factor(model, y)
             for y in model.years
             for d in model.days
             for t in model.time_intervals_set
@@ -1334,30 +1717,59 @@ class ObjectiveRules(OptRules):
             + (model.battery_cost + model.c_battery_space_k[k]) * model.N_batteries[k]
             for k in model.stations_set
         )
+        if self.mine_system.battery_degradation is not None:
+            cost_inv = cost_inv * self.annuity_factor_expr(model)
         return cost_inv
 
     def gen_investment_cost(self, model):
         if len(list(model.gen_set)) == 0:
             return 0
-        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
+        cost = sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def gen_op_cost(self, model):
         if len(list(model.gen_set)) == 0:
             return 0
-        return sum(model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
+        cost = sum(model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def bess_investment_cost(self, model):
         if len(list(model.storage_set)) == 0:
             return 0
-        return sum(model.H_h[h] * model.c_inv_h[h] for h in model.storage_set)
+        cost = sum(model.H_h[h] * model.c_inv_h[h] for h in model.storage_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def bess_op_cost(self, model):
         if len(list(model.storage_set)) == 0:
             return 0
-        return sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
+        cost = sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
+        if self.mine_system.battery_degradation is not None:
+            cost = cost * self.annuity_factor_expr(model)
+        return cost
 
     def peak_power_cost(self, model):
-        return sum(model.P_pot[y] * 12 * 10 for y in model.years)
+        return sum(model.P_pot[y] * 12 * 10 * self._discount_factor(model, y) for y in model.years)
+
+    def battery_replace_cost(self, model):
+        """Costo de reemplazo de TODAS las baterías físicas del sistema:
+        evento puntual del año y (no una anualidad recurrente, por eso no usa
+        annuity_factor_expr). c_bat_replace es el costo TOTAL de UNA sola
+        batería; Z_repl[y] ya linealiza R[y] * n_battery_fleet (n_battery_fleet
+        = N_batteries_total + n_slhd, la flota física completa: pool de
+        estación + una batería siempre instalada en cada LHD swap — ver
+        z_repl_upper1/upper2/lower), así que no hace falta sumar nada más acá."""
+        if self.mine_system.battery_degradation is None:
+            return 0
+        return sum(
+            model.Z_repl[y] * model.c_bat_replace * self._discount_factor(model, y)
+            for y in model.years
+        )
 
     def total_cost(self, model):
         return (self.lhd_charge_cost_bs(model)
@@ -1366,7 +1778,8 @@ class ObjectiveRules(OptRules):
                 + self.gen_op_cost(model)
                 + self.bess_investment_cost(model)
                 + self.bess_op_cost(model)
-                + self.peak_power_cost(model))
+                + self.peak_power_cost(model)
+                + self.battery_replace_cost(model))
 
     def max_min_extraction(self, model):
         """Maximiza la cota inferior L de la extracci�n en todos los puntos."""
