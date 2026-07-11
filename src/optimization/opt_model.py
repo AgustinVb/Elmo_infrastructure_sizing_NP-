@@ -454,33 +454,49 @@ class OptModel(object):
 
         condiciones_aceptables = [
             TerminationCondition.optimal,
-            TerminationCondition.maxTimeLimit, 
-            TerminationCondition.feasible
+            TerminationCondition.maxTimeLimit,
+            TerminationCondition.feasible,
         ]
 
-        if self.solution_status in condiciones_aceptables:
-            
-            if hasattr(self.model, 'obj') and value(self.model.obj) is not None:
-                self.opt_cost_result = value(self.model.obj)
-                print(f"✅ Solution time [sec]: {self.time_total:.2f}")
-                print(f"📊 Status: {self.solution_status}") 
-                print("💰 Operation Cost:", self.opt_cost_result)
-                
-                # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
-                #total_prod_val = 0
-                #for j in self.model.nodes_set:
-                #    prod_expression = self.objective_rules.production_total(self.model, j)
-                #    total_prod_val += value(prod_expression)
-                
-                #self.total_production = total_prod_val
-                #print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
-                # -----------------------------------
-            else:
-                print("WARN Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
-                self.limited_infeasible_log(self.model, log_file=self.infeasible_log_path)
+        # No confiamos solo en termination_condition para decidir si hay una
+        # solución usable: un Ctrl+C interrumpe a Gurobi con status 'aborted'
+        # (no está en condiciones_aceptables), pero igual puede traer una
+        # solución factible cargada — Pyomo la carga igual (load_solutions=True)
+        # y solo emite un warning ("Loading a SolverResults object with an
+        # 'aborted' status, but containing a solution"). Evaluamos el
+        # objetivo directamente: si tiene valor, hay solución usable sin
+        # importar qué termination_condition exacto haya reportado el solver
+        # — esto evita el chequeo de infactibilidad (lento e innecesario en
+        # un modelo grande) cuando en realidad sí hay una solución factible.
+        has_solution = False
+        if hasattr(self.model, 'obj'):
+            try:
+                has_solution = value(self.model.obj) is not None
+            except Exception:
+                has_solution = False
 
+        if has_solution:
+            self.opt_cost_result = value(self.model.obj)
+            print(f"✅ Solution time [sec]: {self.time_total:.2f}")
+            print(f"📊 Status: {self.solution_status}")
+            print("💰 Operation Cost:", self.opt_cost_result)
+            if self.solution_status not in condiciones_aceptables:
+                print(f"ℹ️ Nota: termination_condition '{self.solution_status}' no está en la lista de "
+                      "condiciones esperadas, pero se cargó una solución factible igual (probable "
+                      "interrupción manual con incumbente disponible).")
+
+            # --- CÁLCULO DE PRODUCCIÓN TOTAL ---
+            #total_prod_val = 0
+            #for j in self.model.nodes_set:
+            #    prod_expression = self.objective_rules.production_total(self.model, j)
+            #    total_prod_val += value(prod_expression)
+
+            #self.total_production = total_prod_val
+            #print(f"⛏️  Total production: {self.total_production:,.2f} Ton")
+            # -----------------------------------
         else:
             print(f"WARN Termination condition: {self.solution_status}")
+            print("WARN No se encontró ninguna solución factible cargada en el modelo.")
             self.limited_infeasible_log(self.model, timeout=60, log_file=self.infeasible_log_path)
 
         try:

@@ -753,7 +753,7 @@ class JSONPlotter:
 
     def _detect_intervals(self) -> List[int]:
         sources = []
-        for df in [self.df_B, self.df_Y, self.df_P, self.df_C, self.df_E, self.df_M]:
+        for df in [self.df_B, self.df_Y, self.df_P, self.df_C, self.df_E, self.df_M, self.df_Zswap, self.df_Sv]:
             if df is not None and "interval" in df.columns and not df.empty:
                 sources.append(sorted(df["interval"].dropna().unique().tolist()))
         if self.params.costo_marginal is not None:
@@ -1341,9 +1341,19 @@ class JSONPlotter:
                             current_state = states[i]
                     segments.append((start_idx, len(states), current_state))
 
+                    chart_end_h = len(states) * delta_t
+                    min_width_h = max(2 * delta_t, 0.15)
                     for start_idx, end_idx, state in segments:
                         x_start = start_idx * delta_t
                         width = (end_idx - start_idx) * delta_t
+                        if width < min_width_h:
+                            # Un evento de 1 solo intervalo (ej. swap justo en el
+                            # último intervalo del día) es una fracción ínfima de
+                            # las 24h del eje y puede quedar invisible/recortado
+                            # contra el borde derecho. Se ensancha visualmente sin
+                            # salirse del rango del gráfico.
+                            x_start = max(0.0, min(x_start, chart_end_h - min_width_h))
+                            width = min_width_h
                         ax_task.barh(
                             0.0,
                             width=width,
