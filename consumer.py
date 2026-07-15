@@ -1284,6 +1284,8 @@ def main() -> None:
             rows = [
                 ["Costo energía carga (USD)",       f"{costs['energy_cost']:.2f}"],
                 ["Costo energía red P_red (USD)",    f"{costs.get('grid_energy_cost', 0.0):.2f}"],
+                ["Energía total red (horizonte) [kWh]", f"{costs.get('grid_energy_kwh', 0.0):.2f}"],
+                ["Energía total red (horizonte) [MWh]", f"{costs.get('grid_energy_kwh', 0.0) / 1000.0:.2f}"],
                 ["Costo energía carga real (USD)",   f"{costs.get('real_energy_cost', 0.0):.2f}"],
                 ["Costo potencia pico (USD)",        f"{costs.get('peak_power_cost', 0.0):.2f}"],
                 ["Costo inversión estaciones (USD)", f"{costs['investment_cost']:.2f}"],
@@ -1452,6 +1454,39 @@ def calculate_grid_energy_cost(root: Path) -> float:
             continue
 
     return total_cost * scaling_factor
+
+
+def calculate_grid_energy_total_kwh(root: Path) -> float:
+    """Energía total comprada a la red durante todo el horizonte, en kWh.
+
+    Misma estructura que calculate_grid_energy_cost pero sin costo ni
+    descuento: sum(P_red[y,d,t] * delta_t), anualizando cada año con
+    scaling_factor_op_cost (extrapola el/los día(s) representativo(s) a los
+    365 días de ese año) y sumando los años del horizonte. Es una cantidad
+    física (energía), no monetaria, por eso no se aplica tasa de descuento.
+    """
+    pred_path   = find_json_in_folder(root, "P_red.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not pred_path or not params_path:
+        raise ValueError("No se encontraron P_red.json o parameters.json")
+    if is_effectively_empty_json(pred_path) or is_effectively_empty_json(params_path):
+        raise ValueError("P_red.json o parameters.json están vacíos")
+
+    pred_data   = load_json(pred_path)
+    params_data = load_json(params_path)
+
+    delta_t        = float(params_data.get("delta_t", 0.0))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+
+    total_kwh = 0.0
+    for _, pred_val in _iter_leaf_records(pred_data):
+        try:
+            total_kwh += float(pred_val) * delta_t
+        except Exception:
+            continue
+
+    return total_kwh * scaling_factor
 
 
 def calculate_peak_power_cost(root: Path) -> float:
@@ -1911,6 +1946,12 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         grid_energy_cost = 0.0
 
     try:
+        grid_energy_kwh = calculate_grid_energy_total_kwh(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular energía total de red: {ex}")
+        grid_energy_kwh = 0.0
+
+    try:
         gen_info     = calculate_gen_costs(root)
         gen_inv_cost = gen_info.get("total_inv_cost", 0.0)
         gen_op_cost  = gen_info.get("total_op_cost",  0.0)
@@ -1945,6 +1986,7 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     return {
         "energy_cost":          energy_cost,
         "grid_energy_cost":     grid_energy_cost,
+        "grid_energy_kwh":      grid_energy_kwh,
         "real_energy_cost":     real_energy_cost,
         "investment_cost":      investment_cost,
         "penalty_cost":         penalty_cost,
