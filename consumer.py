@@ -823,6 +823,8 @@ def main() -> None:
             rows = [
                 ["Costo energía carga",         f"{costs['energy_cost']:.2f}"],
                 ["Costo energía red P_red",      f"{costs.get('grid_energy_cost', 0.0):.2f}"],
+                ["Energía total red (horizonte) [kWh]", f"{costs.get('grid_energy_kwh', 0.0):.2f}"],
+                ["Energía total red (horizonte) [MWh]", f"{costs.get('grid_energy_kwh', 0.0) / 1000.0:.2f}"],
                 ["Costo inversión estaciones",   f"{costs['investment_cost']:.2f}"],
                 ["Costo inversión generación",   f"{costs['gen_inv_cost']:.2f}"],
                 ["Costo operación generación",   f"{costs['gen_op_cost']:.2f}"],
@@ -1289,6 +1291,53 @@ def calculate_grid_energy_cost(root: Path) -> float:
     return total_cost * scaling_factor
 
 
+def calculate_grid_energy_total_kwh(root: Path) -> float:
+    """Energía total comprada a la red durante todo el horizonte, en kWh.
+
+    Misma estructura que calculate_grid_energy_cost pero sin costo ni
+    descuento: sum(P_red[y,d,t] * delta_t), anualizando cada año con
+    scaling_factor_op_cost (extrapola el/los día(s) representativo(s) a los
+    365 días de ese año) y sumando los años del horizonte. Es una cantidad
+    física (energía), no monetaria, por eso no se aplica tasa de descuento.
+    """
+    pred_path   = find_json_in_folder(root, "P_red.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not pred_path or not params_path:
+        raise ValueError("No se encontraron P_red.json o parameters.json")
+    if is_effectively_empty_json(pred_path) or is_effectively_empty_json(params_path):
+        raise ValueError("P_red.json o parameters.json están vacíos")
+
+    pred_data   = load_json(pred_path)
+    params_data = load_json(params_path)
+
+    delta_t        = float(params_data.get("delta_t", 0.0))
+    scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+
+    total_kwh = 0.0
+    y_block = pred_data.get("y", pred_data)
+    if isinstance(y_block, dict):
+        for y_val in y_block.values():
+            if not isinstance(y_val, dict):
+                continue
+            d_block = y_val.get("d", y_val)
+            if not isinstance(d_block, dict):
+                continue
+            for d_val in d_block.values():
+                if not isinstance(d_val, dict):
+                    continue
+                t_block = d_val.get("t", d_val)
+                if not isinstance(t_block, dict):
+                    continue
+                for pred_val in t_block.values():
+                    try:
+                        total_kwh += float(pred_val) * delta_t
+                    except (TypeError, ValueError):
+                        continue
+
+    return total_kwh * scaling_factor
+
+
 def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     """
     Lee G_g.json y parameters.json para calcular por generador:
@@ -1543,6 +1592,12 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         grid_energy_cost = 0.0
 
     try:
+        grid_energy_kwh = calculate_grid_energy_total_kwh(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular energía total de red: {ex}")
+        grid_energy_kwh = 0.0
+
+    try:
         gen_info = calculate_gen_costs(root)
         gen_inv_cost = gen_info.get("total_inv_cost", 0.0)
         gen_op_cost  = gen_info.get("total_op_cost",  0.0)
@@ -1572,6 +1627,7 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     return {
         "energy_cost":          energy_cost,
         "grid_energy_cost":     grid_energy_cost,
+        "grid_energy_kwh":      grid_energy_kwh,
         "investment_cost":      investment_cost,
         "power_cost":           power_cost,
         "penalty_cost":         penalty_cost,
