@@ -1,5 +1,7 @@
 
+import json
 import math
+import os
 import pandas as pd
 from pandas import DataFrame, concat
 import numpy as np
@@ -435,24 +437,103 @@ class Timeseries(object):
         self.mapper['elhd_with_battery'] = elhd_with_batt
         return 0
 
-    def get_trips(self, mine_system) -> pd.DataFrame:
+    def _load_wp2_consumption_by_node(self, json_path, required_nodes) -> dict:
+        """
+        Carga el JSON de consumos precalculados por nodo (modelo WP2).
+
+        Valida existencia del archivo, estructura de primer nivel y cobertura
+        de todos los nodos requeridos por el sistema, acumulando cualquier
+        problema (nodo faltante o entrada invalida) para reportarlo en un
+        unico error antes de formular la optimizacion.
+        """
+        if not json_path:
+            raise ValueError(
+                "WP2 requiere una ruta de JSON de consumos (--wp2_consumption_json)."
+            )
+        if not os.path.isfile(json_path):
+            raise FileNotFoundError(
+                f"No se encontro el archivo de consumos WP2: {json_path}"
+            )
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"El JSON de consumos WP2 debe ser un objeto de primer nivel: {json_path}"
+            )
+
+        consumption_by_node = {}
+        missing_nodes = []
+        invalid_entries = []
+
+        for node in required_nodes:
+            entry = raw.get(node)
+            if not isinstance(entry, dict):
+                missing_nodes.append(node)
+                continue
+
+            time_per_cycle_s = entry.get('time_per_cycle_s')
+            energy_per_cycle_kwh = entry.get('energy_per_cycle_kwh')
+
+            time_ok = (isinstance(time_per_cycle_s, (int, float))
+                       and not isinstance(time_per_cycle_s, bool)
+                       and math.isfinite(time_per_cycle_s) and time_per_cycle_s > 0)
+            energy_ok = (isinstance(energy_per_cycle_kwh, (int, float))
+                         and not isinstance(energy_per_cycle_kwh, bool)
+                         and math.isfinite(energy_per_cycle_kwh) and energy_per_cycle_kwh > 0)
+
+            if not time_ok or not energy_ok:
+                invalid_entries.append(node)
+                continue
+
+            consumption_by_node[node] = dict(
+                travel_hours=time_per_cycle_s / 3600.0,
+                energy_kwh=energy_per_cycle_kwh,
+            )
+
+        if missing_nodes or invalid_entries:
+            problems = []
+            if missing_nodes:
+                problems.append(
+                    f"nodos faltantes en {json_path}: {sorted(missing_nodes)}"
+                )
+            if invalid_entries:
+                problems.append(
+                    "entradas invalidas (time_per_cycle_s/energy_per_cycle_kwh) en "
+                    f"{json_path}: {sorted(invalid_entries)}"
+                )
+            raise ValueError("; ".join(problems))
+
+        return consumption_by_node
+
+    def get_trips(self, mine_system, consumption_model='wp1', wp2_consumption_json=None) -> pd.DataFrame:
         elhds = mine_system.get_system_lhds()
         nodes = mine_system.get_system_nodes()
         index = pd.MultiIndex.from_tuples(list(itertools.product(elhds, nodes)),
                                           names=['elhd', 'node'])
         trips = pd.DataFrame(index=index,
-                             columns=['travel_duration', 'n_trips', 'energy_consumption'])
+                             columns=['travel_duration', 'n_trips', 'energy_consumption', 'diesel_consumption'])
+
+        consumption_by_node = None
+        if consumption_model == 'wp2':
+            consumption_by_node = self._load_wp2_consumption_by_node(wp2_consumption_json, nodes)
 
         for elhd, node in index:
-            distance_outbound = mine_system.layout.get_distance_to_d_node_outbound(node)
-            distance_return = mine_system.layout.get_distance_to_d_node_return(node)
-            tilt = mine_system.layout.get_tilt(node)
+            if consumption_model == 'wp2':
+                travel_hours = consumption_by_node[node]['travel_hours']
+                energy_per_trip = consumption_by_node[node]['energy_kwh']
+            else:
+                distance_outbound = mine_system.layout.get_distance_to_d_node_outbound(node)
+                distance_return = mine_system.layout.get_distance_to_d_node_return(node)
+                tilt = mine_system.layout.get_tilt(node)
 
-            travel_dur_hours, energy_per_trip = mine_system.elhd.get_total_trips_info(
-                distance_outbound, distance_return, tilt, elhd, self.delta_t
-            )
-            if travel_dur_hours <= self.delta_t:
-                n_trips = int(np.rint(self.delta_t / travel_dur_hours))
+                travel_hours, energy_per_trip = mine_system.elhd.get_total_trips_info(
+                    distance_outbound, distance_return, tilt, elhd, self.delta_t
+                )
+
+            if travel_hours <= self.delta_t:
+                n_trips = int(np.rint(self.delta_t / travel_hours))
             else:
                 n_trips = 1
 
@@ -460,17 +541,24 @@ class Timeseries(object):
             trips.loc[(elhd, node), 'travel_duration'] = 1
             trips.loc[(elhd, node), 'energy_consumption'] = energy_per_trip
 
-            # ðŸ"¥ NUEVO: transformar kWh a litros de diÃ©sel si corresponde
+            # Transformar kWh a litros de diesel si corresponde
             tech_type = mine_system.elhd.get_technology_type(elhd).lower()
             if tech_type == 'diesel':
-                bsfc_g_per_kwh = 230          # Brake Specific Fuel Consumption [g/kWh]
-                diesel_density_g_per_l = 832  # Densidad del diÃ©sel [g/L]
+                diesel_density_g_per_l = 832  # Densidad del diesel [g/L]
 
-                # Calcular gramos de diÃ©sel
-                grams_diesel = energy_per_trip * bsfc_g_per_kwh  # gramos
+                if consumption_model == 'wp2':
+                    bsfc_g_per_kwh = mine_system.elhd.get_fuel_consumption(elhd)
+                    valid_bsfc = (isinstance(bsfc_g_per_kwh, (int, float))
+                                  and not isinstance(bsfc_g_per_kwh, bool)
+                                  and math.isfinite(bsfc_g_per_kwh) and bsfc_g_per_kwh > 0)
+                    if not valid_bsfc:
+                        bsfc_g_per_kwh = 230  # Fallback BSFC [g/kWh]
+                else:
+                    bsfc_g_per_kwh = 230  # Brake Specific Fuel Consumption [g/kWh]
 
-                # Convertir gramos a litros
-                fuel_liters = grams_diesel / diesel_density_g_per_l  # litros
+                # Calcular gramos de diesel y convertir a litros
+                grams_diesel = energy_per_trip * bsfc_g_per_kwh
+                fuel_liters = grams_diesel / diesel_density_g_per_l
 
                 trips.loc[(elhd, node), 'diesel_consumption'] = fuel_liters
             else:
