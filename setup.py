@@ -5,12 +5,43 @@ from src.optimization import OptimizationModel
 import argparse, pprint
 import pandas as pd
 from os.path import join
+import os
 import xlrd
 xlrd.xlsx.ensure_elementtree_imported(False, None)
 xlrd.xlsx.Element_has_iter = True
 
 
 
+
+def resolve_wp2_json_path(args, mine_system):
+    """ Resuelve la ruta al JSON de consumos WP2.
+
+    Si args.wp2_consumption_json esta seteado, se usa tal cual (salvo
+    resolucion de ruta relativa). Si no, se infiere segun la tecnologia
+    de la flota de LHD (diesel vs electrica).
+
+    :param args: argumentos parseados (namespace de argparse)
+    :param mine_system: instancia de mine.Mine ya construida
+    :return: ruta (str) al JSON de consumos WP2
+    """
+    json_path = args.wp2_consumption_json
+    if not json_path:
+        techs = {
+            mine_system.elhd.get_technology_type(elhd).lower()
+            for elhd in mine_system.get_system_lhds()
+        }
+        if techs == {'diesel'}:
+            json_path = 'diesel_routes_within_time.json'
+        elif 'diesel' not in techs:
+            json_path = 'electric_routes_within_time.json'
+        else:
+            raise ValueError(
+                "La flota mezcla equipos diesel y no-diesel; debe especificar "
+                "--wp2_consumption_json de forma explicita."
+            )
+    if not os.path.isabs(json_path):
+        json_path = os.path.join(args.data_folder, json_path)
+    return json_path
 
 
 def build_mine(args):
@@ -28,7 +59,13 @@ def build_mine(args):
     time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60) #12 dias significativos
     #time_series = timeseries.Timeseries(series, [1], 8/60)
     mine_system = mine.Mine(model)
-    time_series.mapper['Trips'] = time_series.get_trips(mine_system)
+    if args.consumption_model == 'wp2':
+        wp2_json_path = resolve_wp2_json_path(args, mine_system)
+        time_series.mapper['Trips'] = time_series.get_trips(
+            mine_system, consumption_model='wp2', wp2_consumption_json=wp2_json_path
+        )
+    else:
+        time_series.mapper['Trips'] = time_series.get_trips(mine_system)
     return series, mine_system, time_series
 
 
@@ -62,6 +99,11 @@ def main():
         action='store_true',
         help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
     )
+    parser.add_argument('--consumption_model', choices=['wp1', 'wp2'], default='wp1',
+                         help='wp1: calculo fisico interno. wp2: consumos y tiempos precalculados desde un JSON por nodo.')
+    parser.add_argument('--wp2_consumption_json', default=None,
+                         help='Ruta al JSON de consumos WP2 (relativa a data_folder salvo que sea absoluta). '
+                              'Si se omite y --consumption_model wp2, se infiere segun la tecnologia de la flota.')
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)

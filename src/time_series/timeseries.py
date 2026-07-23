@@ -1,4 +1,6 @@
 import math
+import json
+import os
 import pandas as pd
 from pandas import DataFrame, concat
 import numpy as np
@@ -383,7 +385,69 @@ class Timeseries(object):
         self.mapper['elhd_with_battery'] = elhd_with_batt
         return 0
 
-    def get_trips(self, mine_system) -> pd.DataFrame:
+    def _load_wp2_consumption_by_node(self, json_path, required_nodes):
+        """ Carga y valida el JSON de consumos WP2 precalculados por nodo.
+
+        :param json_path: ruta al archivo JSON.
+        :param required_nodes: iterable de nombres de nodo que deben estar
+            presentes (y ser validos) en el JSON.
+        :return: dict {node: {'travel_hours': float, 'energy_kwh': float}}
+        """
+        if not json_path:
+            raise ValueError("Debe especificar la ruta al JSON de consumos WP2.")
+        if not os.path.isfile(json_path):
+            raise FileNotFoundError(f"No se encontro el archivo JSON de consumos WP2: {json_path}")
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"El JSON de consumos WP2 ({json_path}) debe ser un objeto (dict) en su nivel superior."
+            )
+
+        missing_nodes = []
+        invalid_entries = []
+        consumption_by_node = {}
+
+        def _is_valid_positive_number(value):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False
+            if not math.isfinite(value):
+                return False
+            return value > 0
+
+        for node in required_nodes:
+            entry = raw.get(node)
+            if not isinstance(entry, dict):
+                missing_nodes.append(node)
+                continue
+
+            time_per_cycle_s = entry.get('time_per_cycle_s')
+            energy_per_cycle_kwh = entry.get('energy_per_cycle_kwh')
+
+            if not _is_valid_positive_number(time_per_cycle_s) or not _is_valid_positive_number(energy_per_cycle_kwh):
+                invalid_entries.append(node)
+                continue
+
+            consumption_by_node[node] = {
+                'travel_hours': time_per_cycle_s / 3600.0,
+                'energy_kwh': energy_per_cycle_kwh,
+            }
+
+        if missing_nodes or invalid_entries:
+            details = []
+            if missing_nodes:
+                details.append(f"nodos faltantes en {json_path}: {missing_nodes}")
+            if invalid_entries:
+                details.append(
+                    f"nodos con 'time_per_cycle_s'/'energy_per_cycle_kwh' invalidos en {json_path}: {invalid_entries}"
+                )
+            raise ValueError("; ".join(details))
+
+        return consumption_by_node
+
+    def get_trips(self, mine_system, consumption_model='wp1', wp2_consumption_json=None) -> pd.DataFrame:
         elhds = mine_system.get_system_lhds()
         nodes = mine_system.get_system_nodes()
         index = pd.MultiIndex.from_tuples(list(itertools.product(elhds, nodes)),
@@ -391,14 +455,22 @@ class Timeseries(object):
         trips = pd.DataFrame(index=index,
                              columns=['travel_duration', 'n_trips', 'energy_consumption'])
 
-        for elhd, node in index:
-            distance_outbound = mine_system.layout.get_distance_to_d_node_outbound(node)
-            distance_return = mine_system.layout.get_distance_to_d_node_return(node)
-            tilt = mine_system.layout.get_tilt(node)
+        consumption_by_node = None
+        if consumption_model == 'wp2':
+            consumption_by_node = self._load_wp2_consumption_by_node(wp2_consumption_json, nodes)
 
-            travel_dur_hours, energy_per_trip = mine_system.elhd.get_total_trips_info(
-                distance_outbound, distance_return, tilt, elhd, self.delta_t
-            )
+        for elhd, node in index:
+            if consumption_model == 'wp2':
+                travel_dur_hours = consumption_by_node[node]['travel_hours']
+                energy_per_trip = consumption_by_node[node]['energy_kwh']
+            else:
+                distance_outbound = mine_system.layout.get_distance_to_d_node_outbound(node)
+                distance_return = mine_system.layout.get_distance_to_d_node_return(node)
+                tilt = mine_system.layout.get_tilt(node)
+
+                travel_dur_hours, energy_per_trip = mine_system.elhd.get_total_trips_info(
+                    distance_outbound, distance_return, tilt, elhd, self.delta_t
+                )
             if travel_dur_hours <= self.delta_t:
                 n_trips = int(np.rint(self.delta_t / travel_dur_hours))
             else:
