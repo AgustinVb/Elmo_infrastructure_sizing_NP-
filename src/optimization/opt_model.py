@@ -57,6 +57,8 @@ class OptModel(object):
             "X": ["k"],
             "StartCharge": ["k", "i", "d", "t"],
             "EndCharge": ["k", "i", "d", "t"],
+            "StartAssign": ["i", "d", "t"],
+            "EndAssign": ["i", "d", "t"],
             "M": ["i", "j", "d", "t"],
             "F": ["j", "d"],
             "F_seg": ["j", "d", "seg"],

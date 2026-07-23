@@ -334,6 +334,17 @@ class OptParameters(OptRules):
         model.elhd_set,
         initialize={b: float(self.mine_system.elhd.get_e_max(b)) for b in model.elhd_set},
         mutable=False)
+
+        # Eficiencia de carga/descarga de la baterÃ­a on-board (hoja LHD)
+        model.eta_charge_i = pyo.Param(
+        model.elhd_set,
+        initialize={i: float(self.mine_system.elhd.get_charge_efficiency(i)) for i in model.elhd_set},
+        mutable=False)
+
+        model.eta_discharge_i = pyo.Param(
+        model.elhd_set,
+        initialize={i: float(self.mine_system.elhd.get_discharge_efficiency(i)) for i in model.elhd_set},
+        mutable=False)
         # Capacidad de pala
         model.g_i    = pyo.Param(model.lhd_set,                   initialize={i: self.mine_system.elhd.get_load_capacity(i)       for i in model.lhd_set}, mutable=False)
         model.filling_factor = pyo.Param(model.lhd_set,        initialize={i: self.mine_system.elhd.get_filling_factor(i)      for i in model.lhd_set}, mutable=False)
@@ -489,10 +500,13 @@ class BoundRules(OptRules):
         #ElecciÃ³n estaciÃ³n de carga
         model.X = pyo.Var(model.stations_set, domain=pyo.Binary)
         #Inicio de una carga on-board
-        model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)    
+        model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
         # Indica si termina una carga en t
         model.EndCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
-        
+        # Inicio/fin de una asignacion de LHD a un nodo de extraccion
+        model.StartAssign = pyo.Var(model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
+        model.EndAssign   = pyo.Var(model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
+
         ## NUEVAS VARIABLES
 
         # Variables de generacion renovable (solo si existen generadores)
@@ -556,11 +570,17 @@ class ConstraintRules(OptRules):
             model.Y[i, j, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(d, t, i)]
         )
+        # Energia efectivamente almacenada/retirada de la baterÃ­a, afectada por
+        # las eficiencias de carga y descarga de la hoja LHD (charge_efficiency,
+        # discharge_efficiency): la carga entra atenuada por eta_charge y el
+        # consumo de tracciÃ³n se retira de la baterÃ­a amplificado por 1/eta_discharge.
+        charge_eff = charge * model.eta_charge_i[i]
+        discharge_eff = discharge / model.eta_discharge_i[i]
 
         if t == t0:
-            return model.B[i, d, t] == model.B[i, d, 0] + charge - discharge
+            return model.B[i, d, t] == model.B[i, d, 0] + charge_eff - discharge_eff
         else:
-            return model.B[i, d, t] == model.B[i, d, t - 1] + charge - discharge
+            return model.B[i, d, t] == model.B[i, d, t - 1] + charge_eff - discharge_eff
         
      # (C8a) LÃ­mite inferior de SOC baterÃ­a
     def battery_lower(self, model, i, d, t):
@@ -674,6 +694,35 @@ class ConstraintRules(OptRules):
         if t == t_fin:
             return model.Z_charge[k,i,d,t] == 0
         return model.Z_charge[k, i, d, t] + model.Z_charge[k, i, d, t + 1] >= 2 * model.StartCharge[k, i, d, t]
+
+    # Inicio y termino de una asignacion de LHD i a un nodo de extraccion
+    def assign_state(self, model, i, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        assign_sum = sum(model.Y[i, j, d, t] for j in nodes)
+        t0 = self.time_series.get_time_intervals()[0]
+        if t > t0:
+            nodes_prev = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t-1, i), [])
+            assign_sum_prev = sum(model.Y[i, j, d, t-1] for j in nodes_prev)
+            return assign_sum - assign_sum_prev == model.StartAssign[i,d,t] - model.EndAssign[i,d,t]
+        else:
+            return assign_sum == model.StartAssign[i,d,t] - model.EndAssign[i,d,t]
+
+    # Analogo a min_charge_duration: si el LHD i arranca una asignacion a
+    # extraccion (a cualquier nodo j) en t, debe mantenerse asignado (a algun
+    # nodo, no necesariamente el mismo) en t+1.
+    def min_assign_duration(self, model, i, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        t_fin = self.time_series.get_time_intervals()[-1]
+        assign_sum_t = sum(model.Y[i, j, d, t] for j in nodes)
+        if t == t_fin:
+            return assign_sum_t == 0
+        nodes_next = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t+1, i), [])
+        assign_sum_next = sum(model.Y[i, j, d, t+1] for j in nodes_next)
+        return assign_sum_t + assign_sum_next >= 2 * model.StartAssign[i,d,t]
 
     #MÃ¡xima potencia de carga on-board solo si esta en estacion
     def max_power(self, model, k, i, d, t):
@@ -861,6 +910,8 @@ class ConstraintRules(OptRules):
         model.charger_limit                      = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration                = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
+        model.assign_state                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.assign_state)
+        model.min_assign_duration                = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
@@ -888,14 +939,14 @@ class ConstraintRules(OptRules):
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
         #Detenciones DCH
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
-        model.charge_only_meal_or_between_shifts = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts)
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        #model.charge_only_meal_or_between_shifts = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts)
         #
         #Detenciones DET
-        #model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
 class ObjectiveRules(OptRules):
 
