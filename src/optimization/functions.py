@@ -415,6 +415,17 @@ class OptParameters(OptRules):
         model.slhd_set,
         initialize={b: float(self.mine_system.elhd.get_e_max(b)) for b in model.slhd_set},
         mutable=False)
+
+        # Eficiencia de carga/descarga de la bateria (hoja LHD)
+        model.eta_charge_i = pyo.Param(
+        model.slhd_set,
+        initialize={i: float(self.mine_system.elhd.get_charge_efficiency(i)) for i in model.slhd_set},
+        mutable=False)
+
+        model.eta_discharge_i = pyo.Param(
+        model.slhd_set,
+        initialize={i: float(self.mine_system.elhd.get_discharge_efficiency(i)) for i in model.slhd_set},
+        mutable=False)
         # Capacidad de pala
         model.g_i    = pyo.Param(model.lhd_set,                   initialize={i: self.mine_system.elhd.get_load_capacity(i)       for i in model.lhd_set}, mutable=False)
         model.filling_factor = pyo.Param(model.lhd_set,        initialize={i: self.mine_system.elhd.get_filling_factor(i)      for i in model.lhd_set}, mutable=False)
@@ -441,7 +452,9 @@ class OptParameters(OptRules):
         # ((model.bmax_b - model.bmax_b*model.bmin_b)/model.p_charger)/model.delta_t
         # Se usa solo el primer �ndice de slhd_set.
         first_slhd = next(iter(model.slhd_set), None)
-        model.t_charge = pyo.Param(initialize=int(math.floor(((((value(model.bmax_b[first_slhd]) - value(model.bmax_b[first_slhd]) * value(model.bmin_b[first_slhd])) / value(model.p_charger)) / value(model.delta_t)) + 0.5))), mutable=False)
+        # eta_charge reduce la potencia efectiva que llega a la bateria, por lo
+        # que se necesitan mas intervalos para completar la carga.
+        model.t_charge = pyo.Param(initialize=int(math.floor(((((value(model.bmax_b[first_slhd]) - value(model.bmax_b[first_slhd]) * value(model.bmin_b[first_slhd])) / (value(model.p_charger) * value(model.eta_charge_i[first_slhd]))) / value(model.delta_t)) + 0.5))), mutable=False)
 
         # Parámetros de generación renovable (solo si existen generadores)
         if len(list(model.gen_set)) > 0:
@@ -791,8 +804,11 @@ class ConstraintRules(OptRules):
         t0 = self.time_series.get_time_intervals()[0]
         discharge = sum(model.Y[i, j, y, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(y, d, t, i)])
+        # El consumo de traccion se retira de la bateria amplificado por
+        # 1/eta_discharge (perdidas internas de descarga, hoja LHD).
+        discharge_eff = discharge / model.eta_discharge_i[i]
         if t >= t0:
-            return model.B[i, y, d, t] == model.B_s[i, y, d, t-1] - discharge
+            return model.B[i, y, d, t] == model.B_s[i, y, d, t-1] - discharge_eff
 
         else:
             return pyo.Constraint.Skip
