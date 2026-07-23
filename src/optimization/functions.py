@@ -336,6 +336,17 @@ class OptParameters(OptRules):
         model.elhd_set,
         initialize={b: float(self.mine_system.elhd.get_e_max(b)) for b in model.elhd_set},
         mutable=False)
+
+        # Eficiencia de carga/descarga de la baterÃ­a on-board (hoja LHD)
+        model.eta_charge_i = pyo.Param(
+        model.elhd_set,
+        initialize={i: float(self.mine_system.elhd.get_charge_efficiency(i)) for i in model.elhd_set},
+        mutable=False)
+
+        model.eta_discharge_i = pyo.Param(
+        model.elhd_set,
+        initialize={i: float(self.mine_system.elhd.get_discharge_efficiency(i)) for i in model.elhd_set},
+        mutable=False)
         # Capacidad de pala
         model.g_i    = pyo.Param(model.lhd_set,                   initialize={i: self.mine_system.elhd.get_load_capacity(i)       for i in model.lhd_set}, mutable=False)
         model.filling_factor = pyo.Param(model.lhd_set,        initialize={i: self.mine_system.elhd.get_filling_factor(i)      for i in model.lhd_set}, mutable=False)
@@ -575,10 +586,17 @@ class ConstraintRules(OptRules):
             model.Y[i,j,y,d,t] * model.pe_i[i,j] * model.d_i[i,j] * self.time_series.get_n_trips(j, i)
             for j in self.time_series.mapper['Nodes_assigned_at_interval'][(y, d, t, i)]
         )
+        # Energia efectivamente almacenada/retirada de la baterÃ­a, afectada por
+        # las eficiencias de carga y descarga de la hoja LHD (charge_efficiency,
+        # discharge_efficiency): la carga entra atenuada por eta_charge y el
+        # consumo de tracciÃ³n se retira de la baterÃ­a amplificado por 1/eta_discharge.
+        charge_eff = charge * model.eta_charge_i[i]
+        discharge_eff = discharge / model.eta_discharge_i[i]
+
         if t == t0:
-            return model.B[i,y,d,t] == model.B[i,y,d,0] + charge - discharge
+            return model.B[i,y,d,t] == model.B[i,y,d,0] + charge_eff - discharge_eff
         else:
-            return model.B[i,y,d,t] == model.B[i,y,d,t-1] + charge - discharge
+            return model.B[i,y,d,t] == model.B[i,y,d,t-1] + charge_eff - discharge_eff
 
     def battery_lower(self, model, i, y, d, t):
         cap = model.b_bar[y] if self.mine_system.battery_degradation is not None else model.bmax_b[i]
