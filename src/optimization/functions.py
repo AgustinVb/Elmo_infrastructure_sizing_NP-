@@ -633,8 +633,8 @@ class ConstraintRules(OptRules):
                            * self.time_series.get_n_trips(j, i_rep)
                            * pyo_value(model.filling_factor[i_rep]))
         target = pyo_value(model.m_j[j, y])
-        lb = math.floor(target / prod_per_assign)
-        ub = math.ceil(target / prod_per_assign)
+        lb = math.floor(target / prod_per_assign) - 1
+        ub = math.ceil(target / prod_per_assign) + 1
         visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
         return pyo.inequality(lb, visits, ub)
 
