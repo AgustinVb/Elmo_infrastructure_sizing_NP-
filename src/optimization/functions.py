@@ -72,20 +72,20 @@ class OptSets(OptRules):
         pauses = [
             # --- Shift 2 (in progress): 08:00 - 16:00 ---
             # Shift change already started at 08:00, horizon captures from 09:00
-            ("09:00", "09:40", "shift_change"),
-            ("10:28", "12:58", "stop"),
+            ("09:00", "09:40", "meal"),
+            ("11:30", "14:00", "stop"),
 
             # --- Shift 3: 16:00 - 00:00 ---
-            ("16:30", "17:40", "shift_change"),
-            ("19:28", "21:58", "stop"),
+            ("16:30", "17:40", "meal"),
+            ("19:30", "22:00", "stop"),
 
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:30", "01:40", "shift_change"),
-            ("03:28", "05:58", "stop"),
+            ("00:30", "01:40", "meal"),
+            ("03:30", "06:00", "stop"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
             # Interpreted as next day since 08:30 < 09:00
-            ("08:30", "09:00", "shift_change"),
+            ("08:30", "09:00", "meal"),
         ]
 
         return pauses
@@ -200,7 +200,14 @@ class OptSets(OptRules):
         model.storage_set = pyo.Set(initialize=self.mine_system.get_system_storage())
 
          # Subsets de tiempo para pausas
-        meal_intervals = self._get_time_intervals_for_pause_type("meal")
+        det_pauses = self._get_pause_definitions_det()
+        det_meal_intervals = self._get_time_intervals_for_pause_type("meal", pauses=det_pauses)
+        det_stop = self._get_time_intervals_for_pause_type("stop", pauses=det_pauses)
+
+        # Colaciones DCH (Chuqui): set puro, sin union con las colaciones DET.
+        # maint_stop_all, maint_no_charge y charge_only_meal_or_between_shifts
+        # se aplican solo al esquema DCH.
+        meal_intervals = sorted(set(self._get_time_intervals_for_pause_type("meal")))
         meal_g1_intervals, meal_g2_intervals = self._split_meal_blocks(meal_intervals)
 
         model.time_intervals_meal_set = pyo.Set(
@@ -212,8 +219,16 @@ class OptSets(OptRules):
         model.time_intervals_meal_g2_set = pyo.Set(
             initialize=meal_g2_intervals
         )
+        # Colaciones DET puras, expuestas por separado (sin union con DCH).
+        model.time_intervals_meal_det_set = pyo.Set(
+            initialize=sorted(det_meal_intervals)
+        )
+
+        # Mantenciones DCH (Chuqui): set puro, sin union con los "stop" DET.
+        # Las paradas del esquema DET se manejan aparte via det_stop_all
+        # (model.time_intervals_det_set).
         model.time_intervals_maintenance_set = pyo.Set(
-            initialize=self._get_time_intervals_for_pause_type("maintenance")
+            initialize=sorted(set(self._get_time_intervals_for_pause_type("maintenance")))
         )
         # Shift-change and fuel-delay sets for the legacy DCH scheme
         model.time_intervals_shift_change_set = pyo.Set(
@@ -224,15 +239,13 @@ class OptSets(OptRules):
         )
 
         # DET (nuevo) detentions: build sets using the DET pause definitions
-        det_shift = self._get_time_intervals_for_pause_type("shift_change", pauses=self._get_pause_definitions_det())
-        det_stop = self._get_time_intervals_for_pause_type("stop", pauses=self._get_pause_definitions_det())
         model.time_intervals_det_set = pyo.Set(
-            initialize=sorted(set(det_shift) | set(det_stop))
+            initialize=sorted(set(det_meal_intervals) | set(det_stop))
         )
 
         # Expose DET-specific subsets so they are serialized into parameters.json
         model.time_intervals_shift_change_det_set = pyo.Set(
-            initialize=sorted(det_shift)
+            initialize=sorted(det_meal_intervals)
         )
 
         model.time_intervals_forced_detention_set = pyo.Set(
@@ -596,6 +609,10 @@ class ConstraintRules(OptRules):
         tf = self.time_series.get_time_intervals()[-1]
         return model.B[i, d, 0] == model.B[i, d, tf]
 
+    # SOC inicial (= final del dia, por battery_boundary) fijado en 50% de la capacidad.
+    def battery_boundary_soc_50(self, model, i, d):
+        return model.B[i, d, 0] == 0.5 * model.bmax_b[i]
+
     def battery_soc_break_symmetry(self, model, i_low, i_high, d):
         """Rotura de simetría por estación: SOC inicial descendente con el índice.
         El LHD de mayor índice inicia con menor o igual SOC → carga primero.
@@ -873,6 +890,18 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z_charge[k, i, d, t] == 0
 
+    def charge_only_meal_or_between_shifts_det(self, model, k, i, d, t):
+        """Version DET de charge_only_meal_or_between_shifts.
+
+        Solo se permite cargar (Z_charge = 1) durante colación DET
+        (time_intervals_meal_det_set) o entre turnos. Fuera de esas
+        ventanas la carga queda prohibida, sin importar si el equipo
+        está detenido o no.
+        """
+        if t in model.time_intervals_meal_det_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip
+        return model.Z_charge[k, i, d, t] == 0
+
     def det_stop_all(self, model, i, d, t):
         """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
         if t not in model.time_intervals_det_set:
@@ -902,6 +931,7 @@ class ConstraintRules(OptRules):
         model.battery_lower =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
         model.battery_upper =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
+        #model.battery_boundary_soc_50            = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary_soc_50)
         model.battery_soc_break_symmetry        = pyo.Constraint(model.charge_precedence_pairs, model.days, rule=self.battery_soc_break_symmetry)
 
         #nuevas
@@ -947,6 +977,7 @@ class ConstraintRules(OptRules):
         #
         #Detenciones DET
         model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
 class ObjectiveRules(OptRules):
 
