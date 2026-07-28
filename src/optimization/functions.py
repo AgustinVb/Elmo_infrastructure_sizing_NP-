@@ -113,25 +113,32 @@ class OptSets(OptRules):
     def _get_pause_definitions_det(self):
         """Detenciones DET (nuevo): pauses as (start_time, end_time, pause_type) in HH:MM.
 
-        This contains the new, user-provided DET schedule.
+        Esquema correcto (meal/maintenance/road_clearing), portado desde
+        carga_on_board. Reemplaza el esquema viejo (shift_change/"stops")
+        que dejaba time_intervals_det_set practicamente vacio por un
+        pause_type mal escrito ("stops" en vez de "maintenance").
         """
         pauses = [
-            # --- Shift 2 (in progress): 08:00 - 16:00 ---
-            # Shift change already started at 08:00, horizon captures from 09:00
-            ("09:00", "09:40", "shift_change"),
-            ("10:28", "12:58", "maintenance"),
-
-            # --- Shift 3: 16:00 - 00:00 ---
-            ("16:30", "17:40", "shift_change"),
-            ("19:28", "21:58", "maintenance"),
-
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:30", "01:40", "shift_change"),
-            ("03:28", "05:58", "maintenance"),
+            ("00:00", "00:40", "meal"),
+            ("02:30", "03:30", "maintenance"),
+            ("03:30", "04:40", "road_clearing"),
+            ("04:40", "05:00", "maintenance"),
+            ("07:30", "08:00", "meal"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
-            # Interpreted as next day since 08:30 < 09:00
-            ("08:30", "09:00", "shift_change"),
+            ("08:00", "08:40", "meal"),
+            ("10:30", "11:30", "maintenance"),
+            ("11:30", "12:40", "road_clearing"),
+            ("12:40", "13:00", "maintenance"),
+            ("15:30", "16:00", "meal"),
+
+            # -- Shift 3 (next day): 16:00 - 00:00 ---
+            ("16:00", "16:40", "meal"),
+            ("18:30", "19:30", "maintenance"),
+            ("19:30", "20:40", "road_clearing"),
+            ("20:40", "21:00", "maintenance"),
+            ("23:30", "00:00", "meal"),
         ]
 
         return pauses
@@ -319,19 +326,33 @@ class OptSets(OptRules):
         )
 
         # DET (nuevo) detentions: build sets using the DET pause definitions
-        det_shift = self._get_time_intervals_for_pause_type("shift_change", pauses=self._get_pause_definitions_det())
-        det_stops = self._get_time_intervals_for_pause_type("stops", pauses=self._get_pause_definitions_det())
+        det_pauses = self._get_pause_definitions_det()
+        det_meal_intervals = self._get_time_intervals_for_pause_type("meal", pauses=det_pauses)
+        det_maintenance_intervals = self._get_time_intervals_for_pause_type("maintenance", pauses=det_pauses)
+        det_road_clearing_intervals = self._get_time_intervals_for_pause_type("road_clearing", pauses=det_pauses)
+        det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
+
+        model.time_intervals_meal_det_set = pyo.Set(
+            initialize=sorted(det_meal_intervals)
+        )
+        # Road clearing DET: al igual que colacion, el LHD puede estar
+        # detenido o haciendo swap (a diferencia de maintenance, donde debe
+        # permanecer detenido).
+        model.time_intervals_road_clearing_det_set = pyo.Set(
+            initialize=sorted(det_road_clearing_intervals)
+        )
+
         model.time_intervals_det_set = pyo.Set(
-            initialize=sorted(set(det_shift) | set(det_stops))
+            initialize=sorted(set(det_meal_intervals) | set(det_stop))
         )
 
         # Expose DET-specific subsets so they are serialized into parameters.json
         model.time_intervals_shift_change_det_set = pyo.Set(
-            initialize=sorted(det_shift)
+            initialize=sorted(det_meal_intervals)
         )
 
-        model.time_intervals_stops_set = pyo.Set(
-            initialize=sorted(det_stops)
+        model.time_intervals_forced_detention_set = pyo.Set(
+            initialize=sorted(det_stop)
         )
 
         # DCH detentions (legacy) kept under a separate set name
@@ -1063,16 +1084,33 @@ class ConstraintRules(OptRules):
         return model.Z[i, d, t] == 1
     
     def det_stop_all(self, model, i, d, t):
-        """En intervalos DET (shift_change + fuel_delay) todos los LHD deben estar estacionados (Z = 1)."""
+        """En intervalos DET (meal + maintenance + road_clearing) todos los LHD deben estar estacionados (Z = 1) o haciendo swap (Z_swap = 1)."""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         if t not in model.time_intervals_det_set:
-            return sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 0
-            #return pyo.Constraint.Skip
+            return pyo.Constraint.Skip
         return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
-    
+
     def swap_only_meal_or_between_shifts(self, model, k, i, d, t):
         """Solo se permite hacer swap (Z_swap = 1) durante colación o entre turnos."""
         if t in model.time_intervals_meal_set or t in model.time_intervals_between_shifts_set:
+            return pyo.Constraint.Skip
+        return model.Z_swap[k, i, d, t] == 0
+
+    def swap_only_meal_or_between_shifts_det(self, model, k, i, d, t):
+        """Version DET de swap_only_meal_or_between_shifts.
+
+        Se permite hacer swap (Z_swap = 1) durante colación DET
+        (time_intervals_meal_det_set), road_clearing DET
+        (time_intervals_road_clearing_det_set) o entre turnos. Durante
+        maintenance el LHD debe permanecer detenido sin swap, por lo que
+        esas ventanas no se incluyen aquí. Fuera de esas ventanas el swap
+        queda prohibido, sin importar si el equipo está detenido o no.
+        """
+        if (
+            t in model.time_intervals_meal_det_set
+            or t in model.time_intervals_road_clearing_det_set
+            or t in model.time_intervals_between_shifts_set
+        ):
             return pyo.Constraint.Skip
         return model.Z_swap[k, i, d, t] == 0
 
@@ -1340,19 +1378,22 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales DCH
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.maint_stop_all,
+        #)
         #Pausas DET
-        #model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        model.swap_only_meal_or_between_shifts = pyo.Constraint(
-            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        #model.swap_only_meal_or_between_shifts = pyo.Constraint(
+        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        #)
+        model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
+            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
         )
 
         # 7) Balance de potencia y generación / BESS
