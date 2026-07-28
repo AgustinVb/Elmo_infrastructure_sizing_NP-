@@ -579,6 +579,10 @@ class BoundRules(OptRules):
         #model.Z_pen = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
         #Viaje completo de LHD i al nodo j en (d,t)
         model.Y = pyo.Var(model.Y_INDEX, bounds=self.Y, domain=pyo.Binary)
+        # Inicio y termino de una asignacion de LHD a un nodo de extraccion
+        # (duracion minima de asignacion, analogo a Start/EndCharge de OB)
+        model.StartAssign = pyo.Var(model.slhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
+        model.EndAssign   = pyo.Var(model.slhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
         # Variable binaria que indica si el LHD esta inactivo o no
         model.Z         = pyo.Var(model.lhd_set, model.days, model.time_intervals_set,bounds=self.Z, domain=pyo.Binary)
         # Variable binaria que indica si el LHD est� cargando
@@ -654,6 +658,35 @@ class ConstraintRules(OptRules):
     def between_shifts_elhd_swap(self, model, i, d, t):
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
         return model.Z[i, d, t] + sum(model.Z_swap[k, i, d, t] for k in valid_k_list) == 1
+
+    # Inicio y termino de una asignacion de LHD i a un nodo de extraccion
+    def assign_state(self, model, i, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        assign_sum = sum(model.Y[i, j, d, t] for j in nodes)
+        t0 = self.time_series.get_time_intervals()[0]
+        if t > t0:
+            nodes_prev = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t-1, i), [])
+            assign_sum_prev = sum(model.Y[i, j, d, t-1] for j in nodes_prev)
+            return assign_sum - assign_sum_prev == model.StartAssign[i,d,t] - model.EndAssign[i,d,t]
+        else:
+            return assign_sum == model.StartAssign[i,d,t] - model.EndAssign[i,d,t]
+
+    # Analogo a min_charge_duration: si el LHD i arranca una asignacion a
+    # extraccion (a cualquier nodo j) en t, debe mantenerse asignado (a algun
+    # nodo, no necesariamente el mismo) en t+1.
+    def min_assign_duration(self, model, i, d, t):
+        nodes = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t, i), [])
+        if not nodes:
+            return pyo.Constraint.Skip
+        t_fin = self.time_series.get_time_intervals()[-1]
+        assign_sum_t = sum(model.Y[i, j, d, t] for j in nodes)
+        if t == t_fin:
+            return assign_sum_t == 0
+        nodes_next = self.time_series.mapper['Nodes_assigned_at_interval'].get((d, t+1, i), [])
+        assign_sum_next = sum(model.Y[i, j, d, t+1] for j in nodes_next)
+        return assign_sum_t + assign_sum_next >= 2 * model.StartAssign[i,d,t]
 
     # ==========================================================
     # 2) Energ�a y SOC de bater�a (swap)
@@ -1224,6 +1257,18 @@ class ConstraintRules(OptRules):
             model.days,
             model.time_intervals_between_shifts_set,
             rule=self.between_shifts_elhd_swap,
+        )
+        model.assign_state = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.assign_state,
+        )
+        model.min_assign_duration = pyo.Constraint(
+            model.slhd_set,
+            model.days,
+            model.time_intervals_set,
+            rule=self.min_assign_duration,
         )
         model.total_swaps = pyo.Constraint(
             model.stations_set,

@@ -381,6 +381,8 @@ class OptModel(object):
             "Z":        ["i", "d", "t"],
             "Z_swap":   ["k", "i", "d", "t"],
             "Y":        ["i", "j", "d", "t"],
+            "StartAssign": ["i", "d", "t"],
+            "EndAssign":   ["i", "d", "t"],
             "B":        ["i", "d", "t"],
             "B_s":      ["b", "d", "t"],
             "N_chargers": ["k"],
