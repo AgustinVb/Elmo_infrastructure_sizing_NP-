@@ -442,13 +442,14 @@ class Printer:
             "time_intevals_maintenance_set",
             "time_intervals_maintenance_set",
         )
-        payload["time_intervals_shift_change_det_set"] = _export_set_values(
-            "time_intervals_shift_change_det_set",
-            "time_intervals_shift_change_set",
+        payload["time_intervals_meal_det_set"] = _export_set_values(
+            "time_intervals_meal_det_set",
         )
-        payload["time_intervals_stops_set"] = _export_set_values(
-            "time_intervals_stops_set",
-            "time_intervals_fuel_delay_set",
+        payload["time_intervals_maintenance_det_set"] = _export_set_values(
+            "time_intervals_maintenance_det_set",
+        )
+        payload["time_intervals_road_clearing_det_set"] = _export_set_values(
+            "time_intervals_road_clearing_det_set",
         )
         payload["time_intervals_det_set"] = _export_set_values(
             "time_intervals_det_set",

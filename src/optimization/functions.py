@@ -335,6 +335,9 @@ class OptSets(OptRules):
         model.time_intervals_meal_det_set = pyo.Set(
             initialize=sorted(det_meal_intervals)
         )
+        model.time_intervals_maintenance_det_set = pyo.Set(
+            initialize=sorted(det_maintenance_intervals)
+        )
         # Road clearing DET: al igual que colacion, el LHD puede estar
         # detenido o haciendo swap (a diferencia de maintenance, donde debe
         # permanecer detenido).
@@ -344,15 +347,6 @@ class OptSets(OptRules):
 
         model.time_intervals_det_set = pyo.Set(
             initialize=sorted(set(det_meal_intervals) | set(det_stop))
-        )
-
-        # Expose DET-specific subsets so they are serialized into parameters.json
-        model.time_intervals_shift_change_det_set = pyo.Set(
-            initialize=sorted(det_meal_intervals)
-        )
-
-        model.time_intervals_forced_detention_set = pyo.Set(
-            initialize=sorted(det_stop)
         )
 
         # DCH detentions (legacy) kept under a separate set name
@@ -1389,9 +1383,6 @@ class ConstraintRules(OptRules):
         #)
         #Pausas DET
         model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        #model.swap_only_meal_or_between_shifts = pyo.Constraint(
-        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
-        #)
         model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
             model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
         )

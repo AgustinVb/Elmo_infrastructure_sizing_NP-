@@ -570,8 +570,9 @@ class Parameters:
         self.between_shifts: List[int] = []
         self.meals: List[int] = []
         self.maintenance: List[int] = []
-        self.shift_change: List[int] = []
-        self.stops: List[int] = []
+        self.meal_det: List[int] = []
+        self.maintenance_det: List[int] = []
+        self.road_clearing: List[int] = []
 
         self._load()
 
@@ -692,18 +693,9 @@ class Parameters:
             data.get("time_intevals_maintenance_set", data.get("time_intervals_maintenance_set", []))
         )
 
-        self.shift_change = _as_interval_list(
-            data.get("time_intervals_shift_change_det_set", data.get("time_intervals_shift_change_set", []))
-        )
-        self.stops = _as_interval_list(
-            data.get(
-                "time_intervals_stops_set",
-                data.get(
-                    "time_intervals_forced_detention_set",
-                    data.get("time_intervals_fuel_delay_set", []),
-                ),
-            )
-        )
+        self.meal_det = _as_interval_list(data.get("time_intervals_meal_det_set", []))
+        self.maintenance_det = _as_interval_list(data.get("time_intervals_maintenance_det_set", []))
+        self.road_clearing = _as_interval_list(data.get("time_intervals_road_clearing_det_set", []))
 
 # -------------------- Plotter --------------------
 class JSONPlotter:
@@ -721,6 +713,12 @@ class JSONPlotter:
             11: "November",
             12: "December",
         }
+    # Paleta de sombreado para intervalos inactivos en modo DET: (color, alpha)
+    DET_SHADE_COLORS = {
+        "meal": ("red", 0.15),
+        "road_clearing": ("gold", 0.20),
+        "maintenance": ("gray", 0.20),
+    }
     def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
         self.mode = str(mode).upper() if mode else "DCH"
@@ -772,8 +770,9 @@ class JSONPlotter:
     def _special_mode_intervals(self, day: int) -> Dict[str, List[int]]:
         if self.mode == "DET":
             return {
-                "shift_change": self.params.shift_change,
-                "stops": self.params.stops,
+                "meal": self.params.meal_det,
+                "road_clearing": self.params.road_clearing,
+                "maintenance": self.params.maintenance_det,
             }
 
         return {
@@ -1001,24 +1000,26 @@ class JSONPlotter:
                 groups.append((start, prev))
                 return groups
 
-            stops_color = 'darkgray'
-            stops_alpha = 0.7
-
             if self.mode == "DET":
-                shift_change_intervals = (
-                    self.params.shift_change
-                    if getattr(self.params, 'shift_change', None)
-                    else special_intervals.get("shift_change", [])
+                meal_intervals_det = (
+                    self.params.meal_det
+                    if getattr(self.params, 'meal_det', None)
+                    else special_intervals.get("meal", [])
                 )
-                stops_intervals = (
-                    self.params.stops
-                    if getattr(self.params, 'stops', None)
-                    else special_intervals.get("stops", [])
+                road_clearing_intervals = (
+                    self.params.road_clearing
+                    if getattr(self.params, 'road_clearing', None)
+                    else special_intervals.get("road_clearing", [])
                 )
-                # Combine shift-change and stops into a single 'Stops' shading
-                stops_union = sorted(set(int(v) for v in (list(shift_change_intervals) + list(stops_intervals))))
+                maintenance_intervals_det = (
+                    self.params.maintenance_det
+                    if getattr(self.params, 'maintenance_det', None)
+                    else special_intervals.get("maintenance", [])
+                )
                 shade_specs = [
-                    (stops_union, stops_color, stops_alpha),
+                    (meal_intervals_det, *self.DET_SHADE_COLORS["meal"]),
+                    (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
+                    (maintenance_intervals_det, *self.DET_SHADE_COLORS["maintenance"]),
                 ]
                 # Construir intervalos peak: 18:00-22:00 con start_hour=9
                 # Convertir horas a intervalos: intervalo = ceil((hora - start_hour) / dt)
@@ -1115,16 +1116,21 @@ class JSONPlotter:
             ax1.xaxis.set_minor_locator(MultipleLocator(1))
             ax1.tick_params(axis='x', labelsize=tick_fs)
 
-            patch_stops = mpatches.Patch(color=stops_color, alpha=stops_alpha, label='Stops')
-            patch_between = mpatches.Patch(color='gray', alpha=0.6, label='Between Shifts')
-            patch_meal = mpatches.Patch(color='gray', alpha=0.15, label='Meal')
-            patch_maint = mpatches.Patch(color='#FF9999', alpha=0.15, label='Maintenance')
             patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
             line1 = plt.Line2D([0], [0], color='blue', linewidth=1.5, label='Battery Charging Power')
 
             if self.mode == "DET":
-                handles = [line1, patch_peak_hatch, patch_stops]
+                meal_color, meal_alpha = self.DET_SHADE_COLORS["meal"]
+                road_color, road_alpha = self.DET_SHADE_COLORS["road_clearing"]
+                maint_color, maint_alpha = self.DET_SHADE_COLORS["maintenance"]
+                patch_meal_det = mpatches.Patch(color=meal_color, alpha=meal_alpha, label='Meal')
+                patch_road = mpatches.Patch(color=road_color, alpha=road_alpha, label='Road Clearing')
+                patch_maint_det = mpatches.Patch(color=maint_color, alpha=maint_alpha, label='Maintenance')
+                handles = [line1, patch_peak_hatch, patch_meal_det, patch_road, patch_maint_det]
             else:
+                patch_between = mpatches.Patch(color='gray', alpha=0.6, label='Between Shifts')
+                patch_meal = mpatches.Patch(color='gray', alpha=0.15, label='Meal')
+                patch_maint = mpatches.Patch(color='#FF9999', alpha=0.15, label='Maintenance')
                 handles = [line1, patch_between, patch_meal, patch_maint]
                 if price_line is not None:
                     handles.insert(1, plt.Line2D([0], [0], color='red', linewidth=1.8, label='Energy Price'))
@@ -1190,10 +1196,13 @@ class JSONPlotter:
 
             interval_groups = self._special_mode_intervals(d)
             if self.mode == "DET":
-                # Show both shift-change and stops under the same 'Stops' legend
+                meal_color, meal_alpha = self.DET_SHADE_COLORS["meal"]
+                road_color, road_alpha = self.DET_SHADE_COLORS["road_clearing"]
+                maint_color, maint_alpha = self.DET_SHADE_COLORS["maintenance"]
                 shade_specs = [
-                    (interval_groups.get("shift_change", []), "#ffe6e6", 0.8, "Stops"),
-                    (interval_groups.get("stops", []), "#ffe6e6", 0.8, "Stops"),
+                    (interval_groups.get("meal", []), meal_color, meal_alpha, "Meal"),
+                    (interval_groups.get("road_clearing", []), road_color, road_alpha, "Road Clearing"),
+                    (interval_groups.get("maintenance", []), maint_color, maint_alpha, "Maintenance"),
                 ]
             else:
                 shade_specs = [
@@ -1535,8 +1544,9 @@ class JSONPlotter:
 
                 if self.mode == "DET":
                     for interval_list, color, alpha in [
-                        (self.params.shift_change, "darkgray", 0.18),
-                        (self.params.stops, "#ffe6e6", 0.22),
+                        (self.params.meal_det, *self.DET_SHADE_COLORS["meal"]),
+                        (self.params.road_clearing, *self.DET_SHADE_COLORS["road_clearing"]),
+                        (self.params.maintenance_det, *self.DET_SHADE_COLORS["maintenance"]),
                     ]:
                         for gs, ge in self._group_consecutive(interval_list):
                             x0 = (gs - 1) * delta_t
