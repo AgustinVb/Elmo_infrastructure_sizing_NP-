@@ -554,7 +554,7 @@ def infer_step_hours(root: Path, fallback_minutes: float) -> float:
 
 
 # -----------------------------
-# Agregacion de macrobloques (output de run_macrobloques_decomposicion.py)
+# Agregacion de macrobloques (output de run_descomposicion.py)
 # -----------------------------
 _STATION_DAY_RE = re.compile(r"^(.+)_d(\d+)$")
 
@@ -581,7 +581,7 @@ def find_macrobloque_subfolders(root: Path) -> List[Path]:
 
 def group_by_station(subfolders: List[Path]) -> Optional[Dict[str, List[Path]]]:
     """Si las subcarpetas siguen el patron <estacion>_d<dia> (salida de
-    run_macrobloques_decomposicion.py --parallel_days), agrupa por estacion.
+    run_descomposicion.py --parallel_days), agrupa por estacion.
     Devuelve None si alguna subcarpeta no sigue ese patron."""
     groups: Dict[str, List[Path]] = {}
     for sub in subfolders:

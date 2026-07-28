@@ -77,7 +77,7 @@ def find_macrobloque_subfolders(root: Path):
 
 def parse_station_day(name: str) -> Optional[tuple]:
     """Si la carpeta sigue el patron <estacion>_d<dia> (salida de
-    run_macrobloques_decomposicion.py --parallel_days), devuelve (estacion, dia)."""
+    run_descomposicion.py --parallel_days), devuelve (estacion, dia)."""
     m = _STATION_DAY_RE.match(name)
     if not m:
         return None

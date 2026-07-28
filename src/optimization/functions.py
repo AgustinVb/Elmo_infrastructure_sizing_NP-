@@ -12,7 +12,7 @@ class OptRules(object):
         self.mine_system = mine_system
         self.time_series = time_series
         # Override opcional del target agregado de daily_production por dia,
-        # calculado por el problema maestro (ver run_macrobloques_decomposicion.py)
+        # calculado por el problema maestro (ver run_descomposicion.py)
         # para repartir el target global de produccion entre macrobloques en
         # vez de exigirle a cada uno la suma de sus propios m_j. {d: target}
         self.daily_target_override = daily_target_override

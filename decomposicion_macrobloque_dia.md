@@ -25,7 +25,7 @@ descomponer").
 
 ## Archivos involucrados
 
-- [run_macrobloques_decomposicion.py](../run_macrobloques_decomposicion.py) — arma y resuelve los subproblemas.
+- [run_descomposicion.py](../run_descomposicion.py) — arma y resuelve los subproblemas.
 - [combine_macrobloques_for_plot.py](../combine_macrobloques_for_plot.py) — combina los JSON de salida de varios subproblemas y genera gráficos.
 - [consumer.py](../consumer.py) (función `analyze_macrobloques` y soporte alrededor de la línea 963) — calcula costos/métricas agregados a partir de carpetas desacopladas.
 - [src/optimization/opt_model.py](../src/optimization/opt_model.py) — soporta `fixed_infra` (fija `N_chargers`/`X`) y recibe `daily_target_override`.
@@ -45,7 +45,7 @@ pide explícitamente.
 ### 1) Por macrobloque (estación de carga / grupo de LHD)
 
 Cada estación tiene su propio conjunto de LHD y nodos de extracción
-(hoja `StationAssignment` / `NodeAssignment`). `run_macrobloques_decomposicion.py`
+(hoja `StationAssignment` / `NodeAssignment`). `run_descomposicion.py`
 no toca los Excel originales: lee `elmo_data.xlsx` + `time_series.xlsx` **una
 sola vez** y arma un `FilteredReader` en memoria por estación (filtra `LHD`,
 `stations`, `extraction_nodes`; `chargers` y `discharge_nodes` se comparten
@@ -166,14 +166,24 @@ corrida normal.
 
 ```bash
 # Solo por estación (3 macrobloques, todos los días en un MIP cada uno)
-python run_macrobloques_decomposicion.py \
+python run_descomposicion.py \
   --data_folder data/Escenarios_DCH_costos_nuevos/Costo_fijo/Carga_on_board_fixed_3estaciones_P320kW/ \
   --series time_series.xlsx --days 1,32,60 --output_folder output/MB_test/
 
 # Por estación Y por día, en paralelo (Fase1 -> agregación -> Fase2)
-python run_macrobloques_decomposicion.py \
+python run_descomposicion.py \
   --data_folder data/.../Carga_on_board_fixed_3estaciones_P320kW/ \
   --days 1,32,60,91,...  --parallel_days --n_workers 6 \
+  --output_folder output/MB_test/
+
+# Con 1 sola estación (ej. Carga_ob), la descomposición por estación es un
+# no-op (1 macrobloque = problema completo), pero --parallel_days sigue
+# descomponiendo por día igual (1 estación x N días, en paralelo):
+python run_descomposicion.py \
+  --data_folder data/Taller_DET_Agosto/Carga_ob/ \
+  --consumption_model wp2 \
+  --days 1,32,60,91,121,152,182,213,244,274,305,335 \
+  --parallel_days --n_workers 6 \
   --output_folder output/MB_test/
 
 # Combinar y graficar
@@ -182,6 +192,12 @@ python combine_macrobloques_for_plot.py --root_dir output/MB_test/ --mode DCH
 # Costos/métricas agregados
 python consumer.py output/MB_test/ --summary_only
 ```
+
+`--consumption_model wp2` usa consumos/tiempos precalculados por nodo desde
+un JSON (`electric_` o `diesel_routes_within_time.json`, inferido según la
+tecnología de la flota salvo que se pase `--wp2_consumption_json`), igual que
+`setup.py`. El lookup es por nodo, así que funciona igual sobre el
+subconjunto de nodos de cada macrobloque.
 
 ## Qué se pierde al descomponer (limitaciones conocidas)
 

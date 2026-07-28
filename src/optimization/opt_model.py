@@ -101,7 +101,7 @@ class OptModel(object):
 
     def _apply_fixed_infra(self, fixed_infra):
         """Fija N_chargers[k]/X[k] a un valor dado (usado por la Fase 2 de
-        run_macrobloques_decomposicion.py: infraestructura ya decidida en la
+        run_descomposicion.py: infraestructura ya decidida en la
         agregacion de la Fase 1, no se vuelve a optimizar).
 
         fixed_infra: dict {'N_chargers': v, 'X': v} aplicado a todas las
