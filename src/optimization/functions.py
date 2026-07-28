@@ -69,23 +69,27 @@ class OptSets(OptRules):
 
         This contains the new, user-provided DET schedule.
         """
-        pauses = [
-            # --- Shift 2 (in progress): 08:00 - 16:00 ---
-            # Shift change already started at 08:00, horizon captures from 09:00
-            ("09:00", "09:40", "meal"),
-            ("11:30", "14:00", "stop"),
-
-            # --- Shift 3: 16:00 - 00:00 ---
-            ("16:30", "17:40", "meal"),
-            ("19:30", "22:00", "stop"),
-
+        pauses = [      
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:30", "01:40", "meal"),
-            ("03:30", "06:00", "stop"),
+            ("00:00", "00:40", "meal"),
+            ("02:30", "03:30", "maintenance"),
+            ("03:30", "04:40", "road_clearing"),
+            ("04:40", "05:00", "maintenance"),
+            ("07:30", "08:00", "meal"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
-            # Interpreted as next day since 08:30 < 09:00
-            ("08:30", "09:00", "meal"),
+            ("08:00", "08:40", "meal"),
+            ("10:30", "11:30", "maintenance"),
+            ("11:30", "12:40", "road_clearing"),
+            ("12:40", "13:00", "maintenance"),
+            ("15:30", "16:00", "meal"),
+
+            # -- Shift 3 (next day): 16:00 - 00:00 ---
+            ("16:00", "16:40", "meal"),
+            ("18:30", "19:30", "maintenance"),
+            ("19:30", "20:40", "road_clearing"),
+            ("20:40", "21:00", "maintenance"),
+            ("23:30", "00:00", "meal"),
         ]
 
         return pauses
@@ -202,7 +206,9 @@ class OptSets(OptRules):
          # Subsets de tiempo para pausas
         det_pauses = self._get_pause_definitions_det()
         det_meal_intervals = self._get_time_intervals_for_pause_type("meal", pauses=det_pauses)
-        det_stop = self._get_time_intervals_for_pause_type("stop", pauses=det_pauses)
+        det_maintenance_intervals = self._get_time_intervals_for_pause_type("maintenance", pauses=det_pauses)
+        det_road_clearing_intervals = self._get_time_intervals_for_pause_type("road_clearing", pauses=det_pauses)
+        det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
 
         # Colaciones DCH (Chuqui): set puro, sin union con las colaciones DET.
         # maint_stop_all, maint_no_charge y charge_only_meal_or_between_shifts
@@ -223,8 +229,13 @@ class OptSets(OptRules):
         model.time_intervals_meal_det_set = pyo.Set(
             initialize=sorted(det_meal_intervals)
         )
+        # Road clearing DET: al igual que colación, el LHD puede estar detenido
+        # o cargando (a diferencia de maintenance, donde debe permanecer detenido).
+        model.time_intervals_road_clearing_det_set = pyo.Set(
+            initialize=sorted(det_road_clearing_intervals)
+        )
 
-        # Mantenciones DCH (Chuqui): set puro, sin union con los "stop" DET.
+        # Mantenciones DCH (Chuqui): set puro, sin union con "maintenance"/"road_clearing" DET.
         # Las paradas del esquema DET se manejan aparte via det_stop_all
         # (model.time_intervals_det_set).
         model.time_intervals_maintenance_set = pyo.Set(
@@ -893,12 +904,18 @@ class ConstraintRules(OptRules):
     def charge_only_meal_or_between_shifts_det(self, model, k, i, d, t):
         """Version DET de charge_only_meal_or_between_shifts.
 
-        Solo se permite cargar (Z_charge = 1) durante colación DET
-        (time_intervals_meal_det_set) o entre turnos. Fuera de esas
-        ventanas la carga queda prohibida, sin importar si el equipo
-        está detenido o no.
+        Se permite cargar (Z_charge = 1) durante colación DET
+        (time_intervals_meal_det_set), road_clearing DET
+        (time_intervals_road_clearing_det_set) o entre turnos. Durante
+        maintenance el LHD debe permanecer detenido sin cargar, por lo que
+        esas ventanas no se incluyen aquí. Fuera de esas ventanas la carga
+        queda prohibida, sin importar si el equipo está detenido o no.
         """
-        if t in model.time_intervals_meal_det_set or t in model.time_intervals_between_shifts_set:
+        if (
+            t in model.time_intervals_meal_det_set
+            or t in model.time_intervals_road_clearing_det_set
+            or t in model.time_intervals_between_shifts_set
+        ):
             return pyo.Constraint.Skip
         return model.Z_charge[k, i, d, t] == 0
 
