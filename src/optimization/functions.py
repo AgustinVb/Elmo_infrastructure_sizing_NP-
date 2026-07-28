@@ -1290,18 +1290,18 @@ class ConstraintRules(OptRules):
             model.time_intervals_between_shifts_set,
             rule=self.between_shifts_elhd_swap,
         )
-        model.assign_state = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.assign_state,
-        )
-        model.min_assign_duration = pyo.Constraint(
-            model.slhd_set,
-            model.days,
-            model.time_intervals_set,
-            rule=self.min_assign_duration,
-        )
+        #model.assign_state = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.assign_state,
+        #)
+        #model.min_assign_duration = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.min_assign_duration,
+        #)
         model.total_swaps = pyo.Constraint(
             model.stations_set,
             model.days,
@@ -1405,18 +1405,18 @@ class ConstraintRules(OptRules):
             model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.days, rule=self.bess_soc_cyclic)
 
         # 8) Rotura simetr�a
-        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            rule=self.battery_boundary_break_simmetry_lhds_start,
-        )
+        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    rule=self.battery_boundary_break_simmetry_lhds_start,
+        #)
 
-        model.swap_precedence_by_index = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_precedence_by_index,
-        )
+        #model.swap_precedence_by_index = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.swap_precedence_by_index,
+        #)
 
 class ObjectiveRules(OptRules):
     def lhd_charge_cost_bs(self, model):
