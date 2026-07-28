@@ -55,6 +55,19 @@ class Timeseries(object):
             raise ValueError(f"day must be positive, got {day}")
         return ((day_int - 1) // 365) + 1
 
+    def get_representative_day_of_year(self, year: int) -> int:
+        """
+        Retorna el día absoluto representativo del año.
+        Convención:
+        - año 1 -> día 1
+        - año 2 -> día 366
+        - etc.
+        """
+        year_int = int(year)
+        if year_int <= 0:
+            raise ValueError(f"year must be positive, got {year}")
+        return 1 + (year_int - 1) * 365
+
     def _load_marginal_cost_alpha(self) -> float:
         """Lee alpha desde la fila Profile_fixed de MarginalCost si existe."""
         marginal_cost = self.mapper.get('MarginalCost')
@@ -205,8 +218,23 @@ class Timeseries(object):
 
     def sample_extraction_goal(self, extraction_goal: pd.DataFrame) -> pd.DataFrame:
         extraction_goal = extraction_goal.set_index('name')
-        days_selected = np.arange(self.days[0], (self.days[len(self.days) - 1]) + 1)
-        return extraction_goal[days_selected]
+        day_columns = {}
+        for col in extraction_goal.columns:
+            try:
+                day_columns[col] = int(col)
+            except (TypeError, ValueError):
+                continue
+
+        extraction_goal = extraction_goal[list(day_columns.keys())].copy()
+        extraction_goal.columns = [day_columns[col] for col in extraction_goal.columns]
+        representative_days = [self.get_representative_day_of_year(year) for year in self.years]
+        missing_days = [day for day in representative_days if day not in extraction_goal.columns]
+        if missing_days:
+            raise KeyError(
+                "Missing representative day columns in ExtractionGoal for years in horizon: "
+                f"{missing_days}"
+            )
+        return extraction_goal[representative_days]
 
     def get_marginal_cost(self, location_name: str, day: int, time_interval: int) -> float:
         hour_of_year = math.ceil((day - 1) * 24 + time_interval * self.delta_t)
@@ -217,7 +245,9 @@ class Timeseries(object):
         return self.mapper['Emissions'].loc[tipo, hour_of_year]
 
     def get_extraction_goal(self, node_name: str, day: int) -> float:
-        return self.mapper['ExtractionGoal'].loc[node_name, day]
+        year = self.day_to_year[int(day)]
+        representative_day = self.get_representative_day_of_year(year)
+        return self.mapper['ExtractionGoal'].loc[node_name, representative_day]
 
     def get_shift_start_interval(self, shift_name: str) -> float:
         h_start = self.mapper['Shifts'].loc[shift_name, :]['hour_start'].iloc[0]
