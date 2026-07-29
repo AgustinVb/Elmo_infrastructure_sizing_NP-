@@ -597,16 +597,18 @@ def _year_of_day(day: int) -> int:
     return ((int(day) - 1) // 365) + 1
 
 
-def _peak_clock_interval_set(delta_t: float, max_t: int) -> set:
+def _peak_clock_interval_set(delta_t: float, max_t: int, base_hour: float = 8.5) -> set:
     """Replica el calculo de model.time_intervals_peak_set en
-    OptSets.build_sets (functions.py): horizonte operativo arranca a las
-    09:00, ventana punta 18:00-22:00."""
+    OptSets.build_sets (functions.py): horizonte operativo arranca a
+    base_hour (leido de parameters.json, escrito desde Shifts.base_hour),
+    ventana punta 18:00-22:00."""
     dt_minutes = int(round(delta_t * 60))
     if dt_minutes <= 0:
         return set()
+    base_minutes = int(round(base_hour * 60))
     out = set()
     for t in range(1, max_t + 1):
-        clock = (9 * 60 + (t - 1) * dt_minutes) % 1440
+        clock = (base_minutes + (t - 1) * dt_minutes) % 1440
         if 18 * 60 <= clock < 22 * 60:
             out.add(t)
     return out
@@ -623,10 +625,11 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
     Replica power_peak_limit / power_cost_peak_limit (functions.py): demand
     charge = 12*10 por P_pot[year], solo en dias de temporada de punta
     (91<=d<=244) y en la ventana horaria 18:00-22:00 (horizonte operativo
-    arrancando a las 09:00).
+    arrancando a las 08:30).
     """
     combined: Dict[int, Dict[int, float]] = {}
     delta_t = None
+    base_hour = 8.5
     demand_charge_coef = 12 * 10
 
     for sub in subfolders:
@@ -640,6 +643,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         params_data = load_json(params_path)
         if delta_t is None:
             delta_t = _as_float(params_data.get("delta_t", 0.0))
+            base_hour = _as_float(params_data.get("base_hour", 8.5))
 
         pred_data = load_json(pred_path)
         d_block = pred_data.get("d", pred_data)
@@ -667,7 +671,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         return 0.0, {"note": "No se pudo calcular (faltan P_red.json/parameters.json)"}
 
     max_t = max(t for day_map in combined.values() for t in day_map)
-    peak_t_set = _peak_clock_interval_set(delta_t, max_t)
+    peak_t_set = _peak_clock_interval_set(delta_t, max_t, base_hour)
 
     p_pot_ex_post: Dict[int, float] = {}
     for day, t_map in combined.items():

@@ -69,24 +69,24 @@ class OptSets(OptRules):
 
         This contains the new, user-provided DET schedule.
         """
-        pauses = [      
+        pauses = [
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:20", "01:44", "meal"),
-            ("02:56", "03:20", "maintenance"),
-            ("04:32", "05:44", "road_clearing"),
-            ("06:48", "07:36", "maintenance"),
+            ("00:30", "01:42", "meal"),
+            ("02:54", "03:18", "maintenance"),
+            ("04:30", "05:42", "road_clearing"),
+            ("06:46", "07:34", "maintenance"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
-            ("08:32", "09:44", "meal"),
-            ("10:56", "11:28", "maintenance"),
-            ("12:32", "13:44", "road_clearing"),
-            ("14:48", "15:36", "maintenance"),
+            ("08:30", "09:42", "meal"),
+            ("10:54", "11:26", "maintenance"),
+            ("12:30", "13:42", "road_clearing"),
+            ("14:46", "15:34", "maintenance"),
 
             # -- Shift 3 (next day): 16:00 - 00:00 ---
-            ("16:32", "17:44", "meal"),
-            ("18:56", "19:28", "maintenance"),
-            ("20:32", "21:44", "road_clearing"),
-            ("22:48", "23:36", "maintenance"),
+            ("16:30", "17:42", "meal"),
+            ("18:54", "19:26", "maintenance"),
+            ("20:30", "21:42", "road_clearing"),
+            ("22:46", "23:34", "maintenance"),
         ]
 
         return pauses
@@ -125,8 +125,9 @@ class OptSets(OptRules):
         - self.time_series.delta_t is in hours
         - pause definitions are (start_hhmm, end_hhmm, pause_type)
         """
-        # Ajusta esto a tu inicio real del horizonte (09:00 segÃºn tu comentario)
-        base_minutes = 9 * 60
+        # Hora real en que arranca el horizonte (t=1), parametrizada por
+        # escenario via Shifts.base_hour (distinta en DET/DCH).
+        base_minutes = int(round(self.time_series.base_hour * 60))
 
         dt_minutes = int(round(self.time_series.delta_t * 60))
         if dt_minutes <= 0:
@@ -168,11 +169,13 @@ class OptSets(OptRules):
             a = start_min - base_minutes
             b = end_min - base_minutes
 
-            # Marcar intervalos t que se SOLAPAN con [a,b)
+            # Marcar el intervalo t si su PUNTO MEDIO cae dentro de [a,b).
+            # Redondea al intervalo mas cercano (error maximo dt/2 por borde)
+            # en vez de "cualquier solape cuenta" (que redondea siempre hacia
+            # arriba en ambos extremos e infla el tiempo bloqueado).
             for t in range(1, max_t + 1):
-                s = (t - 1) * dt_minutes
-                e = t * dt_minutes
-                if max(s, a) < min(e, b):
+                mid = (t - 1) * dt_minutes + dt_minutes / 2
+                if a <= mid < b:
                     indices.add(t)
 
         return sorted(indices)
@@ -188,10 +191,11 @@ class OptSets(OptRules):
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
+        base_minutes = int(round(self.time_series.base_hour * 60))
         model.time_intervals_peak_set = pyo.Set(
             initialize=[
                 t for t in self.time_series.time_intervals
-                if 18 * 60 <= ((9 * 60 + (t - 1) * int(round(self.time_series.delta_t * 60))) % 1440) < 22 * 60
+                if 18 * 60 <= ((base_minutes + (t - 1) * int(round(self.time_series.delta_t * 60))) % 1440) < 22 * 60
             ]
         )
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
@@ -322,6 +326,7 @@ class OptParameters(OptRules):
     def build_parameters(self, model):
         #ParÃ¡metros temporales
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
+        model.base_hour = pyo.Param(initialize=self.time_series.base_hour, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
         model.year_of_day = pyo.Param(

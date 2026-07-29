@@ -1,0 +1,56 @@
+
+Gurobi 10.0.0 (win64) logging started Wed Jul 29 02:09:50 2026
+
+Set parameter LogFile to value "output/Taller_DET_Agosto/Carga_ob_28ktpd_8lhd_descomp/station_1_d91_stage1\gurobi.log"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 172800
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 1 threads
+
+Optimize a model with 51969 rows, 87521 columns and 260194 nonzeros
+Model fingerprint: 0x42ca1c7e
+Variable types: 41079 continuous, 46442 integer (46441 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 3e+02]
+  Objective range  [4e-01, 9e+04]
+  Bounds range     [1e+00, 3e+00]
+  RHS range        [1e+00, 3e+04]
+Presolve removed 49185 rows and 65341 columns
+Presolve time: 1.10s
+Presolved: 2784 rows, 22180 columns, 70742 nonzeros
+Variable types: 530 continuous, 21650 integer (21475 binary)
+Root relaxation presolved: 2784 rows, 22180 columns, 70742 nonzeros
+
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root relaxation: objective 4.213089e+05, 6399 iterations, 0.51 seconds (0.17 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 423717.380    0  111          - 423717.380      -     -    4s
+H    0     0                    451220.22666 423717.380  6.10%     -    4s
+H    0     0                    435926.13171 423717.380  2.80%     -    5s
+     0     0 435317.509    0   45 435926.132 435317.509  0.14%     -    6s
+
+Cutting planes:
+  Gomory: 2
+  Cover: 11
+  MIR: 2
+  Flow cover: 11
+  Zero half: 173
+
+Explored 1 nodes (13074 simplex iterations) in 6.74 seconds (2.42 work units)
+Thread count was 1 (of 8 available processors)
+
+Solution count 2: 435926 451220 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 4.359261317076e+05, best bound 4.353175093082e+05, gap 0.1396%
