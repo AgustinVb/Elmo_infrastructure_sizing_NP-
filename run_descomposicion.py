@@ -55,8 +55,10 @@ cada worker (estacion,dia); el lookup es por nodo, asi que funciona igual de
 bien sobre el subconjunto de nodos de cada macrobloque.
 """
 import argparse
+import configparser
 import json
 import math
+import multiprocessing
 import os
 import random
 import time
@@ -265,7 +267,7 @@ def _read_station_scalar(output_folder, var_name, station_name):
     return node
 
 
-def _build_series_with_retry(series_path, attempts=8, base_delay=0.5):
+def _build_series_with_retry(series_path, lock=None, attempts=8, base_delay=0.5):
     """Construye Series(series_path) con reintentos.
 
     Series cachea una version "simple" de time_series.xlsx en disco
@@ -275,17 +277,31 @@ def _build_series_with_retry(series_path, attempts=8, base_delay=0.5):
     Excel, asi que para escenarios sin esas hojas la cache se considera
     "desactualizada" en CADA llamada y siempre se reescribe. Con varios
     workers en paralelo (--parallel_days) eso provoca una carrera real
-    escribiendo el mismo simple_time_series.xlsx a la vez (OSError en
-    Windows). No es seguro arreglar ese chequeo aqui (es codigo
-    compartido por todo el proyecto, fuera del alcance de este script),
-    asi que en su lugar reintentamos con backoff: el worker que pierde la
-    carrera simplemente vuelve a intentar.
+    escribiendo el mismo series.ini/simple_time_series.xlsx a la vez: no
+    solo OSError, tambien series.ini corrupto (lecturas parciales de un
+    archivo que otro proceso esta reescribiendo al mismo tiempo), que
+    revienta con configparser.Error (DuplicateOptionError, etc.) y no es
+    un OSError.
+
+    No es seguro arreglar ese chequeo en reader.py (es codigo compartido
+    por todo el proyecto, fuera del alcance de este script). En su lugar:
+    - `lock` (multiprocessing.Manager().Lock(), compartido entre workers)
+      serializa la construccion de Series entre procesos para que la
+      reescritura de series.ini/npy nunca sea concurrente y no se
+      corrompa en primer lugar.
+    - El retry con backoff queda como red de seguridad para corrupcion
+      preexistente (de una corrida anterior a este fix) o si `lock` es
+      None: reintentar vuelve a regenerar el cache desde el Excel
+      original y se autocorrige.
     """
     last_exc = None
     for attempt in range(attempts):
         try:
+            if lock is not None:
+                with lock:
+                    return Series(series_path)
             return Series(series_path)
-        except OSError as exc:
+        except (OSError, configparser.Error) as exc:
             last_exc = exc
             time.sleep(base_delay * (attempt + 1) + random.uniform(0, 0.3))
     raise last_exc
@@ -300,10 +316,11 @@ def solve_macrobloque_day(job):
     """
     (data_folder, model_name, series_name, station_name, lhd_names, node_names,
      day, total_n_days, delta_t, gap, solver_name, timelimit, output_folder,
-     fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json) = job
+     fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json,
+     series_lock) = job
 
     full_model = Reader(join(data_folder, model_name), start_in=1)
-    series = _build_series_with_retry(join(data_folder, series_name))
+    series = _build_series_with_retry(join(data_folder, series_name), lock=series_lock)
 
     mine_system = build_macrobloque_mine(full_model, lhd_names, station_name, node_names)
 
@@ -349,6 +366,15 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
     threads_per_worker = max(1, (os.cpu_count() or n_workers) // n_workers)
     print(f"Hilos de Gurobi por worker: {threads_per_worker} (workers={n_workers}, cpus={os.cpu_count()})")
 
+    # Lock compartido entre los procesos worker: serializa la construccion
+    # de Series (lectura/reescritura de series.ini + cache npy/simple_xlsx)
+    # para que nunca haya dos workers reescribiendo el mismo cache al mismo
+    # tiempo. Antes de esto, con --parallel_days, N workers arrancando a la
+    # vez podian corromper series.ini (escritura entrelazada) y tumbar toda
+    # la corrida con una excepcion no atrapada. Ver _build_series_with_retry.
+    manager = multiprocessing.Manager()
+    series_lock = manager.Lock()
+
     def make_job(station_name, day, output_folder, fixed_infra):
         return (
             args.data_folder, args.model, args.series, station_name,
@@ -357,7 +383,30 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
             output_folder, fixed_infra, threads_per_worker,
             master_targets[station_name][day],
             consumption_model, wp2_consumption_json,
+            series_lock,
         )
+
+    def run_stage(stage_jobs, stage_label):
+        """Ejecuta stage_jobs en paralelo. Si un job individual falla (ej.
+        infactible, error de licencia, etc.) no aborta el resto del batch:
+        se reporta al final para poder re-lanzar solo esos (estacion, dia),
+        en vez de perder tambien los resultados de los jobs que si
+        terminaron bien (lo que paso antes de este fix)."""
+        results, failed = [], []
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            future_to_job = {ex.submit(solve_macrobloque_day, job): job for job in stage_jobs}
+            for fut in as_completed(future_to_job):
+                job = future_to_job[fut]
+                station_name, day = job[3], job[6]
+                try:
+                    results.append(fut.result())
+                except Exception as exc:
+                    failed.append((station_name, day))
+                    print(f"  [ERROR] {stage_label} estacion={station_name} dia={day} fallo: {exc!r}")
+        if failed:
+            print(f"\n[ADVERTENCIA] {stage_label}: {len(failed)}/{len(stage_jobs)} "
+                  f"subproblemas fallaron y deben re-lanzarse a mano: {failed}")
+        return results
 
     # ---- Fase 1: infraestructura libre, todas las combinaciones en paralelo ----
     print(f"\n=== Fase 1: {n_jobs} subproblemas (estacion x dia) en paralelo "
@@ -367,11 +416,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
         for st in sorted(lhds_per_station) for d in days
     ]
 
-    results = []
-    with ProcessPoolExecutor(max_workers=n_workers) as ex:
-        futures = [ex.submit(solve_macrobloque_day, job) for job in stage1_jobs]
-        for fut in as_completed(futures):
-            results.append(fut.result())
+    results = run_stage(stage1_jobs, "Fase 1")
 
     # ---- Agregacion: infraestructura de swap = maximo necesitado entre dias, por estacion ----
     infra_by_station = {}
@@ -396,10 +441,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
         for st in sorted(lhds_per_station) for d in days
     ]
 
-    with ProcessPoolExecutor(max_workers=n_workers) as ex:
-        futures = [ex.submit(solve_macrobloque_day, job) for job in stage2_jobs]
-        for fut in as_completed(futures):
-            fut.result()
+    run_stage(stage2_jobs, "Fase 2")
 
     print("\nListo. Resultados finales en:")
     for st in sorted(lhds_per_station):
@@ -415,7 +457,7 @@ def main():
     parser.add_argument('--output_folder', default='output/MB_test_prueba/')
     parser.add_argument('--solver', default='gurobi')
     parser.add_argument('--days', default='1', help='Dias significativos separados por coma, ej: 1,32,60')
-    parser.add_argument('--timelimit', type=int, default=172800)
+    parser.add_argument('--timelimit', type=int, default=3600)
     parser.add_argument(
         '--parallel_days', action='store_true',
         help='Ademas de por estacion, descompone por dia y resuelve cada (estacion,dia) '
