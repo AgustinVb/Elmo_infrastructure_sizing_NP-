@@ -983,15 +983,16 @@ def find_macrobloque_subfolders(root: Path) -> List[Path]:
     return subfolders
 
 
-def _peak_clock_interval_set(delta_t: float, max_t: int, start_hour: int = 9,
+def _peak_clock_interval_set(delta_t: float, max_t: int, start_hour: float = 8.5,
                               windows=(("18:00", "22:00"),)) -> set:
     """Replica _build_intervals_from_clock_windows de functions.py: convierte
     ventanas horarias (HH:MM) a indices de intervalo, dado que el horizonte
-    operativo arranca en `start_hour` (09:00 por defecto)."""
+    operativo arranca en `start_hour` (8.5 = 08:30 por defecto, para runs
+    viejos sin `base_hour` en parameters.json)."""
     dt_minutes = int(round(delta_t * 60))
     if dt_minutes <= 0:
         return set()
-    base_minutes = start_hour * 60
+    base_minutes = int(round(start_hour * 60))
 
     def _parse_hhmm(s):
         hh, mm = s.strip().split(":")
@@ -1151,6 +1152,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
     """
     combined: Dict[int, Dict[int, float]] = {}
     delta_t = None
+    base_hour = 8.5
     demand_charge_coef = 12 * 10
 
     for sub in subfolders:
@@ -1164,6 +1166,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         params_data = load_json(params_path)
         if delta_t is None:
             delta_t = _as_float(params_data.get("delta_t", 0.0))
+            base_hour = _as_float(params_data.get("base_hour", 8.5))
             try:
                 demand_charge_coef = float(params_data.get("demand_charge_coef", 12 * 10))
             except Exception:
@@ -1188,7 +1191,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         return 0.0, {"note": "No se pudo calcular (faltan P_red.json/parameters.json)"}
 
     max_t = max(t for day_map in combined.values() for t in day_map)
-    peak_t_set = _peak_clock_interval_set(delta_t, max_t)
+    peak_t_set = _peak_clock_interval_set(delta_t, max_t, start_hour=base_hour)
 
     p_pot_ex_post: Dict[int, float] = {}
     for day, t_map in combined.items():

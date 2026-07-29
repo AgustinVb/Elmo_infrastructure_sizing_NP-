@@ -65,7 +65,7 @@ class Series(Reader):
         :param location: path where main files are located
         :param save_sheets: list of sheet names to save as .npy (None = all sheets)
         """
-        self.init = dict(MarginalCost=3, Emissions=3, ExtractionGoal=3, Shifts=6, NodeAssignment=5, StationAssignment=3, GenProfiles=3)
+        self.init = dict(MarginalCost=3, Emissions=3, ExtractionGoal=3, Shifts=7, NodeAssignment=5, StationAssignment=3, GenProfiles=3)
         self.save_sheets = save_sheets
         self.conf, self.parser = 'series.ini', ConfigParser()
         self.dirname = dirname(location)

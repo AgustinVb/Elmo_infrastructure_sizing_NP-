@@ -31,21 +31,25 @@ class OptRules(object):
         end = time.time()
         print(object_name, end - start)
 
-    def _build_intervals_from_clock_windows(self, windows, start_hour: int = 9):
+    def _build_intervals_from_clock_windows(self, windows, start_hour: float = None):
         """Convert a list of (HH:MM, HH:MM) windows into interval indices.
 
         Uses self.time_series.delta_t (hours) and self.time_series.time_intervals.
-        start_hour is the hour (0-23) considered as interval 1 start (default 9).
+        start_hour is the hour considered as interval 1 start. If None, uses
+        self.time_series.base_hour (fallback 9 for scenarios without it).
         """
         if not hasattr(self.time_series, "time_intervals") or len(self.time_series.time_intervals) == 0:
             return []
+
+        if start_hour is None:
+            start_hour = getattr(self.time_series, "base_hour", 9)
 
         dt_minutes = int(round(self.time_series.delta_t * 60))
         if dt_minutes <= 0:
             return []
 
         max_t = int(max(self.time_series.time_intervals))
-        base_minutes = int(start_hour) * 60
+        base_minutes = int(round(float(start_hour) * 60))
 
         def _parse_hhmm(s):
             hh, mm = s.strip().split(":")
@@ -74,7 +78,7 @@ class OptRules(object):
         allowed = set(int(v) for v in self.time_series.time_intervals)
         return sorted(v for v in out if v in allowed)
 
-    def _get_peak_intervals(self, windows: list = None, start_hour: int = 9):
+    def _get_peak_intervals(self, windows: list = None, start_hour: float = None):
         """Return sorted list of interval indices considered peak-hours.
 
         If windows is None a sensible default is used.
@@ -118,26 +122,27 @@ class OptSets(OptRules):
         que dejaba time_intervals_det_set practicamente vacio por un
         pause_type mal escrito ("stops" en vez de "maintenance").
         """
-        pauses = [      
-                    # --- Shift 1: 00:00 - 08:00 ---
-                    ("00:20", "01:44", "meal"),
-                    ("02:56", "03:20", "maintenance"),
-                    ("04:32", "05:44", "road_clearing"),
-                    ("06:48", "07:36", "maintenance"),
-        
-                    # --- Shift 2 (next day): 08:00 - 16:00 ---
-                    ("08:32", "09:44", "meal"),
-                    ("10:56", "11:28", "maintenance"),
-                    ("12:32", "13:44", "road_clearing"),
-                    ("14:48", "15:36", "maintenance"),
-        
-                    # -- Shift 3 (next day): 16:00 - 00:00 ---
-                    ("16:32", "17:44", "meal"),
-                    ("18:56", "19:28", "maintenance"),
-                    ("20:32", "21:44", "road_clearing"),
-                    ("22:48", "23:36", "maintenance"),
-                ]
-        
+      
+        pauses = [
+            # --- Shift 1: 00:00 - 08:00 ---
+            ("00:30", "01:42", "meal"),
+            ("02:54", "03:18", "maintenance"),
+            ("04:30", "05:42", "road_clearing"),
+            ("06:46", "07:34", "maintenance"),
+
+            # --- Shift 2 (next day): 08:00 - 16:00 ---
+            ("08:30", "09:42", "meal"),
+            ("10:54", "11:26", "maintenance"),
+            ("12:30", "13:42", "road_clearing"),
+            ("14:46", "15:34", "maintenance"),
+
+            # -- Shift 3 (next day): 16:00 - 00:00 ---
+            ("16:30", "17:42", "meal"),
+            ("18:54", "19:26", "maintenance"),
+            ("20:30", "21:42", "road_clearing"),
+            ("22:46", "23:34", "maintenance"),
+        ]
+
         return pauses
 
     def _split_contiguous_blocks(self, intervals):
@@ -174,8 +179,7 @@ class OptSets(OptRules):
         - self.time_series.delta_t is in hours
         - pause definitions are (start_hhmm, end_hhmm, pause_type)
         """
-        # Ajusta esto a tu inicio real del horizonte (09:00 según tu comentario)
-        base_minutes = 9 * 60
+        base_minutes = int(round(self.time_series.base_hour * 60))
 
         dt_minutes = int(round(self.time_series.delta_t * 60))
         if dt_minutes <= 0:
@@ -217,71 +221,14 @@ class OptSets(OptRules):
             a = start_min - base_minutes
             b = end_min - base_minutes
 
-            # Marcar intervalos t que se SOLAPAN con [a,b)
+            # Marcar t cuyo punto medio cae dentro de [a,b) (redondeo al mas
+            # cercano, en vez del sesgo sistematico hacia arriba del solape).
             for t in range(1, max_t + 1):
-                s = (t - 1) * dt_minutes
-                e = t * dt_minutes
-                if max(s, a) < min(e, b):
+                mid = (t - 1) * dt_minutes + dt_minutes / 2
+                if a <= mid < b:
                     indices.add(t)
 
         return sorted(indices)
-
-    def _build_intervals_from_clock_windows(self, windows, start_hour: int = 9):
-        """Convert a list of (HH:MM, HH:MM) windows into interval indices.
-
-        Uses self.time_series.delta_t (hours) and self.time_series.time_intervals.
-        start_hour is the hour (0-23) considered as interval 1 start (default 9).
-        """
-        if not hasattr(self.time_series, "time_intervals") or len(self.time_series.time_intervals) == 0:
-            return []
-
-        dt_minutes = int(round(self.time_series.delta_t * 60))
-        if dt_minutes <= 0:
-            return []
-
-        max_t = int(max(self.time_series.time_intervals))
-        base_minutes = int(start_hour) * 60
-
-        def _parse_hhmm(s):
-            hh, mm = s.strip().split(":")
-            return int(hh) * 60 + int(mm)
-
-        out = set()
-        for start_str, end_str in windows:
-            a = _parse_hhmm(start_str)
-            b = _parse_hhmm(end_str)
-            if a < base_minutes:
-                a += 24 * 60
-            if b < base_minutes:
-                b += 24 * 60
-            if b <= a:
-                b += 24 * 60
-
-            a_rel = a - base_minutes
-            b_rel = b - base_minutes
-
-            for t in range(1, max_t + 1):
-                s = (t - 1) * dt_minutes
-                e = t * dt_minutes
-                if max(s, a_rel) < min(e, b_rel):
-                    out.add(t)
-
-        allowed = set(int(v) for v in self.time_series.time_intervals)
-        return sorted(v for v in out if v in allowed)
-
-    def _get_peak_intervals(self, windows: list = None, start_hour: int = 9):
-        """Return sorted list of interval indices considered peak-hours.
-
-        If windows is None a sensible default is used.
-        """
-        if windows is None:
-            # sensible default peak windows (adjust if needed)
-            windows = [ ("18:00", "22:00")]
-        return self._build_intervals_from_clock_windows(windows, start_hour=start_hour)
-      
-    
-    
- 
 
     def build_sets(self, model):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
@@ -410,6 +357,7 @@ class OptParameters(OptRules):
     def build_parameters(self, model):
         #Par�metros temporales
         model.delta_t = pyo.Param(initialize=self.time_series.delta_t, mutable=True)
+        model.base_hour = pyo.Param(initialize=self.time_series.base_hour, mutable=True)
         model.t_ini = pyo.Param(initialize=self.time_series.get_time_intervals()[0], mutable=True)
         model.t_fin = pyo.Param(initialize=self.time_series.get_time_intervals()[-1], mutable=True)
         model.year_of_day = pyo.Param(

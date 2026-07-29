@@ -551,6 +551,7 @@ class Parameters:
         self.path = params_path
         self.ok = False
         self.delta_t = 1.0
+        self.base_hour = 8.5
         self.energy_price_scale = float(energy_price_scale)
 
         self.m_j = None
@@ -583,6 +584,7 @@ class Parameters:
             return
         self.ok = True
         self.delta_t = float(data.get("delta_t", 1.0))
+        self.base_hour = float(data.get("base_hour", 8.5))
         self.p_charger = float(data.get("p_charger", 150.0))
 
         # -------- m_j (demanda por nodo y día) --------
@@ -745,6 +747,7 @@ class JSONPlotter:
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
         self.delta_t = self.params.delta_t if self.params.ok else 1.0
+        self.start_hour = self.params.base_hour if self.params.ok else 8.5
 
         # Dominio
         self.days = self._detect_days()
@@ -866,17 +869,28 @@ class JSONPlotter:
             return "Winter"
         return "Spring"
     
+    @staticmethod
+    def _clock_label(start_hour: float, offset_hours: float) -> str:
+        """Etiqueta HH:MM para start_hour + offset_hours, modulo 24h."""
+        total_minutes = int(round((float(start_hour) + offset_hours) * 60)) % (24 * 60)
+        hh, mm = divmod(total_minutes, 60)
+        return f"{hh:02d}:{mm:02d}"
+
     # -------------------- NUEVO MÉTODO DE TIEMPO FIJO --------------------
-    def _get_fixed_time_ticks(self, mode="interval"):
+    def _get_fixed_time_ticks(self, mode="interval", start_hour: float = None):
         """
-        Devuelve ticks y etiquetas FIJAS para: 09:00, 13:00, 17:00, 21:00, 01:00, 05:00, 09:00(+1).
+        Devuelve ticks y etiquetas FIJAS cada 4h a partir de start_hour
+        (por defecto self.start_hour, ej. 09:00, 13:00, 17:00, 21:00, 01:00, 05:00, 09:00(+1)).
         mode="hour": devuelve posiciones 0, 4, 8... (para gráficos con eje X en horas)
         mode="interval": devuelve posiciones 1, 1+step... (para gráficos con eje X en intervalos)
         """
-        # Horas relativas desde el inicio (0h = 09:00 AM)
+        if start_hour is None:
+            start_hour = self.start_hour
+
+        # Horas relativas desde el inicio del horizonte
         rel_hours = [0, 4, 8, 12, 16, 20, 24]
-        labels = ["09:00", "13:00", "17:00", "21:00", "01:00", "05:00", "09:00"]
-        
+        labels = [self._clock_label(start_hour, h) for h in rel_hours]
+
         if mode == "hour":
             return rel_hours, labels
         else:
@@ -895,13 +909,16 @@ class JSONPlotter:
         labels = [f"{int((t-1)*self.delta_t)}h" for t in ticks]
         return ticks, labels
 
-    def _get_hourly_time_ticks(self, start_hour: int = 9):
+    def _get_hourly_time_ticks(self, start_hour: float = None):
         """
         Devuelve ticks horarios (cada 1h) para 24 horas,
-        comenzando en start_hour y cerrando en start_hour del día siguiente.
+        comenzando en start_hour (por defecto self.start_hour) y cerrando en
+        start_hour del día siguiente.
         """
+        if start_hour is None:
+            start_hour = self.start_hour
         ticks = list(range(0, 25))
-        labels = [f"{(start_hour + h) % 24:02d}:00" for h in ticks]
+        labels = [self._clock_label(start_hour, h) for h in ticks]
         return ticks, labels
 
     def _price_series(self, day: int, lhd: Optional[str] = None) -> pd.Series:
@@ -949,7 +966,7 @@ class JSONPlotter:
         tick_fs = 14
         legend_fs = 14
 
-        start_hour = 9.0
+        start_hour = self.start_hour
         dt = float(self.delta_t)
 
         for d in self.days:
@@ -1021,7 +1038,7 @@ class JSONPlotter:
                     (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
                     (maintenance_intervals_det, *self.DET_SHADE_COLORS["maintenance"]),
                 ]
-                # Construir intervalos peak: 18:00-22:00 con start_hour=9
+                # Construir intervalos peak: 18:00-22:00 con start_hour=self.start_hour
                 # Convertir horas a intervalos: intervalo = ceil((hora - start_hour) / dt)
                 peak_start_hour = 18.0
                 peak_end_hour = 22.0
@@ -1162,7 +1179,7 @@ class JSONPlotter:
         axis_label_fs = 16
         tick_fs = 14
         legend_fs = 14
-        start_hour = 9.0
+        start_hour = self.start_hour
         dt = float(self.delta_t)
 
         for d in self.days:
@@ -1340,7 +1357,7 @@ class JSONPlotter:
                 framealpha=0.6,
             )
 
-            ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+            ticks, labels = self._get_hourly_time_ticks(start_hour=self.start_hour)
             ax_main.set_xticks(ticks)
             ax_main.set_xticklabels(labels, fontsize=13, rotation=0, ha="center")
 
@@ -1642,7 +1659,7 @@ class JSONPlotter:
                 ax_price.set_ylim(0.0, 0.30)
                 ax_price.yaxis.set_major_locator(MultipleLocator(0.05))
 
-                ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+                ticks, labels = self._get_hourly_time_ticks(start_hour=self.start_hour)
                 ax_task.set_xticks(ticks)
                 ax_task.set_xticklabels(labels, fontsize=13, rotation=0, ha="center")
 
@@ -1958,7 +1975,7 @@ class JSONPlotter:
             ax.set_ylim(bottom=0)
             ax.legend(handles=handles, loc="upper right", fontsize=10, framealpha=0.85)
             ax.grid(axis="y", linestyle="--", alpha=0.4)
-            ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+            ticks, labels = self._get_hourly_time_ticks(start_hour=self.start_hour)
             ax.set_xticks(ticks)
             ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
             peak = max((gg.get(g, 0) * p_max.get(g, 0) for g in active_gens), default=0)
@@ -2048,7 +2065,7 @@ class JSONPlotter:
             ax.set_ylim(bottom=0)
             ax.legend(handles=handles, loc="upper right", fontsize=10, framealpha=0.8)
             ax.grid(axis="y", linestyle="--", alpha=0.4)
-            ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+            ticks, labels = self._get_hourly_time_ticks(start_hour=self.start_hour)
             ax.set_xticks(ticks)
             ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
             fig.tight_layout()
@@ -2104,7 +2121,7 @@ class JSONPlotter:
                 ax1.set_xlim(0, 24)
                 ax1.set_ylim(bottom=0)
                 ax1.grid(axis="y", linestyle="--", alpha=0.4)
-                ticks, labels = self._get_hourly_time_ticks(start_hour=9)
+                ticks, labels = self._get_hourly_time_ticks(start_hour=self.start_hour)
                 ax1.set_xticks(ticks)
                 ax1.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
                 lines1, lbl1 = ax1.get_legend_handles_labels()
