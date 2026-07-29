@@ -71,25 +71,22 @@ class OptSets(OptRules):
         """
         pauses = [      
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:00", "00:40", "meal"),
-            ("02:30", "03:30", "maintenance"),
-            ("03:30", "04:40", "road_clearing"),
-            ("04:40", "05:00", "maintenance"),
-            ("07:30", "08:00", "meal"),
+            ("00:20", "01:44", "meal"),
+            ("02:56", "03:20", "maintenance"),
+            ("04:32", "05:44", "road_clearing"),
+            ("06:48", "07:36", "maintenance"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
-            ("08:00", "08:40", "meal"),
-            ("10:30", "11:30", "maintenance"),
-            ("11:30", "12:40", "road_clearing"),
-            ("12:40", "13:00", "maintenance"),
-            ("15:30", "16:00", "meal"),
+            ("08:32", "09:44", "meal"),
+            ("10:56", "11:28", "maintenance"),
+            ("12:32", "13:44", "road_clearing"),
+            ("14:48", "15:36", "maintenance"),
 
             # -- Shift 3 (next day): 16:00 - 00:00 ---
-            ("16:00", "16:40", "meal"),
-            ("18:30", "19:30", "maintenance"),
-            ("19:30", "20:40", "road_clearing"),
-            ("20:40", "21:00", "maintenance"),
-            ("23:30", "00:00", "meal"),
+            ("16:32", "17:44", "meal"),
+            ("18:56", "19:28", "maintenance"),
+            ("20:32", "21:44", "road_clearing"),
+            ("22:48", "23:36", "maintenance"),
         ]
 
         return pauses
@@ -951,8 +948,8 @@ class ConstraintRules(OptRules):
         model.charger_limit                      = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.charge_state                       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration                = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
-        model.assign_state                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.assign_state)
-        model.min_assign_duration                = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.min_assign_duration)
+        #model.assign_state                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.assign_state)
+        #model.min_assign_duration                = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
 
         model.max_installed_capacity             = pyo.Constraint(model.stations_set, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
