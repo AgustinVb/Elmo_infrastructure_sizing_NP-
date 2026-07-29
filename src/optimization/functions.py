@@ -118,29 +118,26 @@ class OptSets(OptRules):
         que dejaba time_intervals_det_set practicamente vacio por un
         pause_type mal escrito ("stops" en vez de "maintenance").
         """
-        pauses = [
-            # --- Shift 1: 00:00 - 08:00 ---
-            ("00:00", "00:40", "meal"),
-            ("02:30", "03:30", "maintenance"),
-            ("03:30", "04:40", "road_clearing"),
-            ("04:40", "05:00", "maintenance"),
-            ("07:30", "08:00", "meal"),
-
-            # --- Shift 2 (next day): 08:00 - 16:00 ---
-            ("08:00", "08:40", "meal"),
-            ("10:30", "11:30", "maintenance"),
-            ("11:30", "12:40", "road_clearing"),
-            ("12:40", "13:00", "maintenance"),
-            ("15:30", "16:00", "meal"),
-
-            # -- Shift 3 (next day): 16:00 - 00:00 ---
-            ("16:00", "16:40", "meal"),
-            ("18:30", "19:30", "maintenance"),
-            ("19:30", "20:40", "road_clearing"),
-            ("20:40", "21:00", "maintenance"),
-            ("23:30", "00:00", "meal"),
-        ]
-
+        pauses = [      
+                    # --- Shift 1: 00:00 - 08:00 ---
+                    ("00:20", "01:44", "meal"),
+                    ("02:56", "03:20", "maintenance"),
+                    ("04:32", "05:44", "road_clearing"),
+                    ("06:48", "07:36", "maintenance"),
+        
+                    # --- Shift 2 (next day): 08:00 - 16:00 ---
+                    ("08:32", "09:44", "meal"),
+                    ("10:56", "11:28", "maintenance"),
+                    ("12:32", "13:44", "road_clearing"),
+                    ("14:48", "15:36", "maintenance"),
+        
+                    # -- Shift 3 (next day): 16:00 - 00:00 ---
+                    ("16:32", "17:44", "meal"),
+                    ("18:56", "19:28", "maintenance"),
+                    ("20:32", "21:44", "road_clearing"),
+                    ("22:48", "23:36", "maintenance"),
+                ]
+        
         return pauses
 
     def _split_contiguous_blocks(self, intervals):
