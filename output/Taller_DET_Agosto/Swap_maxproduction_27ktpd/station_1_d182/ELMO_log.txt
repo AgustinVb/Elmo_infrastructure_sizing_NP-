@@ -1,0 +1,98 @@
+
+Gurobi 10.0.0 (win64) logging started Wed Jul 29 22:45:44 2026
+
+Set parameter LogFile to value "output\Taller_DET_Agosto\Swap_maxproduction_27ktpd\station_1_d182\ELMO_log.txt"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 1 threads
+
+Optimize a model with 33882 rows, 80359 columns and 365462 nonzeros
+Model fingerprint: 0xe799b49a
+Variable types: 4395 continuous, 75964 integer (42841 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 4e+02]
+  Objective range  [4e-01, 1e+02]
+  Bounds range     [1e+00, 4e+00]
+  RHS range        [1e+00, 3e+04]
+
+Warning: Completing partial solution with 75960 unfixed non-continuous variables out of 75964
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 5s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 10s
+Processing user MIP start: 260 nodes explored in subMIP, total elapsed time 15s
+Processing user MIP start: 419 nodes explored in subMIP, total elapsed time 20s
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 20.96 seconds (12.51 work units)
+
+Presolve removed 31534 rows and 58721 columns
+Presolve time: 0.94s
+Presolved: 2348 rows, 21638 columns, 70298 nonzeros
+Variable types: 413 continuous, 21225 integer (20741 binary)
+Root relaxation presolved: 2348 rows, 21638 columns, 70298 nonzeros
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    5.7477800e+05   3.567500e+02   0.000000e+00     22s
+    2612    5.9102660e+05   0.000000e+00   0.000000e+00     22s
+    2612    5.9102660e+05   0.000000e+00   0.000000e+00     22s
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root crossover log...
+
+       0 DPushes remaining with DInf 0.0000000e+00                22s
+
+    2934 PPushes remaining with PInf 0.0000000e+00                22s
+       0 PPushes remaining with PInf 0.0000000e+00                22s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 1.4883133e+03     22s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+    6018    5.9102660e+05   0.000000e+00   1.488313e+03     22s
+    6022    5.9102660e+05   0.000000e+00   0.000000e+00     22s
+    6022    5.9102660e+05   0.000000e+00   0.000000e+00     22s
+
+Root relaxation: objective 5.910266e+05, 6022 iterations, 0.23 seconds (0.11 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 591026.603    0   49          - 591026.603      -     -   24s
+Another try with MIP start
+     0     0 591026.603    0   53          - 591026.603      -     -   27s
+     0     0 591026.603    0   96          - 591026.603      -     -   27s
+     0     0 591026.603    0   56          - 591026.603      -     -   31s
+     0     0 591029.231    0   98          - 591029.231      -     -   32s
+     0     0 591029.231    0   98          - 591029.231      -     -   32s
+     0     0 591029.231    0   31          - 591029.231      -     -   36s
+     0     0 591029.231    0   78          - 591029.231      -     -   36s
+     0     0 591029.231    0   35          - 591029.231      -     -   40s
+     0     0 591029.231    0   74          - 591029.231      -     -   40s
+     0     0 591029.231    0   35          - 591029.231      -     -   44s
+     0     0 591029.231    0   27          - 591029.231      -     -   44s
+H    0     0                    633868.73067 591029.231  6.76%     -   45s
+H    0     0                    632845.56267 591029.231  6.61%     -   47s
+H    0     0                    594445.56267 591029.231  0.57%     -   51s
+
+Cutting planes:
+  Gomory: 4
+  Lift-and-project: 1
+  Flow cover: 1
+
+Explored 1 nodes (58115 simplex iterations) in 51.78 seconds (26.33 work units)
+Thread count was 1 (of 8 available processors)
+
+Solution count 3: 594446 632846 633869 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 5.944455626667e+05, best bound 5.910292307656e+05, gap 0.5747%

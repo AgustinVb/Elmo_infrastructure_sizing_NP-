@@ -1,0 +1,97 @@
+
+Gurobi 10.0.0 (win64) logging started Wed Jul 29 22:49:08 2026
+
+Set parameter LogFile to value "output\Taller_DET_Agosto\Swap_maxproduction_27ktpd\station_1_d1\ELMO_log.txt"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 1 threads
+
+Optimize a model with 33851 rows, 80359 columns and 365400 nonzeros
+Model fingerprint: 0x9c0a7642
+Variable types: 4395 continuous, 75964 integer (42841 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 4e+02]
+  Objective range  [4e-01, 1e+02]
+  Bounds range     [1e+00, 4e+00]
+  RHS range        [1e+00, 3e+04]
+
+Warning: Completing partial solution with 75960 unfixed non-continuous variables out of 75964
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 5s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 10s
+Processing user MIP start: 77 nodes explored in subMIP, total elapsed time 15s
+Processing user MIP start: 229 nodes explored in subMIP, total elapsed time 20s
+Processing user MIP start: 345 nodes explored in subMIP, total elapsed time 25s
+Processing user MIP start: 464 nodes explored in subMIP, total elapsed time 30s
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 31.73 seconds (14.83 work units)
+
+Presolve removed 31503 rows and 58722 columns
+Presolve time: 1.37s
+Presolved: 2348 rows, 21637 columns, 70267 nonzeros
+Variable types: 413 continuous, 21224 integer (20741 binary)
+Root relaxation presolved: 2348 rows, 21637 columns, 70267 nonzeros
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    5.7477800e+05   3.567500e+02   0.000000e+00     34s
+    2589    5.9102660e+05   0.000000e+00   0.000000e+00     34s
+    2589    5.9102660e+05   0.000000e+00   0.000000e+00     34s
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root crossover log...
+
+       0 DPushes remaining with DInf 0.0000000e+00                34s
+
+    3003 PPushes remaining with PInf 0.0000000e+00                34s
+       0 PPushes remaining with PInf 0.0000000e+00                34s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 2.0217452e+02     34s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+    6077    5.9102660e+05   0.000000e+00   2.021745e+02     34s
+    6078    5.9102660e+05   0.000000e+00   0.000000e+00     34s
+    6078    5.9102660e+05   0.000000e+00   0.000000e+00     34s
+
+Root relaxation: objective 5.910266e+05, 6078 iterations, 0.63 seconds (0.10 work units)
+Total elapsed time = 35.16s
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 591026.603    0   30          - 591026.603      -     -   36s
+Another try with MIP start
+     0     0 591026.603    0   45          - 591026.603      -     -   39s
+     0     0 591026.603    0   83          - 591026.603      -     -   40s
+     0     0 591026.603    0   43          - 591026.603      -     -   42s
+     0     0 591026.603    0  119          - 591026.603      -     -   42s
+     0     0 591026.603    0   53          - 591026.603      -     -   45s
+     0     0 591029.231    0   80          - 591029.231      -     -   46s
+     0     0 591029.231    0   62          - 591029.231      -     -   49s
+     0     0 591029.231    0   62          - 591029.231      -     -   50s
+H    0     0                    598424.54933 591029.231  1.24%     -   58s
+H    0     0                    594445.56267 591029.231  0.57%     -   62s
+
+Cutting planes:
+  Gomory: 8
+  Lift-and-project: 2
+  RLT: 2
+
+Explored 1 nodes (40713 simplex iterations) in 62.42 seconds (29.16 work units)
+Thread count was 1 (of 8 available processors)
+
+Solution count 2: 594446 598425 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 5.944455626667e+05, best bound 5.910350026667e+05, gap 0.5737%
