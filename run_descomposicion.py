@@ -317,7 +317,7 @@ def solve_macrobloque_day(job):
     (data_folder, model_name, series_name, station_name, lhd_names, node_names,
      day, total_n_days, delta_t, gap, solver_name, timelimit, output_folder,
      fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json,
-     series_lock) = job
+     series_lock, init_solution_folder) = job
 
     full_model = Reader(join(data_folder, model_name), start_in=1)
     series = _build_series_with_retry(join(data_folder, series_name), lock=series_lock)
@@ -347,6 +347,8 @@ def solve_macrobloque_day(job):
         fixed_infra=fixed_infra,
         threads=threads,
         daily_target_override=daily_target_override,
+        init_solution_folder=init_solution_folder,
+        warmstart_hard_only=True,
     )
 
     result = {'station': station_name, 'day': day}
@@ -375,7 +377,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
     manager = multiprocessing.Manager()
     series_lock = manager.Lock()
 
-    def make_job(station_name, day, output_folder, fixed_infra):
+    def make_job(station_name, day, output_folder, fixed_infra, init_solution_folder=None):
         return (
             args.data_folder, args.model, args.series, station_name,
             lhds_per_station[station_name], nodes_per_station[station_name],
@@ -383,7 +385,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
             output_folder, fixed_infra, threads_per_worker,
             master_targets[station_name][day],
             consumption_model, wp2_consumption_json,
-            series_lock,
+            series_lock, init_solution_folder,
         )
 
     def run_stage(stage_jobs, stage_label):
@@ -408,26 +410,51 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
                   f"subproblemas fallaron y deben re-lanzarse a mano: {failed}")
         return results
 
-    # ---- Fase 1: infraestructura libre, todas las combinaciones en paralelo ----
-    print(f"\n=== Fase 1: {n_jobs} subproblemas (estacion x dia) en paralelo "
-          f"({n_workers} workers), infraestructura libre ===")
-    stage1_jobs = [
-        make_job(st, d, join(args.output_folder, f"{st}_d{d}_stage1"), None)
-        for st in sorted(lhds_per_station) for d in days
-    ]
+    if args.reuse_fase1_from:
+        # ---- Fase 1 omitida: reusar resultados _stage1 de una corrida previa ----
+        if not os.path.isdir(args.reuse_fase1_from):
+            raise SystemExit(
+                f"--reuse_fase1_from apunta a una carpeta inexistente: {args.reuse_fase1_from}"
+            )
+        print(f"\n=== Fase 1 omitida: reusando resultados en '{args.reuse_fase1_from}' ===")
+        fase1_source_folder = args.reuse_fase1_from
+        infra_by_station = {}
+        for st in sorted(lhds_per_station):
+            agg = infra_by_station.setdefault(st, {})
+            for d in days:
+                stage1_folder = join(fase1_source_folder, f"{st}_d{d}_stage1")
+                for key in INFRA_VARS:
+                    val = _read_station_scalar(stage1_folder, key, st)
+                    if val is None:
+                        continue
+                    agg[key] = max(agg.get(key, val), val)
+            if not agg:
+                raise SystemExit(
+                    f"No se pudo leer infraestructura de ningun dia para '{st}' en "
+                    f"'{fase1_source_folder}' (revisar --days y --reuse_fase1_from)."
+                )
+    else:
+        # ---- Fase 1: infraestructura libre, todas las combinaciones en paralelo ----
+        print(f"\n=== Fase 1: {n_jobs} subproblemas (estacion x dia) en paralelo "
+              f"({n_workers} workers), infraestructura libre ===")
+        fase1_source_folder = args.output_folder
+        stage1_jobs = [
+            make_job(st, d, join(args.output_folder, f"{st}_d{d}_stage1"), None)
+            for st in sorted(lhds_per_station) for d in days
+        ]
 
-    results = run_stage(stage1_jobs, "Fase 1")
+        results = run_stage(stage1_jobs, "Fase 1")
 
-    # ---- Agregacion: infraestructura de swap = maximo necesitado entre dias, por estacion ----
-    infra_by_station = {}
-    for r in results:
-        st = r['station']
-        agg = infra_by_station.setdefault(st, {})
-        for key in INFRA_VARS:
-            val = r.get(key)
-            if val is None:
-                continue
-            agg[key] = max(agg.get(key, val), val)
+        # ---- Agregacion: infraestructura de swap = maximo necesitado entre dias, por estacion ----
+        infra_by_station = {}
+        for r in results:
+            st = r['station']
+            agg = infra_by_station.setdefault(st, {})
+            for key in INFRA_VARS:
+                val = r.get(key)
+                if val is None:
+                    continue
+                agg[key] = max(agg.get(key, val), val)
 
     print("\n=== Infraestructura de swap fijada por estacion (maximo entre dias) ===")
     for st, infra in infra_by_station.items():
@@ -437,7 +464,10 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
     print(f"\n=== Fase 2: {n_jobs} subproblemas (estacion x dia) en paralelo "
           f"({n_workers} workers), infraestructura fija ===")
     stage2_jobs = [
-        make_job(st, d, join(args.output_folder, f"{st}_d{d}"), infra_by_station.get(st))
+        make_job(
+            st, d, join(args.output_folder, f"{st}_d{d}"), infra_by_station.get(st),
+            init_solution_folder=join(fase1_source_folder, f"{st}_d{d}_stage1"),
+        )
         for st in sorted(lhds_per_station) for d in days
     ]
 
@@ -466,6 +496,12 @@ def main():
     parser.add_argument(
         '--n_workers', type=int, default=None,
         help='Procesos en paralelo para --parallel_days (default: min(cpus, n_jobs))',
+    )
+    parser.add_argument(
+        '--reuse_fase1_from', default=None,
+        help='Con --parallel_days: en vez de resolver Fase 1, reusa los resultados '
+             '<estacion>_d<dia>_stage1 ya existentes en esta carpeta (de una corrida '
+             'previa) para fijar la infraestructura y como warm start de Fase 2.',
     )
     parser.add_argument(
         '--consumption_model',

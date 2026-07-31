@@ -183,7 +183,7 @@ class OptModel(object):
                     else:
                         idx = tuple(casted)
 
-                    if idx in var_comp:
+                    if idx in var_comp and not var_comp[idx].fixed:
                         var_comp[idx].value = v
                         loaded += 1
                     else:
