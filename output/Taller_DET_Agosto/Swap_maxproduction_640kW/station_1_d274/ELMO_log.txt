@@ -1,0 +1,183 @@
+
+Gurobi 10.0.0 (win64) logging started Thu Jul 30 16:34:33 2026
+
+Set parameter LogFile to value "output\Taller_DET_Agosto\Swap_maxproduction_640kW\station_1_d274\ELMO_log.txt"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 1 threads
+
+Optimize a model with 33851 rows, 80359 columns and 364540 nonzeros
+Model fingerprint: 0xa6193170
+Variable types: 4395 continuous, 75964 integer (42841 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 6e+02]
+  Objective range  [4e-01, 1e+02]
+  Bounds range     [1e+00, 3e+00]
+  RHS range        [1e+00, 3e+04]
+
+Warning: Completing partial solution with 75960 unfixed non-continuous variables out of 75964
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 5s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 10s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 15s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 20s
+Processing user MIP start: 22 nodes explored in subMIP, total elapsed time 25s
+Processing user MIP start: 83 nodes explored in subMIP, total elapsed time 30s
+Processing user MIP start: 160 nodes explored in subMIP, total elapsed time 35s
+Processing user MIP start: 237 nodes explored in subMIP, total elapsed time 40s
+User MIP start did not produce a new incumbent solution
+Processed MIP start in 44.17 seconds (11.55 work units)
+
+Presolve removed 31488 rows and 58712 columns
+Presolve time: 2.58s
+Presolved: 2363 rows, 21647 columns, 69598 nonzeros
+Variable types: 413 continuous, 21234 integer (20953 binary)
+Root relaxation presolved: 2363 rows, 21647 columns, 69598 nonzeros
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    3.4732200e+05   3.567500e+02   0.000000e+00     48s
+    3590    3.6269995e+05   0.000000e+00   0.000000e+00     48s
+    3590    3.6269995e+05   0.000000e+00   0.000000e+00     48s
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root crossover log...
+
+       0 DPushes remaining with DInf 0.0000000e+00                48s
+
+    2885 PPushes remaining with PInf 0.0000000e+00                48s
+       0 PPushes remaining with PInf 0.0000000e+00                48s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 4.7108575e+03     48s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+    6921    3.6269995e+05   0.000000e+00   4.710857e+03     48s
+    6922    3.6269995e+05   0.000000e+00   0.000000e+00     48s
+    6922    3.6269995e+05   0.000000e+00   0.000000e+00     48s
+
+Root relaxation: objective 3.626999e+05, 6922 iterations, 0.77 seconds (0.13 work units)
+Total elapsed time = 50.63s
+Another try with MIP start
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 362699.949    0   28          - 362699.949      -     -   52s
+     0     0 362699.949    0   32          - 362699.949      -     -   55s
+     0     0 362702.285    0   59          - 362702.285      -     -   56s
+     0     0 362702.285    0   56          - 362702.285      -     -   56s
+     0     0 362702.285    0   24          - 362702.285      -     -   63s
+     0     0 362702.285    0   98          - 362702.285      -     -   64s
+     0     0 362702.285    0   43          - 362702.285      -     -   70s
+     0     0 362702.285    0   86          - 362702.285      -     -   71s
+     0     0 362702.285    0   34          - 362702.285      -     -   78s
+     0     0 362702.285    0   55          - 362702.285      -     -   79s
+     0     0 362702.285    0   34          - 362702.285      -     -   83s
+     0     0 362702.285    0   32          - 362702.285      -     -   85s
+     0     2 362702.285    0   31          - 362702.285      -     -  160s
+    10    12 362702.285    5  135          - 362702.285      -   237  165s
+    21    23 362702.285   11   91          - 362702.285      -   412  170s
+    35    37 362702.285   18  105          - 362702.285      -   288  175s
+    40    42 362702.285   21  120          - 362702.285      -   523  180s
+    49    51 362702.285   25  116          - 362702.285      -   486  185s
+    58    60 362702.285   30   35          - 362702.285      -   542  190s
+    62    64 362702.285   32   85          - 362702.285      -   608  195s
+    73    75 362702.285   37  121          - 362702.285      -   525  200s
+    78    80 362702.285   40   25          - 362702.285      -   574  205s
+    88    90 362702.285    4  136          - 362702.285      -   534  210s
+    96    98 362702.285    8  116          - 362702.285      -   496  215s
+   102   104 362702.285   14   97          - 362702.285      -   538  220s
+   112   114 362702.285   19  145          - 362702.285      -   503  225s
+   117   119 362702.285   60   37          - 362702.285      -   570  230s
+   128   130 362702.285   18  115          - 362702.285      -   539  235s
+   135   137 362702.285   69  130          - 362702.285      -   549  240s
+   145   147 362702.285   74   94          - 362702.285      -   554  245s
+   153   155 362745.422   31   86          - 362702.285      -   577  250s
+   168   170 362702.285   38  100          - 362702.285      -   534  255s
+   172   174 362702.285   40   30          - 362702.285      -   570  260s
+   186   188 362702.285   47  105          - 362702.285      -   535  265s
+   191   193 362702.285   50   31          - 362702.285      -   553  270s
+   202   204 362702.285   27  128          - 362702.285      -   539  275s
+   208   210 362702.285   30   34          - 362702.285      -   556  280s
+   214   216 362702.285   62   76          - 362702.285      -   561  285s
+   223   225 362702.285   66   96          - 362702.285      -   548  290s
+   231   233 362702.285   70   33          - 362702.285      -   562  295s
+   240   242 362702.285   75   96          - 362702.285      -   547  300s
+   250   252 362702.285   65  106          - 362702.285      -   535  305s
+   256   258 362702.285   10   33          - 362702.285      -   565  312s
+   259   261 362702.285   81   35          - 362702.285      -   571  315s
+   271   273 362702.285   87   79          - 362702.285      -   556  320s
+   277   279 362702.285   90   51          - 362702.285      -   568  325s
+   287   289 362702.285   95   88          - 362702.285      -   555  330s
+   296   298 362702.285  100   26          - 362702.285      -   563  337s
+   301   303 362702.285  103   68          - 362702.285      -   559  340s
+   310   312 362702.285   67  102          - 362702.285      -   551  345s
+   315   317 362702.285  110   43          - 362702.285      -   562  350s
+   317   319 362702.285  111   71          - 362702.285      -   579  355s
+   323   325 362702.285  114   99          - 362702.285      -   578  360s
+   333   335 362702.285  119   91          - 362702.285      -   567  365s
+   340   342 362702.285   82  103          - 362702.285      -   575  370s
+   345   347 362702.285   84   84          - 362702.285      -   573  375s
+   352   354 362702.285   88  105          - 362702.285      -   565  380s
+   356   358 362702.285   90   37          - 362702.285      -   571  388s
+   357   359 362702.285   90   29          - 362702.285      -   584  391s
+   362   364 362702.285   66  112          - 362702.285      -   582  395s
+   373   375 362702.285   98   87          - 362702.285      -   568  400s
+   376   378 362702.285   69  103          - 362702.285      -   564  405s
+   380   382 362702.285   10   34          - 362702.285      -   588  412s
+   382   384 362702.285   11   84          - 362702.285      -   587  416s
+   388   390 362702.285   30   29          - 362702.285      -   601  422s
+   397   399 362702.285   29  130          - 362702.285      -   594  444s
+   399   401 362702.285   30   36          - 362702.285      -   601  446s
+   408   410 362702.285   40   40          - 362702.285      -   599  451s
+   419   421 362702.285   40   48          - 362702.285      -   602  457s
+   428   430 362702.285   50   32          - 362702.285      -   597  463s
+   435   437 362702.285   48  111          - 362702.285      -   592  465s
+   442   444 362702.285   57  112          - 362702.285      -   602  470s
+   448   450 362702.285   60   36          - 362702.285      -   613  475s
+   459   461 362702.285   60   27          - 362702.285      -   615  480s
+   470   472 362702.285   66  112          - 362702.285      -   603  486s
+   476   478 362702.285   69   90          - 362702.285      -   597  491s
+   479   481 362702.285   70   32          - 362702.285      -   612  495s
+   492   494 362702.285   77   90          - 362702.285      -   600  500s
+   494   496 362702.285   78   79          - 362702.285      -   599  518s
+   497   499 362702.285   66  144          - 362702.285      -   598  520s
+   504   506 362702.285   22   81          - 362702.285      -   602  525s
+   508   510 362702.285   80   37          - 362702.285      -   618  530s
+   513   513 362702.285   53   34          - 362702.285      -   612  542s
+   514   514 362702.285   57   37          - 362702.285      -   611  545s
+   517   516 362702.285   30   39          - 362702.285      -   608  558s
+   518   517 362702.285   20  124          - 362702.285      -   607  565s
+   519   517 362702.285   81   39          - 362702.285      -   605  584s
+   520   518 362702.285   91   65          - 362702.285      -   604  591s
+   521   519 362702.285   11   28          - 362702.285      -   603  602s
+   522   519 362702.285   77  138          - 362702.285      -   602  609s
+   523   520 362702.285   79   28          - 362702.285      -   601  626s
+   524   521 362702.285   61   80          - 362702.285      -   600  632s
+   525   521 362702.285   93   36          - 362702.285      -   598  642s
+   526   522 362702.285   80   36          - 362702.285      -   597  651s
+H  526   495                    366648.50667 362702.285  1.08%   597  691s
+H  526   470                    365739.02400 362702.285  0.83%   597  699s
+
+Cutting planes:
+  Gomory: 3
+  Flow cover: 1
+
+Explored 526 nodes (424890 simplex iterations) in 699.57 seconds (163.39 work units)
+Thread count was 1 (of 8 available processors)
+
+Solution count 2: 365739 366649 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 3.657390240000e+05, best bound 3.627832053333e+05, gap 0.8082%
