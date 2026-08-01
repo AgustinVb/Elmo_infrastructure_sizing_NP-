@@ -574,6 +574,7 @@ class Parameters:
         self.meal_det: List[int] = []
         self.maintenance_det: List[int] = []
         self.road_clearing: List[int] = []
+        self.between_shifts_det: List[int] = []
 
         self._load()
 
@@ -698,6 +699,7 @@ class Parameters:
         self.meal_det = _as_interval_list(data.get("time_intervals_meal_det_set", []))
         self.maintenance_det = _as_interval_list(data.get("time_intervals_maintenance_det_set", []))
         self.road_clearing = _as_interval_list(data.get("time_intervals_road_clearing_det_set", []))
+        self.between_shifts_det = _as_interval_list(data.get("time_intervals_between_shifts_det_set", []))
 
 # -------------------- Plotter --------------------
 class JSONPlotter:
@@ -720,6 +722,7 @@ class JSONPlotter:
         "meal": ("red", 0.15),
         "road_clearing": ("gold", 0.20),
         "maintenance": ("gray", 0.20),
+        "between_shifts": ("blue", 0.20),
     }
     def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
@@ -776,6 +779,7 @@ class JSONPlotter:
                 "meal": self.params.meal_det,
                 "road_clearing": self.params.road_clearing,
                 "maintenance": self.params.maintenance_det,
+                "between_shifts": self.params.between_shifts_det,
             }
 
         return {
@@ -1033,7 +1037,13 @@ class JSONPlotter:
                     if getattr(self.params, 'maintenance_det', None)
                     else special_intervals.get("maintenance", [])
                 )
+                between_shifts_intervals_det = (
+                    self.params.between_shifts_det
+                    if getattr(self.params, 'between_shifts_det', None)
+                    else special_intervals.get("between_shifts", [])
+                )
                 shade_specs = [
+                    (between_shifts_intervals_det, *self.DET_SHADE_COLORS["between_shifts"]),
                     (meal_intervals_det, *self.DET_SHADE_COLORS["meal"]),
                     (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
                     (maintenance_intervals_det, *self.DET_SHADE_COLORS["maintenance"]),
@@ -1137,13 +1147,15 @@ class JSONPlotter:
             line1 = plt.Line2D([0], [0], color='blue', linewidth=1.5, label='Battery Charging Power')
 
             if self.mode == "DET":
+                between_color_det, between_alpha_det = self.DET_SHADE_COLORS["between_shifts"]
                 meal_color, meal_alpha = self.DET_SHADE_COLORS["meal"]
                 road_color, road_alpha = self.DET_SHADE_COLORS["road_clearing"]
                 maint_color, maint_alpha = self.DET_SHADE_COLORS["maintenance"]
+                patch_between_det = mpatches.Patch(color=between_color_det, alpha=between_alpha_det, label='Between Shifts')
                 patch_meal_det = mpatches.Patch(color=meal_color, alpha=meal_alpha, label='Meal')
                 patch_road = mpatches.Patch(color=road_color, alpha=road_alpha, label='Road Clearing')
                 patch_maint_det = mpatches.Patch(color=maint_color, alpha=maint_alpha, label='Maintenance')
-                handles = [line1, patch_peak_hatch, patch_meal_det, patch_road, patch_maint_det]
+                handles = [line1, patch_peak_hatch, patch_between_det, patch_meal_det, patch_road, patch_maint_det]
             else:
                 patch_between = mpatches.Patch(color='gray', alpha=0.6, label='Between Shifts')
                 patch_meal = mpatches.Patch(color='gray', alpha=0.15, label='Meal')
@@ -1213,10 +1225,12 @@ class JSONPlotter:
 
             interval_groups = self._special_mode_intervals(d)
             if self.mode == "DET":
+                between_color, between_alpha = self.DET_SHADE_COLORS["between_shifts"]
                 meal_color, meal_alpha = self.DET_SHADE_COLORS["meal"]
                 road_color, road_alpha = self.DET_SHADE_COLORS["road_clearing"]
                 maint_color, maint_alpha = self.DET_SHADE_COLORS["maintenance"]
                 shade_specs = [
+                    (interval_groups.get("between_shifts", []), between_color, between_alpha, "Between Shifts"),
                     (interval_groups.get("meal", []), meal_color, meal_alpha, "Meal"),
                     (interval_groups.get("road_clearing", []), road_color, road_alpha, "Road Clearing"),
                     (interval_groups.get("maintenance", []), maint_color, maint_alpha, "Maintenance"),
@@ -1561,6 +1575,7 @@ class JSONPlotter:
 
                 if self.mode == "DET":
                     for interval_list, color, alpha in [
+                        (self.params.between_shifts_det, *self.DET_SHADE_COLORS["between_shifts"]),
                         (self.params.meal_det, *self.DET_SHADE_COLORS["meal"]),
                         (self.params.road_clearing, *self.DET_SHADE_COLORS["road_clearing"]),
                         (self.params.maintenance_det, *self.DET_SHADE_COLORS["maintenance"]),

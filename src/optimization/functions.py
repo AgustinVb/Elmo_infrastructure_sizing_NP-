@@ -8,7 +8,7 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system, time_series, daily_target_override=None):
+    def __init__(self, mine_system, time_series, daily_target_override=None, autonomous_mode=False):
         self.mine_system = mine_system
         self.time_series = time_series
         # Override opcional del target agregado de daily_production por dia,
@@ -16,6 +16,12 @@ class OptRules(object):
         # para repartir el target global de produccion entre macrobloques en
         # vez de exigirle a cada uno la suma de sus propios m_j. {d: target}
         self.daily_target_override = daily_target_override
+        # Escenario DET: False (default) = modo normal, la colacion solo
+        # permite hacer swap o estar detenido. True = modo autonomo, la
+        # colacion ademas permite operar (viajar/extraer). El cambio de turno
+        # (between_shifts) siempre restringe a swap o detenido, en ambos
+        # modos.
+        self.autonomous_mode = autonomous_mode
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -125,19 +131,22 @@ class OptSets(OptRules):
       
         pauses = [
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:30", "01:42", "meal"),
+            ("00:30", "00:46", "between_shifts"),
+            ("00:46", "01:42", "meal"),
             ("02:54", "03:18", "maintenance"),
             ("04:30", "05:42", "road_clearing"),
             ("06:46", "07:34", "maintenance"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
-            ("08:30", "09:42", "meal"),
+            ("08:30", "08:46", "between_shifts"),
+            ("08:46", "09:42", "meal"),
             ("10:54", "11:26", "maintenance"),
             ("12:30", "13:42", "road_clearing"),
             ("14:46", "15:34", "maintenance"),
 
             # -- Shift 3 (next day): 16:00 - 00:00 ---
-            ("16:30", "17:42", "meal"),
+            ("16:30", "16:46", "between_shifts"),
+            ("16:46", "17:42", "meal"),
             ("18:54", "19:26", "maintenance"),
             ("20:30", "21:42", "road_clearing"),
             ("22:46", "23:34", "maintenance"),
@@ -274,6 +283,7 @@ class OptSets(OptRules):
         det_meal_intervals = self._get_time_intervals_for_pause_type("meal", pauses=det_pauses)
         det_maintenance_intervals = self._get_time_intervals_for_pause_type("maintenance", pauses=det_pauses)
         det_road_clearing_intervals = self._get_time_intervals_for_pause_type("road_clearing", pauses=det_pauses)
+        det_between_shifts_intervals = self._get_time_intervals_for_pause_type("between_shifts", pauses=det_pauses)
         det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
 
         model.time_intervals_meal_det_set = pyo.Set(
@@ -288,10 +298,29 @@ class OptSets(OptRules):
         model.time_intervals_road_clearing_det_set = pyo.Set(
             initialize=sorted(det_road_clearing_intervals)
         )
-
-        model.time_intervals_det_set = pyo.Set(
-            initialize=sorted(set(det_meal_intervals) | set(det_stop))
+        # Cambio de turno (between_shifts) DET: extraido directamente de la
+        # lista de pausas DET (antes se inferia de los huecos entre turnos de
+        # la hoja Shifts del Excel). En ambos modos (normal/autonomo) el LHD
+        # solo puede hacer swap o estar detenido durante esta ventana.
+        model.time_intervals_between_shifts_det_set = pyo.Set(
+            initialize=sorted(det_between_shifts_intervals)
         )
+
+        # DET (nuevo) detentions: build sets using the DET pause definitions.
+        # Modo normal: la colacion tambien impide operar (solo swap o estar
+        # detenido), igual que maintenance/road_clearing.
+        # Modo autonomo: la colacion queda fuera de este set, por lo que el
+        # LHD puede ademas operar (viajar/extraer) durante esa ventana; solo
+        # queda restringido a swap-o-detenido durante between_shifts (ver
+        # between_shifts_elhd_swap / time_intervals_between_shifts_det_set).
+        if self.autonomous_mode:
+            model.time_intervals_det_set = pyo.Set(
+                initialize=sorted(set(det_stop))
+            )
+        else:
+            model.time_intervals_det_set = pyo.Set(
+                initialize=sorted(set(det_meal_intervals) | set(det_stop))
+            )
 
         # DCH detentions (legacy) kept under a separate set name
         model.time_intervals_dch_det_set = pyo.Set(
@@ -1048,7 +1077,7 @@ class ConstraintRules(OptRules):
         if (
             t in model.time_intervals_meal_det_set
             or t in model.time_intervals_road_clearing_det_set
-            or t in model.time_intervals_between_shifts_set
+            or t in model.time_intervals_between_shifts_det_set
         ):
             return pyo.Constraint.Skip
         return model.Z_swap[k, i, d, t] == 0
@@ -1232,7 +1261,7 @@ class ConstraintRules(OptRules):
         model.between_shifts_elhd_swap = pyo.Constraint(
             model.slhd_set,
             model.days,
-            model.time_intervals_between_shifts_set,
+            model.time_intervals_between_shifts_det_set,
             rule=self.between_shifts_elhd_swap,
         )
         #model.assign_state = pyo.Constraint(

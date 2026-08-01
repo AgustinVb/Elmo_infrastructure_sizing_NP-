@@ -358,11 +358,14 @@ class OptModel(object):
                 print("⚠️ Could not read log file for summary:", e)
 
     def __init__(self, mine_system, time_series, output_folder, y_init_path=None, init_solution_folder=None,
-                 warmstart_hard_only=False, fixed_infra=None, daily_target_override=None):
+                 warmstart_hard_only=False, fixed_infra=None, daily_target_override=None, autonomous_mode=False):
         self.output_folder   = output_folder
         self.time_series     = time_series
         self.mine_system     = mine_system
-        self.set_builder      = OptSets(mine_system, time_series)
+        # Escenario DET autonomo: durante la colacion el LHD puede ademas
+        # operar (no solo hacer swap o estar detenido). Ver OptSets.build_sets.
+        self.autonomous_mode  = autonomous_mode
+        self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
         self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override)

@@ -11,7 +11,8 @@ class OptimizationModel(object):
                  warmstart_hard_only=False,
                  fixed_infra=None,
                  threads=24,
-                 daily_target_override=None):
+                 daily_target_override=None,
+                 autonomous_mode=False):
 
         t0 = time.time()
 
@@ -25,6 +26,7 @@ class OptimizationModel(object):
             warmstart_hard_only=warmstart_hard_only,
             fixed_infra=fixed_infra,
             daily_target_override=daily_target_override,
+            autonomous_mode=autonomous_mode,
         )
         print('formulation time:', time.time() - t0)
         self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality, threads=threads)

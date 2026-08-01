@@ -451,6 +451,9 @@ class Printer:
         payload["time_intervals_road_clearing_det_set"] = _export_set_values(
             "time_intervals_road_clearing_det_set",
         )
+        payload["time_intervals_between_shifts_det_set"] = _export_set_values(
+            "time_intervals_between_shifts_det_set",
+        )
         payload["time_intervals_det_set"] = _export_set_values(
             "time_intervals_det_set",
         )
