@@ -1,0 +1,118 @@
+Command: C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\.venv_elmo\Scripts\python.exe C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\run_project.py --data_folder C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\data\data_teniente_onboard_max_target\ --output_folder C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\output\run_all_teniente_short_shift\data_teniente_onboard_max_target\ --solver gurobi --objective cost --time_limit 1800 --consumption_model wp2 --wp2_consumption_json electric_routes_within_time.json --short_shift_changes
+Started: 2026-07-31T00:17:36
+
+Detectado escenario a costo fijo: obj_fixed y obj_marginal son equivalentes.
+Se omitira Stage 1 y se resolvera una sola vez con el objetivo marginal.
+Saltando Stage 1 (precio fijo).
+Set parameter Username
+Set parameter LicenseID to value 2695249
+
+--------------------------------------------
+Warning: your license will expire in 12 days
+--------------------------------------------
+
+Academic license - for non-commercial use only - expires 2026-08-12
+Set parameter MIPGap to value 0.01
+Set parameter Threads to value 16
+Set parameter NodefileStart to value 30
+Set parameter NodefileDir to value "C:\Temp\gurobi_nodefile"
+Set parameter SoftMemLimit to value 40
+Set parameter Heuristics to value 0.2
+Set parameter TimeLimit to value 1800
+Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\output\run_all_teniente_short_shift\data_teniente_onboard_max_target\gurobi.log"
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 16 threads
+
+Optimize a model with 48582 rows, 82629 columns and 283724 nonzeros
+Model fingerprint: 0xda24a776
+Variable types: 41949 continuous, 40680 integer (0 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 3e+02]
+  Objective range  [1e-02, 5e+01]
+  Bounds range     [1e+00, 9e+02]
+  RHS range        [1e+00, 9e+02]
+Found heuristic solution: objective 4321610.0676
+Presolve removed 46048 rows and 55460 columns
+Presolve time: 0.20s
+Presolved: 2534 rows, 27169 columns, 87894 nonzeros
+Variable types: 1746 continuous, 25423 integer (25212 binary)
+
+Root relaxation: objective 2.159232e+06, 33121 iterations, 1.05 seconds (3.40 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 2159232.07    0  502 4321610.07 2159232.07  50.0%     -    1s
+H    0     0                    2262076.2240 2159232.07  4.55%     -    1s
+H    0     0                    2260565.6227 2159232.07  4.48%     -    2s
+     0     0 2163067.92    0  566 2260565.62 2163067.92  4.31%     -    2s
+H    0     0                    2192096.1670 2163067.92  1.32%     -    3s
+     0     0 2163067.92    0  574 2192096.17 2163067.92  1.32%     -    3s
+     0     0 2163068.23    0  588 2192096.17 2163068.23  1.32%     -    3s
+     0     0 2163068.23    0  590 2192096.17 2163068.23  1.32%     -    3s
+H    0     0                    2191340.4698 2163068.23  1.29%     -    3s
+H    0     0                    2191340.1769 2163120.38  1.29%     -    5s
+     0     0 2163950.38    0  460 2191340.18 2163950.38  1.25%     -    5s
+H    0     0                    2191340.1767 2163950.38  1.25%     -    6s
+     0     0 2163950.38    0  459 2191340.18 2163950.38  1.25%     -    6s
+H    0     0                    2191340.0995 2163950.38  1.25%     -    7s
+     0     0 2163950.38    0  463 2191340.10 2163950.38  1.25%     -    7s
+     0     0 2163950.38    0  437 2191340.10 2163950.38  1.25%     -    7s
+H    0     0                    2191340.0940 2163950.38  1.25%     -    8s
+H    0     2                    2191340.0936 2163950.38  1.25%     -    9s
+     0     2 2163950.38    0  437 2191340.09 2163950.38  1.25%     -    9s
+     3     8 2163979.76    2  156 2191340.09 2163979.76  1.25% 10443   10s
+H   33    48                    2190857.6363 2163979.76  1.23%   971   10s
+H   34    48                    2190585.0206 2163979.76  1.21%   944   10s
+H   36    48                    2189829.0424 2163979.76  1.18%   892   10s
+H   40    48                    2189829.0403 2163979.76  1.18%   804   10s
+H   45    48                    2189829.0156 2163979.76  1.18%   717   10s
+H  147   164                    2189073.1056 2163979.76  1.15%   230   12s
+H  208   244                    2189073.0937 2163979.76  1.15%   166   12s
+H  324   341                    2189073.0138 2163979.76  1.15%   111   14s
+H  326   341                    2189073.0050 2163979.76  1.15%   110   14s
+H  335   341                    2188279.1442 2163979.76  1.11%   108   14s
+   582   743 2163979.76   25  137 2188279.14 2163979.76  1.11%  66.9   17s
+H  591   743                    2188278.9673 2163979.76  1.11%  66.2   17s
+H  742  1078                    2188278.9662 2163979.76  1.11%  55.0   19s
+H  801  1078                    2188278.9640 2163979.76  1.11%  51.6   19s
+H  819  1078                    2188278.9637 2163979.76  1.11%  50.7   19s
+H  912  1078                    2188278.9374 2163979.76  1.11%  46.8   19s
+H 1042  1078                    2188278.9357 2163979.76  1.11%  43.1   19s
+H 1062  1078                    2187891.0752 2163979.76  1.09%  42.6   19s
+H 1080  1410                    2187891.0453 2163979.76  1.09%  42.1   23s
+H 1132  1410                    2187891.0439 2163979.76  1.09%  40.9   23s
+H 1349  1410                    2187781.4290 2163979.76  1.09%  36.8   23s
+  1423  2897 2164030.08   76  127 2187781.43 2163979.76  1.09%  39.1   29s
+H 1437  2897                    2187781.4282 2163979.76  1.09%  38.8   29s
+H 1880  2897                    2187781.4271 2163979.76  1.09%  36.2   29s
+H 1980  2897                    2187781.3940 2163979.76  1.09%  37.8   29s
+  2955  5441 2164100.56  150  150 2187781.39 2163979.76  1.09%  33.0   35s
+  7224  9254 2176155.28  391   81 2187781.39 2163979.76  1.09%  32.7   42s
+  9523  9691 2164103.56   38  180 2187781.39 2163979.76  1.09%  31.8   45s
+H 9901  9691                    2187781.3937 2163979.76  1.09%  32.3   45s
+  9960 12683 2164781.19   45  217 2187781.39 2163979.76  1.09%  32.4   50s
+ 13103 12685 2177027.84  167  485 2187781.39 2163979.76  1.09%  30.0   55s
+
+Cutting planes:
+  Gomory: 5
+  MIR: 48
+  StrongCG: 13
+  Flow cover: 9
+  Zero half: 32
+
+Explored 13103 nodes (528579 simplex iterations) in 56.79 seconds (76.28 work units)
+Thread count was 16 (of 32 available processors)
+
+Solution count 10: 2.18778e+06 2.18778e+06 2.18778e+06 ... 2.18828e+06
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 2.187781393694e+06, best bound 2.166439732755e+06, gap 0.9755%
+Gurobi status= 2
+Total time [sec]: 57.56
+Operation Cost (marginal): 2187781.3936943817
+JSON de variables, parametros y sets, log y summary guardados en 'C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\output\run_all_teniente_short_shift\data_teniente_onboard_max_target\'.
+[bootstrap] Entorno OK. (Dependencias ya presentes)
+[bootstrap] Ejecutando: .venv_elmo\Scripts\python.exe setup.py --data_folder C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\data\data_teniente_onboard_max_target\ --output_folder C:\Users\TECNO-MASTER\Desktop\ELMO\Modelos\ELMO-UG-8min-Chuqui&Teniente\ELMO-UG-8min-Teniente\output\run_all_teniente_short_shift\data_teniente_onboard_max_target\ --solver gurobi --objective cost --time_limit 1800 --consumption_model wp2 --wp2_consumption_json electric_routes_within_time.json --short_shift_changes

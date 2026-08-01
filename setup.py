@@ -105,6 +105,14 @@ def main():
         help='Ruta al JSON de consumos WP2 (relativa a data_folder salvo que sea absoluta). '
              'Si se omite y --consumption_model wp2, se infiere segun la tecnologia de la flota.'
     )
+    parser.add_argument(
+        '--autonomous_mode',
+        action='store_true',
+        help='Escenario DET de vehiculos autonomos: durante la colacion el LHD '
+             'puede ademas operar (viajar/extraer), no solo cargar o estar '
+             'detenido. El cambio de turno (between_shifts) sigue restringido '
+             'a cargar-o-detenido en ambos modos.'
+    )
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
@@ -120,6 +128,7 @@ def main():
         y_init_path=args.y_init_path,
         init_solution_folder=args.init_solution_folder,
         relax_integrality=args.relax_integrality,
+        autonomous_mode=args.autonomous_mode,
     )
 
 

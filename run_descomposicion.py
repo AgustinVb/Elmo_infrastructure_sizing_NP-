@@ -219,7 +219,8 @@ def compute_master_daily_targets(full_model: Reader, series: Series, lhds_per_st
 
 def run_macrobloque(full_model, series, station_name, lhd_names, node_names,
                      days, delta_t, gap, solver_name, output_folder, timelimit,
-                     daily_target_override=None, consumption_model='wp1', wp2_consumption_json=None):
+                     daily_target_override=None, consumption_model='wp1', wp2_consumption_json=None,
+                     autonomous_mode=False):
     mine_system = build_macrobloque_mine(full_model, lhd_names, station_name, node_names)
 
     time_series = timeseries.Timeseries(series, days, delta_t)
@@ -237,6 +238,7 @@ def run_macrobloque(full_model, series, station_name, lhd_names, node_names,
         output_folder,
         timelimit=timelimit,
         daily_target_override=daily_target_override,
+        autonomous_mode=autonomous_mode,
     )
 
 
@@ -292,7 +294,8 @@ def solve_macrobloque_day(job):
     """
     (data_folder, model_name, series_name, station_name, lhd_names, node_names,
      day, total_n_days, delta_t, gap, solver_name, timelimit, output_folder,
-     fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json) = job
+     fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json,
+     autonomous_mode) = job
 
     full_model = Reader(join(data_folder, model_name), start_in=1)
     series = _build_series_with_retry(join(data_folder, series_name))
@@ -322,6 +325,7 @@ def solve_macrobloque_day(job):
         fixed_infra=fixed_infra,
         threads=threads,
         daily_target_override=daily_target_override,
+        autonomous_mode=autonomous_mode,
     )
 
     return {
@@ -351,6 +355,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
             output_folder, fixed_infra, threads_per_worker,
             master_targets[station_name][day],
             consumption_model, wp2_consumption_json,
+            args.autonomous_mode,
         )
 
     # ---- Fase 1: infraestructura libre, todas las combinaciones en paralelo ----
@@ -431,6 +436,14 @@ def main():
         help='Ruta al JSON de consumos WP2 (relativa a data_folder salvo que sea absoluta). '
              'Si se omite y --consumption_model wp2, se infiere segun la tecnologia de la flota.'
     )
+    parser.add_argument(
+        '--autonomous_mode',
+        action='store_true',
+        help='Escenario DET de vehiculos autonomos: durante la colacion el LHD '
+             'puede ademas operar (viajar/extraer), no solo cargar o estar '
+             'detenido. El cambio de turno (between_shifts) sigue restringido '
+             'a cargar-o-detenido en ambos modos.'
+    )
     args = parser.parse_args()
 
     days = [int(d) for d in args.days.split(',')]
@@ -470,6 +483,7 @@ def main():
             daily_target_override=master_targets[station_name],
             consumption_model=args.consumption_model,
             wp2_consumption_json=wp2_consumption_json,
+            autonomous_mode=args.autonomous_mode,
         )
 
 

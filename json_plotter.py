@@ -537,6 +537,7 @@ class Parameters:
         self.meal_det = []
         self.maintenance_det = []
         self.road_clearing = []
+        self.between_shifts_det = []
 
         self._load()
 
@@ -626,6 +627,7 @@ class Parameters:
         self.meal_det = sorted(int(v) for v in data.get("time_intervals_meal_det_set", []))
         self.maintenance_det = sorted(int(v) for v in data.get("time_intervals_maintenance_det_set", []))
         self.road_clearing = sorted(int(v) for v in data.get("time_intervals_road_clearing_det_set", []))
+        self.between_shifts_det = sorted(int(v) for v in data.get("time_intervals_between_shifts_det_set", []))
 
 # -------------------- Plotter --------------------
 class JSONPlotter:
@@ -648,6 +650,7 @@ class JSONPlotter:
         "meal": ("red", 0.15),
         "road_clearing": ("gold", 0.20),
         "maintenance": ("gray", 0.20),
+        "between_shifts": ("blue", 0.20),
     }
     def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
@@ -895,10 +898,16 @@ class JSONPlotter:
                 ("11:30", "12:40"),
                 ("19:30", "20:40"),
             ]
+            det_between_shifts_windows = [
+                ("00:30", "00:46"),
+                ("08:30", "08:46"),
+                ("16:30", "16:46"),
+            ]
             return {
                 "meal": self._build_intervals_from_clock_windows(det_meal_windows, start_hour=self.start_hour),
                 "road_clearing": self._build_intervals_from_clock_windows(det_road_clearing_windows, start_hour=self.start_hour),
                 "maintenance": self._build_intervals_from_clock_windows(det_maintenance_windows, start_hour=self.start_hour),
+                "between_shifts": self._build_intervals_from_clock_windows(det_between_shifts_windows, start_hour=self.start_hour),
             }
 
         # Fallback: empty sets
@@ -973,7 +982,13 @@ class JSONPlotter:
                     if getattr(self.params, 'maintenance_det', None)
                     else self.special_intervals.get("maintenance", [])
                 )
+                between_shifts_intervals_det = (
+                    self.params.between_shifts_det
+                    if getattr(self.params, 'between_shifts_det', None)
+                    else self.special_intervals.get("between_shifts", [])
+                )
                 shade_specs = [
+                    (between_shifts_intervals_det, *self.DET_SHADE_COLORS["between_shifts"]),
                     (meal_intervals_det, *self.DET_SHADE_COLORS["meal"]),
                     (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
                     (maintenance_intervals_det, *self.DET_SHADE_COLORS["maintenance"]),
@@ -1072,13 +1087,15 @@ class JSONPlotter:
             patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
 
             if self.mode == "DET":
+                between_color_det, between_alpha_det = self.DET_SHADE_COLORS["between_shifts"]
                 meal_color_det, meal_alpha_det = self.DET_SHADE_COLORS["meal"]
                 road_color, road_alpha = self.DET_SHADE_COLORS["road_clearing"]
                 maint_color_det, maint_alpha_det = self.DET_SHADE_COLORS["maintenance"]
+                patch_between_det = mpatches.Patch(color=between_color_det, alpha=between_alpha_det, label='Between Shifts')
                 patch_meal_det = mpatches.Patch(color=meal_color_det, alpha=meal_alpha_det, label='Meal')
                 patch_road = mpatches.Patch(color=road_color, alpha=road_alpha, label='Road Clearing')
                 patch_maint_det = mpatches.Patch(color=maint_color_det, alpha=maint_alpha_det, label='Maintenance')
-                handles = [line1, patch_peak_hatch, patch_meal_det, patch_road, patch_maint_det]
+                handles = [line1, patch_peak_hatch, patch_between_det, patch_meal_det, patch_road, patch_maint_det]
             else:
                 patch_between = mpatches.Patch(color=between_shifts_color, alpha=between_shifts_alpha, label='Between Shifts')
                 patch_meal = mpatches.Patch(color=meal_color, alpha=meal_alpha, label='Meal')
