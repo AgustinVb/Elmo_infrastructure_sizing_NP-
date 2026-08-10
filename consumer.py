@@ -666,6 +666,7 @@ def calculate_real_charged_energy_from_swaps(
             continue
 
     total_real = 0.0
+    total_real_grid = 0.0
     n_events = 0
     n_events_with_discount = 0
     n_events_missing_b = 0
@@ -683,6 +684,23 @@ def calculate_real_charged_energy_from_swaps(
             continue
         try:
             bmax_map[str(station)] = float(bmax_val)
+        except Exception:
+            continue
+
+    # Eficiencia de carga por LHD (hoja LHD, eta_charge_i): la energia que
+    # entra a la bateria (bmax_i - B_llegada) es POST-eficiencia; para
+    # estimar lo que habria que comprarle a la red hay que des-escalarla
+    # dividiendo por eta_charge_i, igual que hace battery_soc/battery_soc_swap
+    # en functions.py.
+    eta_charge_raw = params_data.get("eta_charge_i", {})
+    eta_charge_map: Dict[str, float] = {}
+    for path, eta_val in _iter_leaf_records(eta_charge_raw):
+        axis_map = _axis_map_from_path(path)
+        lhd_key = axis_map.get("i") or axis_map.get("b") or axis_map.get("_1")
+        if lhd_key is None:
+            continue
+        try:
+            eta_charge_map[str(lhd_key)] = float(eta_val)
         except Exception:
             continue
 
@@ -726,9 +744,12 @@ def calculate_real_charged_energy_from_swaps(
 
         soc_arrival = b_prev / bmax_i
         event_real = max(0.0, bmax_i - b_prev)
+        eta_c = eta_charge_map.get(str(lhd), 1.0)
+        event_real_grid = event_real / eta_c if eta_c > 0 else event_real
         if event_real > eps:
             n_events_with_discount += 1
         total_real += event_real
+        total_real_grid += event_real_grid
         soc_arrival_sum += soc_arrival
         soc_arrival_min = soc_arrival if soc_arrival_min is None else min(soc_arrival_min, soc_arrival)
         soc_arrival_max = soc_arrival if soc_arrival_max is None else max(soc_arrival_max, soc_arrival)
@@ -743,6 +764,8 @@ def calculate_real_charged_energy_from_swaps(
                 "bmax_kwh": bmax_i,
                 "b_arrival_kwh": b_prev,
                 "real_event_kwh": event_real,
+                "real_event_grid_kwh": event_real_grid,
+                "eta_charge": eta_c,
             }
         )
 
@@ -757,6 +780,8 @@ def calculate_real_charged_energy_from_swaps(
         "base_energy_total_kwh": float(charge_intervals) * p_charger * delta_t * n_events,
         "sv_energy_total_kwh": sv_energy_total,
         "gap_vs_sv_kwh": sv_energy_total - total_real,
+        "real_grid_energy_kwh": total_real_grid,
+        "gap_vs_sv_grid_kwh": sv_energy_total - total_real_grid,
         "soc_base": soc_base,
         "soc_arrival_avg": (soc_arrival_sum / n_events) if n_events else 0.0,
         "soc_arrival_min": soc_arrival_min if soc_arrival_min is not None else 0.0,
@@ -1234,6 +1259,7 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
     per_station_energy: Dict[str, float] = {}
     per_station_consumed: Dict[str, float] = {}
     per_station_real_charged: Dict[str, float] = {}
+    per_station_real_grid: Dict[str, float] = {}
 
     for sub in subfolders:
         if not summary_only:
@@ -1271,10 +1297,12 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
             per_station_consumed[sub.name] = 0.0
 
         try:
-            real_charged_kwh, _, _ = calculate_real_charged_energy_from_swaps(sub)
+            real_charged_kwh, real_charged_meta, _ = calculate_real_charged_energy_from_swaps(sub)
             per_station_real_charged[sub.name] = real_charged_kwh
+            per_station_real_grid[sub.name] = float(real_charged_meta.get("real_grid_energy_kwh", 0.0))
         except Exception:
             per_station_real_charged[sub.name] = 0.0
+            per_station_real_grid[sub.name] = 0.0
 
         if not summary_only:
             if costs:
@@ -1332,6 +1360,7 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
         capex_total = 0.0
         opex_total = 0.0
         real_energy_cost_total = 0.0
+        real_grid_energy_cost_total = 0.0
         dedup_rows = []
         for station, subs_for_station in station_groups.items():
             capex_value = per_station_costs[subs_for_station[0].name].get("investment_cost", 0.0) \
@@ -1345,9 +1374,14 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
                 per_station_costs[s.name].get("real_energy_cost", 0.0)
                 for s in subs_for_station
             )
+            real_grid_ec_value = sum(
+                per_station_costs[s.name].get("real_grid_energy_cost", 0.0)
+                for s in subs_for_station
+            )
             capex_total += capex_value
             opex_total += opex_value
             real_energy_cost_total += real_ec_value
+            real_grid_energy_cost_total += real_grid_ec_value
             dedup_rows.append([station, str(len(subs_for_station)), f"{capex_value:.2f}", f"{opex_value:.2f}", f"{real_ec_value:.2f}"])
 
         if not summary_only:
@@ -1364,6 +1398,10 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
             per_station_costs[s.name].get(k, 0.0)
             for s in subfolders for k in ("penalty_cost", "gen_op_cost", "bess_op_cost")
         ) + combined_peak_cost
+        real_total_with_real_grid_ec = capex_total + real_grid_energy_cost_total + sum(
+            per_station_costs[s.name].get(k, 0.0)
+            for s in subfolders for k in ("penalty_cost", "gen_op_cost", "bess_op_cost")
+        ) + combined_peak_cost
         print(make_table(
             "COSTO TOTAL FINAL (deduplicado, 3 estaciones, todos los dias)",
             ["Concepto", "Valor"],
@@ -1375,6 +1413,9 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
                 ["--- alternativo (costo carga real) ---", ""],
                 ["Costo carga real (bmax-B_llegada, suma dias)", f"{real_energy_cost_total:.2f}"],
                 ["COSTO TOTAL (con costo carga real)", f"{real_total_with_real_ec:.2f}"],
+                ["--- alternativo (costo carga real ajustado por eficiencia) ---", ""],
+                ["Costo carga real / eta_charge (energia comprada a la red estimada, suma dias)", f"{real_grid_energy_cost_total:.2f}"],
+                ["COSTO TOTAL (con costo carga real ajustado por eficiencia)", f"{real_total_with_real_grid_ec:.2f}"],
             ],
         ))
         print()
@@ -1384,6 +1425,9 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
         real_energy_cost_total = sum(
             per_station_costs[s.name].get("real_energy_cost", 0.0) for s in subfolders
         )
+        real_grid_energy_cost_total = sum(
+            per_station_costs[s.name].get("real_grid_energy_cost", 0.0) for s in subfolders
+        )
         print(make_table(
             "COSTO TOTAL FINAL (3 estaciones)",
             ["Concepto", "Valor"],
@@ -1392,6 +1436,8 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
                 ["COSTO TOTAL", f"{corrected_total:.2f}"],
                 ["--- alternativo (costo carga real) ---", ""],
                 ["Costo carga real (bmax-B_llegada)", f"{real_energy_cost_total:.2f}"],
+                ["--- alternativo (costo carga real ajustado por eficiencia) ---", ""],
+                ["Costo carga real / eta_charge (energia comprada a la red estimada)", f"{real_grid_energy_cost_total:.2f}"],
             ],
         ))
         print()
@@ -1400,6 +1446,7 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
     energy_total = sum(per_station_energy.values())
     consumed_total = sum(per_station_consumed.values())
     real_charged_total = sum(per_station_real_charged.values())
+    real_grid_total = sum(per_station_real_grid.values())
     peak_charging_str = (
         f"{peak_charging_kw:.2f} kW  "
         f"(max {peak_charging_meta.get('max_baterias_cargando', 0):.0f} bat x "
@@ -1414,6 +1461,7 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
     extraction_annual_str = f"{extraction_total * scaling_factor:.2f}" if scaling_factor else "N/D"
     energy_annual_str = f"{energy_total * scaling_factor:.2f}" if scaling_factor else "N/D"
     consumed_annual_str = f"{consumed_total * scaling_factor:.2f}" if scaling_factor else "N/D"
+    real_grid_annual_str = f"{real_grid_total * scaling_factor:.2f}" if scaling_factor else "N/D"
 
     if summary_only:
         print(make_table(
@@ -1425,6 +1473,8 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
                 ["Energia cargada total combinada (Sv) [kWh] (dias significativos)", f"{energy_total:.2f}"],
                 ["Energia cargada total anualizada [kWh]", energy_annual_str],
                 ["Energia cargada real (bmax-B_llegada) [kWh]", f"{real_charged_total:.2f}"],
+                ["Energia comprada a la red estimada (bmax-B_llegada / eta_charge) [kWh]", f"{real_grid_total:.2f}"],
+                ["Energia comprada a la red estimada anualizada [kWh]", real_grid_annual_str],
                 ["Energia consumida por vehiculos (B_s-B) [kWh] (dias significativos)", f"{consumed_total:.2f}"],
                 ["Energia consumida por vehiculos anualizada [kWh]", consumed_annual_str],
                 ["Potencia pico de carga (combinada)", peak_charging_str],
@@ -1441,6 +1491,8 @@ def analyze_macrobloques(root: Path, subfolders: List[Path], args) -> None:
             ["Energia cargada total combinada (Sv) [kWh] (dias significativos)"] + [f"{per_station_energy[s.name]:.2f}" for s in subfolders] + [f"{energy_total:.2f}"],
             ["Energia cargada total anualizada [kWh]"] + ["" for _ in subfolders] + [energy_annual_str],
             ["Energia cargada real (bmax-B_llegada) [kWh]"] + [f"{per_station_real_charged[s.name]:.2f}" for s in subfolders] + [f"{real_charged_total:.2f}"],
+            ["Energia comprada a la red estimada (bmax-B_llegada / eta_charge) [kWh]"] + [f"{per_station_real_grid[s.name]:.2f}" for s in subfolders] + [f"{real_grid_total:.2f}"],
+            ["Energia comprada a la red estimada anualizada [kWh]"] + ["" for _ in subfolders] + [real_grid_annual_str],
             ["Energia consumida por vehiculos (B_s-B) [kWh] (dias significativos)"] + [f"{per_station_consumed[s.name]:.2f}" for s in subfolders] + [f"{consumed_total:.2f}"],
             ["Energia consumida por vehiculos anualizada [kWh]"] + ["" for _ in subfolders] + [consumed_annual_str],
             ["Potencia pico de carga (combinada) [kW]"] + ["" for s in subfolders] + [peak_charging_str],
@@ -2149,7 +2201,52 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     except Exception as ex:
         print(f"Advertencia al calcular costo de energía real: {ex}")
         real_energy_cost = 0.0
-    
+
+    # Costo de energía "real ajustado por eficiencia": igual que real_energy_cost,
+    # pero en vez de usar directamente (bmax_i - B_llegada) -que es energia ya
+    # DENTRO de la bateria, post eta_charge- usa esa misma energia dividida por
+    # eta_charge_i (real_grid_energy_kwh), estimando lo que realmente habria
+    # que comprarle a la red para reponerla. Es la version consistente con como
+    # OB contabiliza su propia energia de carga (ver discusion Sv vs P).
+    real_grid_energy_cost = 0.0
+    real_grid_energy_kwh = 0.0
+    try:
+        _, real_swap_meta_grid, _ = calculate_real_charged_energy_from_swaps(root)
+        real_grid_energy_kwh = float(real_swap_meta_grid.get("real_grid_energy_kwh", 0.0))
+        sv_energy_total_kwh_g = float(real_swap_meta_grid.get("sv_energy_total_kwh", 0.0))
+
+        params_path_g = find_json_in_folder(root, "parameters.json")
+        if not params_path_g or is_effectively_empty_json(params_path_g):
+            raise ValueError("No se encontró parameters.json para costo fijo")
+
+        params_data_g = load_json(params_path_g)
+        scaling_factor_g = float(params_data_g.get("scaling_factor_op_cost", 1.0))
+
+        costo_electricidad_g = params_data_g.get("costo_electricidad", {})
+        fixed_candidates_g: List[float] = []
+        for _, v in _iter_leaf_records(costo_electricidad_g):
+            try:
+                fixed_candidates_g.append(float(v))
+            except Exception:
+                continue
+
+        if not fixed_candidates_g:
+            raise ValueError("No hay valores en costo_electricidad para costo fijo")
+
+        c_min_g = min(fixed_candidates_g)
+        energy_cost_profile_g = str(params_data_g.get("energy_cost", "")).strip()
+
+        if energy_cost_profile_g == "Profile_fixed":
+            real_grid_energy_cost = real_grid_energy_kwh * c_min_g * scaling_factor_g
+        else:
+            if sv_energy_total_kwh_g > 0:
+                real_grid_energy_cost = float(energy_cost) * (real_grid_energy_kwh / sv_energy_total_kwh_g)
+            else:
+                real_grid_energy_cost = 0.0
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de energía real ajustado por eficiencia: {ex}")
+        real_grid_energy_cost = 0.0
+
     try:
         investment_cost = calculate_investment_cost(root)
     except Exception as ex:
@@ -2197,6 +2294,7 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         "energy_cost":      energy_cost,
         "grid_energy_cost": grid_energy_cost,
         "real_energy_cost": real_energy_cost,
+        "real_grid_energy_cost": real_grid_energy_cost,
         "investment_cost":  investment_cost,
         "penalty_cost":     penalty_cost,
         "peak_power_cost":  peak_power_cost,
