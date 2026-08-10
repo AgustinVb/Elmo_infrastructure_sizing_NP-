@@ -1,0 +1,65 @@
+
+Gurobi 12.0.1 (win64) logging started Thu Aug  6 17:47:58 2026
+
+Set parameter LogFile to value "output/Taller_DET_Agosto/Resultados_finales/Carga_ob_8lhds_base\station_1_d60_stage1\gurobi.log"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 5400
+Gurobi Optimizer version 12.0.1 build v12.0.1rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 1 threads
+
+Non-default parameters:
+TimeLimit  5400
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  1
+
+Optimize a model with 51939 rows, 87347 columns and 259960 nonzeros
+Model fingerprint: 0x014449de
+Variable types: 40905 continuous, 46442 integer (46441 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 1e+03]
+  Objective range  [4e-01, 2e+05]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 3e+04]
+Presolve removed 49157 rows and 65307 columns
+Presolve time: 1.64s
+Presolved: 2782 rows, 22040 columns, 66934 nonzeros
+Variable types: 528 continuous, 21512 integer (21511 binary)
+Root relaxation presolved: 2782 rows, 22040 columns, 66934 nonzeros
+
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root relaxation: objective 2.633966e+05, 6925 iterations, 0.74 seconds (0.19 work units)
+Total elapsed time = 5.13s (DegenMoves)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 301917.338    0  258          - 301917.338      -     -    6s
+     0     0 455931.646    0  211          - 455931.646      -     -    7s
+*    0     0               0    455931.64584 455931.646  0.00%     -   14s
+
+Cutting planes:
+  Gomory: 14
+  Lift-and-project: 71
+  Projected implied bound: 3
+  MIR: 5
+  Flow cover: 16
+
+Explored 1 nodes (20845 simplex iterations) in 14.60 seconds (3.92 work units)
+Thread count was 1 (of 8 available processors)
+
+Solution count 1: 455932 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 4.559316458442e+05, best bound 4.559316458442e+05, gap 0.0000%

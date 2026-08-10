@@ -1,4 +1,4 @@
-import pyomo.environ as pyo
+﻿import pyomo.environ as pyo
 import math
 import pandas as pd
 import numpy as np
@@ -697,8 +697,8 @@ class ConstraintRules(OptRules):
                            * pyo_value(model.filling_factor[i_rep]))
 
         target = pyo_value(model.m_j[j, d])
-        lb = math.floor(target / prod_per_assign) - 1
-        ub = math.ceil(target / prod_per_assign) + 1
+        lb = math.floor(target / prod_per_assign) 
+        ub = math.ceil(target / prod_per_assign) 
 
         visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
 
@@ -973,7 +973,14 @@ class ConstraintRules(OptRules):
         model.battery_upper =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_upper)
         model.battery_boundary                  = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary)
         #model.battery_boundary_soc_50            = pyo.Constraint(model.elhd_set, model.days, rule=self.battery_boundary_soc_50)
-        model.battery_soc_break_symmetry        = pyo.Constraint(model.charge_precedence_pairs, model.days, rule=self.battery_soc_break_symmetry)
+        # Rotura de simetria por SOC inicial: asume que basta ordenar el SOC
+        # inicial de forma monotona entre LHD identicos, pero eso descarta
+        # soluciones reales cuando el target de extraccion queda pegado al
+        # maximo fisico de la flota (SOC inicial optimo no sale monotono).
+        # Confirmado: con esta restriccion activa, un escenario con target
+        # en el limite de capacidad da "Model is infeasible"; desactivada,
+        # el mismo modelo (misma infra, mismo target) encuentra solucion.
+        #model.battery_soc_break_symmetry        = pyo.Constraint(model.charge_precedence_pairs, model.days, rule=self.battery_soc_break_symmetry)
 
         #nuevas
         model.max_n_chargers                     = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
