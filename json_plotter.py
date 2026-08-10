@@ -491,6 +491,7 @@ class Parameters:
         self.path = params_path
         self.ok = False
         self.delta_t = 1.0
+        self.base_hour = 8.5
         self.energy_price_scale = float(energy_price_scale)
 
         self.m_j = None
@@ -510,9 +511,16 @@ class Parameters:
         self.between_shifts = []
         self.meals = []
         self.maintenance = []
-        # DET defaults
+        # DET defaults (esquema viejo, se mantiene por compatibilidad con
+        # carpetas de resultados generadas antes de la redefinicion DET)
         self.shift_change = []
         self.forced_detention = []
+        # DET defaults (esquema nuevo: between_shifts/meal/maintenance/road_clearing
+        # separados, ver OptSets.build_sets en src/optimization/functions.py)
+        self.meal_det = []
+        self.maintenance_det = []
+        self.road_clearing = []
+        self.between_shifts_det = []
 
         self._load()
 
@@ -523,6 +531,7 @@ class Parameters:
             return
         self.ok = True
         self.delta_t = float(data.get("delta_t", 1.0))
+        self.base_hour = float(data.get("base_hour", 8.5))
         if "b_max_fleet" in data:
             self.b_max_fleet = float(data["b_max_fleet"])
         if "min_capacity_fraction" in data:
@@ -627,6 +636,16 @@ class Parameters:
         forced_raw = data.get("time_intervals_forced_detention_set", data.get("time_intervals_fuel_delay_set", []))
         self.forced_detention = sorted(int(v) for v in forced_raw)
 
+        # DET-specific sets (esquema nuevo: between_shifts/meal/maintenance/
+        # road_clearing separados). Vacios si la corrida es de antes de la
+        # redefinicion DET -- en ese caso el plotter cae al sombreado 2-color
+        # viejo (shift_change/forced_detention) via el fallback en
+        # plot_charge_power_vs_price / _load_special_intervals.
+        self.meal_det = sorted(int(v) for v in data.get("time_intervals_meal_det_set", []))
+        self.maintenance_det = sorted(int(v) for v in data.get("time_intervals_maintenance_det_set", []))
+        self.road_clearing = sorted(int(v) for v in data.get("time_intervals_road_clearing_det_set", []))
+        self.between_shifts_det = sorted(int(v) for v in data.get("time_intervals_between_shifts_det_set", []))
+
 # -------------------- Plotter --------------------
 class JSONPlotter:
     MONTH_LABELS = {
@@ -643,6 +662,15 @@ class JSONPlotter:
             11: "November",
             12: "December",
         }
+
+    # Paleta de sombreado para intervalos DET (esquema nuevo: (color, alpha))
+    DET_SHADE_COLORS = {
+        "meal": ("red", 0.15),
+        "road_clearing": ("gold", 0.20),
+        "maintenance": ("gray", 0.20),
+        "between_shifts": ("blue", 0.20),
+    }
+
     def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
         self.mode = mode.upper() if isinstance(mode, str) else "DCH"
@@ -672,6 +700,7 @@ class JSONPlotter:
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
         self.delta_t = self.params.delta_t if self.params.ok else 1.0
+        self.start_hour = self.params.base_hour if self.params.ok else 8.5
 
         # Dominio
         self.days = self._detect_days()
@@ -913,7 +942,7 @@ class JSONPlotter:
         tick_fs = 14
         legend_fs = 14
 
-        start_hour = 9.0
+        start_hour = self.start_hour
         dt = float(self.delta_t)
 
         for y, d in itertools.product(self.years, self.days):
@@ -956,22 +985,39 @@ class JSONPlotter:
             maintenance_alpha = 0.15
 
             if self.mode == "DET":
-                shift_change_intervals = (
-                    self.params.shift_change
-                    if getattr(self.params, 'shift_change', None)
-                    else self.special_intervals.get("shift_change", [])
-                )
-                forced_intervals = (
-                    self.params.forced_detention
-                    if getattr(self.params, 'forced_detention', None)
-                    else self.special_intervals.get("forced_detention", [])
-                )
-                shade_specs = [
-                    (shift_change_intervals, between_shifts_color, between_shifts_alpha),
-                    (forced_intervals, between_shifts_color, between_shifts_alpha),
-                ]
+                meal_det_intervals = self.params.meal_det
+                road_clearing_intervals = self.params.road_clearing
+                maintenance_det_intervals = self.params.maintenance_det
+                between_shifts_det_intervals = self.params.between_shifts_det
+
+                if meal_det_intervals or road_clearing_intervals or maintenance_det_intervals or between_shifts_det_intervals:
+                    # Esquema DET nuevo (between_shifts/meal/maintenance/road_clearing
+                    # separados, ver OptSets.build_sets): sombreado de 4 colores.
+                    shade_specs = [
+                        (between_shifts_det_intervals, *self.DET_SHADE_COLORS["between_shifts"]),
+                        (meal_det_intervals, *self.DET_SHADE_COLORS["meal"]),
+                        (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
+                        (maintenance_det_intervals, *self.DET_SHADE_COLORS["maintenance"]),
+                    ]
+                else:
+                    # Fallback: carpeta de resultados de antes de la redefinicion DET
+                    # (parameters.json solo trae shift_change/forced_detention viejos).
+                    shift_change_intervals = (
+                        self.params.shift_change
+                        if getattr(self.params, 'shift_change', None)
+                        else self.special_intervals.get("shift_change", [])
+                    )
+                    forced_intervals = (
+                        self.params.forced_detention
+                        if getattr(self.params, 'forced_detention', None)
+                        else self.special_intervals.get("forced_detention", [])
+                    )
+                    shade_specs = [
+                        (shift_change_intervals, between_shifts_color, between_shifts_alpha),
+                        (forced_intervals, between_shifts_color, between_shifts_alpha),
+                    ]
                 peak_windows = [("18:00", "22:00")]
-                peak_intervals = self._build_intervals_from_clock_windows(peak_windows, start_hour=9)
+                peak_intervals = self._build_intervals_from_clock_windows(peak_windows, start_hour=self.start_hour)
             else:
                 between_shifts_intervals = (
                     self.params.between_shifts
@@ -1069,7 +1115,18 @@ class JSONPlotter:
             patch_peak_hatch = mpatches.Patch(facecolor='none', edgecolor='#d62728', hatch='///', label='Peak hours')
 
             if self.mode == "DET":
-                handles = [line1, patch_peak_hatch, patch_between]
+                if meal_det_intervals or road_clearing_intervals or maintenance_det_intervals or between_shifts_det_intervals:
+                    between_color_det, between_alpha_det = self.DET_SHADE_COLORS["between_shifts"]
+                    meal_color_det, meal_alpha_det = self.DET_SHADE_COLORS["meal"]
+                    road_color, road_alpha = self.DET_SHADE_COLORS["road_clearing"]
+                    maint_color_det, maint_alpha_det = self.DET_SHADE_COLORS["maintenance"]
+                    patch_between_det = mpatches.Patch(color=between_color_det, alpha=between_alpha_det, label='Between Shifts')
+                    patch_meal_det = mpatches.Patch(color=meal_color_det, alpha=meal_alpha_det, label='Meal')
+                    patch_road = mpatches.Patch(color=road_color, alpha=road_alpha, label='Road Clearing')
+                    patch_maint_det = mpatches.Patch(color=maint_color_det, alpha=maint_alpha_det, label='Maintenance')
+                    handles = [line1, patch_peak_hatch, patch_between_det, patch_meal_det, patch_road, patch_maint_det]
+                else:
+                    handles = [line1, patch_peak_hatch, patch_between]
             else:
                 handles = [line1, patch_between, patch_meal, patch_maint]
                 if price_line is not None:

@@ -8,9 +8,12 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system,  time_series):
+    def __init__(self, mine_system,  time_series, autonomous_mode=False):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Escenario DET autonomo: durante la colacion el LHD puede ademas
+        # operar (no solo cargar o estar detenido). Ver OptSets.build_sets.
+        self.autonomous_mode = autonomous_mode
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -77,22 +80,26 @@ class OptSets(OptRules):
         This contains the new, user-provided DET schedule.
         """
         pauses = [
-            # --- Shift 2 (in progress): 08:00 - 16:00 ---
-            # Shift change already started at 08:00, horizon captures from 09:00
-            ("09:00", "09:40", "shift_change"),
-            ("10:28", "12:58", "stop"),
-
-            # --- Shift 3: 16:00 - 00:00 ---
-            ("16:30", "17:40", "shift_change"),
-            ("19:28", "21:58", "stop"),
-
             # --- Shift 1: 00:00 - 08:00 ---
-            ("00:30", "01:40", "shift_change"),
-            ("03:28", "05:58", "stop"),
+            ("00:30", "00:46", "between_shifts"),
+            ("00:46", "01:42", "meal"),
+            ("02:54", "03:18", "maintenance"),
+            ("04:30", "05:42", "road_clearing"),
+            ("06:46", "07:34", "maintenance"),
 
             # --- Shift 2 (next day): 08:00 - 16:00 ---
-            # Interpreted as next day since 08:30 < 09:00
-            ("08:30", "09:00", "shift_change"),
+            ("08:30", "08:46", "between_shifts"),
+            ("08:46", "09:42", "meal"),
+            ("10:54", "11:26", "maintenance"),
+            ("12:30", "13:42", "road_clearing"),
+            ("14:46", "15:34", "maintenance"),
+
+            # -- Shift 3 (next day): 16:00 - 00:00 ---
+            ("16:30", "16:46", "between_shifts"),
+            ("16:46", "17:42", "meal"),
+            ("18:54", "19:26", "maintenance"),
+            ("20:30", "21:42", "road_clearing"),
+            ("22:46", "23:34", "maintenance"),
         ]
 
         return pauses
@@ -131,8 +138,9 @@ class OptSets(OptRules):
         - self.time_series.delta_t is in hours
         - pause definitions are (start_hhmm, end_hhmm, pause_type)
         """
-        # Ajusta esto a tu inicio real del horizonte (09:00 segÃºn tu comentario)
-        base_minutes = 9 * 60
+        # Hora real en que arranca el horizonte (t=1), parametrizada por
+        # escenario via Shifts.base_hour (distinta en DET/DCH).
+        base_minutes = int(round(self.time_series.base_hour * 60))
 
         dt_minutes = int(round(self.time_series.delta_t * 60))
         if dt_minutes <= 0:
@@ -194,10 +202,11 @@ class OptSets(OptRules):
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
+        base_minutes = int(round(self.time_series.base_hour * 60))
         model.time_intervals_peak_set = pyo.Set(
             initialize=[
                 t for t in self.time_series.time_intervals
-                if 18 * 60 <= ((9 * 60 + (t - 1) * int(round(self.time_series.delta_t * 60))) % 1440) < 22 * 60
+                if 18 * 60 <= ((base_minutes + (t - 1) * int(round(self.time_series.delta_t * 60))) % 1440) < 22 * 60
             ]
         )
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
@@ -230,20 +239,46 @@ class OptSets(OptRules):
             initialize=self._get_time_intervals_for_pause_type("fuel_delay")
         )
 
-        # DET (nuevo) detentions: build sets using the DET pause definitions
-        det_shift = self._get_time_intervals_for_pause_type("shift_change", pauses=self._get_pause_definitions_det())
-        det_stop = self._get_time_intervals_for_pause_type("stop", pauses=self._get_pause_definitions_det())
-        model.time_intervals_det_set = pyo.Set(
-            initialize=sorted(set(det_shift) | set(det_stop))
-        )
+        # DET (nuevo) detentions: build sets using the DET pause definitions.
+        # Modo normal: la colacion tambien impide operar (solo cargar o estar
+        # detenido), igual que maintenance/road_clearing.
+        # Modo autonomo: la colacion queda fuera de este set, por lo que el
+        # LHD puede ademas operar (viajar/extraer) durante esa ventana; solo
+        # queda restringido a cargar-o-detenido durante between_shifts (ver
+        # between_shifts_elhd / time_intervals_between_shifts_det_set).
+        det_pauses = self._get_pause_definitions_det()
+        det_meal_intervals = self._get_time_intervals_for_pause_type("meal", pauses=det_pauses)
+        det_maintenance_intervals = self._get_time_intervals_for_pause_type("maintenance", pauses=det_pauses)
+        det_road_clearing_intervals = self._get_time_intervals_for_pause_type("road_clearing", pauses=det_pauses)
+        det_between_shifts_intervals = self._get_time_intervals_for_pause_type("between_shifts", pauses=det_pauses)
+        det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
+
+        if self.autonomous_mode:
+            model.time_intervals_det_set = pyo.Set(
+                initialize=sorted(set(det_stop))
+            )
+        else:
+            model.time_intervals_det_set = pyo.Set(
+                initialize=sorted(set(det_meal_intervals) | set(det_stop))
+            )
 
         # Expose DET-specific subsets so they are serialized into parameters.json
-        model.time_intervals_shift_change_det_set = pyo.Set(
-            initialize=sorted(det_shift)
+        model.time_intervals_meal_det_set = pyo.Set(
+            initialize=sorted(det_meal_intervals)
         )
-
-        model.time_intervals_forced_detention_set = pyo.Set(
-            initialize=sorted(det_stop)
+        model.time_intervals_maintenance_det_set = pyo.Set(
+            initialize=sorted(det_maintenance_intervals)
+        )
+        # Road clearing DET: al igual que colacion, el LHD puede estar detenido
+        # o cargando (a diferencia de maintenance, donde debe permanecer detenido).
+        model.time_intervals_road_clearing_det_set = pyo.Set(
+            initialize=sorted(det_road_clearing_intervals)
+        )
+        # Cambio de turno (between_shifts) DET: extraido directamente de la
+        # lista de pausas DET. En ambos modos (normal/autonomo) el LHD solo
+        # puede cargar o estar detenido durante esta ventana.
+        model.time_intervals_between_shifts_det_set = pyo.Set(
+            initialize=sorted(det_between_shifts_intervals)
         )
 
         # DCH detentions (legacy) kept under a separate set name
@@ -795,6 +830,27 @@ class ConstraintRules(OptRules):
             return pyo.Constraint.Skip
         return model.Z[i,y,d,t] + sum(model.Z_charge[k,i,y,d,t] for (k, i2) in model.ZCHARGE_INDEX if i2 == i) == 1
 
+    def charge_only_meal_or_between_shifts_det(self, model, k, i, y, d, t):
+        """Version DET de charge_only_meal_or_shift_change.
+
+        Se permite cargar (Z_charge = 1) durante colacion DET
+        (time_intervals_meal_det_set), road_clearing DET
+        (time_intervals_road_clearing_det_set) o entre turnos DET
+        (time_intervals_between_shifts_det_set). Durante maintenance el LHD
+        debe permanecer detenido sin cargar, por lo que esa ventana no se
+        incluye aqui. Fuera de esas ventanas la carga queda prohibida.
+
+        Definida pero no registrada en build_all_constraints (igual que
+        det_stop_all): el esquema activo hoy en esta rama sigue siendo DCH.
+        """
+        if (
+            t in model.time_intervals_meal_det_set
+            or t in model.time_intervals_road_clearing_det_set
+            or t in model.time_intervals_between_shifts_det_set
+        ):
+            return pyo.Constraint.Skip
+        return model.Z_charge[k,i,y,d,t] == 0
+
     def fixed_n_chargers(self, model, k):
         if k == "station_1":
             return model.N_chargers[k] == 4
@@ -897,7 +953,14 @@ class ConstraintRules(OptRules):
         model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
         model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
         model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
+
+        # Esquema DET (redefinido, con base_hour y modo autonomo): definido pero
+        # NO activo todavia en esta rama -- el esquema DCH de arriba sigue siendo
+        # el que corre. Para activarlo, descomentar estas dos lineas y comentar
+        # el bloque DCH (meal_g1/g2, maintenance_stop_all, maint_no_charge,
+        # charge_only_meal_or_shift_change), igual que en carga_on_board.
         #model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        #model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
       
 class ObjectiveRules(OptRules):

@@ -335,13 +335,60 @@ def calculate_daily_trips(y_json_path: Path) -> Dict[str, float]:
     return trips_by_day
 
 
-def calculate_daily_charged_energy(p_json_path: Path, step_hours: float) -> Dict[str, float]:
-    """Suma energÃ­a diaria [kWh] desde P [kW] usando step_hours."""
+def _get_eta_charge_by_lhd(params_data: Dict[str, Any]) -> Dict[str, float]:
+    """Lee eta_charge_i (Param de src/optimization/functions.py, indexado solo por
+    elhd_set) desde parameters.json: estructura {"_1": {lhd_id: eta_charge}}.
+    Devuelve {} si la corrida no trae ese parametro (escenario sin esa hoja/feature)."""
+    raw = params_data.get("eta_charge_i", {})
+    inner = raw.get("_1", {}) if isinstance(raw, dict) else {}
+    if not isinstance(inner, dict):
+        return {}
+    result: Dict[str, float] = {}
+    for lhd_id, val in inner.items():
+        try:
+            result[str(lhd_id)] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def calculate_daily_charged_energy(
+    p_json_path: Path,
+    step_hours: float,
+    eta_charge_by_lhd: Optional[Dict[str, float]] = None,
+) -> Dict[str, float]:
+    """Suma energia diaria [kWh] desde P [kW] usando step_hours.
+
+    Estructura esperada: k -> station -> i -> lhd -> y -> year -> d -> day -> t -> interval
+    (compatibilidad con formato legado sin eje de anio: k -> station -> i -> lhd -> d -> day -> t).
+
+    Por defecto (eta_charge_by_lhd=None) devuelve la energia BRUTA del lado del
+    cargador (P tal cual, sin perdidas) -- comportamiento original. Si se entrega
+    eta_charge_by_lhd ({lhd_id: eta_charge}, ver _get_eta_charge_by_lhd), cada
+    potencia se escala por la eficiencia de carga de ESE LHD antes de sumar,
+    devolviendo la energia NETA que efectivamente queda almacenada en la bateria.
+    """
     data = load_json(p_json_path)
     energy_by_day: Dict[str, float] = {}
 
     if not isinstance(data, dict) or "k" not in data or not isinstance(data["k"], dict):
         return energy_by_day
+
+    def _accumulate(lhd_id: str, d_block: Any) -> None:
+        if not isinstance(d_block, dict):
+            return
+        eta = float(eta_charge_by_lhd.get(lhd_id, 1.0)) if eta_charge_by_lhd else 1.0
+        for day_key, day_data in d_block.items():
+            if not isinstance(day_data, dict):
+                continue
+            t_block = day_data.get("t", {})
+            if not isinstance(t_block, dict):
+                continue
+
+            day = str(day_key)
+            energy_by_day.setdefault(day, 0.0)
+            for power in t_block.values():
+                energy_by_day[day] += _as_float(power, 0.0) * step_hours * eta
 
     for station_data in data["k"].values():
         if not isinstance(station_data, dict):
@@ -350,24 +397,16 @@ def calculate_daily_charged_energy(p_json_path: Path, step_hours: float) -> Dict
         if not isinstance(i_block, dict):
             continue
 
-        for lhd_data in i_block.values():
+        for lhd_id, lhd_data in i_block.items():
             if not isinstance(lhd_data, dict):
                 continue
-            d_block = lhd_data.get("d", {})
-            if not isinstance(d_block, dict):
-                continue
-
-            for day_key, day_data in d_block.items():
-                if not isinstance(day_data, dict):
-                    continue
-                t_block = day_data.get("t", {})
-                if not isinstance(t_block, dict):
-                    continue
-
-                day = str(day_key)
-                energy_by_day.setdefault(day, 0.0)
-                for power in t_block.values():
-                    energy_by_day[day] += _as_float(power, 0.0) * step_hours
+            year_block = lhd_data.get("y", {})
+            if isinstance(year_block, dict) and year_block:
+                for year_data in year_block.values():
+                    _accumulate(lhd_id, year_data.get("d", {}) if isinstance(year_data, dict) else {})
+            else:
+                # Compatibilidad con formato legado (sin eje de anio)
+                _accumulate(lhd_id, lhd_data.get("d", {}))
 
     return energy_by_day
 
@@ -661,6 +700,21 @@ def main() -> None:
         trips_daily = calculate_daily_trips(y_path) if (y_path and not is_effectively_empty_json(y_path)) else {}
         step_hours = infer_step_hours(root, args.delta_minutes)
         energy_daily = calculate_daily_charged_energy(p_path, step_hours) if (p_path and not is_effectively_empty_json(p_path)) else {}
+
+        # EnergÃ­a neta almacenada en baterÃ­a (post eta_charge) y pÃ©rdidas de carga.
+        # Solo se calcula si el escenario trae eta_charge_i en parameters.json
+        # (hoja LHD con charge_efficiency/discharge_efficiency); si no, queda {}
+        # y las columnas nuevas simplemente no aportan nada (compatibilidad con
+        # escenarios/carpetas de resultados antiguas sin esa hoja).
+        eta_charge_by_lhd: Dict[str, float] = {}
+        if params_path and not is_effectively_empty_json(params_path):
+            eta_charge_by_lhd = _get_eta_charge_by_lhd(load_json(params_path))
+        net_energy_daily = (
+            calculate_daily_charged_energy(p_path, step_hours, eta_charge_by_lhd=eta_charge_by_lhd)
+            if (eta_charge_by_lhd and p_path and not is_effectively_empty_json(p_path))
+            else {}
+        )
+
         cycles_total = 0.0
         cycles_daily: Dict[str, float] = {}
         if (
@@ -676,33 +730,35 @@ def main() -> None:
             rows = []
             total_trips = 0.0
             total_energy = 0.0
+            total_net_energy = 0.0
             total_cycles = 0.0
+            show_net = bool(eta_charge_by_lhd)
 
             for d in all_days:
                 trips = trips_daily.get(d, 0.0)
                 energy = energy_daily.get(d, 0.0)
+                net_energy = net_energy_daily.get(d, 0.0)
                 cycles = cycles_daily.get(d, 0.0)
 
                 total_trips += trips
                 total_energy += energy
+                total_net_energy += net_energy
                 total_cycles += cycles
 
-                rows.append([
-                    d,
-                    f"{trips:.0f}",
-                    f"{cycles:.3f}",
-                    f"{energy:.3f}",
-                ])
+                row = [d, f"{trips:.0f}", f"{cycles:.3f}", f"{energy:.3f}"]
+                if show_net:
+                    row.extend([f"{net_energy:.3f}", f"{energy - net_energy:.3f}"])
+                rows.append(row)
 
-            rows.append([
-                "TOTAL",
-                f"{total_trips:.0f}",
-                f"{total_cycles:.3f}",
-                f"{total_energy:.3f}",
-            ])
+            total_row = ["TOTAL", f"{total_trips:.0f}", f"{total_cycles:.3f}", f"{total_energy:.3f}"]
+            headers = ["DÃ­a", "Viajes diarios totales", "Ciclos (Y*n_trips)", "EnergÃ­a diaria bruta [kWh]"]
+            if show_net:
+                total_row.extend([f"{total_net_energy:.3f}", f"{total_energy - total_net_energy:.3f}"])
+                headers.extend(["EnergÃ­a neta en baterÃ­a [kWh]", "PÃ©rdidas de carga (eta_charge) [kWh]"])
+            rows.append(total_row)
             print(make_table(
                 "OPERACIÃ“N DIARIA",
-                ["DÃ­a", "Viajes diarios totales", "Ciclos (Y*n_trips)", "EnergÃ­a diaria [kWh]"],
+                headers,
                 rows,
             ))
             print()
@@ -885,6 +941,10 @@ def calculate_lhd_charge_cost(root: Path) -> float:
     """
     Calcula el costo de carga de los LHD elÃ©ctricos.
     Usa P.json (potencia de carga) y parameters.json (costos marginales y delta_t).
+
+    Nota (eta_charge): usa P bruto (sin dividir por eta_charge) a propÃ³sito --
+    ver el docstring de calculate_grid_energy_cost para la explicaciÃ³n completa
+    de por quÃ© P ya equivale a "demanda neta / eficiencia".
     """
     p_path = find_json_in_folder(root, "P.json")
     params_path = find_json_in_folder(root, "parameters.json")
@@ -1213,6 +1273,16 @@ def calculate_grid_energy_cost(root: Path) -> float:
 
     Usa P_red.json y parameters.json.
     Estructura P_red.json (multi-año): {"y": {"1": {"d": {"1": {"t": {"1.0": val}}}}}}
+
+    Nota (eta_charge/eta_discharge): P_red ya es la energía bruta comprada a la
+    red -- power_balance define P_red = sum(P) sin pérdidas, y battery_soc es la
+    ÚNICA restricción que aplica eta_charge/eta_discharge (para dimensionar
+    cuánto de P efectivamente queda en la batería). Como battery_boundary cierra
+    el SOC de cada día, en el agregado se cumple P_red = (demanda neta de
+    tracción de los LHD / eta_discharge) / eta_charge exactamente por
+    construcción del modelo -- no hay que volver a dividir por la eficiencia
+    acá, eso duplicaría la pérdida. Ver calculate_daily_charged_energy(...,
+    eta_charge_by_lhd=...) para la energía NETA que sí queda en la batería.
     """
     pred_path   = find_json_in_folder(root, "P_red.json")
     params_path = find_json_in_folder(root, "parameters.json")

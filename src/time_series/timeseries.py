@@ -30,6 +30,7 @@ class Timeseries(object):
         self.mapper['MarginalCost']    = self.sample_marginal_cost(self.series['MarginalCost'])
         self.mapper['ExtractionGoal']  = self.sample_extraction_goal(self.series['ExtractionGoal'])
         self.mapper['Shifts']          = self.sample_shifts(self.series['Shifts'])
+        self.base_hour                 = self.get_base_hour()
         self.mapper['Time_Intervals']  = self.get_time_intervals()
         self.mapper['NodeAssignment']  = self.sample_node_assignment(self.series['NodeAssignment'])
         self.mapper['StationAssignment']  = self.sample_station_assignment(self.series['StationAssignment'])
@@ -283,9 +284,26 @@ class Timeseries(object):
         return self.mapper['Shifts'].loc[shift_name, :]['duration'].iloc[0]
 
     def sample_shifts(self, shifts: pd.DataFrame) -> pd.DataFrame:
-        shifts = shifts[['id', 'name', 'day_start', 'day_end', 'hour_start', 'duration']].copy()
+        cols = ['id', 'name', 'day_start', 'day_end', 'hour_start', 'duration']
+        if 'base_hour' in shifts.columns:
+            cols.append('base_hour')
+        shifts = shifts[cols].copy()
         shifts = shifts.set_index(['name', 'id'])
         return shifts
+
+    def get_base_hour(self) -> float:
+        """Hora real (decimal) en que arranca el horizonte (t=1), leida de la
+        columna 'base_hour' de la hoja Shifts (basta con que un solo valor
+        este lleno en toda la columna; el resto puede quedar vacio).
+        Distinta segun esquema: DET usa 8.5 (08:30), DCH usa 9 (09:00).
+        Si la hoja no trae esa columna, o esta vacia (escenarios viejos),
+        usa 8.5 por compatibilidad con el default DET actual."""
+        shifts = self.mapper['Shifts']
+        if 'base_hour' in shifts.columns:
+            values = pd.to_numeric(shifts['base_hour'], errors='coerce').dropna()
+            if not values.empty:
+                return float(values.iloc[0])
+        return 8.5
 
     def get_next_shift(self, shift_name: str):
         shift_id = self.mapper['Shifts'].loc[shift_name].index.item() - 1
@@ -543,17 +561,24 @@ class Timeseries(object):
             trips.loc[(elhd, node), 'travel_duration'] = 1
             trips.loc[(elhd, node), 'energy_consumption'] = energy_per_trip
 
-            # ðŸ"¥ NUEVO: transformar kWh a litros de diÃ©sel si corresponde
+            # Transformar kWh a litros de diesel si corresponde
             tech_type = mine_system.elhd.get_technology_type(elhd).lower()
             if tech_type == 'diesel':
-                bsfc_g_per_kwh = 230          # Brake Specific Fuel Consumption [g/kWh]
-                diesel_density_g_per_l = 832  # Densidad del diÃ©sel [g/L]
+                diesel_density_g_per_l = 832  # Densidad del diesel [g/L]
 
-                # Calcular gramos de diÃ©sel
-                grams_diesel = energy_per_trip * bsfc_g_per_kwh  # gramos
+                if consumption_model == 'wp2':
+                    bsfc_g_per_kwh = mine_system.elhd.get_fuel_consumption(elhd)
+                    valid_bsfc = (isinstance(bsfc_g_per_kwh, (int, float))
+                                  and not isinstance(bsfc_g_per_kwh, bool)
+                                  and math.isfinite(bsfc_g_per_kwh) and bsfc_g_per_kwh > 0)
+                    if not valid_bsfc:
+                        bsfc_g_per_kwh = 230  # Fallback BSFC [g/kWh]
+                else:
+                    bsfc_g_per_kwh = 230  # Brake Specific Fuel Consumption [g/kWh]
 
-                # Convertir gramos a litros
-                fuel_liters = grams_diesel / diesel_density_g_per_l  # litros
+                # Calcular gramos de diesel y convertir a litros
+                grams_diesel = energy_per_trip * bsfc_g_per_kwh
+                fuel_liters = grams_diesel / diesel_density_g_per_l
 
                 trips.loc[(elhd, node), 'diesel_consumption'] = fuel_liters
             else:
