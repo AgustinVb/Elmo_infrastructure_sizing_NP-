@@ -665,6 +665,7 @@ def calculate_real_charged_energy_from_swaps(
             continue
 
     total_real = 0.0
+    total_real_grid = 0.0
     n_events = 0
     n_events_with_discount = 0
     n_events_missing_b = 0
@@ -682,6 +683,23 @@ def calculate_real_charged_energy_from_swaps(
             continue
         try:
             bmax_map[str(station)] = float(bmax_val)
+        except Exception:
+            continue
+
+    # Eficiencia de carga por LHD (hoja LHD, eta_charge_i): la energia que
+    # entra a la bateria (bmax_i - B_llegada) es POST-eficiencia; para
+    # estimar lo que habria que comprarle a la red hay que des-escalarla
+    # dividiendo por eta_charge_i, igual que hace battery_soc/battery_soc_swap
+    # en functions.py.
+    eta_charge_raw = params_data.get("eta_charge_i", {})
+    eta_charge_map: Dict[str, float] = {}
+    for path, eta_val in _iter_leaf_records(eta_charge_raw):
+        axis_map = _axis_map_from_path(path)
+        lhd_key = axis_map.get("i") or axis_map.get("b") or axis_map.get("_1")
+        if lhd_key is None:
+            continue
+        try:
+            eta_charge_map[str(lhd_key)] = float(eta_val)
         except Exception:
             continue
 
@@ -725,9 +743,12 @@ def calculate_real_charged_energy_from_swaps(
 
         soc_arrival = b_prev / bmax_i
         event_real = max(0.0, bmax_i - b_prev)
+        eta_c = eta_charge_map.get(str(lhd), 1.0)
+        event_real_grid = event_real / eta_c if eta_c > 0 else event_real
         if event_real > eps:
             n_events_with_discount += 1
         total_real += event_real
+        total_real_grid += event_real_grid
         soc_arrival_sum += soc_arrival
         soc_arrival_min = soc_arrival if soc_arrival_min is None else min(soc_arrival_min, soc_arrival)
         soc_arrival_max = soc_arrival if soc_arrival_max is None else max(soc_arrival_max, soc_arrival)
@@ -742,6 +763,8 @@ def calculate_real_charged_energy_from_swaps(
                 "bmax_kwh": bmax_i,
                 "b_arrival_kwh": b_prev,
                 "real_event_kwh": event_real,
+                "real_event_grid_kwh": event_real_grid,
+                "eta_charge": eta_c,
             }
         )
 
@@ -756,6 +779,8 @@ def calculate_real_charged_energy_from_swaps(
         "base_energy_total_kwh": float(charge_intervals) * p_charger * delta_t * n_events,
         "sv_energy_total_kwh": sv_energy_total,
         "gap_vs_sv_kwh": sv_energy_total - total_real,
+        "real_grid_energy_kwh": total_real_grid,
+        "gap_vs_sv_grid_kwh": sv_energy_total - total_real_grid,
         "soc_base": soc_base,
         "soc_arrival_avg": (soc_arrival_sum / n_events) if n_events else 0.0,
         "soc_arrival_min": soc_arrival_min if soc_arrival_min is not None else 0.0,
@@ -1046,6 +1071,14 @@ def main() -> None:
                 [
                     "Brecha vs energía Sv (Sv - real)",
                     f"{real_swap_meta.get('gap_vs_sv_kwh', 0.0):.6f} kWh" if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "Energía real cargada a la red estimada (real / eta_charge)",
+                    f"{real_swap_meta.get('real_grid_energy_kwh', 0.0):.6f} kWh" if real_swap_energy_kwh is not None else "N/D",
+                ],
+                [
+                    "Brecha vs energía Sv (grid)",
+                    f"{real_swap_meta.get('gap_vs_sv_grid_kwh', 0.0):.6f} kWh" if real_swap_energy_kwh is not None else "N/D",
                 ],
                 [
                     "Eventos swap considerados",
