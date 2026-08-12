@@ -668,12 +668,12 @@ class BoundRules(OptRules):
 
             b_max_val = value(model.b_max_pool)
             min_frac_val = value(model.min_capacity_fraction)
+            B_L = min_frac_val * b_max_val
+            B_U = b_max_val
 
-            # Cota superior de EFC anualizado de la flota: energía máxima
-            # cargable (todas las estaciones a N_batteries=12 CADA UNA, todos
-            # los días representativos del año, a potencia nominal del
-            # cargador), normalizada por la capacidad de una batería y por
-            # la flota más chica posible (cota conservadora, no ajustada).
+            # Energía máxima cargable en un año por toda la flota (todas las
+            # estaciones a N_batteries=12 CADA UNA, todos los días
+            # representativos del año, a potencia nominal del cargador).
             # OJO: se usa el tope POR ESTACIÓN (12), no N_max (que es el tope
             # del pool TOTAL, ya multiplicado por n_stations) — usar N_max acá
             # infla la cota en un factor extra de n_stations y debilita mucho
@@ -681,8 +681,63 @@ class BoundRules(OptRules):
             max_batteries_per_station = 12
             n_slots_per_year = len(model.stations_set) * max_batteries_per_station * len(model.days) * len(model.time_intervals_set)
             max_energy_per_year = n_slots_per_year * value(model.p_charger) * value(model.delta_t)
-            efc_max_per_year = max_energy_per_year * value(model.scaling_factor_op_cost) / (NF_min * b_max_val)
-            cum_efc_max = efc_max_per_year * len(model.years)
+
+            # Cota de N_ciclos[y] = EnergyConsumed_anual[y] / (n_battery_fleet * b_bar[y]):
+            # el peor caso (más ciclos) usa el denominador más chico posible en
+            # AMBOS factores de forma independiente — N_ciclos decrece
+            # monótonamente en n_battery_fleet y en b_bar[y] por separado, así
+            # que NF_min*B_L es una cota válida sin necesitar que ese vértice
+            # sea conjuntamente alcanzable (basta con que cada factor esté
+            # dentro de su propio rango, ya garantizado por los bounds de sus
+            # Vars). OJO: antes se dividía por b_max_val (fijo) — con b_bar
+            # variable, el peor caso real es B_L (batería más degradada), no
+            # la capacidad nominal.
+            # --- Cota inferior de N_ciclos[y]: producción mínima obligatoria ---
+            # Mismo criterio que en carga_ob_multiaño (producción mínima por
+            # nodo obliga a un consumo de energía mínimo), pero acá se divide
+            # por 2*n_elhd, no por n_battery_fleet: el LHD de swap consume esa
+            # energía sea cual sea la batería que tenga puesta, así que el
+            # "mejor caso" para minimizar N_ciclos asume el máximo de
+            # baterías físicamente razonable por vehículo (2 — una puesta más
+            # una de respaldo en rotación), no el NF_max del pool en estación
+            # (que puede ser mucho mayor y daría una cota N_L trivial ~0).
+            node_lhd_pairs = {}
+            for (i2, j2, y2, d2, t2) in model.Y_INDEX:
+                node_lhd_pairs.setdefault((y2, d2, j2), []).append(i2)
+
+            E_year_low_by_y = {}
+            for y in model.years:
+                e_day_low = 0.0
+                for d in model.days:
+                    for j in model.nodes_set:
+                        i_list = node_lhd_pairs.get((y, d, j))
+                        if not i_list:
+                            continue
+                        swap_i_list = [i for i in i_list if i in model.slhd_set]
+                        if not swap_i_list:
+                            continue  # nodo no servido por LHD de swap
+                        i_j = swap_i_list[0]
+
+                        prod_per_assign = (value(model.g_i[i_j]) * self.time_series.get_n_trips(j, i_j)
+                                            * value(model.filling_factor[i_j]))
+                        target = value(model.m_j[j, y])
+                        lb_j = max(math.floor(target / prod_per_assign) - 1, 0)
+
+                        e_j = (value(model.pe_i[i_j, j]) * value(model.d_i[i_j, j])
+                               * self.time_series.get_n_trips(j, i_j) / value(model.eta_discharge_i[i_j]))
+
+                        e_day_low += lb_j * e_j
+
+                E_year_low_by_y[y] = e_day_low * value(model.scaling_factor_op_cost)
+
+            N_L = min(math.floor(E_year_low_by_y[y] / (2 * n_elhd * B_U)) for y in model.years)
+            N_L = max(N_L, 0)
+
+            N_U = math.ceil(max_energy_per_year * value(model.scaling_factor_op_cost) / (NF_min * B_L))
+            cum_efc_max = N_U * len(model.years)
+
+            K = math.ceil(math.log2(N_U - N_L + 1))
+            model.K_bits = pyo.RangeSet(0, K - 1)
 
             # Energía CONSUMIDA por los LHD (descarga real, misma expresión
             # que el término "discharge" de battery_soc_swap) en el año y, y
@@ -702,7 +757,7 @@ class BoundRules(OptRules):
 
             model.R        = pyo.Var(model.years, domain=pyo.Binary)
             model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals,
-                                      bounds=(min_frac_val * b_max_val, b_max_val))
+                                      bounds=(B_L, B_U))
 
             # Linealización exacta (big-M) de P_bbar_zagg[i,y,d,t] = b_bar[y] *
             # z_agg (z_agg = suma de Z_swap para el LHD i en (y,d,t)) — evita
@@ -711,9 +766,20 @@ class BoundRules(OptRules):
             model.P_bbar_zagg = pyo.Var(model.slhd_set, model.years, model.days, model.time_intervals_set,
                                          domain=pyo.NonNegativeReals, bounds=(0, b_max_val))
 
-            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, efc_max_per_year))
+            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeIntegers, bounds=(N_L, N_U))
             model.CumEFC   = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
             model.cum_efc_max = pyo.Param(initialize=cum_efc_max, mutable=False)
+
+            # Expansión binaria exacta de N_ciclos[y] (entera) + big-M exacto
+            # del producto binario x continua b_bit[y,k]*b_bar[y] = z_bit[y,k],
+            # que permite reconstruir NB[y] = N_ciclos[y]*b_bar[y] sin
+            # aproximación (mismo patrón que carga_ob_multiaño). A diferencia
+            # de esa rama, acá el 1/n_battery_fleet ya se resolvió exacto
+            # aparte vía el one-hot Z_energy_per_batt de arriba, así que
+            # N_ciclos[y]*b_bar[y] es el único producto que falta linealizar.
+            model.b_bit = pyo.Var(model.years, model.K_bits, domain=pyo.Binary)
+            model.z_bit = pyo.Var(model.years, model.K_bits, domain=pyo.NonNegativeReals, bounds=(0, B_U))
+            model.NB    = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, N_U * B_U))
 
             years_sorted = sorted(model.years)
             later_years = years_sorted[1:]
@@ -1365,16 +1431,53 @@ class ConstraintRules(OptRules):
     def z_energy_lower(self, model, y, n):
         return model.Z_energy_per_batt[y, n] >= model.EnergyConsumed[y] - model.max_energy_per_year_param * (1 - model.delta_nfleet[n])
 
+    # -- N_ciclos[y] = EnergyConsumed_anual[y] / (n_battery_fleet * b_bar[y]) --
+    # El termino n_battery_fleet ya se linealiza exacto (one-hot) via
+    # Z_energy_per_batt (energy_per_battery abajo). La division adicional por
+    # b_bar[y] (capacidad variable, se degrada con CumEFC) hace que
+    # N_ciclos[y]*b_bar[y] sea un producto entera x continua: se introduce
+    # NB[y] = N_ciclos[y]*b_bar[y] y se linealiza EXACTO (no McCormick/
+    # relajacion) via expansion binaria de N_ciclos[y] (entera, acotada
+    # [N_L,N_U]) + big-M exacto sobre cada bit (b_bit[y,k]*b_bar[y] = z_bit[y,k]
+    # es binaria x continua, exacto). Mismo patron que carga_ob_multiaño.
+    def n_ciclos_bits(self, model, y):
+        """Expansión binaria exacta: N_ciclos[y] = N_L + sum_k 2^k * b_bit[y,k]."""
+        NL = model.N_ciclos[y].lb
+        return model.N_ciclos[y] == NL + sum((2 ** k) * model.b_bit[y, k] for k in model.K_bits)
+
+    def z_bit_upper1(self, model, y, k):
+        BU = model.b_bar[y].ub
+        return model.z_bit[y, k] <= BU * model.b_bit[y, k]
+
+    def z_bit_lower1(self, model, y, k):
+        BL = model.b_bar[y].lb
+        return model.z_bit[y, k] >= BL * model.b_bit[y, k]
+
+    def z_bit_upper2(self, model, y, k):
+        BL = model.b_bar[y].lb
+        return model.z_bit[y, k] <= model.b_bar[y] - BL * (1 - model.b_bit[y, k])
+
+    def z_bit_lower2(self, model, y, k):
+        BU = model.b_bar[y].ub
+        return model.z_bit[y, k] >= model.b_bar[y] - BU * (1 - model.b_bit[y, k])
+
+    def nb_def(self, model, y):
+        """NB[y] = N_ciclos[y] * b_bar[y], reconstruido exacto a partir de los z_bit."""
+        NL = model.N_ciclos[y].lb
+        return model.NB[y] == NL * model.b_bar[y] + sum((2 ** k) * model.z_bit[y, k] for k in model.K_bits)
+
     def n_ciclos_def(self, model, y):
-        """N_ciclos[y] = EFC (equivalent full cycles) anualizado, normalizado
-        por el total de baterías FÍSICAS del sistema (n_battery_fleet) — no
-        solo el pool de la estación (N_batteries_total), sino también las que
-        están puestas en los LHD de swap en todo momento (una por LHD).
-        EnergyConsumed[y]/n_battery_fleet vía Z_energy_per_batt (exacto),
-        escalada a año completo y normalizada por la capacidad nominal de
-        una batería del pool."""
+        """NB[y] (= N_ciclos[y]*b_bar[y], exacto vía expansión binaria) = EFC *
+        capacidad = energía anual consumida por batería. energy_per_battery
+        normaliza por el total de baterías FÍSICAS del sistema
+        (n_battery_fleet) — no solo el pool de la estación
+        (N_batteries_total), sino también las que están puestas en los LHD de
+        swap en todo momento (una por LHD), vía Z_energy_per_batt (one-hot
+        exacto). Reemplaza la versión anterior que dividía por
+        value(model.b_max_pool) fijo -- ahora el denominador es la capacidad
+        variable b_bar[y], consistente con on-board."""
         energy_per_battery = sum((1.0 / n) * model.Z_energy_per_batt[y, n] for n in model.n_fleet_range)
-        return model.N_ciclos[y] == energy_per_battery * model.scaling_factor_op_cost / value(model.b_max_pool)
+        return model.NB[y] == energy_per_battery * model.scaling_factor_op_cost
 
     def w_upper_R(self, model, y):
         return model.W_cum[y] <= model.cum_efc_max * (1 - model.R[y])
@@ -1669,6 +1772,12 @@ class ConstraintRules(OptRules):
             model.z_energy_upper2 = pyo.Constraint(model.years, model.n_fleet_range, rule=self.z_energy_upper2)
             model.z_energy_lower  = pyo.Constraint(model.years, model.n_fleet_range, rule=self.z_energy_lower)
 
+            model.n_ciclos_bits = pyo.Constraint(model.years, rule=self.n_ciclos_bits)
+            model.z_bit_upper1  = pyo.Constraint(model.years, model.K_bits, rule=self.z_bit_upper1)
+            model.z_bit_lower1  = pyo.Constraint(model.years, model.K_bits, rule=self.z_bit_lower1)
+            model.z_bit_upper2  = pyo.Constraint(model.years, model.K_bits, rule=self.z_bit_upper2)
+            model.z_bit_lower2  = pyo.Constraint(model.years, model.K_bits, rule=self.z_bit_lower2)
+            model.nb_def        = pyo.Constraint(model.years, rule=self.nb_def)
             model.n_ciclos_def = pyo.Constraint(model.years, rule=self.n_ciclos_def)
             model.cum_efc_def  = pyo.Constraint(model.years, rule=self.cum_efc_def)
             model.b_bar_fade   = pyo.Constraint(model.years, rule=self.b_bar_fade)
