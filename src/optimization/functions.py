@@ -26,12 +26,19 @@ class OptRules(object):
         para exponente de descuento — desacoplado del valor real de y."""
         return sorted(self.time_series.years).index(y) + 1
 
-    def annuity_factor_expr(self, model):
-        """AF(r,Y) = sum_{k=1..Y} 1/(1+r)^k. Escalar (expresion en model.discount_rate)
-        para convertir un costo anualizado recurrente en su NPV sobre el horizonte."""
+    def annuity_factor_expr(self, model, y):
+        """AF_y(r,Y) = sum_{n=pos(y)}^{|Y|} 1/(1+r)^n. Escalar (expresion en
+        model.discount_rate) para convertir un costo anualizado recurrente que
+        empieza a devengarse en el año y (y se mantiene hasta el fin del
+        horizonte, sin retiro) en su NPV. AF_{y1}(r,Y) reproduce la anualidad
+        original de horizonte-unico (pos(y1)=1)."""
         Y = len(self.time_series.years)
+        pos_y = self.year_position(y)
         r = model.discount_rate
-        return sum(1 / (1 + r) ** k for k in range(1, Y + 1))
+        return sum(1 / (1 + r) ** n for n in range(pos_y, Y + 1))
+
+    def _first_year(self):
+        return sorted(self.time_series.years)[0]
 
     def create_pyo_object(self, object_type, model, object_name, sets, rule, domain=pyo.Reals):
         start = time.time()
@@ -439,6 +446,17 @@ class OptParameters(OptRules):
 
         # Parametros de almacenamiento BESS (solo si existen unidades de almacenamiento)
         if len(list(model.storage_set)) > 0:
+            storage_names = list(model.storage_set)
+            if len(storage_names) > 1:
+                # El modelo de inversion multi-anio de BESS (H, sin indice h)
+                # asume un unico cluster de almacenamiento candidato, ver
+                # docs/restricciones_modelo.tex sec. Infraestructura de
+                # generacion y almacenamiento.
+                raise ValueError(
+                    "El modelo de inversion multi-anio de BESS asume un unico "
+                    "cluster de almacenamiento (una sola fila en la hoja "
+                    f"Storage); se encontraron {len(storage_names)}: {storage_names}"
+                )
             stor = self.mine_system.storage
             model.c_inv_h = pyo.Param(
                 model.storage_set,
@@ -464,6 +482,10 @@ class OptParameters(OptRules):
                 model.storage_set,
                 initialize={h: stor.get_a_max(h) for h in model.storage_set},
                 mutable=False)
+            # Cota de unidades del cluster instalables en todo el horizonte
+            # (H no tiene cota superior natural al ser entera, a diferencia de
+            # X que es binaria): ver eq. max_storage_units.
+            model.h_max = pyo.Param(initialize=stor.get_h_max(storage_names[0]), mutable=False)
 
         # Degradación de batería on-board (fleet-wide, solo si la hoja existe)
         bd = self.mine_system.battery_degradation
@@ -535,8 +557,16 @@ class BoundRules(OptRules):
         model.P         = pyo.Var(model.ZCHARGE_INDEX, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         model.P_pot     = pyo.Var(model.years, domain=pyo.NonNegativeReals)
         model.B         = pyo.Var(model.elhd_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
-        model.N_chargers= pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
-        model.X         = pyo.Var(model.stations_set, domain=pyo.Binary)
+        # Inversion multi-anio: X/N_chargers pasan a ser el STOCK acumulado por
+        # año (usado en el resto de las restricciones operativas), y Delta_X/
+        # Delta_N_chargers son la decision de inversion propiamente tal del año
+        # y (la que entra al costo). Ver restricciones de enlace link_station_stock
+        # / link_charger_stock mas abajo, que acumulan Delta_* año a año desde
+        # un stock inicial cero (escenario greenfield).
+        model.X                 = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+        model.Delta_X           = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+        model.N_chargers        = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
+        model.Delta_N_chargers  = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
         model.EndCharge   = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
@@ -544,14 +574,25 @@ class BoundRules(OptRules):
         model.EndAssign   = pyo.Var(model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
         if len(list(model.gen_set)) > 0:
-            model.G_g    = pyo.Var(model.gen_set, domain=pyo.NonNegativeIntegers)
+            # G_g = stock acumulado (fraccion de p_max_g) al año y; Delta_G_g =
+            # capacidad instalada en el año y (ver link_gen_stock).
+            model.G_g       = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeIntegers)
+            model.Delta_G_g = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeIntegers)
             model.P_gen  = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
             model.Curt_g = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
 
         model.P_red = pyo.Var(model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
 
         if len(list(model.storage_set)) > 0:
-            model.H_h  = pyo.Var(model.storage_set, domain=pyo.Binary)
+            # Un unico cluster de almacenamiento (ver guardia de cardinalidad en
+            # build_parameters): H = unidades acumuladas del cluster al año y,
+            # Delta_H = unidades construidas en el año y (ver link_storage_stock).
+            # Sin indice h a diferencia de la formulacion de horizonte unico
+            # (H_h binaria) — el indice h se mantiene solo en las restricciones
+            # operativas (P_bat, A_h) por si en el futuro se admite mas de un
+            # cluster candidato.
+            model.H       = pyo.Var(model.years, domain=pyo.NonNegativeIntegers)
+            model.Delta_H = pyo.Var(model.years, domain=pyo.NonNegativeIntegers)
             model.P_bat = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set, domain=pyo.Reals)
             model.A_h   = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
 
@@ -757,14 +798,46 @@ class ConstraintRules(OptRules):
             model.Y[i,j,y,d,t] * model.g_i[i] * self.time_series.get_n_trips(j, i) * model.filling_factor[i]
         )
 
-    def max_n_chargers(self, model, k):
-        return model.N_chargers[k] <= model.max_bays_k[k] * model.X[k]
+    def max_n_chargers(self, model, k, y):
+        return model.N_chargers[k,y] <= model.max_bays_k[k] * model.X[k,y]
 
     def station_existence_constraint(self, model, k, i, y, d, t):
-        return model.Z_charge[k,i,y,d,t] <= model.X[k]
+        return model.Z_charge[k,i,y,d,t] <= model.X[k,y]
 
     def charger_limit(self, model, k, y, d, t):
-        return sum(model.Z_charge[k,i,y,d,t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_chargers[k]
+        return sum(model.Z_charge[k,i,y,d,t] for (k2, i) in model.ZCHARGE_INDEX if k2 == k) <= model.N_chargers[k,y]
+
+    # ------------------------------------------------------------------ #
+    # Inversion multi-anio: restricciones de enlace (linking constraints)
+    # entre el stock acumulado y el incremento anual, para estaciones,
+    # cargadores, generacion y almacenamiento. Ver
+    # docs/restricciones_modelo.tex sec. "Inversion multi-año e
+    # infraestructura acumulada". Escenario greenfield: stock inicial (antes
+    # de y1) es cero para las cuatro tecnologias, por lo que el caso y==y1
+    # colapsa a stock[y1] == delta[y1].
+    # ------------------------------------------------------------------ #
+    def link_station_stock(self, model, k, y):
+        if y == self._first_year():
+            return model.X[k,y] == model.Delta_X[k,y]
+        return model.X[k,y] == model.X[k, self._prev_year(y)] + model.Delta_X[k,y]
+
+    def link_charger_stock(self, model, k, y):
+        if y == self._first_year():
+            return model.N_chargers[k,y] == model.Delta_N_chargers[k,y]
+        return model.N_chargers[k,y] == model.N_chargers[k, self._prev_year(y)] + model.Delta_N_chargers[k,y]
+
+    def link_gen_stock(self, model, g, y):
+        if y == self._first_year():
+            return model.G_g[g,y] == model.Delta_G_g[g,y]
+        return model.G_g[g,y] == model.G_g[g, self._prev_year(y)] + model.Delta_G_g[g,y]
+
+    def link_storage_stock(self, model, y):
+        if y == self._first_year():
+            return model.H[y] == model.Delta_H[y]
+        return model.H[y] == model.H[self._prev_year(y)] + model.Delta_H[y]
+
+    def max_storage_units(self, model, y):
+        return model.H[y] <= model.h_max
 
     def charge_state(self, model, k, i, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -836,12 +909,15 @@ class ConstraintRules(OptRules):
 
     def gen_limit(self, model, g, y, d, t):
         return (model.P_gen[g,y,d,t] + model.Curt_g[g,y,d,t]
-                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g,y,d,t])
+                == model.G_g[g,y] * model.p_max_g[g] * model.alpha_g[g,y,d,t])
 
-    def gen_max_units(self, model, g):
-        return model.G_g[g] <= model.g_max_g[g]
+    def gen_max_units(self, model, g, y):
+        return model.G_g[g,y] <= model.g_max_g[g]
 
     def initial_condition_station(self, model):
+        # No registrada en build_all_constraints (dead code, ya lo era antes
+        # de la inversion multi-año). Si se reactiva, X ahora es X[k,y] —
+        # actualizar la indexacion antes de usarla.
         return sum(model.X[k] for k in model.stations_set) == 1
 
     def meal_g1_no_travel_group1(self, model, i, y, d, t):
@@ -865,10 +941,10 @@ class ConstraintRules(OptRules):
         return sum(model.Y[i,j,y,d,t] for j in nodes) == 0
 
     def bess_power_upper(self, model, h, y, d, t):
-        return model.P_bat[h,y,d,t] <= model.p_max_h[h] * model.H_h[h]
+        return model.P_bat[h,y,d,t] <= model.p_max_h[h] * model.H[y]
 
     def bess_power_lower(self, model, h, y, d, t):
-        return model.P_bat[h,y,d,t] >= -model.p_max_h[h] * model.H_h[h]
+        return model.P_bat[h,y,d,t] >= -model.p_max_h[h] * model.H[y]
 
     def bess_soc_balance(self, model, h, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -879,10 +955,10 @@ class ConstraintRules(OptRules):
         return model.A_h[h,y,d,0] == 0
 
     def bess_soc_upper(self, model, h, y, d, t):
-        return model.A_h[h,y,d,t] <= model.a_max_h[h] * model.H_h[h]
+        return model.A_h[h,y,d,t] <= model.a_max_h[h] * model.H[y]
 
     def bess_soc_lower(self, model, h, y, d, t):
-        return model.A_h[h,y,d,t] >= model.a_min_h[h] * model.H_h[h]
+        return model.A_h[h,y,d,t] >= model.a_min_h[h] * model.H[y]
 
     def bess_soc_cyclic(self, model, h, y, d):
         t_ini = self.time_series.get_time_intervals()[0]
@@ -931,6 +1007,9 @@ class ConstraintRules(OptRules):
         return model.Z_charge[k,i,y,d,t] == 0
 
     def fixed_n_chargers(self, model, k):
+        # No registrada en build_all_constraints (dead code, ya lo era antes
+        # de la inversion multi-año). Si se reactiva, N_chargers ahora es
+        # N_chargers[k,y] — actualizar la indexacion antes de usarla.
         if k == "station_1":
             return model.N_chargers[k] == 4
         elif k == "station_2":
@@ -1018,9 +1097,11 @@ class ConstraintRules(OptRules):
         model.battery_boundary          = pyo.Constraint(model.elhd_set, model.years, model.days, rule=self.battery_boundary)
         model.battery_soc_break_symmetry = pyo.Constraint(model.charge_precedence_pairs, model.years, model.days, rule=self.battery_soc_break_symmetry)
 
-        model.max_n_chargers            = pyo.Constraint(model.stations_set, rule=self.max_n_chargers)
+        model.max_n_chargers            = pyo.Constraint(model.stations_set, model.years, rule=self.max_n_chargers)
         model.station_existence_constraint = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.station_existence_constraint)
         model.charger_limit             = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.charger_limit)
+        model.link_station_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
+        model.link_charger_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
         model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
         model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
@@ -1033,9 +1114,12 @@ class ConstraintRules(OptRules):
 
         if len(list(model.gen_set)) > 0:
             model.gen_limit     = pyo.Constraint(model.gen_set, model.years, model.days, model.time_intervals_set, rule=self.gen_limit)
-            model.gen_max_units = pyo.Constraint(model.gen_set, rule=self.gen_max_units)
+            model.gen_max_units = pyo.Constraint(model.gen_set, model.years, rule=self.gen_max_units)
+            model.link_gen_stock = pyo.Constraint(model.gen_set, model.years, rule=self.link_gen_stock)
 
         if len(list(model.storage_set)) > 0:
+            model.link_storage_stock = pyo.Constraint(model.years, rule=self.link_storage_stock)
+            model.max_storage_units  = pyo.Constraint(model.years, rule=self.max_storage_units)
             model.bess_power_upper = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_upper)
             model.bess_power_lower = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_lower)
             model.bess_soc_balance = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_balance)
@@ -1097,49 +1181,56 @@ class ObjectiveRules(OptRules):
         ) * model.delta_t
         return cost_el * model.scaling_factor_op_cost
 
-    def inversion_cost(self, model):
-        cost_inv = sum(
-            model.station_cost_k[k] * model.X[k]
-            + (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.N_chargers[k]
-            for k in model.stations_set
-        )
+    def _annuitized_yearly_sum(self, model, yearly_cost_fn):
+        """sum_y AF_y(r,Y) * yearly_cost_fn(y) si hay datos de degradacion/
+        descuento cargados; si no, suma cruda sin anualizar ni descontar
+        (replica el comportamiento de un unico año representativo sin
+        descuento). yearly_cost_fn(y) debe usar las variables de INCREMENTO
+        (Delta_*) del año y, no el stock acumulado, para no contar de nuevo
+        cada año el costo de un activo ya construido — ver
+        docs/restricciones_modelo.tex ec. costo_total."""
         if self.mine_system.battery_degradation is not None:
-            cost_inv = cost_inv * self.annuity_factor_expr(model)
-        return cost_inv
+            return sum(self.annuity_factor_expr(model, y) * yearly_cost_fn(y) for y in model.years)
+        return sum(yearly_cost_fn(y) for y in model.years)
+
+    def inversion_cost(self, model):
+        def yearly(y):
+            return sum(
+                model.station_cost_k[k] * model.Delta_X[k,y]
+                + (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.Delta_N_chargers[k,y]
+                for k in model.stations_set
+            )
+        return self._annuitized_yearly_sum(model, yearly)
 
     def gen_investment_cost(self, model):
         if len(list(model.gen_set)) == 0:
             return 0
-        cost = sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
-        if self.mine_system.battery_degradation is not None:
-            cost = cost * self.annuity_factor_expr(model)
-        return cost
+        def yearly(y):
+            return sum(model.Delta_G_g[g,y] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
+        return self._annuitized_yearly_sum(model, yearly)
 
     def gen_op_cost(self, model):
         if len(list(model.gen_set)) == 0:
             return 0
-        cost = sum(model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
-        if self.mine_system.battery_degradation is not None:
-            cost = cost * self.annuity_factor_expr(model)
-        return cost
+        def yearly(y):
+            return sum(model.Delta_G_g[g,y] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
+        return self._annuitized_yearly_sum(model, yearly)
 
     def bess_investment_cost(self, model):
-        """Costo de inversión BESS: sum_h c_inv_h * H_h — ec. 3.1."""
+        """Costo de inversión BESS: sum_h c_inv_h * Delta_H[y] — ec. costo_total."""
         if len(list(model.storage_set)) == 0:
             return 0
-        cost = sum(model.H_h[h] * model.c_inv_h[h] for h in model.storage_set)
-        if self.mine_system.battery_degradation is not None:
-            cost = cost * self.annuity_factor_expr(model)
-        return cost
+        def yearly(y):
+            return sum(model.Delta_H[y] * model.c_inv_h[h] for h in model.storage_set)
+        return self._annuitized_yearly_sum(model, yearly)
 
     def bess_op_cost(self, model):
-        """Costo de O&M anual BESS: sum_h c_op_h * H_h — ec. 3.1."""
+        """Costo de O&M anual BESS: sum_h c_op_h * Delta_H[y] — ec. costo_total."""
         if len(list(model.storage_set)) == 0:
             return 0
-        cost = sum(model.H_h[h] * model.c_op_h[h] for h in model.storage_set)
-        if self.mine_system.battery_degradation is not None:
-            cost = cost * self.annuity_factor_expr(model)
-        return cost
+        def yearly(y):
+            return sum(model.Delta_H[y] * model.c_op_h[h] for h in model.storage_set)
+        return self._annuitized_yearly_sum(model, yearly)
 
     def power_cost(self, model):
         return sum(model.P_pot[y] * 12 * 10 * self._discount_factor(model, y) for y in model.years)

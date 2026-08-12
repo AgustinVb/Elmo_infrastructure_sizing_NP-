@@ -33,3 +33,7 @@ class StorageSystems(object):
     def get_a_max(self, name: str) -> float:
         """Estado de energía máximo [kWh]."""
         return float(self.data.loc[name, 'a_max'])
+
+    def get_h_max(self, name: str) -> int:
+        """Número máximo de unidades del cluster instalables en todo el horizonte."""
+        return int(self.data.loc[name, 'h_max'])

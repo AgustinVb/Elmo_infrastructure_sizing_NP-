@@ -1,0 +1,248 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+% Alias usado en el documento fuente del usuario para capacidad "barra" sobre
+% símbolos con subíndices (p.ej. \Bar{B}_y): \bar no escala bien en esos casos.
+\providecommand{\Bar}{}
+\renewcommand{\Bar}[1]{\overline{#1}}
+
+% Marca en rojo lo que difiere del documento original enviado por el usuario
+% (contenido nuevo o corregido respecto de ese texto, no solo renombres
+% cosméticos como i_c->i o SCharge->StartCharge). Para quitar el resaltado,
+% basta redefinir \change{#1}{#1}.
+\newcommand{\change}[1]{\textcolor{red}{#1}}
+
+\title{Restricciones activas del modelo de optimización\\[2pt]\large Carga \textit{on-board} multi-año, con inversión multi-año\\[2pt] (rama \texttt{carga\_ob\_multiaño})}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Alcance de este documento}
+
+Este documento reconstruye, en notación matemática, el conjunto de restricciones que efectivamente registra \texttt{ConstraintRules.build\_all\_constraints} (\texttt{src/optimization/functions.py}) en la rama \texttt{carga\_ob\_multiaño}, \change{extendida para permitir que la inversión en estaciones de carga, cargadores, generación renovable y almacenamiento estacionario (BESS) ocurra en cualquier año del horizonte de evaluación, y no únicamente en el primer año}. Quedan fuera del alcance:
+
+\begin{itemize}
+    \item Las reglas que están \emph{definidas} en el código pero no se registran en \texttt{build\_all\_constraints}: el esquema de detenciones DET (\texttt{det\_stop\_all}, \texttt{charge\_only\_meal\_or\_between\_shifts\_det}), redefinido con soporte de \texttt{base\_hour} y modo autónomo, pero comentado en favor del esquema DCH —el que efectivamente corre hoy—.
+    \item Toda la formulación de \textit{battery swapping} (estaciones de intercambio, inventario de baterías cargadas/descargadas): esta rama solo implementa la tecnología de carga \textit{on-board}.
+\end{itemize}
+
+Las restricciones de generación renovable, almacenamiento estacionario (BESS) y degradación de baterías solo se generan cuando el escenario cargado incluye las hojas de datos correspondientes (\texttt{Generators}, \texttt{Storage} y \texttt{BatteryDegradation}, respectivamente); esta condicionalidad se indica explícitamente donde corresponde.
+
+\change{El modelo de inversión multi-año que se presenta aquí asume: (i) que el conjunto de años $Y$ está compuesto por años consecutivos (dato de entrada), por lo que $y-1$ está bien definido para todo $y\neq y^1$; (ii) que la vida útil de estaciones, cargadores, plantas de generación y unidades de almacenamiento excede el horizonte de evaluación, por lo que no se modela su retiro; y (iii) que el escenario es \textit{greenfield}: no existe infraestructura de estos cuatro tipos previa al inicio del horizonte. El supuesto (iii) se traduce en parámetros de stock inicial fijados en cero; relajarlo a un escenario \textit{brownfield} no requiere cambios estructurales, solo cargar esos parámetros con datos distintos de cero.}
+
+El texto en \change{rojo} marca lo que difiere del documento original enviado por el usuario (fórmula, dominio o término corregido para reflejar el código, o ecuación completamente nueva) y, en particular, todo el contenido de la extensión de inversión multi-año descrita en la Sección \ref{sec:inversion_multianio}. No se marcan los renombres cosméticos aplicados de forma uniforme en todo el documento (p.\,ej. $i_c\to i$, $SCharge/ECharge\to StartCharge/EndCharge$, $SAssign/EAssign\to StartAssign/EndAssign$), ya que no cambian el contenido de ninguna restricción particular.
+
+\section{Formulación matemática}
+
+\subsection{Funciones objetivo}
+
+La función objetivo optimiza tanto los costos de inversión como los de energía y potencia. Los primeros incluyen los costos de construcción de las estaciones de carga y la instalación de cargadores —cuyo valor unitario incorpora los equipos auxiliares asociados—, y, cuando el escenario lo contempla, la inversión en generación renovable y en almacenamiento estacionario. \change{Esta inversión puede realizarse en cualquier año del horizonte (Sección \ref{sec:inversion_multianio}), no solo en el primero.} A esto se suma el costo operativo de la energía asociado a la carga de las baterías \textit{on-board}, el costo por potencia contratada —estimado a partir del mayor registro de potencia durante las horas y meses \textit{peak} del sistema— y, cuando el escenario incorpora el módulo de degradación de baterías, el costo de reemplazo de baterías de la flota.\\
+
+Para que las componentes de inversión y de operación sean comparables en magnitud, los costos de inversión (estaciones, cargadores, generación, almacenamiento) se anualizan mediante el factor de anualidad \change{$AF_y(r,Y)=\sum_{n=pos(y)}^{\|Y\|}\frac{1}{(1+r)^n}$, definido para cada año de inversión $y$ (Sección \ref{sec:inversion_multianio}); el caso particular $AF_{y^1}(r,Y)=\sum_{p=1}^{\|Y\|}\frac{1}{(1+r)^p}$ corresponde a la definición original cuando toda la inversión ocurre en el primer año.} Los costos operativos —calculados a partir de días representativos y escalados a un año completo mediante $365/\|D\|$— y el costo puntual de reemplazo de batería se descuentan año a año con el factor $1/(1+r)^{pos(y)}$, donde $pos(y)$ es la posición 1-indexada del año $y$ dentro del horizonte modelado (ordenado ascendentemente), desacoplada del valor calendario de $y$. Si el escenario no carga la hoja \texttt{BatteryDegradation}, no hay tasa de descuento ni degradación: $r=0$, el costo de reemplazo no existe y la inversión no se anualiza, replicando el comportamiento de un único año representativo sin descuento. La estructura de costos vigente se presenta en la ecuación \eqref{eq:costo_total}.
+
+\begin{equation}\label{eq:costo_total}
+\begin{split}
+C = \; & \change{\sum_{y \in Y} AF_y(r,Y) \cdot \left[ \sum_{k \in K} \Big(c^{s} \cdot \Delta X_{k,y} +( c^{nave} + c^{esc} +c^{sc}) \cdot \Delta N_{k,y}^C\Big) + \sum_{g \in G} (c^{inv}_g + c^{op}_g) \cdot \Delta G_{g,y} \cdot p^{max}_g + \sum_{h \in H} (c^{inv}_h + c^{op}_h)\cdot \Delta H_{h,y} \right]}  \\
+& + \sum_{y \in Y} \sum_{d \in D} \sum_{t \in T} \frac{1}{(1+r)^{pos(y)}} \cdot \frac{365}{\| D \|} \cdot c^{elec}_{y,d,t} \cdot P^{red}_{y,d,t} \cdot \Delta t \; + \; \sum_{y \in Y} \frac{1}{(1+r)^{pos(y)}} \cdot c^{P_{elec}} \cdot P^{pot}_y \cdot 12 \\
+& + \sum_{y \in Y} \frac{1}{(1+r)^{pos(y)}} \cdot n^{elhd} \cdot c^{bat} \cdot R_y
+\end{split}
+\end{equation}
+
+\noindent donde $n^{elhd}=\|I\|$ es el tamaño de la flota eléctrica y $c^{bat}$ es el costo \emph{total} de reemplazar una batería (no anualizado: el reemplazo es un evento puntual cuyo año lo decide $R_y$, por lo que se descuenta solo al año en que ocurre, sin pasar por $AF_y(r,Y)$). En la implementación vigente $c^{P_{elec}}=10$ está fijado como literal en el código, no como dato de entrada.
+
+\change{El primer bloque de \eqref{eq:costo_total} generaliza estrictamente la formulación original: si toda la inversión se concentra en $y^1$ (es decir, $\Delta(\cdot)_{k,y}=\Delta(\cdot)_{g,y}=\Delta(\cdot)_{h,y}=0\;\forall y>y^1$), la suma sobre $y$ colapsa a un único término con $AF_{y^1}(r,Y)=AF(r,Y)$, replicando exactamente la ecuación original. Las variables $\Delta X_{k,y}$, $\Delta N_{k,y}^C$, $\Delta G_{g,y}$ y $\Delta H_{h,y}$ se definen formalmente en la Sección \ref{sec:inversion_multianio}.}
+
+\subsection{Inversión multi-año e infraestructura acumulada}
+\label{sec:inversion_multianio}
+
+\begingroup\color{red}
+Esta sección presenta el patrón general de \emph{restricciones de enlace} (\textit{linking constraints}) utilizado para permitir que la inversión en estaciones de carga, cargadores, generación renovable y almacenamiento estacionario ocurra en cualquier año del horizonte, en lugar de estar fijada al primer año. El patrón sigue la lógica de balance de stock operativo entre años empleada por Lara, Mallapragada, Papageorgiou, Venkatesh y Grossmann (2018) para clusters de generadores y de almacenamiento (Eqs. (16)-(17) y (25)-(26) de dicha referencia), particularizado a un caso sin retiro de activos: dado que se asume vida útil mayor al horizonte de evaluación, no se requieren las variables de retiro ($ngr$) ni de extensión de vida ($nge$) que sí aparecen en la referencia, y el balance se reduce a acumulación pura.
+
+Cada variable de inversión que en la formulación original representaba una decisión única para todo el horizonte pasa a representar el \emph{stock acumulado} disponible en el año $y$ (utilizado en el resto de las restricciones del modelo, sin cambios de forma respecto del documento original salvo el subíndice de año); se introduce además una variable de \emph{incremento}, que es la verdadera decisión de inversión del año $y$.
+
+\subsubsection*{Parámetros de stock inicial (parque preexistente)}
+
+\begin{itemize}
+    \item $x_k^{0}\in\{0,1\}$: 1 si la estación $k$ ya existe al inicio del horizonte (antes de $y^1$).
+    \item $n_k^{C,0}\in\mathbb{Z}_{\geq0}$: cargadores ya instalados en la estación $k$ al inicio del horizonte ($n_k^{C,0}=0$ si $x_k^0=0$).
+    \item $g_g^{0}\geq0$: capacidad (fracción de $p^{max}_g$) ya instalada del generador $g$ al inicio del horizonte.
+    \item $h^{0}\in\mathbb{Z}_{\geq0}$: unidades del cluster de almacenamiento $H$ ya instaladas al inicio del horizonte.
+\end{itemize}
+
+\noindent En el escenario \textit{greenfield} vigente, $x_k^0=n_k^{C,0}=g_g^0=h^0=0$ para todo $k,g$; el escenario \textit{brownfield} queda habilitado sin cambios estructurales, cargando estos parámetros con datos distintos de cero.
+
+\subsubsection*{Parámetro adicional: cota de unidades de almacenamiento}
+
+\begin{itemize}
+    \item $n^{H,max}\in\mathbb{Z}_{\geq0}$: número máximo de unidades del cluster de almacenamiento $H$ instalables a lo largo de todo el horizonte. Este parámetro es necesario porque, a diferencia de $X_{k,y}$ (acotada implícitamente en $\{0,1\}$), $H_{y}$ es una variable entera sin cota superior natural.
+\end{itemize}
+
+\subsubsection*{Variables: stock acumulado e incremento anual}
+
+\begin{itemize}
+    \item $X_{k,y}\in\{0,1\}$: disponibilidad acumulada de la estación $k$ al año $y$ (reemplaza a $X_k$ del documento original en todas las restricciones donde aparecía).
+    \item $\Delta X_{k,y}\in\{0,1\}$: 1 si la estación $k$ se construye exactamente en el año $y$.
+    \item $N_{k,y}^C\in\mathbb{Z}_{\geq0}$: cargadores acumulados en la estación $k$ al año $y$ (reemplaza a $N_k^C$).
+    \item $\Delta N_{k,y}^C\in\mathbb{Z}_{\geq0}$: cargadores instalados en la estación $k$ en el año $y$.
+    \item $G_{g,y}\geq0$: capacidad acumulada (fracción de $p^{max}_g$) del generador $g$ al año $y$ (reemplaza a $G_g$).
+    \item $\Delta G_{g,y}\geq0$: capacidad instalada del generador $g$ en el año $y$.
+    \item $H_{y}\in\mathbb{Z}_{\geq0}$: número de unidades del cluster de almacenamiento instaladas y operativas al año $y$ (reemplaza a $H_h$; nótese el cambio de dominio respecto de la formulación previa, de binaria a entera, y la caída del índice $h$ dado que se considera un único cluster de almacenamiento).
+    \item $\Delta H_{y}\in\mathbb{Z}_{\geq0}$: número de unidades del cluster de almacenamiento construidas en el año $y$.
+\end{itemize}
+
+\subsubsection*{Restricciones de enlace (\textit{linking constraints})}
+
+\begin{flalign}
+    & X_{k,y} = \begin{cases} x_k^{0} + \Delta X_{k,y}, & y=y^1 \\ X_{k,y-1} + \Delta X_{k,y}, & y>y^1 \end{cases}, &&& \forall k,y \label{eq:link_X}\\[14pt]
+    & N_{k,y}^C = \begin{cases} n_k^{C,0} + \Delta N_{k,y}^C, & y=y^1 \\ N_{k,y-1}^C + \Delta N_{k,y}^C, & y>y^1 \end{cases}, &&& \forall k,y \label{eq:link_N}\\[14pt]
+    & G_{g,y} = \begin{cases} g_g^{0} + \Delta G_{g,y}, & y=y^1 \\ G_{g,y-1} + \Delta G_{g,y}, & y>y^1 \end{cases}, &&& \forall g,y \label{eq:link_G}\\[14pt]
+    & H_{y} = \begin{cases} h^{0} + \Delta H_{y}, & y=y^1 \\ H_{y-1} + \Delta H_{y}, & y>y^1 \end{cases}, &&& \forall y \label{eq:link_H}\\[10pt]
+    & H_y \leq n^{H,max}, &&& \forall y \label{eq:max_unidades_bess}
+\end{flalign}
+
+\noindent Como $X_{k,y}\in\{0,1\}$ y la acumulación es monótona ($\Delta X_{k,y}\geq0$), la propia cota $X_{k,y}\leq1$ impide reconstruir una estación ya existente; no se requiere una restricción adicional del tipo $\sum_y\Delta X_{k,y}\leq1$. El mismo argumento aplica a la relación entre $N_{k,y}^C$ y $n_k^{bays}\cdot X_{k,y}$ en \eqref{eq:max_cargadores}. Para $H_y$, en cambio, al ser entera sin cota implícita, \eqref{eq:max_unidades_bess} es necesaria para acotar la inversión total del cluster.
+
+Estas variables de stock acumulado ($X_{k,y}$, $N_{k,y}^C$, $G_{g,y}$, $H_y$) son las que se utilizan, sin más cambios que el subíndice de año, en el resto de las restricciones operativas del modelo (secciones \ref{sec:estaciones_MY} y \ref{sec:generacion_MY}). Las variables de incremento ($\Delta X_{k,y}$, $\Delta N_{k,y}^C$, $\Delta G_{g,y}$, $\Delta H_y$) son las que entran en el costo de inversión \eqref{eq:costo_total}, puesto que el costo se devenga únicamente cuando se construye, no cada año que el activo permanece disponible.
+\endgroup
+
+\subsection{Estaciones de carga}
+\label{sec:estaciones_MY}
+
+En esta sección se agrupan las restricciones asociadas a la infraestructura y operación de las estaciones de carga \textit{on-board}. El número máximo de cargadores que puede albergar cada estación candidata está acotado por el número de bahías disponibles, según \eqref{eq:max_cargadores}. \change{Dado que la inversión en estaciones y cargadores ahora puede ocurrir en cualquier año (Sección \ref{sec:inversion_multianio}), esta y las dos restricciones siguientes se evalúan sobre el stock acumulado $X_{k,y}$ y $N_{k,y}^C$ en cada año $y$, en lugar de sobre una decisión única $X_k$, $N_k^C$ válida para todo el horizonte.} La relación de existencia de la estación, que vincula su construcción con la posibilidad de asignar un vehículo a cargar en ella, se establece en \eqref{eq:existencia_onboard}, y el límite operativo de cargadores disponibles en cada intervalo se impone en \eqref{eq:limite_onboard}, sobre el conjunto $\mathcal{KI}\subseteq K\times I$ de pares estación-LHD técnicamente factibles según la asignación estación-vehículo de los datos de entrada.\\
+
+Las variables que indican el inicio y término de cada sesión de carga se modelan mediante \eqref{eq:inicio_termino_t0} (primer intervalo del día) y \eqref{eq:inicio_termino_t} (resto de los intervalos). Toda sesión de carga iniciada debe extenderse al menos $t^{chmin}$ intervalos consecutivos \eqref{eq:min_intervalos_carga} —en la implementación vigente, $t^{chmin}=2$—, y no puede iniciarse una sesión en el último intervalo del día \eqref{eq:min_intervalos_carga_ci}. Finalmente, la potencia entregada a cada vehículo está acotada por la potencia nominal del cargador cuando este se encuentra activo \eqref{eq:potencia_max}; el límite adicional impuesto por la capacidad de la subestación eléctrica dedicada a cada estación se presenta en la Sección \ref{sec:distribucion} (ecuación \eqref{eq:potencia_instalada}), junto con el resto de las restricciones del sistema de distribución. \change{Esta capacidad de subestación, $p_k^{max}$, se mantiene como parámetro exógeno fijo en el tiempo —no depende del año— aun cuando la estación y sus cargadores se expandan en años posteriores a $y^1$.}
+
+\begin{flalign}
+    & N_{k,\change{y}}^C \leq n_k^{bays} \cdot X_{k,\change{y}}, &&& \forall k \change{,y} \label{eq:max_cargadores} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} \leq X_{k,\change{y}}, &&& \forall (k,i)\in\mathcal{KI}, y,d,t \label{eq:existencia_onboard} \\[10pt]
+    & \sum_{i \,:\, (k,i) \in \mathcal{KI}} Z_{k,i,y,d,t}^{charge} \leq N_{k,\change{y}}^C, &&& \forall k,y,d,t \label{eq:limite_onboard} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} = StartCharge_{k,i,y,d,t} - EndCharge_{k,i,y,d,t}, &&& \forall (k,i)\in\mathcal{KI}, y,d, \; t=t_{ini} \label{eq:inicio_termino_t0} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} - Z_{k,i,y,d,t-1}^{charge} = StartCharge_{k,i,y,d,t} - EndCharge_{k,i,y,d,t}, &&& \forall (k,i)\in\mathcal{KI}, y,d, \; t>t_{ini} \label{eq:inicio_termino_t} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} = 0, &&& \forall (k,i)\in\mathcal{KI}, y,d, \; t=t_{fin} \label{eq:min_intervalos_carga_ci} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} + Z_{k,i,y,d,t+1}^{charge} \geq t^{chmin} \cdot StartCharge_{k,i,y,d,t}, &&& \forall (k,i)\in\mathcal{KI}, y,d, \; t<t_{fin} \label{eq:min_intervalos_carga} \\[10pt]
+    & P_{k,i,y,d,t} \leq Z_{k,i,y,d,t}^{charge} \cdot p_c^{nom}, &&& \forall (k,i)\in\mathcal{KI}, y,d,t \label{eq:potencia_max}
+\end{flalign}
+
+\subsection{Operación de las baterías}
+
+La dinámica del estado de energía de los LHD eléctricos se modela mediante un balance entre intervalos consecutivos, afectado por las eficiencias de carga y descarga de la batería reportadas en la hoja \texttt{LHD} \eqref{eq:soc_onboard}: la energía entregada por los cargadores ingresa a la batería atenuada por $\eta^{ch}_i$, mientras que el consumo de tracción se retira de ella amplificado por $1/\eta^{dis}_i$. Los límites técnicos de operación se imponen en \eqref{eq:limites_soc}, y la condición de borde \eqref{eq:condicion_borde} obliga a que el nivel de energía sea idéntico al inicio y al término de cada día representativo. Adicionalmente, \eqref{eq:break_symmetry} fija un orden relativo entre el nivel de energía inicial de pares de LHD que comparten estación de carga —ordenados por su sufijo numérico—, restricción de ruptura de simetría que reduce el espacio de soluciones equivalentes que el solver debe explorar.\\
+
+Cuando el escenario incorpora el módulo de degradación de baterías (hoja \texttt{BatteryDegradation}), la capacidad máxima operable $\Bar{B}_y$ decrece año a año según un modelo de desgaste lineal en función de los ciclos equivalentes completos (\textit{equivalent full cycles}, EFC) acumulados desde el último reemplazo \eqref{eq:degradacion_anual}; en caso contrario, $\Bar{B}_y$ en \eqref{eq:limites_soc} se reemplaza por la capacidad nominal fija $b^{max}_i$ del LHD y no se generan las restricciones de este párrafo. El número de EFC del año $y$ se define conceptualmente en \eqref{eq:num_ciclos_frac} como el cociente entre la energía total cargada por la flota y el producto entre el tamaño de la flota y $\Bar{B}_y$; el acumulado desde el último reemplazo se define en \eqref{eq:num_ciclos}, donde la variable binaria $R_y$ decide si la batería se reemplaza ese año —reiniciando el conteo— o si se arrastra el desgaste acumulado del año anterior a través de $W_y$ \eqref{lineal_W_1}-\eqref{lineal_W_2}.\\
+
+Tanto el cociente \eqref{eq:num_ciclos_frac} (entero $N^{ciclos}_y$ sobre continua $\Bar{B}_y$, ambas variables de decisión) como el producto $W_y=(1-R_y)\cdot AN^{ciclos}_{y-1}$ (binaria por continua) son no lineales. Ambos se linealizan de forma \emph{exacta} —sin aproximación— mediante las ecuaciones \eqref{eq:s_def}-\eqref{eq:w_lower}: la energía cargada por la flota en el año se agrega en la variable $S_y$ \eqref{eq:s_def}; $N^{ciclos}_y$ se reescribe como una expansión binaria exacta sobre $\kappa=\lceil\log_2(N^U-N^L+1)\rceil$ bits \eqref{eq:n_ciclos_bits}; el producto de cada bit por $\Bar{B}_y$ se reconstruye de forma exacta vía \textit{big-M} en \eqref{eq:z_upper1}-\eqref{eq:z_lower2}, lo que permite recomponer $N^{ciclos}_y\cdot\Bar{B}_y$ sin aproximación en \eqref{eq:nb_def} y vincularlo a la energía cargada en \eqref{eq:n_ciclos_energy_link}; análogamente, el producto $W_y$ se linealiza con \textit{big-M} estándar (binaria por continua, exacto) en \eqref{eq:w_upper_R}-\eqref{eq:w_lower}, usando la cota $AN^{max}=N^U\cdot\|Y\|$.
+
+\begin{flalign}
+    & B_{i,y,d,t} = B_{i,y,d,t-1} + \eta^{ch}_i \sum_{k\,:\,(k,i)\in\mathcal{KI}} P_{k,i,y,d,t}\,\Delta t \; - \; \frac{1}{\eta^{dis}_i} \sum_{j \in J_{i,y,d,t}} Y_{i,j,y,d,t}\, p^{e}_{i,j}\, d_{i,j}\, n_{i,j}, &&& \forall i,y,d,t \label{eq:soc_onboard} \\[10pt]
+    & b^{min}_i \cdot \Bar{B}_y \leq B_{i,y,d,t} \leq \Bar{B}_y, &&& \forall i,y,d,t \label{eq:limites_soc} \\[10pt]
+    & B_{i,y,d,0} = B_{i,y,d,t_{fin}}, &&& \forall i,y,d \label{eq:condicion_borde} \\[10pt]
+    & B_{i_{high},y,d,0} \leq B_{i_{low},y,d,0}, &&& \forall (i_{low},i_{high}) \in P^{prec}, \, y,d \label{eq:break_symmetry} \\[10pt]
+    & \Bar{B}_y = b^{max} - \gamma_m \cdot AN^{ciclos}_y, &&& \forall y \label{eq:degradacion_anual} \\[10pt]
+    & N^{ciclos}_y = \frac{\displaystyle\sum_{(k,i)\in\mathcal{KI}}\sum_{d,t} P_{k,i,y,d,t} \cdot \Delta t \cdot \frac{365}{\| D \|}}{n^{elhd} \cdot \Bar{B}_y}, &&& \forall y \label{eq:num_ciclos_frac} \\[10pt]
+    & AN^{ciclos}_y = \begin{cases} N^{ciclos}_y & y=y^1 \\ W_y + N^{ciclos}_y, & y>y^1 \end{cases} &&& \forall y \label{eq:num_ciclos} \\[10pt]
+    & W_y = (1 - R_y) \cdot AN^{ciclos}_{y-1}, &&& \forall y>y^1 \label{lineal_W_1} \\[10pt]
+    & W_{y^1} = 0, &&& \label{lineal_W_2} \\[12pt]
+    & S_y = \Delta t \cdot \frac{365}{\|D\|}\sum_{(k,i)\in\mathcal{KI}}\sum_{d,t} P_{k,i,y,d,t}, &&& \forall y \label{eq:s_def} \\[10pt]
+    & N^{ciclos}_y = N^{L} + \sum_{b=0}^{\kappa-1} 2^{b}\cdot bit_{y,b}, \; bit_{y,b}\in\{0,1\}, &&& \forall y \label{eq:n_ciclos_bits} \\[10pt]
+    & z_{y,b} \leq B^{U}\cdot bit_{y,b}, &&& \forall y, b \label{eq:z_upper1} \\[10pt]
+    & z_{y,b} \geq B^{L}\cdot bit_{y,b}, &&& \forall y, b \label{eq:z_lower1} \\[10pt]
+    & z_{y,b} \leq \Bar{B}_y - B^{L}\cdot(1-bit_{y,b}), &&& \forall y, b \label{eq:z_upper2} \\[10pt]
+    & z_{y,b} \geq \Bar{B}_y - B^{U}\cdot(1-bit_{y,b}), &&& \forall y, b \label{eq:z_lower2} \\[10pt]
+    & NB_y = N^{L}\cdot \Bar{B}_y + \sum_{b=0}^{\kappa-1} 2^{b}\cdot z_{y,b}, &&& \forall y \label{eq:nb_def} \\[10pt]
+    & n^{elhd}\cdot NB_y = S_y, &&& \forall y \label{eq:n_ciclos_energy_link} \\[10pt]
+    & W_y \leq AN^{max}\cdot(1-R_y), &&& \forall y>y^1 \label{eq:w_upper_R} \\[10pt]
+    & W_y \leq AN^{ciclos}_{y-1}, &&& \forall y>y^1 \label{eq:w_upper_cum} \\[10pt]
+    & W_y \geq AN^{ciclos}_{y-1} - AN^{max}\cdot R_y, &&& \forall y>y^1 \label{eq:w_lower}
+\end{flalign}
+
+\noindent Las ecuaciones \eqref{eq:n_ciclos_bits}-\eqref{eq:n_ciclos_energy_link} reemplazan a \eqref{eq:num_ciclos_frac} en la implementación (esta última se mantiene solo como definición conceptual); análogamente, \eqref{eq:w_upper_R}-\eqref{eq:w_lower} reemplazan al producto no lineal de \eqref{lineal_W_1}. $N^{ciclos}_y\in[N^L,N^U]$ y $\Bar{B}_y\in[B^L,B^U]=[b^{min}_{frac}\cdot b^{max},\,b^{max}]$ son cotas de dominio de las variables, calculadas a partir de la meta de producción y la energía máxima cargable por la flota en un año.
+
+\subsection{Sistema de distribución eléctrica}
+\label{sec:distribucion}
+
+La infraestructura eléctrica limita la operación del sistema de carga mediante restricciones de capacidad física y operativa. La potencia total consumida por los vehículos asignados a una estación está acotada por la capacidad disponible de su subestación dedicada en \eqref{eq:potencia_instalada}. \change{Esta capacidad, $p_k^{max}$, es un parámetro exógeno fijo en el tiempo (no se expande junto con la estación o sus cargadores) tal como se indicó en la Sección \ref{sec:estaciones_MY}.} La potencia efectivamente importada desde la red está además acotada por la capacidad contratada de distribución en \eqref{eq:peak_onboard}.\\
+
+Para modelar el cargo por potencia, se adopta una simplificación conservadora que vincula la potencia facturable ($P^{pot}_y$) con los máximos registros de demanda de red durante los intervalos de punta. Esta relación se formaliza en \eqref{eq:cargo_onboard}, considerando como meses punta los días $91$ a $244$ del año y como bloque horario de punta el intervalo $18{:}00$-$22{:}00$.\\
+
+\begin{flalign}
+    & \sum_{i\,:\,(k,i)\in\mathcal{KI}} P_{k,i,y,d,t} \leq p^{max}_{k}, &&& \forall k \in K, \forall y,d,t \label{eq:potencia_instalada} \\[10pt]
+    & P^{red}_{y,d,t} \leq p^{\text{peak}}, &&& \forall y,d,t \label{eq:peak_onboard} \\[10pt]
+    & P^{red}_{y,d,t} \leq P^{pot}_y, &&& \forall y, \, \forall d\in D^{peak}\,(91\le d\le 244), \, \forall t \in T^{peak}\,(18\text{:}00\text{-}22\text{:}00) \label{eq:cargo_onboard}
+\end{flalign}
+
+\subsection{Operación de los vehículos}
+
+El estado operativo de los LHD eléctricos se define mediante un balance de exclusividad: en cada intervalo de tiempo el vehículo debe encontrarse en un único estado —en recorrido hacia un nodo asignado, en espera dentro de la estación, o cargando—, según \eqref{eq:estado_onboard}. Esta restricción se omite en los intervalos en que el LHD no tiene ningún nodo asignable (p.\,ej. fuera de turno), caso cubierto en su lugar por \eqref{eq:detencion_turno_onboard} (Sección \ref{sec:detenciones}). Las restricciones de este apartado, al igual que las de estado de carga de la sección anterior, se registran únicamente sobre \texttt{elhd\_set} ($I$, LHD eléctricos); los LHD diésel ($I^d$, \texttt{dlhd\_set}) no participan en ninguna restricción de estado activa —su producción se contabiliza igual en las restricciones de la Sección \ref{sec:produccion} a través de $Y_{i,j,y,d,t}$, pero sin balance de exclusividad temporal propio en esta rama.\\
+
+De forma análoga al estado de carga, se define un estado agregado "asignado a extracción" ($\sum_j Y_{i,j,y,d,t}$, agregado sobre cualquier nodo $j$ asignable, no un nodo específico). Las variables de inicio y término de esta asignación se modelan en \eqref{eq:asignacion_estado_ini} (primer intervalo del día) y \eqref{eq:asignacion_estado} (resto). Toda asignación iniciada debe mantenerse al menos $t^{amin}$ intervalos consecutivos \eqref{eq:asignacion_minima} —en la implementación vigente, $t^{amin}=2$—, y no puede iniciarse una asignación en el último intervalo del día \eqref{eq:asignacion_minima_ci}.
+
+\begin{flalign}
+    & Z_{i,y,d,t} + \sum_{k\,:\,(k,i)\in\mathcal{KI}} Z_{k,i,y,d,t}^{charge} + \sum_{j \in J_{i,y,d,t}} Y_{i,j,y,d,t} = 1, &&& \forall i \in I, y,d,t \; : \; J_{i,y,d,t}\neq\emptyset \label{eq:estado_onboard} \\[10pt]
+    & \sum_{j \in J_{i,y,d,t_{ini}}} Y_{i,j,y,d,t_{ini}} = StartAssign_{i,y,d,t_{ini}} - EndAssign_{i,y,d,t_{ini}} , &&& \forall i, y,d \label{eq:asignacion_estado_ini} \\[10pt]
+    & \sum_{j \in J_{i,y,d,t}} Y_{i,j,y,d,t} - \sum_{j \in J_{i,y,d,t-1}} Y_{i,j,y,d,t-1} = StartAssign_{i,y,d,t} - EndAssign_{i,y,d,t} , &&& \forall i, y,d, \; t>t_{ini}  \label{eq:asignacion_estado} \\[10pt]
+    & \sum_{j \in J_{i,y,d,t}} Y_{i,j,y,d,t} + \sum_{j \in J_{i,y,d,t+1}} Y_{i,j,y,d,t+1} \ge t^{amin} \cdot StartAssign_{i,y,d,t} , &&& \forall i, y,d, \; t < t_{fin}  \label{eq:asignacion_minima} \\[10pt]
+    & \sum_{j \in J_{i,y,d,t_{fin}}} Y_{i,j,y,d,t_{fin}} = 0 , &&& \forall i, y,d  \label{eq:asignacion_minima_ci}
+\end{flalign}
+
+\noindent donde $J_{i,y,d,t}$ denota el conjunto de nodos asignables al LHD $i$ en $(y,d,t)$ (\texttt{Nodes\_assigned\_at\_interval}); tanto \eqref{eq:estado_onboard} como \eqref{eq:asignacion_estado_ini}-\eqref{eq:asignacion_minima_ci} se omiten cuando $J_{i,y,d,t}=\emptyset$.
+
+\subsection{Producción}
+\label{sec:produccion}
+
+La gestión de la producción diaria asegura el cumplimiento de las metas de extracción. En cada año $y$ se debe extraer una cantidad de mineral $m_{j,y}$ desde cada punto de extracción $j$, meta que se aplica por igual a todos los días representativos $d$ del año. Dado que las asignaciones son variables enteras, en general no existe un número entero de asignaciones que satisfaga exactamente la meta; por ello, el modelo acota el número total de asignaciones al nodo $j$ en el día $d$ entre el piso y el techo del cociente entre la meta y la producción por asignación \eqref{eq:balance_nodo}, calculada usando como referencia un LHD $i^{rep}_j$ efectivamente asignable a ese nodo (se asume una tasa de producción equivalente entre los LHD asignables a un mismo nodo). La producción por intervalo se registra en la variable auxiliar $M_{i,j,y,d,t}$ según \eqref{eq:extraccion_diaria}, considerando la capacidad del balde ($g_i$), el número de viajes por asignación ($n_{i,j}$) y el factor de llenado ($\beta_i$). Esta formulación admite una tolerancia de a lo más una asignación por defecto o por exceso respecto a la meta en cada nodo, consecuencia inevitable del redondeo entero. Adicionalmente, \eqref{eq:cuota} impone una cota inferior agregada: la producción total del día $d$, sumada sobre \emph{todos} los nodos y ambas tecnologías (LHD eléctricos y diésel), debe alcanzar la meta anual agregada $\sum_j m_{j,y}$.
+
+\begin{flalign}
+    & M_{i,j,y,d,t} = Y_{i,j,y,d,t} \cdot g_i \cdot n_{i,j} \cdot \beta_{i},
+      &&& \forall\, (i,j,y,d,t) \; : \; Y_{i,j,y,d,t} \text{ definida} \label{eq:extraccion_diaria} \\[10pt]
+    & \left\lfloor \frac{m_{j,y}}{g_{i^{rep}_j} \cdot n_{i^{rep}_j,j} \cdot \beta_{i^{rep}_j}} \right\rfloor - 1
+      \leq \sum_{i\in I\cup I^d}\sum_{t\in T} Y_{i,j,y,d,t}
+      \leq \left\lceil \frac{m_{j,y}}{g_{i^{rep}_j} \cdot n_{i^{rep}_j,j} \cdot \beta_{i^{rep}_j}} \right\rceil + 1,
+      &&& \forall\, y \in Y,\, d \in D,\; j \in J \label{eq:balance_nodo} \\[10pt]
+    & \sum_{j \in J} m_{j,y} \leq \sum_{i \in I \cup I^{d}} \sum_{j \in J} \sum_{t \in T} Y_{i,j,y,d,t}\cdot g_i \cdot n_{i,j} \cdot \beta_i,
+      &&& \forall\, y \in Y,\; d \in D \label{eq:cuota}
+\end{flalign}
+
+\subsection{Detenciones operacionales}
+\label{sec:detenciones}
+
+El modelo incorpora restricciones para asegurar el cumplimiento de las detenciones programadas durante la jornada laboral, bajo el esquema DCH actualmente activo. Durante el período entre turnos ($T^{BS}$, calculado a partir de los turnos reales definidos en la hoja \texttt{Shifts}), todos los LHD eléctricos deben permanecer en la estación, ya sea en espera o cargando \eqref{eq:detencion_turno_onboard}. La carga \textit{on-board} está además confinada a las ventanas de colación o entre turnos: fuera de $T^{meal}\cup T^{BS}$ el vehículo no puede cargar \eqref{eq:carga_solo_pausas}, aun si el balance de exclusividad \eqref{eq:estado_onboard} lo permitiría.\\
+
+Durante la colación se restringe cualquier movimiento de producción. La flota completa (LHD eléctricos y diésel) se divide en dos subgrupos según la paridad del sufijo numérico de su nombre, y cada bloque de colación se separa cronológicamente en dos mitades ($T^{C,g1}$, $T^{C,g2}$, con $T^{C,g1}\cup T^{C,g2}=T^{meal}$): el subgrupo 1 no puede extraer durante la primera mitad \eqref{eq:colacion_g1} y el subgrupo 2 durante la segunda \eqref{eq:colacion_g2}, de modo que no toda la flota detiene su operación de forma simultánea. Finalmente, durante los periodos de mantenimiento ($T^{M}$) los LHD eléctricos deben permanecer detenidos en la estación \eqref{eq:mantenimiento}, sin poder cargar ni intercambiar potencia \eqref{eq:mantenimiento_no_carga}.
+
+\begin{flalign}
+    & Z_{i,y,d,t} + \sum_{k\,:\,(k,i)\in\mathcal{KI}} Z_{k,i,y,d,t}^{charge} = 1, &&& \forall i \in I, y,d, \; t \in T^{BS} \label{eq:detencion_turno_onboard} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} = 0, &&& \forall (k,i)\in\mathcal{KI}, y,d, \; t \notin T^{meal}\cup T^{BS} \label{eq:carga_solo_pausas} \\[10pt]
+    & \sum_{j \in J_i} Y_{i,j,y,d,t} = 0, &&& \forall i \in I^{g1}, y,d, \; t \in T^{C,g1} \label{eq:colacion_g1} \\[10pt]
+    & \sum_{j \in J_i} Y_{i,j,y,d,t} = 0, &&& \forall i \in I^{g2}, y,d, \; t \in T^{C,g2} \label{eq:colacion_g2} \\[10pt]
+    & Z_{i,y,d,t} = 1, &&& \forall i \in I, y,d, \; t \in T^{M} \label{eq:mantenimiento} \\[10pt]
+    & Z_{k,i,y,d,t}^{charge} = 0, &&& \forall (k,i)\in\mathcal{KI}, y,d, \; t \in T^{M} \label{eq:mantenimiento_no_carga}
+\end{flalign}
+
+\noindent El esquema DET (con soporte de \texttt{base\_hour} y modo autónomo, donde la colación deja de impedir la extracción) está implementado pero \textbf{no registrado} en \texttt{build\_all\_constraints} de esta rama; el esquema activo sigue siendo DCH.
+
+\subsection{Infraestructura de generación y almacenamiento}
+\label{sec:generacion_MY}
+
+El modelo contempla la posibilidad de invertir en tecnologías de generación renovable y almacenamiento estacionario para satisfacer la demanda eléctrica del sistema de carga; estas restricciones solo se generan si el escenario define generadores (\texttt{Generators}) o unidades de almacenamiento (\texttt{Storage}), respectivamente. \change{Al igual que en la Sección \ref{sec:estaciones_MY}, la inversión en generación y almacenamiento puede ocurrir en cualquier año del horizonte; las restricciones de esta sección se evalúan sobre el stock acumulado $G_{g,y}$ y $H_y$ (Sección \ref{sec:inversion_multianio}), y $H_y$ es ahora una variable entera —número de unidades del cluster de almacenamiento— en lugar de la variable binaria de existencia de la formulación de horizonte único.} La capacidad instalable de cada planta de generación está acotada superiormente por \eqref{eq:maxima_cap_plantas}, mientras que la potencia efectivamente generada en cada intervalo queda restringida por \eqref{eq:maxima_gen_renv}, la cual incorpora la disponibilidad del recurso renovable en función de la hora y el día ($\alpha_{g,y,d,t}$).\\
+
+El balance entre la demanda de los cargadores y las fuentes de suministro disponibles —red eléctrica, generación local y almacenamiento— se establece en \eqref{eq:balance_potencia}. Respecto al sistema de almacenamiento, \eqref{eq:p_max_bat} define los límites de potencia de carga y descarga de la batería \change{—ahora interpretados como límites del cluster completo, es decir, del parámetro por unidad multiplicado por las $H_y$ unidades acumuladas al año $y$—}, condicionados a su existencia. La evolución del estado de energía entre intervalos se rige por \eqref{eq:SOC_bat}, con condición inicial \eqref{eq:SOC_bat_ini} y ciclo cerrado de energía en el día \eqref{eq:ciclicidad}. Finalmente, \eqref{eq:almac_max} impone los límites de almacenamiento mínimo y máximo del cluster, también condicionados a $H_y$.
+
+\begin{flalign}
+    & G_{g,\change{y}} \leq g^{max}_g, &&& \forall g \change{,y} \label{eq:maxima_cap_plantas} \\[10pt]
+    & P^{gen}_{g,y,d,t} + Curt_{g,y,d,t} = G_{g,\change{y}} \cdot p^{max}_g \cdot \alpha_{g,y,d,t}, &&& \forall g, y,d,t \label{eq:maxima_gen_renv} \\[10pt]
+    & P^{red}_{y,d,t} + \sum_{g\in G} P^{gen}_{g,y,d,t} + \sum_{h \in H} P^{bat}_{h,y,d,t} = \sum_{(k,i)\in\mathcal{KI}} P_{k,i,y,d,t}, &&& \forall y,d,t \label{eq:balance_potencia} \\[10pt]
+    & -p_h^{max}\cdot H_{\change{y}} \leq P^{bat}_{h,y,d,t} \leq p^{max}_h \cdot H_{\change{y}}, &&& \forall h \in H, y,d,t \label{eq:p_max_bat} \\[10pt]
+    & A_{h,y,d,t} = A_{h,y,d,t-1} - \frac{P^{bat}_{h,y,d,t}}{\eta_{h}}\cdot\Delta t, &&& \forall h \in H, y,d,t \label{eq:SOC_bat} \\[10pt]
+    & A_{h,y,d,0} = 0, &&& \forall h \in H, y,d \label{eq:SOC_bat_ini} \\[10pt]
+    & A_{h,y,d,t_{ini}} = A_{h,y,d,t_{fin}} , &&& \forall h \in H, y,d \label{eq:ciclicidad} \\[10pt]
+    & a_h^{min}\cdot H_{\change{y}} \leq A_{h,y,d,t} \leq a_h^{max}\cdot H_{\change{y}}, &&& \forall h \in H, y,d,t \label{eq:almac_max}
+\end{flalign}
+
+\noindent \change{Se mantiene el índice $h\in H$ en las restricciones operativas \eqref{eq:balance_potencia}-\eqref{eq:ciclicidad} por consistencia con la notación original (por si en el futuro se admite más de un cluster de almacenamiento candidato), aunque bajo el supuesto vigente de un único cluster, $H=\{h\}$ y $H_y$ (sin índice $h$) es la única variable de stock relevante, tal como se definió en la Sección \ref{sec:inversion_multianio}.}
+
+\end{document}

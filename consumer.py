@@ -808,10 +808,9 @@ def main() -> None:
         if bess_info and bess_info.get("units"):
             rows = []
             for h, info in bess_info["units"].items():
-                estado = "Instalado" if info["installed"] >= 0.5 else "No instalado"
                 rows.append([
                     h,
-                    estado,
+                    f"{info['installed']:.0f}",
                     f"{info['p_max_kw']:.0f}",
                     f"{info['a_min_kwh']:.0f}",
                     f"{info['a_max_kwh']:.0f}",
@@ -825,7 +824,7 @@ def main() -> None:
             ])
             print(make_table(
                 "ALMACENAMIENTO BESS",
-                ["Unidad", "Estado", "P_max [kW]", "A_min [kWh]", "A_max [kWh]",
+                ["Unidad", "Unidades instaladas", "P_max [kW]", "A_min [kWh]", "A_max [kWh]",
                  "Costo inv.", "Costo op. anual"],
                 rows,
             ))
@@ -934,6 +933,58 @@ def _year_discount_factor(r: float, year: int, years_sorted: List[int]) -> float
         return 1.0
     pos = years_sorted.index(int(year)) + 1 if int(year) in years_sorted else 1
     return 1.0 / (1.0 + r) ** pos
+
+
+def _annuity_factor_year(r: float, pos_y: int, n_years: int) -> float:
+    """AF_y(r,Y) = sum_{n=pos_y..n_years} 1/(1+r)^n — igual a annuity_factor_expr(model, y)
+    en functions.py (inversion multi-año: NPV de un costo anualizado que
+    empieza a devengarse en el año de posicion pos_y y se mantiene hasta el
+    fin del horizonte, sin retiro)."""
+    if n_years <= 0 or pos_y > n_years:
+        return 0.0
+    if r == 0:
+        return float(n_years - pos_y + 1)
+    return sum(1.0 / (1.0 + r) ** n for n in range(pos_y, n_years + 1))
+
+
+def _indexed_vars_by_year(path: Optional[Path], outer_candidates: Tuple[str, ...] = ("k", "_1")) -> Dict[str, Dict[str, float]]:
+    """Lee un JSON con estructura {outer_axis: {id: {'y': {year: val}}}}
+    (variables de inversion multi-año Delta_X/Delta_N_chargers/Delta_G_g,
+    indexadas por (id, y)) y devuelve {id: {year_str: val}}. Devuelve {} si
+    el archivo no existe/esta vacio o no calza con la estructura esperada."""
+    if not path or is_effectively_empty_json(path):
+        return {}
+    data = load_json(path)
+    if not isinstance(data, dict):
+        return {}
+    outer = None
+    for candidate in outer_candidates:
+        if candidate in data:
+            outer = data[candidate]
+            break
+    if not isinstance(outer, dict):
+        return {}
+    result: Dict[str, Dict[str, float]] = {}
+    for outer_id, inner in outer.items():
+        if not isinstance(inner, dict):
+            continue
+        y_block = inner.get("y", inner)
+        if not isinstance(y_block, dict):
+            continue
+        result[str(outer_id)] = {str(y): _as_float(v, 0.0) for y, v in y_block.items()}
+    return result
+
+
+def _year_only_vars(path: Optional[Path]) -> Dict[str, float]:
+    """Lee un JSON con estructura {'y': {year: val}} (variables de inversion
+    multi-año sin eje adicional, como Delta_H/H) y devuelve {year_str: val}."""
+    if not path or is_effectively_empty_json(path):
+        return {}
+    data = load_json(path)
+    if not isinstance(data, dict):
+        return {}
+    inner = data.get("y", data)
+    return {str(y): _as_float(v, 0.0) for y, v in inner.items()} if isinstance(inner, dict) else {}
 
 
 
@@ -1058,23 +1109,24 @@ def calculate_lhd_charge_cost(root: Path) -> float:
 
 def calculate_investment_cost(root: Path) -> float:
     """
-    Costo de inversión en estaciones, idéntico a inversion_cost() de functions.py.
+    Costo de inversión en estaciones. Detecta el tipo de escenario por la
+    presencia de Sv.json o Z_swap.json:
 
-    Detecta el tipo de escenario por la presencia de Sv.json o Z_swap.json:
-
-    Swap:
+    Swap (rama battery_swapping*, sin inversion multi-año aun -- X/N_chargers
+    siguen siendo decisiones de un unico año, formato plano):
       Σ_k  station_cost_k[k] * X[k]
            + c_bays_k[k]                              * N_bays[k]
            + (charger_cost + c_charger_space_k[k])    * N_chargers[k]
            + (battery_cost + c_battery_space_k[k])    * N_batteries[k]
+      (con la anualidad global _annuity_factor si hay datos de degradación)
 
-    Carga on-board:
-      Σ_k  station_cost_k[k] * X[k]
-           + (c_bays_k[k] + charger_cost + c_charger_space_k[k]) * N_chargers[k]
+    Carga on-board (esta rama, inversion multi-año -- idéntico a
+    inversion_cost() de functions.py: usa las variables de INCREMENTO
+    Delta_X/Delta_N_chargers de cada año y, anualizadas con AF_y(r,Y)):
+      Σ_y AF_y(r,Y) * Σ_k  station_cost_k[k] * Delta_X[k,y]
+           + (c_bays_k[k] + charger_cost + c_charger_space_k[k]) * Delta_N_chargers[k,y]
     """
-    x_path           = find_json_in_folder(root, "X.json")
-    n_chargers_path  = find_json_in_folder(root, "N_chargers.json")
-    params_path      = find_json_in_folder(root, "parameters.json")
+    params_path = find_json_in_folder(root, "parameters.json")
 
     if not params_path or is_effectively_empty_json(params_path):
         raise ValueError("No se encontró parameters.json")
@@ -1090,40 +1142,39 @@ def calculate_investment_cost(root: Path) -> float:
             raw = raw["_1"]
         return {str(k): _as_float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
 
-    # Variables de decisión por estación: soporta {"k": {k: v}} o {"_1": {k: v}}
-    def _station_vars(path: Optional[Path]) -> Dict[str, float]:
-        if not path or is_effectively_empty_json(path):
-            return {}
-        data = load_json(path)
-        if not isinstance(data, dict):
-            return {}
-        inner = data.get("k") or data.get("_1") or {}
-        if not isinstance(inner, dict):
-            return {}
-        return {str(k): _as_float(v) for k, v in inner.items()}
-
     p_station = _station_param("station_cost_k")
     p_bays    = _station_param("c_bays_k")
     p_char_sp = _station_param("c_charger_space_k")
 
-    x_map    = _station_vars(x_path)
-    char_map = _station_vars(n_chargers_path)
-    stations = sorted(set(x_map) | set(char_map))
-
-    # Detecta si es escenario swap (tiene Sv.json o Z_swap.json)
+    # Detecta si es escenario swap (tiene Sv.json o Z_swap.json) -- nunca
+    # ocurre en esta rama (carga on-board), se mantiene por compatibilidad si
+    # esta funcion se reutiliza en la rama battery_swapping*.
     is_swap = (
         find_json_in_folder(root, "Sv.json") is not None
         or find_json_in_folder(root, "Z_swap.json") is not None
     )
 
     if is_swap:
+        # Variables de decisión por estación (formato plano, un unico año):
+        # soporta {"k": {k: v}} o {"_1": {k: v}}
+        def _station_vars(path: Optional[Path]) -> Dict[str, float]:
+            if not path or is_effectively_empty_json(path):
+                return {}
+            data = load_json(path)
+            if not isinstance(data, dict):
+                return {}
+            inner = data.get("k") or data.get("_1") or {}
+            if not isinstance(inner, dict):
+                return {}
+            return {str(k): _as_float(v) for k, v in inner.items()}
+
+        x_map    = _station_vars(find_json_in_folder(root, "X.json"))
+        char_map = _station_vars(find_json_in_folder(root, "N_chargers.json"))
         battery_cost = _as_float(params.get("battery_cost", 0.0))
         p_bat_sp  = _station_param("c_battery_space_k")
-        n_bays_path      = find_json_in_folder(root, "N_bays.json")
-        n_batteries_path = find_json_in_folder(root, "N_batteries.json")
-        bays_map = _station_vars(n_bays_path)
-        bat_map  = _station_vars(n_batteries_path)
-        stations = sorted(set(stations) | set(bays_map) | set(bat_map))
+        bays_map = _station_vars(find_json_in_folder(root, "N_bays.json"))
+        bat_map  = _station_vars(find_json_in_folder(root, "N_batteries.json"))
+        stations = sorted(set(x_map) | set(char_map) | set(bays_map) | set(bat_map))
 
         total = 0.0
         for k in stations:
@@ -1133,19 +1184,34 @@ def calculate_investment_cost(root: Path) -> float:
                 + (charger_cost + p_char_sp.get(k, 0.0))      * char_map.get(k, 0.0)
                 + (battery_cost + p_bat_sp.get(k, 0.0))       * bat_map.get(k, 0.0)
             )
-    else:
-        # Carga on-board: c_bays_k va agrupado con el costo por cargador
-        total = 0.0
-        for k in stations:
-            total += (
-                p_station.get(k, 0.0) * x_map.get(k, 0.0)
-                + (p_bays.get(k, 0.0) + charger_cost + p_char_sp.get(k, 0.0)) * char_map.get(k, 0.0)
-            )
 
-    if _has_degradation_data(params):
-        r = _get_discount_rate(params)
-        af = _annuity_factor(r, len(_get_years_sorted(params)))
-        total = total * af
+        if _has_degradation_data(params):
+            total = total * _annuity_factor(_get_discount_rate(params), len(_get_years_sorted(params)))
+        return total
+
+    # Carga on-board (esta rama): c_bays_k va agrupado con el costo por
+    # cargador; usa las variables de incremento por año.
+    delta_x_by_station = _indexed_vars_by_year(find_json_in_folder(root, "Delta_X.json"))
+    delta_n_by_station = _indexed_vars_by_year(find_json_in_folder(root, "Delta_N_chargers.json"))
+    stations = sorted(set(delta_x_by_station) | set(delta_n_by_station))
+
+    years_sorted = _get_years_sorted(params)
+    n_years = len(years_sorted)
+    has_degradation = _has_degradation_data(params)
+    discount_r = _get_discount_rate(params) if has_degradation else 0.0
+
+    total = 0.0
+    for k in stations:
+        dx = delta_x_by_station.get(k, {})
+        dn = delta_n_by_station.get(k, {})
+        for pos_y, y in enumerate(years_sorted, start=1):
+            y_key = str(y)
+            yearly = (
+                p_station.get(k, 0.0) * dx.get(y_key, 0.0)
+                + (p_bays.get(k, 0.0) + charger_cost + p_char_sp.get(k, 0.0)) * dn.get(y_key, 0.0)
+            )
+            af = _annuity_factor_year(discount_r, pos_y, n_years) if has_degradation else 1.0
+            total += yearly * af
 
     return total
 
@@ -1410,52 +1476,61 @@ def calculate_grid_energy_total_kwh(root: Path) -> float:
 
 def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     """
-    Lee G_g.json y parameters.json para calcular por generador:
-    - Unidades instaladas (G_g)
-    - Potencia instalada total [kW] = G_g * p_max_g
-    - Costo de inversión = G_g * c_inv_g
-    - Costo de operación anual = G_g * c_op_g
+    Lee Delta_G_g.json (inversión por año), G_g.json (stock acumulado, para
+    reportar unidades instaladas al final del horizonte) y parameters.json.
+
+    Costo multi-año (idéntico a gen_investment_cost/gen_op_cost de
+    functions.py): sum_y AF_y(r,Y) * Delta_G_g[g,y] * c_inv_g[g]/c_op_g[g] * p_max_g[g].
     """
-    gg_path = find_json_in_folder(root, "G_g.json")
-    params_path = find_json_in_folder(root, "parameters.json")
+    delta_gg_path = find_json_in_folder(root, "Delta_G_g.json")
+    gg_path       = find_json_in_folder(root, "G_g.json")
+    params_path   = find_json_in_folder(root, "parameters.json")
 
-    if not gg_path or not params_path:
+    if not delta_gg_path or not params_path:
         return {}
-    if is_effectively_empty_json(gg_path) or is_effectively_empty_json(params_path):
+    if is_effectively_empty_json(delta_gg_path) or is_effectively_empty_json(params_path):
         return {}
 
-    gg_data = load_json(gg_path)
     params_data = load_json(params_path)
 
-    def _extract_param(params: Dict, key: str) -> Dict[str, float]:
-        raw = params.get(key, {})
+    def _extract_param(key: str) -> Dict[str, float]:
+        raw = params_data.get(key, {})
         inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
         return {str(g): _as_float(v, 0.0) for g, v in inner.items()} if isinstance(inner, dict) else {}
 
-    gg_raw = gg_data
-    for candidate in ("g", "_1"):
-        if isinstance(gg_raw, dict) and candidate in gg_raw:
-            gg_raw = gg_raw[candidate]
-            break
-    gg_map = {str(g): _as_float(v, 0.0) for g, v in gg_raw.items()} if isinstance(gg_raw, dict) else {}
-    c_inv = _extract_param(params_data, "c_inv_g")
-    c_op  = _extract_param(params_data, "c_op_g")
-    p_max = _extract_param(params_data, "p_max_g")
+    delta_gg_by_gen = _indexed_vars_by_year(delta_gg_path, outer_candidates=("g", "_1"))
+    stock_gg_by_gen = _indexed_vars_by_year(gg_path, outer_candidates=("g", "_1"))
 
-    gen_set = [str(g) for g in params_data.get("gen_set", list(gg_map.keys()))]
+    c_inv = _extract_param("c_inv_g")
+    c_op  = _extract_param("c_op_g")
+    p_max = _extract_param("p_max_g")
 
-    af = 1.0
-    if _has_degradation_data(params_data):
-        af = _annuity_factor(_get_discount_rate(params_data), len(_get_years_sorted(params_data)))
+    gen_set = [str(g) for g in params_data.get("gen_set", list(delta_gg_by_gen.keys()))]
+
+    years_sorted = _get_years_sorted(params_data)
+    n_years = len(years_sorted)
+    last_year_key = str(years_sorted[-1]) if years_sorted else None
+    has_degradation = _has_degradation_data(params_data)
+    discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
 
     gens: Dict[str, Dict[str, float]] = {}
     total_inv = total_op = total_power = 0.0
 
     for g in gen_set:
-        units = gg_map.get(g, 0.0)
-        inv   = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0) * af
-        op    = units * c_op.get(g, 0.0)  * p_max.get(g, 0.0) * af
+        deltas = delta_gg_by_gen.get(g, {})
+        inv = op = 0.0
+        for pos_y, y in enumerate(years_sorted, start=1):
+            dval = deltas.get(str(y), 0.0)
+            af = _annuity_factor_year(discount_r, pos_y, n_years) if has_degradation else 1.0
+            inv += dval * c_inv.get(g, 0.0) * p_max.get(g, 0.0) * af
+            op  += dval * c_op.get(g, 0.0)  * p_max.get(g, 0.0) * af
+
+        # Unidades acumuladas al final del horizonte (= total construido, sin
+        # retiro de activos); fallback a la suma de incrementos si G_g.json
+        # no esta disponible.
+        units = stock_gg_by_gen.get(g, {}).get(last_year_key, 0.0) if last_year_key else sum(deltas.values())
         power = units * p_max.get(g, 0.0)
+
         gens[g] = {
             "units":      units,
             "p_max_unit": p_max.get(g, 0.0),
@@ -1477,57 +1552,63 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
 
 def calculate_bess_costs(root: Path) -> Dict[str, Any]:
     """
-    Lee H_h.json y parameters.json para calcular por unidad BESS:
-    - Instalada (H_h = 1) o no (H_h = 0)
-    - Potencia máxima [kW], capacidad [kWh]
-    - Costo de inversión = H_h * c_inv_h
-    - Costo de operación anual = H_h * c_op_h
+    Lee Delta_H.json (inversión del cluster BESS por año, sin eje h -- el
+    modelo asume un único cluster candidato, ver
+    docs/restricciones_modelo.tex), H.json (stock acumulado, para reportar
+    unidades instaladas al final del horizonte) y parameters.json.
+
+    Costo multi-año (idéntico a bess_investment_cost/bess_op_cost de
+    functions.py): sum_y AF_y(r,Y) * Delta_H[y] * c_inv_h[h]/c_op_h[h].
     """
-    hh_path     = find_json_in_folder(root, "H_h.json")
-    params_path = find_json_in_folder(root, "parameters.json")
+    delta_h_path = find_json_in_folder(root, "Delta_H.json")
+    h_path       = find_json_in_folder(root, "H.json")
+    params_path  = find_json_in_folder(root, "parameters.json")
 
-    if not hh_path or not params_path:
+    if not delta_h_path or not params_path:
         return {}
-    if is_effectively_empty_json(hh_path) or is_effectively_empty_json(params_path):
+    if is_effectively_empty_json(delta_h_path) or is_effectively_empty_json(params_path):
         return {}
 
-    hh_data     = load_json(hh_path)
     params_data = load_json(params_path)
 
-    def _extract_param(params: Dict, key: str) -> Dict[str, float]:
-        raw   = params.get(key, {})
+    def _extract_param(key: str) -> Dict[str, float]:
+        raw   = params_data.get(key, {})
         inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
         return {str(h): _as_float(v, 0.0) for h, v in inner.items()} if isinstance(inner, dict) else {}
 
-    # H_h puede venir como {"h": {"Bess": 1}} o {"_1": {"Bess": 1}} o {"Bess": 1}
-    raw_hh = hh_data
-    for candidate in ("h", "_1"):
-        if isinstance(raw_hh, dict) and candidate in raw_hh:
-            raw_hh = raw_hh[candidate]
-            break
-    hh_map  = {str(h): _as_float(v, 0.0) for h, v in raw_hh.items()} if isinstance(raw_hh, dict) else {}
+    delta_h_by_year = _year_only_vars(delta_h_path)
+    h_by_year       = _year_only_vars(h_path)
 
-    c_inv  = _extract_param(params_data, "c_inv_h")
-    c_op   = _extract_param(params_data, "c_op_h")
-    p_max  = _extract_param(params_data, "p_max_h")
-    a_max  = _extract_param(params_data, "a_max_h")
-    a_min  = _extract_param(params_data, "a_min_h")
+    c_inv  = _extract_param("c_inv_h")
+    c_op   = _extract_param("c_op_h")
+    p_max  = _extract_param("p_max_h")
+    a_max  = _extract_param("a_max_h")
+    a_min  = _extract_param("a_min_h")
 
-    stor_set = [str(h) for h in params_data.get("storage_set", list(hh_map.keys()))]
+    stor_set = [str(h) for h in params_data.get("storage_set", list(c_inv.keys()))]
 
-    af = 1.0
-    if _has_degradation_data(params_data):
-        af = _annuity_factor(_get_discount_rate(params_data), len(_get_years_sorted(params_data)))
+    years_sorted = _get_years_sorted(params_data)
+    n_years = len(years_sorted)
+    last_year_key = str(years_sorted[-1]) if years_sorted else None
+    has_degradation = _has_degradation_data(params_data)
+    discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
+
+    # Unidades acumuladas del cluster al final del horizonte (sin retiro de
+    # activos); fallback a la suma de incrementos si H.json no esta disponible.
+    units_final = h_by_year.get(last_year_key, 0.0) if last_year_key else sum(delta_h_by_year.values())
 
     units_info: Dict[str, Dict[str, float]] = {}
     total_inv = total_op = 0.0
 
     for h in stor_set:
-        installed = hh_map.get(h, 0.0)
-        inv = installed * c_inv.get(h, 0.0) * af
-        op  = installed * c_op.get(h, 0.0) * af
+        inv = op = 0.0
+        for pos_y, y in enumerate(years_sorted, start=1):
+            dval = delta_h_by_year.get(str(y), 0.0)
+            af = _annuity_factor_year(discount_r, pos_y, n_years) if has_degradation else 1.0
+            inv += dval * c_inv.get(h, 0.0) * af
+            op  += dval * c_op.get(h, 0.0) * af
         units_info[h] = {
-            "installed":  installed,
+            "installed":  units_final,
             "p_max_kw":   p_max.get(h, 0.0),
             "a_max_kwh":  a_max.get(h, 0.0),
             "a_min_kwh":  a_min.get(h, 0.0),
