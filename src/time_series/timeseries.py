@@ -30,6 +30,7 @@ class Timeseries(object):
         self.mapper['MarginalCost']    = self.sample_marginal_cost(self.series['MarginalCost'])
         self.mapper['ExtractionGoal']  = self.sample_extraction_goal(self.series['ExtractionGoal'])
         self.mapper['Shifts']          = self.sample_shifts(self.series['Shifts'])
+        self.base_hour                 = self.get_base_hour()
         self.mapper['Time_Intervals']  = self.get_time_intervals()
         self.mapper['NodeAssignment']  = self.sample_node_assignment(self.series['NodeAssignment'])
         self.mapper['StationAssignment']  = self.sample_station_assignment(self.series['StationAssignment'])
@@ -284,9 +285,25 @@ class Timeseries(object):
         return self.mapper['Shifts'].loc[shift_name, :]['duration'].iloc[0]
 
     def sample_shifts(self, shifts: pd.DataFrame) -> pd.DataFrame:
-        shifts = shifts[['id', 'name', 'day_start', 'day_end', 'hour_start', 'duration']].copy()
+        columns = ['id', 'name', 'day_start', 'day_end', 'hour_start', 'duration']
+        if 'base_hour' in shifts.columns:
+            columns.append('base_hour')
+        shifts = shifts[columns].copy()
         shifts = shifts.set_index(['name', 'id'])
         return shifts
+
+    def get_base_hour(self) -> float:
+        """Hora real (decimal) en que arranca el horizonte (t=1), leida de la
+        columna 'base_hour' de la hoja Shifts (basta con que un solo valor
+        este lleno en toda la columna; el resto puede quedar vacio).
+        Si la hoja no trae esa columna, o esta vacia (escenarios viejos),
+        usa 8.5 por compatibilidad con el default DET actual."""
+        shifts = self.mapper['Shifts']
+        if 'base_hour' in shifts.columns:
+            values = pd.to_numeric(shifts['base_hour'], errors='coerce').dropna()
+            if not values.empty:
+                return float(values.iloc[0])
+        return 8.5
 
     def get_next_shift(self, shift_name: str):
         shift_id = self.mapper['Shifts'].loc[shift_name].index.item() - 1

@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -37,7 +37,7 @@ class OptModel(object):
         self.init_solution_folder = init_solution_folder if init_solution_folder is not None else warm_start_folder
         self.relax_integrality = relax_integrality
         self.has_warm_start = False
-        self.set_builder      = OptSets(mine_system, time_series)
+        self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
         self.constraint_rules = ConstraintRules(mine_system, time_series)

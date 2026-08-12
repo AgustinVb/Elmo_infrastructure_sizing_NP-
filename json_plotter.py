@@ -515,6 +515,7 @@ class Parameters:
         self.path = params_path
         self.ok = False
         self.delta_t = 1.0
+        self.base_hour = 8.5
         self.energy_price_scale = float(energy_price_scale)
 
         self.m_j = None
@@ -537,6 +538,10 @@ class Parameters:
         # DET defaults
         self.shift_change = []
         self.forced_detention = []
+        self.meal_det = []
+        self.maintenance_det = []
+        self.road_clearing = []
+        self.between_shifts_det = []
 
         self._load()
 
@@ -547,6 +552,7 @@ class Parameters:
             return
         self.ok = True
         self.delta_t = float(data.get("delta_t", 1.0))
+        self.base_hour = float(data.get("base_hour", 8.5))
         if "b_max_pool" in data:
             self.b_max_pool = float(data["b_max_pool"])
         if "min_capacity_fraction" in data:
@@ -672,6 +678,14 @@ class Parameters:
         forced_raw = data.get("time_intervals_forced_detention_set", data.get("time_intervals_fuel_delay_set", []))
         self.forced_detention = sorted(int(v) for v in forced_raw)
 
+        # DET (nuevo esquema meal/maintenance/road_clearing/between_shifts),
+        # portado desde battery_swapping. Vacios si parameters.json no trae
+        # estos sets (carpetas de resultados viejas, o esquema DCH activo).
+        self.meal_det = sorted(int(v) for v in data.get("time_intervals_meal_det_set", []))
+        self.maintenance_det = sorted(int(v) for v in data.get("time_intervals_maintenance_det_set", []))
+        self.road_clearing = sorted(int(v) for v in data.get("time_intervals_road_clearing_det_set", []))
+        self.between_shifts_det = sorted(int(v) for v in data.get("time_intervals_between_shifts_det_set", []))
+
 # -------------------- Plotter --------------------
 class JSONPlotter:
     MONTH_LABELS = {
@@ -688,6 +702,13 @@ class JSONPlotter:
             11: "November",
             12: "December",
         }
+    # Paleta de sombreado para intervalos inactivos en modo DET: (color, alpha)
+    DET_SHADE_COLORS = {
+        "meal": ("red", 0.15),
+        "road_clearing": ("gold", 0.20),
+        "maintenance": ("gray", 0.20),
+        "between_shifts": ("blue", 0.20),
+    }
     def __init__(self, json_dir: str, energy_price_scale: float = DEFAULT_ENERGY_PRICE_SCALE, mode: str = "DCH"):
         self.json_dir = json_dir
         self.mode = mode.upper() if isinstance(mode, str) else "DCH"
@@ -719,6 +740,7 @@ class JSONPlotter:
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
         self.delta_t = self.params.delta_t if self.params.ok else 1.0
+        self.start_hour = self.params.base_hour if self.params.ok else 8.5
 
         # Dominio
         self.days = self._detect_days()
@@ -960,7 +982,7 @@ class JSONPlotter:
         tick_fs = 14
         legend_fs = 14
 
-        start_hour = 9.0
+        start_hour = self.start_hour
         dt = float(self.delta_t)
 
         for y, d in itertools.product(self.years, self.days):
@@ -1002,7 +1024,25 @@ class JSONPlotter:
             maintenance_color = '#FF9999'
             maintenance_alpha = 0.15
 
-            if self.mode == "DET":
+            det_intervals_available = (
+                self.params.meal_det
+                or self.params.maintenance_det
+                or self.params.road_clearing
+                or self.params.between_shifts_det
+            )
+            if det_intervals_available:
+                # Esquema DET (nuevo), portado desde battery_swapping: 4
+                # ventanas con colores propios. Solo se usa si
+                # parameters.json trae los sets nuevos (corrida reciente);
+                # si no, se cae a los esquemas de mas abajo (compatibilidad
+                # con carpetas de resultados viejas).
+                shade_specs = [
+                    (self.params.between_shifts_det, *self.DET_SHADE_COLORS["between_shifts"]),
+                    (self.params.meal_det, *self.DET_SHADE_COLORS["meal"]),
+                    (self.params.road_clearing, *self.DET_SHADE_COLORS["road_clearing"]),
+                    (self.params.maintenance_det, *self.DET_SHADE_COLORS["maintenance"]),
+                ]
+            elif self.mode == "DET":
                 shift_change_intervals = (
                     self.params.shift_change
                     if getattr(self.params, 'shift_change', None)
