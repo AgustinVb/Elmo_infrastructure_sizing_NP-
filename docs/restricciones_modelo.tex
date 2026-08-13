@@ -1,0 +1,312 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+% Alias usado en el documento fuente (analogo al de carga_ob_multiaño) para
+% capacidad "barra" sobre simbolos con subindices (p.ej. \Bar{B}_y).
+\providecommand{\Bar}{}
+\renewcommand{\Bar}[1]{\overline{#1}}
+
+% Marca en rojo el contenido de la extension de inversion multi-año (Sección
+% \ref{sec:inversion_multianio} y los cambios que induce en el resto del
+% documento). Para quitar el resaltado, basta redefinir \change{#1}{#1}.
+\newcommand{\change}[1]{\textcolor{red}{#1}}
+
+\title{Restricciones activas del modelo de optimización\\[2pt]\large Battery swapping multi-año, con inversión multi-año\\[2pt] (rama \texttt{battery\_swapping\_multiaño})}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Alcance de este documento}
+
+Este documento reconstruye, en notación matemática, el conjunto de restricciones que efectivamente registra \texttt{ConstraintRules.build\_all\_constraints} (\texttt{src/optimization/functions.py}) en la rama \texttt{battery\_swapping\_multiaño}, \change{extendida para permitir que la inversión en estaciones de intercambio, naves, cargadores, pool de baterías, generación renovable y almacenamiento estacionario (BESS) ocurra en cualquier año del horizonte de evaluación, y no únicamente en el primero}. Quedan fuera del alcance —definidas en el código pero no registradas en \texttt{build\_all\_constraints}—:
+
+\begin{itemize}
+    \item El esquema de detenciones DET (\texttt{det\_stop\_all}, \texttt{swap\_only\_meal\_or\_between\_shifts\_det}): el esquema activo hoy es DCH.
+    \item \texttt{swap\_soc\_limit\_30} (límite adicional de SOC al iniciar un swap) y \texttt{n\_swaps\_limit\_1}/\texttt{n\_swaps\_limit\_2} (cotas de número de swaps por LHD y día).
+    \item \texttt{fix\_n\_chargers}/\texttt{fix\_n\_batteries} (fijación manual de cargadores/baterías por estación, usada en pruebas puntuales).
+    \item \texttt{aux\_zpen\_1/2/3}: referencian una variable \texttt{Z\_pen} que no llega a declararse en \texttt{build\_all\_variables} en esta rama; código inerte.
+\end{itemize}
+
+Las restricciones de generación renovable, almacenamiento estacionario (BESS) y degradación del pool de baterías de swap solo se generan cuando el escenario cargado incluye las hojas de datos correspondientes (\texttt{Generators}, \texttt{Storage} y \texttt{BatteryDegradation}, respectivamente); esta condicionalidad se indica explícitamente donde corresponde.
+
+\change{El modelo de inversión multi-año que se presenta aquí asume: (i) que el conjunto de años $Y$ está compuesto por años consecutivos (dato de entrada), por lo que $y-1$ está bien definido para todo $y\neq y^1$; (ii) que la vida útil de estaciones, naves, cargadores, pool de baterías, plantas de generación y unidades de almacenamiento excede el horizonte de evaluación, por lo que no se modela su retiro; y (iii) que el escenario es \textit{greenfield}: no existe infraestructura de estos tipos previa al inicio del horizonte (stock inicial cero). Relajar (iii) a un escenario \textit{brownfield} no requiere cambios estructurales, solo cargar los parámetros de stock inicial con datos distintos de cero.}
+
+El texto en \change{rojo} marca todo el contenido de la extensión de inversión multi-año (Sección \ref{sec:inversion_multianio}) y los cambios puntuales que induce en el resto del documento (fórmulas y dominios que pasan a depender del año $y$). El resto del documento describe, sin marcar, el estado actual de la rama.
+
+\section{Formulación matemática}
+
+\subsection{Notación}
+
+$I$ denota los LHD con tecnología de intercambio de batería (\texttt{slhd\_set}, \texttt{technology\_type=Battery\_swap}); $I^{all}$ denota el conjunto completo de LHD de la flota (\texttt{lhd\_set}, todas las tecnologías), usado solo en las restricciones de pausas de colación, que aplican a toda la flota por igual. $J$ es el conjunto de nodos de extracción, $K$ el de estaciones de intercambio candidatas, $G$ el de generadores renovables y $H$ el de unidades de almacenamiento estacionario. $Y$, $D$ y $T$ son los años, días representativos e intervalos horarios del horizonte. $\mathcal{KI}\subseteq K\times I$ es el conjunto de pares estación-LHD técnicamente factibles según la asignación estación-vehículo de los datos de entrada (\texttt{StationAssignment}).
+
+\subsection{Funciones objetivo}
+
+La función objetivo optimiza tanto los costos de inversión como los de energía y potencia. Los costos de inversión incluyen la construcción de las estaciones, sus naves (bahías de intercambio simultáneo), la grúa/manipulador de baterías de cada nave, los cargadores estacionarios y el pool de baterías de repuesto; y, cuando el escenario lo contempla, la inversión en generación renovable y en almacenamiento estacionario. A esto se suma el costo operativo de la energía de carga del pool, el costo por potencia contratada, y, cuando el escenario incorpora el módulo de degradación, el costo de reemplazo del pool físico de baterías.
+
+Para que las componentes de inversión y de operación sean comparables en magnitud, los costos de inversión se anualizan mediante el factor de anualidad $AF(r,Y)=\sum_{k=1}^{\|Y\|}\frac{1}{(1+r)^k}$. Los costos operativos y el costo puntual de reemplazo se descuentan año a año con el factor $1/(1+r)^{pos(y)}$, donde $pos(y)$ es la posición 1-indexada del año $y$ dentro del horizonte modelado (ordenado ascendentemente). Si el escenario no carga la hoja \texttt{BatteryDegradation}, no hay tasa de descuento ni degradación: $r=0$, el costo de reemplazo no existe y la inversión no se anualiza (comportamiento de un único año representativo sin descuento). La estructura de costos vigente se presenta en la ecuación \eqref{eq:costo_total}.
+
+\begin{equation}\label{eq:costo_total}
+\begin{split}
+C = \; & \change{\sum_{y\in Y} AF_y(r,Y)\cdot\bigg[} \sum_{k \in K} \Big(c^{fix} X_{k\change{,y}} + (c^{bay}_k + c^{crane}_k)\, N^{bay}_{k\change{,y}} + (c^{ch} + c^{esc}_k)\, N^{C}_{k\change{,y}} + (c^{bat} + c^{eb}_k)\, N^{bat}_{k\change{,y}} \Big) \\
+& \change{\bigg]} \quad\text{\change{— reemplazando $X_{k,y}$, $N^{bay}_{k,y}$, etc.\ por $\Delta X_{k,y}$, $\Delta N^{bay}_{k,y}$, etc.\ (Sección \ref{sec:inversion_multianio})}} \\
+& + \change{\sum_{y\in Y} AF_y(r,Y)\cdot} \sum_{g \in G} (c^{inv}_g + c^{op}_g)\, \change{\Delta} G_{g\change{,y}}\, p^{max}_g \; + \; \change{\sum_{y\in Y} AF_y(r,Y)\cdot} \sum_{h \in H} (c^{inv}_h + c^{op}_h)\, \change{\Delta} H_{\change{y}} \\
+& + \sum_{y \in Y} \sum_{d \in D} \sum_{t \in T} \frac{1}{(1+r)^{pos(y)}} \cdot c^{elec}_{y,d,t} \cdot P^{red}_{y,d,t} \cdot \Delta t \; + \; \sum_{y \in Y} \frac{1}{(1+r)^{pos(y)}} \cdot c^{P_{elec}} \cdot P^{pot}_y \cdot 12 \\
+& + \sum_{y \in Y} \frac{1}{(1+r)^{pos(y)}} \cdot c^{bat\text{-}repl} \cdot Z^{repl}_y
+\end{split}
+\end{equation}
+
+\noindent donde $c^{P_{elec}}=10$ está fijado como literal en el código (no como dato de entrada), y $c^{bat\text{-}repl}$ es el costo \emph{total} de reemplazar una batería física del sistema; $Z^{repl}_y$ (definida en la Sección \ref{sec:degradacion}) ya incorpora la cantidad de baterías físicas reemplazadas, por lo que el costo de reemplazo no se anualiza (evento puntual del año en que ocurre, no una anualidad recurrente). \change{En su forma vigente antes de esta extensión, el primer bloque de \eqref{eq:costo_total} usa $AF(r,Y)$ (un único factor para todo el horizonte, sin subíndice $y$) multiplicando la inversión decidida una sola vez en $X_k$, $N^{bay}_k$, $N^{C}_k$, $N^{bat}_k$, $G_g$, $H_h$ —sin eje de año—; esta extensión generaliza ese bloque tal como se muestra, colapsando exactamente al caso original si toda la inversión se concentra en $y^1$.}
+
+\subsection{Estado operacional del LHD e intercambio (swap)}
+
+En cada intervalo, un LHD de intercambio se encuentra en exactamente uno de tres estados —detenido, en recorrido hacia un nodo asignado, o realizando un intercambio de batería—, según \eqref{eq:estado_swap}. Durante el período entre turnos, el LHD solo puede estar detenido o intercambiando batería \eqref{eq:entre_turnos_swap}. El intercambio (\texttt{Z\_swap}) solo puede ocurrir durante las ventanas de colación o entre turnos \eqref{eq:swap_solo_pausas}, y cada LHD intercambia en a lo más una estación por intervalo \eqref{eq:max_un_swap}. Las variables de inicio y término de la asignación a extracción se modelan de forma análoga a la rama \textit{on-board} —agregando sobre todos los nodos asignables, no un nodo específico—, mediante \eqref{eq:asignacion_estado_swap_ini}-\eqref{eq:asignacion_minima_swap}, exigiendo un mínimo de $t^{amin}=2$ intervalos consecutivos asignado a extracción.
+
+\begin{flalign}
+    & Z_{i,y,d,t} + \sum_{j\in J_{i,y,d,t}} Y_{i,j,y,d,t} + \sum_{k\,:\,(k,i)\in\mathcal{KI}} Z^{swap}_{k,i,y,d,t} = 1, &&& \forall i\in I,\, y,d,t : J_{i,y,d,t}\neq\emptyset \label{eq:estado_swap} \\[8pt]
+    & Z_{i,y,d,t} + \sum_{k\,:\,(k,i)\in\mathcal{KI}} Z^{swap}_{k,i,y,d,t} = 1, &&& \forall i\in I,\, y,d,\, t\in T^{BS} \label{eq:entre_turnos_swap} \\[8pt]
+    & Z^{swap}_{k,i,y,d,t} = 0, &&& \forall (k,i)\in\mathcal{KI},y,d,\, t\notin T^{meal}\cup T^{BS} \label{eq:swap_solo_pausas} \\[8pt]
+    & \sum_{k\,:\,(k,i)\in\mathcal{KI}} Z^{swap}_{k,i,y,d,t} \leq 1, &&& \forall i\in I,y,d,t \label{eq:max_un_swap} \\[8pt]
+    & \sum_{j\in J_{i,y,d,t_{ini}}} Y_{i,j,y,d,t_{ini}} = StartAssign_{i,y,d,t_{ini}} - EndAssign_{i,y,d,t_{ini}}, &&& \forall i\in I, y,d \label{eq:asignacion_estado_swap_ini} \\[8pt]
+    & \sum_{j\in J_{i,y,d,t}} Y_{i,j,y,d,t} - \sum_{j\in J_{i,y,d,t-1}} Y_{i,j,y,d,t-1} = StartAssign_{i,y,d,t} - EndAssign_{i,y,d,t}, &&& \forall i\in I, y,d,\, t>t_{ini} \label{eq:asignacion_estado_swap} \\[8pt]
+    & \sum_{j\in J_{i,y,d,t}} Y_{i,j,y,d,t} + \sum_{j\in J_{i,y,d,t+1}} Y_{i,j,y,d,t+1} \geq 2\cdot StartAssign_{i,y,d,t}, &&& \forall i\in I, y,d,\, t<t_{fin} \label{eq:asignacion_minima_swap}
+\end{flalign}
+
+\noindent donde $T^{BS}$ es el período entre turnos (calculado desde la hoja \texttt{Shifts}) y $J_{i,y,d,t}$ el conjunto de nodos asignables al LHD $i$ en $(y,d,t)$; \eqref{eq:estado_swap} y \eqref{eq:asignacion_estado_swap_ini}-\eqref{eq:asignacion_minima_swap} se omiten cuando $J_{i,y,d,t}=\emptyset$. Adicionalmente, para romper simetría entre LHD intercambiables, \eqref{eq:swap_precedence} obliga a que el LHD de menor sufijo numérico acumule, en cada intervalo, un número de swaps mayor o igual al del siguiente LHD en el orden global (no agrupado por estación, a diferencia de la rotura de simetría de SOC de la rama \textit{on-board}):
+
+\begin{equation}
+    \sum_{k\,:\,(k,i_{low})\in\mathcal{KI}}\sum_{\tau\leq t} Z^{swap}_{k,i_{low},y,d,\tau} \;\geq\; \sum_{k\,:\,(k,i_{high})\in\mathcal{KI}}\sum_{\tau\leq t} Z^{swap}_{k,i_{high},y,d,\tau}, \qquad \forall (i_{low},i_{high})\in P^{prec}_{swap},\, y,d,t \label{eq:swap_precedence}
+\end{equation}
+
+\noindent donde $P^{prec}_{swap}$ son los pares consecutivos de la lista de \emph{todos} los LHD de intercambio, ordenados por sufijo numérico ascendente.
+
+\subsection{Energía y estado de carga de la batería (formulación convexa del intercambio)}
+\label{sec:soc_swap}
+
+A diferencia de la carga \textit{on-board} (donde la batería se recarga gradualmente en el propio vehículo), en esta rama el LHD cambia su batería completa por otra ya cargada disponible en la estación. El balance de energía \eqref{eq:soc_swap} retira del estado de carga el consumo de tracción del intervalo —amplificado por $1/\eta^{dis}_i$—, partiendo de una variable auxiliar $B^s_{i,y,d,t-1}$ que representa el SOC \emph{efectivo} tras la eventual decisión de intercambio del intervalo anterior:
+
+\begin{equation}
+    B_{i,y,d,t} = B^s_{i,y,d,t-1} - \frac{1}{\eta^{dis}_i}\sum_{j\in J_{i,y,d,t}} Y_{i,j,y,d,t}\, p^{e}_{i,j}\, d_{i,j}\, n_{i,j}, \qquad \forall i\in I,y,d,\, t\geq t_{ini} \label{eq:soc_swap}
+\end{equation}
+
+$B^s_{i,y,d,t-1}$ se define mediante una formulación de \emph{envoltura convexa} (\textit{convex-hull}) que captura exactamente los dos casos posibles del intervalo $t-1$: si el LHD no intercambia ($Z^{agg}_{i,y,d,t-1}=\sum_{k:(k,i)\in\mathcal{KI}} Z^{swap}_{k,i,y,d,t-1}=0$, efectivamente binaria por \eqref{eq:max_un_swap}), $B^s$ conserva el SOC previo sin cambios; si intercambia ($Z^{agg}=1$), $B^s$ queda libre en el rango $[\Bar{B}_y\cdot b^{min}_i,\,\Bar{B}_y]$ —representa que la batería recibida es alguna del inventario de baterías cargadas, cuyo SOC exacto no se fija de antemano—. Las ecuaciones \eqref{eq:soc_swap_1}-\eqref{eq:soc_swap_4} implementan esta envoltura:
+
+\begin{flalign}
+    & B^s_{i,y,d,t-1} \leq B_{i,y,d,t-1} + (1-b^{min}_i)\cdot \Bar{B}_y \cdot Z^{agg}_{i,y,d,t-1}, &&& \forall i\in I,y,d,\, t>t_{ini} \label{eq:soc_swap_1} \\[6pt]
+    & B^s_{i,y,d,t-1} \geq B_{i,y,d,t-1}, &&& \forall i\in I,y,d,\, t>t_{ini} \label{eq:soc_swap_2} \\[6pt]
+    & B^s_{i,y,d,t-1} \leq \Bar{B}_y, &&& \forall i\in I,y,d,\, t>t_{ini} \label{eq:soc_swap_3} \\[6pt]
+    & B^s_{i,y,d,t-1} \geq b^{min}_i\cdot\Bar{B}_y + (1-b^{min}_i)\cdot \Bar{B}_y \cdot Z^{agg}_{i,y,d,t-1}, &&& \forall i\in I,y,d,\, t>t_{ini} \label{eq:soc_swap_4}
+\end{flalign}
+
+\noindent Cuando el escenario no incorpora degradación, $\Bar{B}_y$ se reemplaza por la capacidad nominal fija $b^{max}_i$ del LHD. Si hay degradación cargada, $\Bar{B}_y$ es variable (Sección \ref{sec:degradacion}) y el producto $\Bar{B}_y\cdot Z^{agg}_{i,y,d,t}$ (binaria por continua) se linealiza de forma exacta vía \textit{big-M} mediante la variable auxiliar $P^{\Bar{B}z}_{i,y,d,t}$ \eqref{eq:pbbz_1}-\eqref{eq:pbbz_3}, que reemplaza a $\Bar{B}_y\cdot Z^{agg}_{i,y,d,t}$ en \eqref{eq:soc_swap_1} y \eqref{eq:soc_swap_4}:
+
+\begin{flalign}
+    & P^{\Bar{B}z}_{i,y,d,t} \leq \Bar{B}_y, &&& \forall i\in I,y,d,t \label{eq:pbbz_1} \\[6pt]
+    & P^{\Bar{B}z}_{i,y,d,t} \leq b^{max}_i \cdot Z^{agg}_{i,y,d,t}, &&& \forall i\in I,y,d,t \label{eq:pbbz_2} \\[6pt]
+    & P^{\Bar{B}z}_{i,y,d,t} \geq \Bar{B}_y - b^{max}_i\cdot(1-Z^{agg}_{i,y,d,t}), &&& \forall i\in I,y,d,t \label{eq:pbbz_3}
+\end{flalign}
+
+Los límites técnicos de operación se imponen en \eqref{eq:limites_soc_swap}, y la condición de borde \eqref{eq:borde_bs_swap}-\eqref{eq:borde_swap} alinea $B^s$ con $B$ al inicio del día y cierra el ciclo diario de energía. Finalmente, \eqref{eq:break_symmetry_swap} rompe simetría entre LHD que comparten estación de swap: el de menor sufijo numérico debe iniciar el día con \emph{menor o igual} SOC que el siguiente en el orden —debe ser, en igualdad de condiciones, el primero en intercambiar—, consistente con \eqref{eq:swap_precedence}.
+
+\begin{flalign}
+    & b^{min}_i\cdot\Bar{B}_y \leq B_{i,y,d,t} \leq \Bar{B}_y, &&& \forall i\in I,y,d,t \label{eq:limites_soc_swap} \\[6pt]
+    & B^s_{i,y,d,0} = B_{i,y,d,0}, &&& \forall i\in I,y,d \label{eq:borde_bs_swap} \\[6pt]
+    & B_{i,y,d,0} = B_{i,y,d,t_{fin}}, &&& \forall i\in I,y,d \label{eq:borde_swap} \\[6pt]
+    & B_{i_{low},y,d,0} \leq B_{i_{high},y,d,0}, &&& \forall (i_{low},i_{high})\in P^{prec}_{swap},\, y,d \label{eq:break_symmetry_swap}
+\end{flalign}
+
+\subsection{Infraestructura de estaciones y sistema de distribución eléctrica}
+\label{sec:estaciones_swap}
+
+Cada estación candidata puede construir naves (bahías de intercambio simultáneo), cargadores estacionarios y un pool de baterías de repuesto, sujeto a la existencia de la estación \eqref{eq:existencia_swap} y a las relaciones de capacidad física \eqref{eq:max_naves}-\eqref{eq:carg_le_bat}: el número de naves está acotado por la disponibilidad física de la estación \eqref{eq:max_naves}; los swaps simultáneos no pueden superar las naves disponibles \eqref{eq:naves_swap}; cada nave requiere al menos un cargador \eqref{eq:naves_le_cargadores}; y los cargadores y baterías del pool están acotados por nave \eqref{eq:max_cargadores_nave}-\eqref{eq:max_baterias_nave}, con el número de cargadores adicionalmente acotado por el de baterías disponibles para cargar \eqref{eq:carg_le_bat} (no tiene sentido instalar más cargadores que baterías a cargar).
+
+\begin{flalign}
+    & N^{bay}_{k\change{,y}} \leq n_k^{bay,max}\cdot X_{k\change{,y}}, &&& \forall k\change{,y} \label{eq:max_naves} \\[8pt]
+    & \sum_{i\,:\,(k,i)\in\mathcal{KI}} Z^{swap}_{k,i,y,d,t} \leq N^{bay}_{k\change{,y}}, &&& \forall k,y,d,t \label{eq:naves_swap} \\[8pt]
+    & N^{bay}_{k\change{,y}} \leq N^{C}_{k\change{,y}}, &&& \forall k\change{,y} \label{eq:naves_le_cargadores} \\[8pt]
+    & N^{C}_{k\change{,y}} \leq n_k^{ch/bay}\cdot N^{bay}_{k\change{,y}}, &&& \forall k\change{,y} \label{eq:max_cargadores_nave} \\[8pt]
+    & N^{bat}_{k\change{,y}} \leq n_k^{bat/bay}\cdot N^{bay}_{k\change{,y}}, &&& \forall k\change{,y} \label{eq:max_baterias_nave} \\[8pt]
+    & N^{C}_{k\change{,y}} \leq N^{bat}_{k\change{,y}}, &&& \forall k\change{,y} \label{eq:carg_le_bat} \\[8pt]
+    & Z^{swap}_{k,i,y,d,t} \leq X_{k\change{,y}}, &&& \forall (k,i)\in\mathcal{KI},y,d,t \label{eq:existencia_swap}
+\end{flalign}
+
+\noindent \change{Dado que la inversión en estaciones, naves, cargadores y pool de baterías ahora puede ocurrir en cualquier año (Sección \ref{sec:inversion_multianio}), las ecuaciones \eqref{eq:max_naves}-\eqref{eq:existencia_swap} se evalúan sobre el stock acumulado $X_{k,y}$, $N^{bay}_{k,y}$, $N^{C}_{k,y}$, $N^{bat}_{k,y}$ en cada año $y$, en lugar de sobre una decisión única válida para todo el horizonte.}
+
+El número de baterías conectadas cargando en un intervalo no puede exceder los cargadores disponibles \eqref{eq:limite_cargadores_swap}; la potencia consumida por las baterías en carga está acotada por la capacidad de la subestación dedicada a cada estación \eqref{eq:potencia_instalada_swap} y por la capacidad contratada de distribución agregada \eqref{eq:peak_swap}. El cargo por potencia se formaliza igual que en la rama \textit{on-board} \eqref{eq:cargo_swap}, considerando como meses punta los días $91$-$244$ del año y, mediante la restricción de índices, como bloque horario de punta el definido por \texttt{time\_intervals\_peak\_set} (18:00-22:00 por defecto).
+
+\begin{flalign}
+    & \sum_{a\in T} Sv_{k,y,d,t,a} \leq N^{C}_{k\change{,y}}, &&& \forall k,y,d,t \label{eq:limite_cargadores_swap} \\[8pt]
+    & \sum_{a\in T} Sv_{k,y,d,t,a}\cdot p^{charger} \leq p^{max}_k, &&& \forall k,y,d,t \label{eq:potencia_instalada_swap} \\[8pt]
+    & \sum_{k\in K}\sum_{a\in T} Sv_{k,y,d,t,a}\cdot p^{charger} \leq p^{peak}, &&& \forall y,d,t \label{eq:peak_swap} \\[8pt]
+    & P^{red}_{y,d,t} \leq P^{pot}_y, &&& \forall y,\, \forall d\in D^{peak}(91\le d\le244),\, \forall t\in T^{peak} \label{eq:cargo_swap}
+\end{flalign}
+
+\subsection{Inventario de baterías en las estaciones}
+\label{sec:inventario}
+
+Cada estación mantiene tres variables enteras de inventario para las $N^{bat}_k$ baterías del pool: baterías \emph{cargadas} y disponibles ($S_{k,y,d,t}$), baterías \emph{descargadas} en espera de carga ($X^{dch}_{k,y,d,t}$), y baterías conectadas a un cargador que iniciaron su carga en el intervalo $a$ ($Sv_{k,y,d,t,a}$). La demanda de intercambios en cada intervalo, $W_{k,y,d,t}$, se agrega en \eqref{eq:demanda_swaps} como la suma de los intercambios efectivamente realizados en esa estación.
+
+El inventario de baterías descargadas \eqref{eq:inv_descargadas} se actualiza restando las que comienzan a cargar en el intervalo anterior y sumando las que llegan por nuevos intercambios. El inventario de baterías cargadas \eqref{eq:inv_cargadas} incorpora las que \emph{terminan} su ciclo de carga —rastreadas mediante $Sv$, que inició $t^{charge}-1$ intervalos atrás— y descuenta las consumidas por intercambios del intervalo siguiente. La dinámica de $Sv$ —cuánto tiempo lleva conectada una batería que empezó a cargar en $a$— se rige por \eqref{eq:sv_dinamica}: la conexión termina una vez transcurrido el tiempo de carga $t^{charge}$, se mantiene mientras la carga está en curso, y se inicializa con $X^{ini}_{k,y,d,t}$ (baterías que comienzan a cargar en $t$) cuando $a=t$.
+
+\begin{flalign}
+    & W_{k,y,d,t} = \sum_{i\,:\,(k,i)\in\mathcal{KI}} Z^{swap}_{k,i,y,d,t}, &&& \forall k,y,d,t \label{eq:demanda_swaps} \\[8pt]
+    & X^{dch}_{k,y,d,t} = X^{dch}_{k,y,d,t-1} - X^{ini}_{k,y,d,t-1} + W_{k,y,d,t}, &&& \forall k,y,d,\, t>t_{ini} \label{eq:inv_descargadas} \\[8pt]
+    & S_{k,y,d,t+1} = \begin{cases} S_{k,y,d,t} + Sv_{k,y,d,t,\,t-t^{charge}+1} - W_{k,y,d,t+1}, & t-t^{charge}+1\geq t_{ini} \\ S_{k,y,d,t} - W_{k,y,d,t+1}, & \text{en otro caso} \end{cases}, &&& \forall k,y,d,\, t<t_{fin} \label{eq:inv_cargadas} \\[8pt]
+    & Sv_{k,y,d,t+1,a} = \begin{cases} 0, & a\leq t-t^{charge}+1 \\ Sv_{k,y,d,t,a}, & t-t^{charge}+1 < a < t \\ X^{ini}_{k,y,d,t}, & a=t \end{cases}, &&& \forall k,y,d,\, t<t_{fin},\, a\in T \label{eq:sv_dinamica}
+\end{flalign}
+
+\noindent El inventario cierra de forma cíclica dentro de cada día representativo \eqref{eq:ci_s}-\eqref{eq:ci_xdch}, y la suma de baterías cargadas y descargadas en el primer intervalo debe igualar el tamaño del pool de la estación \eqref{eq:cb_general} —balance de conservación: toda batería del pool está, en todo momento, o cargada o descargada—.
+
+\begin{flalign}
+    & S_{k,y,d,t_{ini}} = S_{k,y,d,t_{fin}}, &&& \forall k,y,d \label{eq:ci_s} \\[6pt]
+    & X^{dch}_{k,y,d,t_{ini}} = X^{dch}_{k,y,d,t_{fin}}, &&& \forall k,y,d \label{eq:ci_xdch} \\[6pt]
+    & S_{k,y,d,t_{ini}} + X^{dch}_{k,y,d,t_{ini}} = N^{bat}_{k\change{,y}}, &&& \forall k,y,d \label{eq:cb_general}
+\end{flalign}
+
+\noindent donde $t^{charge}$ es el tiempo de carga en intervalos, calculado a partir de la capacidad y potencia de carga del primer LHD de \texttt{slhd\_set} (se asume una batería representativa homogénea para toda la flota de intercambio), y afectado por la eficiencia de carga del cargador estacionario.
+
+\subsection{Producción}
+
+Idéntica en estructura a la rama \textit{on-board}: la producción por intervalo se registra en $M_{i,j,y,d,t}$ según \eqref{eq:extraccion_swap}; el número de asignaciones al nodo $j$ en el día $d$ se acota entre el piso y el techo del cociente entre la meta de extracción y la producción por asignación \eqref{eq:balance_nodo_swap}, con una tolerancia de a lo más una asignación por defecto o exceso; y \eqref{eq:cuota_swap} impone una cota inferior agregada sobre la producción total del día.
+
+\begin{flalign}
+    & M_{i,j,y,d,t} = Y_{i,j,y,d,t}\cdot g_i\cdot n_{i,j}\cdot\beta_i, &&& \forall\,(i,j,y,d,t) : Y_{i,j,y,d,t}\text{ definida} \label{eq:extraccion_swap} \\[8pt]
+    & \left\lfloor\frac{m_{j,y}}{g_{i^{rep}_j}\cdot n_{i^{rep}_j,j}\cdot\beta_{i^{rep}_j}}\right\rfloor - 1 \leq \sum_{i\in I}\sum_{t\in T} Y_{i,j,y,d,t} \leq \left\lceil\frac{m_{j,y}}{g_{i^{rep}_j}\cdot n_{i^{rep}_j,j}\cdot\beta_{i^{rep}_j}}\right\rceil + 1, &&& \forall y,d,j \label{eq:balance_nodo_swap} \\[8pt]
+    & \sum_{j\in J} m_{j,y} \leq \sum_{i\in I}\sum_{j\in J}\sum_{t\in T} Y_{i,j,y,d,t}\cdot g_i\cdot n_{i,j}\cdot\beta_i, &&& \forall y,d \label{eq:cuota_swap}
+\end{flalign}
+
+\subsection{Detenciones operacionales}
+
+Durante colación, la flota completa $I^{all}$ (todas las tecnologías) se divide en dos subgrupos según la paridad del sufijo numérico, y cada bloque de colación se separa cronológicamente en dos mitades: el subgrupo 1 no puede extraer durante la primera mitad \eqref{eq:colacion_g1_swap} y el subgrupo 2 durante la segunda \eqref{eq:colacion_g2_swap}. Durante los periodos de mantenimiento, los LHD de intercambio deben permanecer detenidos \eqref{eq:mantenimiento_swap} —al estar forzado $Z_{i,y,d,t}=1$, el balance de estado único \eqref{eq:estado_swap}/\eqref{eq:entre_turnos_swap} ya impide simultáneamente viajar o intercambiar batería, sin necesidad de una restricción adicional que anule $Z^{swap}$ explícitamente—.
+
+\begin{flalign}
+    & \sum_{j\in J_i} Y_{i,j,y,d,t} = 0, &&& \forall i\in I^{g1}, y,d,\, t\in T^{C,g1} \label{eq:colacion_g1_swap} \\[8pt]
+    & \sum_{j\in J_i} Y_{i,j,y,d,t} = 0, &&& \forall i\in I^{g2}, y,d,\, t\in T^{C,g2} \label{eq:colacion_g2_swap} \\[8pt]
+    & Z_{i,y,d,t} = 1, &&& \forall i\in I, y,d,\, t\in T^{M} \label{eq:mantenimiento_swap}
+\end{flalign}
+
+\subsection{Sistema de distribución eléctrica, generación y almacenamiento}
+
+El balance entre la demanda de los cargadores estacionarios y las fuentes de suministro disponibles se establece en \eqref{eq:balance_potencia_swap}; a diferencia de la rama \textit{on-board} (donde la demanda es $\sum P_{k,i,y,d,t}$), aquí la demanda se calcula a partir de las baterías efectivamente conectadas y cargando, $\sum_{k,a} Sv_{k,y,d,t,a}\cdot p^{charger}$. La potencia importada desde la red está acotada por la capacidad de la subestación central \eqref{eq:grid_limit_swap}.
+
+\begin{flalign}
+    & P^{red}_{y,d,t} + \sum_{g\in G} P^{gen}_{g,y,d,t} + \sum_{h\in H} P^{bat}_{h,y,d,t} = \sum_{k\in K}\sum_{a\in T} Sv_{k,y,d,t,a}\cdot p^{charger}, &&& \forall y,d,t \label{eq:balance_potencia_swap} \\[8pt]
+    & P^{red}_{y,d,t} \leq p^{peak}, &&& \forall y,d,t \label{eq:grid_limit_swap}
+\end{flalign}
+
+\noindent Las restricciones de generación renovable \eqref{eq:maxima_cap_plantas_swap}-\eqref{eq:maxima_gen_renv_swap} y de almacenamiento \eqref{eq:p_max_bat_swap}-\eqref{eq:almac_max_swap} son estructuralmente idénticas a las de la rama \textit{on-board}:
+
+\begin{flalign}
+    & G_{g\change{,y}} \leq g^{max}_g, &&& \forall g\change{,y} \label{eq:maxima_cap_plantas_swap} \\[6pt]
+    & P^{gen}_{g,y,d,t} + Curt_{g,y,d,t} = G_{g\change{,y}}\cdot p^{max}_g\cdot\alpha_{g,y,d,t}, &&& \forall g,y,d,t \label{eq:maxima_gen_renv_swap} \\[6pt]
+    & -p_h^{max}\cdot H_{\change{y}} \leq P^{bat}_{h,y,d,t} \leq p^{max}_h\cdot H_{\change{y}}, &&& \forall h\in H,y,d,t \label{eq:p_max_bat_swap} \\[6pt]
+    & A_{h,y,d,t} = A_{h,y,d,t-1} - \frac{P^{bat}_{h,y,d,t}}{\eta_h}\cdot\Delta t, &&& \forall h\in H,y,d,t \label{eq:soc_bat_swap} \\[6pt]
+    & A_{h,y,d,0} = 0, &&& \forall h\in H,y,d \label{eq:soc_bat_ini_swap} \\[6pt]
+    & A_{h,y,d,t_{ini}} = A_{h,y,d,t_{fin}}, &&& \forall h\in H,y,d \label{eq:ciclicidad_swap} \\[6pt]
+    & a_h^{min}\cdot H_{\change{y}} \leq A_{h,y,d,t} \leq a_h^{max}\cdot H_{\change{y}}, &&& \forall h\in H,y,d,t \label{eq:almac_max_swap}
+\end{flalign}
+
+\noindent \change{Al igual que en la rama \textit{on-board}, $H$ (sin índice $h$) representa el stock acumulado de unidades de un único cluster de almacenamiento candidato (Sección \ref{sec:inversion_multianio}); el índice $h\in H$ se mantiene en \eqref{eq:balance_potencia_swap}-\eqref{eq:ciclicidad_swap} solo por consistencia notacional.}
+
+\subsection{Degradación del pool de baterías de intercambio}
+\label{sec:degradacion}
+
+Cuando el escenario incorpora \texttt{BatteryDegradation}, la capacidad operable $\Bar{B}_y$ de la batería del pool decrece año a año según el mismo modelo de desgaste lineal en función de los ciclos equivalentes completos (EFC) usado en la rama \textit{on-board} —ecuaciones \eqref{eq:cum_efc_swap}-\eqref{eq:bbar_fade_swap}—, pero normalizado por la flota \emph{física completa} del sistema de intercambio, no solo por el pool en estación: $n^{fleet}$ suma el pool en las estaciones ($n^{bat,tot}=\sum_k N^{bat}_k$) más una batería siempre instalada en cada uno de los $\|I\|$ LHD de intercambio \eqref{eq:nbattot_def}-\eqref{eq:nfleet_def}.
+
+\begin{flalign}
+    & n^{bat,tot}\change{_y} = \sum_{k\in K} N^{bat}_{k\change{,y}}, &&& \change{\forall y} \label{eq:nbattot_def} \\[6pt]
+    & n^{fleet}\change{_y} = n^{bat,tot}\change{_y} + \|I\|, &&& \change{\forall y} \label{eq:nfleet_def}
+\end{flalign}
+
+A diferencia de la rama \textit{on-board} —donde el tamaño de la flota ($n^{elhd}$) es un dato fijo—, aquí $n^{fleet}\change{_y}$ es en sí mismo una variable de decisión (o, tras esta extensión, una variable indexada por año): $EC_y/n^{fleet}\change{_y}$ (energía consumida sobre tamaño de flota) es un cociente entre dos variables. Se linealiza de forma \emph{exacta} mediante una codificación \emph{one-hot} $\delta_{\change{y,}n}\in\{0,1\}$ sobre el rango factible $n\in[NF^L,NF^U]$ \eqref{eq:one_hot_select}-\eqref{eq:one_hot_value}: exactamente un $\delta_{\change{y,}n}$ está activo, y selecciona el valor de $n^{fleet}\change{_y}$.
+
+\begin{flalign}
+    & \sum_{n=NF^L}^{NF^U} \delta_{\change{y,}n} = 1, &&& \change{\forall y} \label{eq:one_hot_select} \\[6pt]
+    & n^{fleet}\change{_y} = \sum_{n=NF^L}^{NF^U} n\cdot\delta_{\change{y,}n}, &&& \change{\forall y} \label{eq:one_hot_value}
+\end{flalign}
+
+La energía consumida (descarga real) por la flota de intercambio en el año $y$ se agrega en $EC_y$ \eqref{eq:energy_consumed} —se usa el consumo de tracción, no la energía cargada en estación, porque esta última puede desfasarse del consumo real dentro de un mismo día representativo—. El producto $EC_y\cdot\delta_{\change{y,}n}$ (continua por binaria) se linealiza exacto vía \textit{big-M} en la variable $Z^{en}_{y,n}$ \eqref{eq:zen_1}-\eqref{eq:zen_3}, reconstruyendo $EC_y/n^{fleet}\change{_y}=\sum_n \frac{1}{n}Z^{en}_{y,n}$ sin necesidad de dividir por una variable.
+
+\begin{flalign}
+    & EC_y = \sum_{i\in I}\sum_{d\in D}\sum_{t\in T} Y_{i,j,y,d,t}\cdot p^{e}_{i,j}\cdot d_{i,j}\cdot n_{i,j}, &&& \forall y \label{eq:energy_consumed} \\[6pt]
+    & Z^{en}_{y,n} \leq EC_y, &&& \forall y,n \label{eq:zen_1} \\[6pt]
+    & Z^{en}_{y,n} \leq EC^{max}\cdot\delta_{\change{y,}n}, &&& \forall y,n \label{eq:zen_2} \\[6pt]
+    & Z^{en}_{y,n} \geq EC_y - EC^{max}\cdot(1-\delta_{\change{y,}n}), &&& \forall y,n \label{eq:zen_3}
+\end{flalign}
+
+El número de EFC del año $y$, $N^{ciclos}_y$, se define como el cociente entre $EC_y$ y $\Bar{B}_y\cdot n^{fleet}\change{_y}$; el producto $N^{ciclos}_y\cdot\Bar{B}_y$ (entera por continua, ambas variables de decisión) se linealiza exacto mediante la misma expansión binaria de \textit{on-board}: $N^{ciclos}_y$ se reescribe sobre $\kappa=\lceil\log_2(N^U-N^L+1)\rceil$ bits \eqref{eq:n_ciclos_bits_swap}, cada bit se combina con $\Bar{B}_y$ vía \textit{big-M} en $z_{y,\kappa}$ \eqref{eq:z_upper1_swap}-\eqref{eq:z_lower2_swap}, y \eqref{eq:nb_def_swap}-\eqref{eq:n_ciclos_energy_swap} recompone $NB_y=N^{ciclos}_y\cdot\Bar{B}_y$ y lo vincula a la energía consumida vía el término \textit{one-hot} $\frac{365}{\|D\|}\sum_n \frac{1}{n}Z^{en}_{y,n}$.
+
+\begin{flalign}
+    & N^{ciclos}_y = N^{L} + \sum_{b=0}^{\kappa-1} 2^b\cdot bit_{y,b}, \; bit_{y,b}\in\{0,1\}, &&& \forall y \label{eq:n_ciclos_bits_swap} \\[6pt]
+    & z_{y,b} \leq B^{U}\cdot bit_{y,b}, \qquad z_{y,b} \geq B^{L}\cdot bit_{y,b}, &&& \forall y,b \label{eq:z_upper1_swap} \\[6pt]
+    & z_{y,b} \leq \Bar{B}_y - B^{L}\cdot(1-bit_{y,b}), \qquad z_{y,b} \geq \Bar{B}_y - B^{U}\cdot(1-bit_{y,b}), &&& \forall y,b \label{eq:z_lower2_swap} \\[6pt]
+    & NB_y = N^{L}\cdot\Bar{B}_y + \sum_{b=0}^{\kappa-1} 2^b\cdot z_{y,b}, &&& \forall y \label{eq:nb_def_swap} \\[6pt]
+    & NB_y = \frac{365}{\|D\|}\sum_{n=NF^L}^{NF^U} \frac{1}{n}\cdot Z^{en}_{y,n}, &&& \forall y \label{eq:n_ciclos_energy_swap}
+\end{flalign}
+
+El acumulado de EFC desde el último reemplazo, $AN^{ciclos}_y$, y el fade de capacidad, se rigen exactamente como en la rama \textit{on-board}:
+
+\begin{flalign}
+    & AN^{ciclos}_y = \begin{cases} N^{ciclos}_y & y=y^1 \\ W^{cum}_y + N^{ciclos}_y, & y>y^1 \end{cases}, &&& \forall y \label{eq:cum_efc_swap} \\[8pt]
+    & W^{cum}_y \leq AN^{max}\cdot(1-R_y), \quad W^{cum}_y \leq AN^{ciclos}_{y-1}, \quad W^{cum}_y \geq AN^{ciclos}_{y-1} - AN^{max}\cdot R_y, &&& \forall y>y^1 \label{eq:w_swap} \\[8pt]
+    & \Bar{B}_y = b^{max} - \gamma_m\cdot AN^{ciclos}_y, &&& \forall y \label{eq:bbar_fade_swap}
+\end{flalign}
+
+Finalmente, el costo de reemplazo requiere la cantidad de baterías físicas reemplazadas, $Z^{repl}_y=R_y\cdot n^{fleet}\change{_y}$ (binaria por entera), linealizada exacta vía \textit{big-M} en \eqref{eq:zrepl_swap}, y usada directamente en el tercer término de \eqref{eq:costo_total}:
+
+\begin{flalign}
+    & Z^{repl}_y \leq n^{fleet}\change{_y}, \qquad Z^{repl}_y \leq NF^U\cdot R_y, \qquad Z^{repl}_y \geq n^{fleet}\change{_y} - NF^U\cdot(1-R_y), &&& \forall y \label{eq:zrepl_swap}
+\end{flalign}
+
+\noindent $N^{ciclos}_y\in[N^L,N^U]$ y $\Bar{B}_y\in[B^L,B^U]$ son cotas de dominio calculadas a partir de la meta de producción y la energía máxima cargable por el sistema en un año; $NF^L,NF^U$ son las cotas factibles de $n^{fleet}\change{_y}$. \change{En su forma vigente antes de esta extensión, $n^{fleet}$ (sin subíndice $y$), $n^{bat,tot}$ y $\delta_n$ son variables escalares —un único valor para todo el horizonte, calculado a partir de las cotas estructurales de $N^{bat}_k\in[1,12]$ (bounds fijos, sin variable de incremento)—, y $NF^L=\|K\|+\|I\|$, $NF^U=12\|K\|+\|I\|$.}
+
+\section{Inversión multi-año e infraestructura acumulada}
+\label{sec:inversion_multianio}
+
+\begingroup\color{red}
+
+Esta sección presenta el patrón general de \emph{restricciones de enlace} (\textit{linking constraints}) que permite que la inversión en estaciones, naves, cargadores, pool de baterías, generación renovable y almacenamiento estacionario ocurra en cualquier año del horizonte, en lugar de estar fijada al primer año —el mismo patrón usado en la rama \texttt{carga\_ob\_multiaño} (Lara et al., 2018, particularizado a un caso sin retiro de activos)—. Cada variable de inversión que en la formulación de horizonte único representaba una decisión fija para todo el horizonte pasa a representar el \emph{stock acumulado} disponible en el año $y$ (usado sin más cambios de forma en el resto de las restricciones del modelo); se introduce una variable de \emph{incremento}, que es la verdadera decisión de inversión del año $y$ y la que entra al costo \eqref{eq:costo_total}.
+
+\subsubsection*{Parámetros de stock inicial (parque preexistente)}
+
+En el escenario \textit{greenfield} vigente, todos los parámetros de stock inicial son cero: $x_k^0=n_k^{bay,0}=n_k^{C,0}=n_k^{bat,0}=g_g^0=h^0=0$ para todo $k,g$. El escenario \textit{brownfield} queda habilitado sin cambios estructurales, cargando estos parámetros con datos distintos de cero.
+
+\subsubsection*{Parámetro adicional: cota de unidades de almacenamiento}
+
+Igual que en \texttt{carga\_ob\_multiaño}: $n^{H,max}\in\mathbb{Z}_{\geq0}$, número máximo de unidades del cluster de almacenamiento $H$ instalables a lo largo de todo el horizonte (necesario porque $H_y$, entera, no tiene cota superior natural a diferencia de las variables binarias de existencia).
+
+\subsubsection*{Variables: stock acumulado e incremento anual}
+
+\begin{itemize}
+    \item $X_{k,y}\in\{0,1\}$, $\Delta X_{k,y}\in\{0,1\}$: existencia acumulada de la estación $k$ al año $y$, y si se construye exactamente en $y$.
+    \item $N^{bay}_{k,y},\,N^{C}_{k,y},\,N^{bat}_{k,y}\in\mathbb{Z}_{\geq0}$ y sus incrementos $\Delta N^{bay}_{k,y}$, $\Delta N^{C}_{k,y}$, $\Delta N^{bat}_{k,y}\in\mathbb{Z}_{\geq0}$: naves, cargadores y baterías del pool acumulados en la estación $k$ al año $y$, e instalados en el año $y$.
+    \item $G_{g,y}\geq0$, $\Delta G_{g,y}\geq0$: capacidad acumulada e instalada del generador $g$ al año $y$.
+    \item $H_{y}\in\mathbb{Z}_{\geq0}$, $\Delta H_{y}\in\mathbb{Z}_{\geq0}$: unidades acumuladas e instaladas del cluster de almacenamiento al año $y$ (sin índice $h$, un único cluster candidato, igual que en \texttt{carga\_ob\_multiaño}).
+\end{itemize}
+
+\subsubsection*{Restricciones de enlace (\textit{linking constraints})}
+
+\begin{flalign}
+    & X_{k,y} = \begin{cases} \Delta X_{k,y}, & y=y^1 \\ X_{k,y-1} + \Delta X_{k,y}, & y>y^1 \end{cases}, &&& \forall k,y \label{eq:link_X_swap}\\[10pt]
+    & N^{bay}_{k,y} = \begin{cases} \Delta N^{bay}_{k,y}, & y=y^1 \\ N^{bay}_{k,y-1} + \Delta N^{bay}_{k,y}, & y>y^1 \end{cases}, &&& \forall k,y \label{eq:link_Nbay}\\[10pt]
+    & N^{C}_{k,y} = \begin{cases} \Delta N^{C}_{k,y}, & y=y^1 \\ N^{C}_{k,y-1} + \Delta N^{C}_{k,y}, & y>y^1 \end{cases}, &&& \forall k,y \label{eq:link_NC_swap}\\[10pt]
+    & N^{bat}_{k,y} = \begin{cases} \Delta N^{bat}_{k,y}, & y=y^1 \\ N^{bat}_{k,y-1} + \Delta N^{bat}_{k,y}, & y>y^1 \end{cases}, &&& \forall k,y \label{eq:link_Nbat}\\[10pt]
+    & G_{g,y} = \begin{cases} \Delta G_{g,y}, & y=y^1 \\ G_{g,y-1} + \Delta G_{g,y}, & y>y^1 \end{cases}, &&& \forall g,y \label{eq:link_G_swap}\\[10pt]
+    & H_{y} = \begin{cases} \Delta H_{y}, & y=y^1 \\ H_{y-1} + \Delta H_{y}, & y>y^1 \end{cases}, &&& \forall y \label{eq:link_H_swap}\\[10pt]
+    & H_y \leq n^{H,max}, &&& \forall y \label{eq:max_unidades_bess_swap}
+\end{flalign}
+
+\noindent Como $X_{k,y}\in\{0,1\}$ y la acumulación es monótona, la propia cota $X_{k,y}\leq1$ impide reconstruir una estación ya existente. El mismo argumento (monotonía + cota superior implícita vía \eqref{eq:max_naves}-\eqref{eq:max_baterias_nave}, que ya acotan $N^{bay}_{k,y}$, $N^{C}_{k,y}$, $N^{bat}_{k,y}$ en función de $X_{k,y}$ y entre sí) evita necesitar restricciones adicionales de "a lo más una construcción" para naves, cargadores o baterías. Para $H_y$, entera sin cota implícita, \eqref{eq:max_unidades_bess_swap} es necesaria.
+
+\subsubsection*{Generalización de la degradación del pool a stock multi-año}
+
+Dado que $N^{bat}_{k,y}$ pasa a ser un stock por año, el pool total y la flota física completa también lo son: $n^{bat,tot}_y$ y $n^{fleet}_y$ (ecuaciones \eqref{eq:nbattot_def}-\eqref{eq:nfleet_def}, ya escritas con el subíndice $y$ en la Sección \ref{sec:degradacion}). Las cotas estructurales $NF^L,NF^U$ del rango \textit{one-hot} —que antes se derivaban de los \textit{bounds} fijos $N^{bat}_k\in[1,12]$— se recalculan de forma consistente con el arranque \textit{greenfield} y la ausencia de cota manual: $NF^L=\|I\|$ (el pool en estación puede partir en 0; solo las baterías instaladas en cada LHD de intercambio son un piso estructural fijo) y $NF^U=\|I\|+\sum_{k\in K} n_k^{bay,max}\cdot n_k^{bat/bay}$ (la cota física real de cada estación, vía \eqref{eq:max_naves} y \eqref{eq:max_baterias_nave}, en vez del literal $12$). La codificación \textit{one-hot} $\delta_{y,n}$ y la variable $Z^{en}_{y,n}$ (Sección \ref{sec:degradacion}) se extienden con el eje de año $y$ sobre este mismo rango $[NF^L,NF^U]$, reutilizado sin cambios para todos los años. Análogamente, la energía máxima cargable por año usada para acotar $N^{ciclos}_y$ se recalcula usando la cota física por estación ($n_k^{bay,max}\cdot n_k^{bat/bay}$) en lugar del literal $12$.
+
+\endgroup
+
+\end{document}
