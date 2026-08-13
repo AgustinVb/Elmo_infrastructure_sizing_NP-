@@ -1233,7 +1233,7 @@ def main() -> None:
         if gen_info and gen_info.get("generators"):
             rows = []
             for g, info in gen_info["generators"].items():
-                rows.append([g, f"{info['units']:.0f}", f"{info['p_max_unit']:.0f}",
+                rows.append([g, f"{info['units']:.3f}", f"{info['p_max_unit']:.0f}",
                               f"{info['power_kw']:.0f}", f"{info['inv_cost']:.2f}", f"{info['op_cost']:.2f}"])
             rows.append(["TOTAL", "", "", f"{gen_info['total_power_kw']:.0f}",
                          f"{gen_info['total_inv_cost']:.2f}", f"{gen_info['total_op_cost']:.2f}"])
@@ -1255,7 +1255,7 @@ def main() -> None:
         if bess_info and bess_info.get("units"):
             rows = []
             for h, info in bess_info["units"].items():
-                rows.append([h, f"{info['installed']:.0f}", f"{info['p_max_kw']:.0f}", f"{info['a_min_kwh']:.0f}",
+                rows.append([h, f"{info['installed']:.3f}", f"{info['p_max_kw']:.0f}", f"{info['a_min_kwh']:.0f}",
                               f"{info['a_max_kwh']:.0f}", f"{info['inv_cost']:.2f}", f"{info['op_cost']:.2f}"])
             rows.append(["TOTAL", "", "", "", "",
                          f"{bess_info['total_inv_cost']:.2f}", f"{bess_info['total_op_cost']:.2f}"])

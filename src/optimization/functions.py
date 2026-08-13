@@ -692,9 +692,11 @@ class BoundRules(OptRules):
         # Variables de generación renovable (solo si existen generadores)
         if len(list(model.gen_set)) > 0:
             # G_g = stock acumulado (fraccion de p_max_g) al año y; Delta_G_g =
-            # capacidad instalada en el año y (ver link_gen_stock).
-            model.G_g       = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeIntegers)
-            model.Delta_G_g = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeIntegers)
+            # capacidad instalada en el año y (ver link_gen_stock). Continuas
+            # (relajacion del numero de unidades de generacion): permite
+            # instalar capacidad fraccionaria de cada tecnologia.
+            model.G_g       = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeReals)
+            model.Delta_G_g = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeReals)
             model.P_gen = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set,
                                   domain=pyo.NonNegativeReals)
             # Curtailment: potencia renovable vertida en (d,t) [kW] — ec. 3.47
@@ -706,9 +708,10 @@ class BoundRules(OptRules):
             # en build_parameters): H = unidades acumuladas del cluster al
             # año y, Delta_H = unidades construidas en el año y (ver
             # link_storage_stock). Sin indice h a diferencia de la
-            # formulacion de horizonte unico (H_h binaria).
-            model.H       = pyo.Var(model.years, domain=pyo.NonNegativeIntegers)
-            model.Delta_H = pyo.Var(model.years, domain=pyo.NonNegativeIntegers)
+            # formulacion de horizonte unico (H_h binaria). Continuas
+            # (relajacion del numero de unidades del cluster BESS).
+            model.H       = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+            model.Delta_H = pyo.Var(model.years, domain=pyo.NonNegativeReals)
             model.P_bat = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set,
                                   domain=pyo.Reals)
             model.A_h = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero,
@@ -1866,16 +1869,16 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales DCH
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.years,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.maint_stop_all,
+        #)
         #Pausas DET (esquema alternativo, portado desde battery_swapping pero
         # dejado sin registrar: DCH sigue siendo el esquema activo aqui).
         #model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)

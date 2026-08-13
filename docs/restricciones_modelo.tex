@@ -285,8 +285,8 @@ Igual que en \texttt{carga\_ob\_multiaño}: $n^{H,max}\in\mathbb{Z}_{\geq0}$, n�
 \begin{itemize}
     \item $X_{k,y}\in\{0,1\}$, $\Delta X_{k,y}\in\{0,1\}$: existencia acumulada de la estación $k$ al año $y$, y si se construye exactamente en $y$.
     \item $N^{bay}_{k,y},\,N^{C}_{k,y},\,N^{bat}_{k,y}\in\mathbb{Z}_{\geq0}$ y sus incrementos $\Delta N^{bay}_{k,y}$, $\Delta N^{C}_{k,y}$, $\Delta N^{bat}_{k,y}\in\mathbb{Z}_{\geq0}$: naves, cargadores y baterías del pool acumulados en la estación $k$ al año $y$, e instalados en el año $y$.
-    \item $G_{g,y}\geq0$, $\Delta G_{g,y}\geq0$: capacidad acumulada e instalada del generador $g$ al año $y$.
-    \item $H_{y}\in\mathbb{Z}_{\geq0}$, $\Delta H_{y}\in\mathbb{Z}_{\geq0}$: unidades acumuladas e instaladas del cluster de almacenamiento al año $y$ (sin índice $h$, un único cluster candidato, igual que en \texttt{carga\_ob\_multiaño}).
+    \item $G_{g,y}\in\mathbb{R}_{\geq0}$, $\Delta G_{g,y}\in\mathbb{R}_{\geq0}$: capacidad acumulada e instalada del generador $g$ al año $y$ (número de unidades relajado a continuo: permite capacidad fraccionaria de cada tecnología).
+    \item $H_{y}\in\mathbb{R}_{\geq0}$, $\Delta H_{y}\in\mathbb{R}_{\geq0}$: unidades acumuladas e instaladas del cluster de almacenamiento al año $y$ (sin índice $h$, un único cluster candidato, igual que en \texttt{carga\_ob\_multiaño}; número de unidades relajado a continuo, igual criterio que $G_{g,y}$).
 \end{itemize}
 
 \subsubsection*{Restricciones de enlace (\textit{linking constraints})}

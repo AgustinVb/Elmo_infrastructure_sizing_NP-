@@ -48,7 +48,7 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [1,91,181,271], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60) #12 dias significativos
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
-    time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
+    time_series = timeseries.Timeseries(series, [380], 8/60)
     mine_system = mine.Mine(model)
     if args.consumption_model == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args, mine_system)
