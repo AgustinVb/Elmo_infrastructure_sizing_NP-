@@ -576,8 +576,8 @@ class BoundRules(OptRules):
         if len(list(model.gen_set)) > 0:
             # G_g = stock acumulado (fraccion de p_max_g) al año y; Delta_G_g =
             # capacidad instalada en el año y (ver link_gen_stock).
-            model.G_g       = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeIntegers)
-            model.Delta_G_g = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeIntegers)
+            model.G_g       = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeReals)
+            model.Delta_G_g = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeReals)
             model.P_gen  = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
             model.Curt_g = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
 
@@ -591,8 +591,8 @@ class BoundRules(OptRules):
             # (H_h binaria) — el indice h se mantiene solo en las restricciones
             # operativas (P_bat, A_h) por si en el futuro se admite mas de un
             # cluster candidato.
-            model.H       = pyo.Var(model.years, domain=pyo.NonNegativeIntegers)
-            model.Delta_H = pyo.Var(model.years, domain=pyo.NonNegativeIntegers)
+            model.H       = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+            model.Delta_H = pyo.Var(model.years, domain=pyo.NonNegativeReals)
             model.P_bat = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set, domain=pyo.Reals)
             model.A_h   = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
 
@@ -1102,10 +1102,10 @@ class ConstraintRules(OptRules):
         model.charger_limit             = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.link_station_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
         model.link_charger_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
-        model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
-        model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
-        model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
-        model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
+        #model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
+        #model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
+        #model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
+        #model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                 = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
         model.max_installed_capacity    = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance             = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
