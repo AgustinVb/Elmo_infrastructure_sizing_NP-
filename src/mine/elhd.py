@@ -3,7 +3,7 @@ import numpy as np
 
 
 class ELHD(object):
-    """Objeto ELHD (Electric / Diesel Load-Haul-Dump).
+    """Objeto ELHD (Electric Load-Haul-Dump).
 
     Este módulo solo maneja los datos que vienen de la hoja “LHD” en el Excel.
     Todos los parámetros relacionados con baterías han sido movidos a `battery.py`.
@@ -120,17 +120,8 @@ class ELHD(object):
     def get_frontal_area(self, keys=None):
         return self._get("frontal_area", keys)
 
-    def get_tank_capacity(self, keys=None):
-        return self._get("tank_capacity", keys)
-
     def get_min_capacity(self, keys=None):
         return self._get("min_capacity", keys)
-
-    def get_fuel_consumption(self, keys=None):
-        return self._get("fuel_consumption", keys)
-
-    def get_refueling_time(self, keys=None):
-        return self._get("refueling_time", keys)
 
     def get_engine_efficiency(self, keys=None):
         return self._get("engine_efficiency", keys)

@@ -220,8 +220,7 @@ class Printer:
             "Z_repl":     ["y"],
             "R":          ["y"],
             "b_bar":      ["y"],
-            "N_ciclos":   ["y"],
-            "CumEFC":     ["y"],
+            "CumS":       ["y"],
         }
         self.var_axis_order: Dict[str, List[str]] = {
             "Z":          ["i", "y", "d", "t"],
@@ -257,8 +256,7 @@ class Printer:
             "Z_repl":     ["y"],
             "R":          ["y"],
             "b_bar":      ["y"],
-            "N_ciclos":   ["y"],
-            "CumEFC":     ["y"],
+            "CumS":       ["y"],
         }
 
         self.float_tol: float = 1e-9

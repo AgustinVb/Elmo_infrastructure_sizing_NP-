@@ -72,15 +72,16 @@ class Mine(object):
     # LHD: lista completa o filtrada por 'technology_type'
     # ------------------------------------------------------------------ #
     def get_system_lhds(self):
-        """Devuelve TODOS los LHD (sin filtrar por tecnología)."""
-        return list(self.elhd.elhds)
+        """Devuelve todos los LHD del sistema, excluyendo diesel (no soportado)."""
+        df = self.elhd.data
+        seleccion = df[df["technology_type"] != "diesel"]
+        return list(seleccion.index)
 
     def get_lhds_by_technology(self, tech_type: str):
         """
         Devuelve solo los LHD cuyo 'technology_type' coincide con tech_type.
         Ejemplo:
             get_lhds_by_technology("electric")   → lista de todos los LHD eléctricos
-            get_lhds_by_technology("diesel")     → lista de todos los LHD diésel
             get_lhds_by_technology("Battery_swap") → lista de Battery_swap
         """
         df = self.elhd.data
@@ -90,9 +91,6 @@ class Mine(object):
     # Métodos de comodidad (wrappers) para tecnologías frecuentes:
     def get_electric_lhds(self):
         return self.get_lhds_by_technology("electric")
-
-    def get_diesel_lhds(self):
-        return self.get_lhds_by_technology("diesel")
 
     def get_swap_lhds(self):
         return self.get_lhds_by_technology("Battery_swap")
