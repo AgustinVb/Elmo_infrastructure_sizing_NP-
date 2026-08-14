@@ -1855,20 +1855,20 @@ class ConstraintRules(OptRules):
         model.swap_only_meal_or_between_shifts = pyo.Constraint(
             model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
         )
-        model.assign_state = pyo.Constraint(
-            model.slhd_set,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            rule=self.assign_state,
-        )
-        model.min_assign_duration = pyo.Constraint(
-            model.slhd_set,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            rule=self.min_assign_duration,
-        )
+        #model.assign_state = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.years,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.assign_state,
+        #)
+        #model.min_assign_duration = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.years,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.min_assign_duration,
+        #)
         model.total_swaps = pyo.Constraint(
             model.stations_set,
             model.years,
@@ -1948,16 +1948,16 @@ class ConstraintRules(OptRules):
         )
 
         # 6) Pausas operacionales DCH
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        #model.maintenance_stop_all = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.years,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.maint_stop_all,
-        #)
+        model.maintenance_stop_all = pyo.Constraint(
+            model.slhd_set,
+            model.years,
+            model.days,
+            model.time_intervals_set,
+            rule=self.maint_stop_all,
+        )
         #Pausas DET (esquema alternativo, portado desde battery_swapping pero
         # dejado sin registrar: DCH sigue siendo el esquema activo aqui).
         #model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
@@ -1984,20 +1984,20 @@ class ConstraintRules(OptRules):
             model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.years, model.days, rule=self.bess_soc_cyclic)
 
         # 8) Rotura simetr�a
-        model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.years,
-            model.days,
-            rule=self.battery_boundary_break_simmetry_lhds_start,
-        )
+        #model.battery_boundary_break_simmetry_lhds_start = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.years,
+        #    model.days,
+        #    rule=self.battery_boundary_break_simmetry_lhds_start,
+        #)
 
-        model.swap_precedence_by_index = pyo.Constraint(
-            model.swap_precedence_pairs,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            rule=self.swap_precedence_by_index,
-        )
+        #model.swap_precedence_by_index = pyo.Constraint(
+        #    model.swap_precedence_pairs,
+        #    model.years,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.swap_precedence_by_index,
+        #)
 
         # 9) Degradación de batería del pool de swap (solo si hay datos cargados)
         if self.mine_system.battery_degradation is not None:
