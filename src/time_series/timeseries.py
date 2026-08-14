@@ -561,29 +561,6 @@ class Timeseries(object):
             trips.loc[(elhd, node), 'travel_duration'] = 1
             trips.loc[(elhd, node), 'energy_consumption'] = energy_per_trip
 
-            # Transformar kWh a litros de diesel si corresponde
-            tech_type = mine_system.elhd.get_technology_type(elhd).lower()
-            if tech_type == 'diesel':
-                diesel_density_g_per_l = 832  # Densidad del diesel [g/L]
-
-                if consumption_model == 'wp2':
-                    bsfc_g_per_kwh = mine_system.elhd.get_fuel_consumption(elhd)
-                    valid_bsfc = (isinstance(bsfc_g_per_kwh, (int, float))
-                                  and not isinstance(bsfc_g_per_kwh, bool)
-                                  and math.isfinite(bsfc_g_per_kwh) and bsfc_g_per_kwh > 0)
-                    if not valid_bsfc:
-                        bsfc_g_per_kwh = 230  # Fallback BSFC [g/kWh]
-                else:
-                    bsfc_g_per_kwh = 230  # Brake Specific Fuel Consumption [g/kWh]
-
-                # Calcular gramos de diesel y convertir a litros
-                grams_diesel = energy_per_trip * bsfc_g_per_kwh
-                fuel_liters = grams_diesel / diesel_density_g_per_l
-
-                trips.loc[(elhd, node), 'diesel_consumption'] = fuel_liters
-            else:
-                trips.loc[(elhd, node), 'diesel_consumption'] = 0
-
         self.mapper['Trips'] = trips
         return trips
 
@@ -595,9 +572,6 @@ class Timeseries(object):
 
     def get_energy_consumption(self, node_name: str, elhd_name: str) -> float:
         return self.mapper['Trips'].loc[elhd_name, node_name]['energy_consumption']
-
-    def get_diesel_consumption(self, node_name: str, elhd_name: str) -> float:
-        return self.mapper['Trips'].loc[elhd_name, node_name]['diesel_consumption']
 
     def get(self, start_col=None, end_col=None, keys=None):
         """

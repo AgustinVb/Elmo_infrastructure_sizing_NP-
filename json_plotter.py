@@ -499,13 +499,11 @@ class Parameters:
 
         # Dos formas de emisiones:
         # a) por LHD (legacy): self.emissions  (cols: lhd, day, interval, emission_rate)
-        # b) por tecnología (nuevo): self.emissions_electric / self.emissions_diesel (cols: day, interval, emission_rate)
+        # b) por tecnología (nuevo): self.emissions_electric (cols: day, interval, emission_rate)
         self.emissions = None
         self.emissions_electric = None
-        self.emissions_diesel = None
 
         self.pe_i = None
-        self.pd_i = None
         self.b_max_fleet = None
         self.min_capacity_fraction = None
         self.between_shifts = []
@@ -603,21 +601,8 @@ class Parameters:
                     })
         self.emissions_electric = pd.DataFrame(em_e) if em_e else None
 
-        # -------- emisiones diésel (nuevo) --------
-        em_d = []
-        if "emissions_diesel" in data:
-            for day, t_blk in data["emissions_diesel"].get("_1", {}).items():
-                for interval, e in t_blk.get("_2", {}).items():
-                    em_d.append({
-                        "day": _numeric_or_str(day),
-                        "interval": _numeric_or_str(interval),
-                        "emission_rate": float(e),
-                    })
-        self.emissions_diesel = pd.DataFrame(em_d) if em_d else None
-
-        # (opcional) guarda pe_i / pd_i si los usas en otros reportes
+        # (opcional) guarda pe_i si lo usas en otros reportes
         self.pe_i = data.get("pe_i")
-        self.pd_i = data.get("pd_i")
 
         # -------- intervalos especiales para visualización --------
         self.between_shifts = sorted(int(v) for v in data.get("time_intervals_between_shifts_set", []))

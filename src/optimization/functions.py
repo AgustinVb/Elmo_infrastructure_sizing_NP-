@@ -201,7 +201,6 @@ class OptSets(OptRules):
     def build_sets(self, model):
         model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
         model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
-        model.dlhd_set = pyo.Set(initialize=self.mine_system.get_diesel_lhds())
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
         model.days = pyo.Set(initialize=self.time_series.days_within_year)
@@ -365,7 +364,6 @@ class OptParameters(OptRules):
         # ParÃ¡metros de viaje por nodo
         model.d_i    = pyo.Param(model.lhd_set, model.nodes_set, initialize={(i,j): self.time_series.get_n_intervals_trip(j,i)       for i in model.lhd_set for j in model.nodes_set}, mutable=False)
         model.pe_i   = pyo.Param(model.lhd_set, model.nodes_set, initialize={(i,j): self.time_series.get_energy_consumption(j,i)     for i in model.lhd_set for j in model.nodes_set}, mutable=False)
-        model.pd_i = pyo.Param( model.lhd_set,model.nodes_set,initialize={(i, j): self.time_series.get_diesel_consumption(j,i) for i in model.lhd_set for j in model.nodes_set},mutable=False)
         # ParÃ¡metros de baterÃ­a
         model.pmax_b = pyo.Param(model.elhd_set,               initialize={b: self.mine_system.elhd.get_pmax_charge(b)        for b in model.elhd_set}, mutable=False)
         
@@ -1432,17 +1430,6 @@ class ObjectiveRules(OptRules):
         """Maximiza L: la extracción mínima garantizada en todos los puntos-días."""
         return model.L
     
-    #def production_total(self, model, j):
-    #    def ntr(node,i):
-    #        return self.time_series.get_n_trips(node,i)
-
-        # extracciÃ³n normal de mineral
-    #    term_de = sum(
-    #    model.Y[i,j,d,t] * model.g_i[i] * ntr(j,i) * model.filling_factor[i]
-    #    for i in model.dlhd_set|model.elhd_set for t in model.time_intervals_set
-    #    for d in model.days)
-    #    return term_de*model.scaling_factor_op_cost
-
     def build_objective(self, model):
         model.obj = pyo.Objective(rule=self.total_cost, sense=pyo.minimize)
         #model.obj = pyo.Objective(rule=self.op_cost_total, sense=pyo.minimize)

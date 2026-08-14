@@ -11,22 +11,8 @@ xlrd.xlsx.ensure_elementtree_imported(False, None)
 xlrd.xlsx.Element_has_iter = True
 
 
-def resolve_wp2_json_path(args, mine_system):
-    json_path = args.wp2_consumption_json
-    if not json_path:
-        techs = {
-            mine_system.elhd.get_technology_type(elhd).lower()
-            for elhd in mine_system.get_system_lhds()
-        }
-        if techs == {'diesel'}:
-            json_path = 'diesel_routes_within_time.json'
-        elif 'diesel' not in techs:
-            json_path = 'electric_routes_within_time.json'
-        else:
-            raise ValueError(
-                "La flota mezcla equipos diesel y no-diesel; debe especificar "
-                "--wp2_consumption_json de forma explicita."
-            )
+def resolve_wp2_json_path(args):
+    json_path = args.wp2_consumption_json or 'electric_routes_within_time.json'
     if not os.path.isabs(json_path):
         json_path = os.path.join(args.data_folder, json_path)
     return json_path
@@ -50,7 +36,7 @@ def build_mine(args):
     time_series = timeseries.Timeseries(series, [15,380,745, 1110, 1475], 8/60)
     mine_system = mine.Mine(model)
     if getattr(args, 'consumption_model', 'wp1') == 'wp2':
-        wp2_json_path = resolve_wp2_json_path(args, mine_system)
+        wp2_json_path = resolve_wp2_json_path(args)
         time_series.mapper['Trips'] = time_series.get_trips(
             mine_system, consumption_model='wp2', wp2_consumption_json=wp2_json_path
         )
@@ -88,7 +74,7 @@ def main():
                          help='wp1: calculo fisico interno. wp2: consumos y tiempos precalculados desde un JSON por nodo.')
     parser.add_argument('--wp2_consumption_json', default=None,
                          help='Ruta al JSON de consumos WP2 (relativa a data_folder salvo que sea absoluta). '
-                              'Si se omite y --consumption_model wp2, se infiere segun la tecnologia de la flota.')
+                              "Si se omite y --consumption_model wp2, se usa 'electric_routes_within_time.json'.")
     parser.add_argument(
         '--autonomous_mode',
         action='store_true',
