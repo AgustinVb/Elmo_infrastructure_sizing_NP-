@@ -74,8 +74,9 @@ class OptModel(object):
             "A_h": ["h", "y", "d", "t"],
             "R": ["y"],
             "b_bar": ["y"],
-            "N_ciclos": ["y"],
-            "CumEFC": ["y"],
+            "S": ["y"],
+            "CumS": ["y"],
+            "W_s": ["y"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)

@@ -1,4 +1,4 @@
-import pyomo.environ as pyo
+﻿import pyomo.environ as pyo
 import math
 import pandas as pd
 import numpy as np
@@ -604,109 +604,220 @@ class BoundRules(OptRules):
         # producto entera x continua (N_ciclos ahora depende de b_bar[y], no de un
         # b_max_fleet fijo) y se linealiza de forma EXACTA vía expansión binaria de
         # N_ciclos[y] + big-M sobre cada bit (ver n_ciclos_bits/z_.../nb_def más abajo).
+        # if self.mine_system.battery_degradation is not None:
+        #     b_max_val = value(model.b_max_fleet)
+        #     min_frac_val = value(model.min_capacity_fraction)
+        #     n_elhd = len(model.elhd_set)
+        #
+        #     # Energía máxima cargable en un año por toda la flota (todas las
+        #     # combinaciones estación-LHD-día-intervalo a potencia nominal del
+        #     # cargador), ya escalada a año completo.
+        #     n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
+        #     max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
+        #                             * value(model.scaling_factor_op_cost))
+        #
+        #     # Cotas de B_y = b_bar[y]: las mismas ya usadas para acotar b_bar.
+        #     B_L = min_frac_val * b_max_val
+        #     B_U = b_max_val
+        #
+        #     # --- Cotas de N_ciclos[y]: cobertura mínima/máxima del target agregado --
+        #     # `daily_production` (ver ConstraintRules) exige que la producción TOTAL
+        #     # de la flota cubra sum_j m_j[j,y] cada día representativo: es un piso
+        #     # GLOBAL que production() (banda [lb_j,ub_j] por nodo) no captura por sí
+        #     # solo -- lb_j puede ser 0 sin violar production() en nodos de baja
+        #     # demanda, pero la flota en su conjunto no puede producir 0. Como el
+        #     # objetivo no premia sobreproducir (solo penaliza la energía cargada),
+        #     # ambas cotas se calculan con un greedy que cubre total_target_day
+        #     # empezando por el nodo más barato en energía-por-unidad-de-producción
+        #     # (ratio = e_j/prod_per_assign_j), respetando el tope ub_j de cada nodo
+        #     # antes de pasar al siguiente:
+        #     #   - N_L: versión fraccionaria (relajación LP) del problema de
+        #     #     cobertura al mínimo costo -> cota válida para CUALQUIER solución
+        #     #     factible (no sólo la óptima), porque es el mínimo absoluto del
+        #     #     problema relajado y toda solución real debe costar al menos eso.
+        #     #   - N_U: versión entera (redondea al alza en el nodo marginal) del
+        #     #     mismo greedy, con margen de seguridad N_U_SAFETY_MARGIN. A
+        #     #     diferencia de N_L, depende de un argumento de dominancia
+        #     #     económica (nada en el objetivo premia sobreproducir) y no de una
+        #     #     banda válida para todo punto factible del MILP; el margen cubre
+        #     #     holguras que el greedy no modela (viabilidad de horario, etc.).
+        #     N_U_SAFETY_MARGIN = 1.10
+        #
+        #     def _greedy_min_cost_fractional(nodes_sorted, total_target):
+        #         remaining = total_target
+        #         energy = 0.0
+        #         for ratio, ppa, ub_j, e_j in nodes_sorted:
+        #             if remaining <= 0:
+        #                 break
+        #             tomar = min(ub_j * ppa, remaining)
+        #             energy += tomar * ratio
+        #             remaining -= tomar
+        #         return energy
+        #
+        #     def _greedy_min_cost_integer(nodes_sorted, total_target):
+        #         remaining = total_target
+        #         energy = 0.0
+        #         for ratio, ppa, ub_j, e_j in nodes_sorted:
+        #             if remaining <= 0:
+        #                 break
+        #             visits = min(ub_j, math.ceil(remaining / ppa))
+        #             energy += visits * e_j
+        #             remaining -= visits * ppa
+        #         return energy
+        #
+        #     node_lhd_pairs = {}
+        #     for (i2, j2, y2, d2, t2) in model.Y_INDEX:
+        #         node_lhd_pairs.setdefault((y2, d2, j2), []).append(i2)
+        #
+        #     E_year_low_by_y = {}
+        #     E_year_high_by_y = {}
+        #     for y in model.years:
+        #         e_day_low = 0.0
+        #         e_day_high = 0.0
+        #         for d in model.days:
+        #             nodes_info = []
+        #             total_target_day = 0.0
+        #             for j in model.nodes_set:
+        #                 i_list = node_lhd_pairs.get((y, d, j))
+        #                 if not i_list:
+        #                     continue
+        #                 elec_i_list = [i for i in i_list if i in model.elhd_set]
+        #                 if not elec_i_list:
+        #                     continue  # nodo servido solo por diesel: no aporta a N_ciclos
+        #                 i_j = elec_i_list[0]
+        #
+        #                 prod_per_assign = (value(model.g_i[i_j]) * self.time_series.get_n_trips(j, i_j)
+        #                                     * value(model.filling_factor[i_j]))
+        #                 target = value(model.m_j[j, y])
+        #                 ub_j = math.ceil(target / prod_per_assign) + 1
+        #
+        #                 e_j = (value(model.pe_i[i_j, j]) * value(model.d_i[i_j, j])
+        #                        * self.time_series.get_n_trips(j, i_j) / value(model.eta_discharge_i[i_j]))
+        #
+        #                 nodes_info.append((e_j / prod_per_assign, prod_per_assign, ub_j, e_j))
+        #                 total_target_day += target
+        #
+        #             nodes_sorted = sorted(nodes_info, key=lambda info: info[0])
+        #             e_day_low += _greedy_min_cost_fractional(nodes_sorted, total_target_day)
+        #             e_day_high += _greedy_min_cost_integer(nodes_sorted, total_target_day)
+        #
+        #         E_year_low_by_y[y] = e_day_low * value(model.scaling_factor_op_cost)
+        #         E_year_high_by_y[y] = e_day_high * value(model.scaling_factor_op_cost) * N_U_SAFETY_MARGIN
+        #
+        #     # Cota de N_ciclos[y]: como el denominador es variable (B_y, no
+        #     # b_max_fleet fijo), la cota superior usa el peor caso B_y = B_L
+        #     # (batería más degradada => misma energía produce más EFC) y la
+        #     # inferior usa el mejor caso B_y = B_U. N_L/N_U son globales (un solo
+        #     # K para todos los años), así que se toma el más ajustado válido para
+        #     # TODOS los años: min de los N_L por año, max de los N_U por año.
+        #     N_L = min(math.floor(E_year_low_by_y[y] / (n_elhd * B_U)) for y in model.years)
+        #     N_L = max(N_L, 0)
+        #
+        #     N_U_prod = max(math.ceil(E_year_high_by_y[y] / (n_elhd * B_L)) for y in model.years)
+        #     N_U_charger = math.ceil(max_energy_per_year / (n_elhd * B_L))
+        #     N_U = min(N_U_charger, N_U_prod)
+        #
+        #     cum_efc_max = N_U * len(model.years)
+        #
+        #     K = math.ceil(math.log2(N_U - N_L + 1))
+        #     model.K_bits = pyo.RangeSet(0, K - 1)
+        #
+        #     model.N_L = pyo.Param(initialize=N_L, mutable=False)
+        #     model.N_U = pyo.Param(initialize=N_U, mutable=False)
+        #     model.B_L = pyo.Param(initialize=B_L, mutable=False)
+        #     model.B_U = pyo.Param(initialize=B_U, mutable=False)
+        #     model.n_elhd_bd = pyo.Param(initialize=n_elhd, mutable=False)
+        #
+        #     model.R        = pyo.Var(model.years, domain=pyo.Binary)
+        #     model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals,
+        #                               bounds=(B_L, B_U))
+        #     model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeIntegers, bounds=(N_L, N_U))
+        #     model.CumEFC   = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+        #     model.cum_efc_max = pyo.Param(initialize=cum_efc_max, mutable=False)
+        #
+        #     # Expansión binaria exacta de N_ciclos[y] = N_L + sum_k 2^k * b_bit[y,k],
+        #     # y linealización exacta (big-M) del producto b_bit[y,k] * b_bar[y] = z_bit[y,k],
+        #     # que permite reconstruir NB[y] = N_ciclos[y] * b_bar[y] sin aproximación.
+        #     model.S      = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+        #     model.b_bit  = pyo.Var(model.years, model.K_bits, domain=pyo.Binary)
+        #     model.z_bit  = pyo.Var(model.years, model.K_bits, domain=pyo.NonNegativeReals, bounds=(0, B_U))
+        #     model.NB     = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+        #
+        #     years_sorted = sorted(model.years)
+        #     later_years = years_sorted[1:]
+        #     if later_years:
+        #         model.later_years_set = pyo.Set(initialize=later_years, within=model.years)
+        #         # W[y] = (1-R[y]) * CumEFC[y_prev]: si se reemplaza (R[y]=1) el
+        #         # arrastre de ciclos previos se anula; si no, se conserva integro.
+        #         model.W = pyo.Var(model.later_years_set, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+
+        # ================================================================== #
+        # ALTERNATIVA: degradación lineal por energía acumulada (CumS), sin
+        # expansión binaria. En vez de contar N_ciclos=S/(n_elhd*b_bar) (que
+        # es circular -- b_bar depende de N_ciclos que depende de b_bar -- y
+        # por eso requiere toda la maquinaria de arriba: N_L/N_U/K_bits/
+        # b_bit/z_bit/NB), se acumula directamente la energía cargada (S, que
+        # NO depende de b_bar) y el fade se aplica como fracción lineal de esa
+        # energía acumulada: b_bar[y] = b_max - gamma_lin*CumS[y], con
+        # gamma_lin = gamma_coef/b_max_fleet (aproxima N_ciclos[y] por
+        # S[y]/(n_elhd*b_max) en vez de S[y]/(n_elhd*b_bar[y])).
+        #
+        # Error de la aproximación ~ O(L^2) con L = fracción de capacidad
+        # perdida acumulada: chico para L bajo (ej. ~0.07% de error con
+        # L~2.6%), pero crece cerca del umbral de reemplazo
+        # (min_capacity_fraction, L~15-20% => error ~3%). Si hace falta más
+        # precisión ahí, recentrar gamma_lin en B_ref=(b_max+B_L)/2 en vez de
+        # b_max, o refinar con 1-2 iteraciones de linealización sucesiva
+        # (resolver, recalcular gamma_lin alrededor de la trayectoria
+        # obtenida, re-resolver).
+        #
+        # PARA ACTIVAR: comentar el bloque exacto de arriba completo (desde
+        # "if self.mine_system.battery_degradation is not None:" en la línea
+        # ~607 hasta el "model.W = ..." justo antes de este comentario) y
+        # descomentar el bloque de abajo. También hay que comentar/descomentar
+        # las restricciones equivalentes en ConstraintRules (ver
+        # cum_s_def/b_bar_fade_linear/w_s_upper_R/w_s_upper_cum/w_s_lower más
+        # abajo en este archivo) y su registro en build_all_constraints.
+        #
         if self.mine_system.battery_degradation is not None:
             b_max_val = value(model.b_max_fleet)
             min_frac_val = value(model.min_capacity_fraction)
             n_elhd = len(model.elhd_set)
 
-            # Energía máxima cargable en un año por toda la flota (todas las
-            # combinaciones estación-LHD-día-intervalo a potencia nominal del
-            # cargador), ya escalada a año completo.
-            n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
-            max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
-                                    * value(model.scaling_factor_op_cost))
-
-            # Cotas de B_y = b_bar[y]: las mismas ya usadas para acotar b_bar.
             B_L = min_frac_val * b_max_val
             B_U = b_max_val
 
-            # --- Cota inferior de N_ciclos[y]: producción mínima obligatoria -------
-            # Cada nodo j tiene un único LHD asociado (estructura de
-            # Nodes_assigned_at_interval); production() ya acota sus visitas entre
-            # [lb_j, ub_j] a partir del target m_j[j,y]. Reusamos esa misma banda
-            # para acotar la energía que la flota eléctrica está obligada a consumir
-            # cada año (lb_j => cota inferior de energía; ub_j => cota superior,
-            # alternativa a la basada en potencia de cargador).
-            node_lhd_pairs = {}
-            for (i2, j2, y2, d2, t2) in model.Y_INDEX:
-                node_lhd_pairs.setdefault((y2, d2, j2), []).append(i2)
-
-            E_year_low_by_y = {}
-            E_year_high_by_y = {}
-            for y in model.years:
-                e_day_low = 0.0
-                e_day_high = 0.0
-                for d in model.days:
-                    for j in model.nodes_set:
-                        i_list = node_lhd_pairs.get((y, d, j))
-                        if not i_list:
-                            continue
-                        elec_i_list = [i for i in i_list if i in model.elhd_set]
-                        if not elec_i_list:
-                            continue  # nodo servido solo por diesel: no aporta a N_ciclos
-                        i_j = elec_i_list[0]
-
-                        prod_per_assign = (value(model.g_i[i_j]) * self.time_series.get_n_trips(j, i_j)
-                                            * value(model.filling_factor[i_j]))
-                        target = value(model.m_j[j, y])
-                        lb_j = max(math.floor(target / prod_per_assign) - 1, 0)
-                        ub_j = math.ceil(target / prod_per_assign) + 1
-
-                        e_j = (value(model.pe_i[i_j, j]) * value(model.d_i[i_j, j])
-                               * self.time_series.get_n_trips(j, i_j) / value(model.eta_discharge_i[i_j]))
-
-                        e_day_low += lb_j * e_j
-                        e_day_high += ub_j * e_j
-
-                E_year_low_by_y[y] = e_day_low * value(model.scaling_factor_op_cost)
-                E_year_high_by_y[y] = e_day_high * value(model.scaling_factor_op_cost)
-
-            # Cota de N_ciclos[y]: como el denominador es variable (B_y, no
-            # b_max_fleet fijo), la cota superior usa el peor caso B_y = B_L
-            # (batería más degradada => misma energía produce más EFC) y la
-            # inferior usa el mejor caso B_y = B_U. N_L/N_U son globales (un solo
-            # K para todos los años), así que se toma el más ajustado válido para
-            # TODOS los años: min de los N_L por año, max de los N_U por año.
-            N_L = min(math.floor(E_year_low_by_y[y] / (n_elhd * B_U)) for y in model.years)
-            N_L = max(N_L, 0)
-
-            N_U_prod = max(math.ceil(E_year_high_by_y[y] / (n_elhd * B_L)) for y in model.years)
-            N_U_charger = math.ceil(max_energy_per_year / (n_elhd * B_L))
-            N_U = min(N_U_charger, N_U_prod)
-
-            cum_efc_max = N_U * len(model.years)
-
-            K = math.ceil(math.log2(N_U - N_L + 1))
-            model.K_bits = pyo.RangeSet(0, K - 1)
-
-            model.N_L = pyo.Param(initialize=N_L, mutable=False)
-            model.N_U = pyo.Param(initialize=N_U, mutable=False)
             model.B_L = pyo.Param(initialize=B_L, mutable=False)
             model.B_U = pyo.Param(initialize=B_U, mutable=False)
             model.n_elhd_bd = pyo.Param(initialize=n_elhd, mutable=False)
 
-            model.R        = pyo.Var(model.years, domain=pyo.Binary)
-            model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals,
-                                      bounds=(B_L, B_U))
-            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeIntegers, bounds=(N_L, N_U))
-            model.CumEFC   = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
-            model.cum_efc_max = pyo.Param(initialize=cum_efc_max, mutable=False)
+            # gamma_lin = gamma_coef/b_max: aproxima el denominador variable
+            # b_bar[y] por la constante b_max (ver nota de error más arriba).
+            model.gamma_lin = pyo.Param(
+                initialize=value(model.gamma_coef) / b_max_val, mutable=True)
 
-            # Expansión binaria exacta de N_ciclos[y] = N_L + sum_k 2^k * b_bit[y,k],
-            # y linealización exacta (big-M) del producto b_bit[y,k] * b_bar[y] = z_bit[y,k],
-            # que permite reconstruir NB[y] = N_ciclos[y] * b_bar[y] sin aproximación.
+            # Cota de energía acumulable por LHD representativo en el
+            # horizonte completo, para acotar CumS (mismo max_energy_per_year
+            # que la versión exacta, dividido por n_elhd).
+            n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
+            max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
+                                    * value(model.scaling_factor_op_cost))
+            cum_s_max = (max_energy_per_year / n_elhd) * len(model.years)
+            model.cum_s_max = pyo.Param(initialize=cum_s_max, mutable=False)
+
+            model.R      = pyo.Var(model.years, domain=pyo.Binary)
+            model.b_bar  = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
             model.S      = pyo.Var(model.years, domain=pyo.NonNegativeReals)
-            model.b_bit  = pyo.Var(model.years, model.K_bits, domain=pyo.Binary)
-            model.z_bit  = pyo.Var(model.years, model.K_bits, domain=pyo.NonNegativeReals, bounds=(0, B_U))
-            model.NB     = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+            model.CumS   = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, cum_s_max))
 
             years_sorted = sorted(model.years)
             later_years = years_sorted[1:]
             if later_years:
                 model.later_years_set = pyo.Set(initialize=later_years, within=model.years)
-                # W[y] = (1-R[y]) * CumEFC[y_prev]: si se reemplaza (R[y]=1) el
-                # arrastre de ciclos previos se anula; si no, se conserva integro.
-                model.W = pyo.Var(model.later_years_set, domain=pyo.NonNegativeReals, bounds=(0, cum_efc_max))
+                # W_s[y] = (1-R[y])*CumS[y_prev]: análogo a W[y] de la versión
+                # exacta, mismo big-M, sin expansión binaria.
+                model.W_s = pyo.Var(model.later_years_set, domain=pyo.NonNegativeReals, bounds=(0, cum_s_max))
+        # ================================================================== #
 
         model.M = pyo.Var(model.Y_INDEX, domain=pyo.NonNegativeReals)
 
@@ -788,8 +899,8 @@ class ConstraintRules(OptRules):
                            * self.time_series.get_n_trips(j, i_rep)
                            * pyo_value(model.filling_factor[i_rep]))
         target = pyo_value(model.m_j[j, y])
-        lb = math.floor(target / prod_per_assign) - 1
-        ub = math.ceil(target / prod_per_assign) + 1
+        lb = math.floor(target / prod_per_assign) 
+        ub = math.ceil(target / prod_per_assign) 
         visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
         return pyo.inequality(lb, visits, ub)
 
@@ -1030,62 +1141,101 @@ class ConstraintRules(OptRules):
     # se linealiza en 3 pasos: (1) suma lineal S[y]; (2) expansión binaria exacta
     # de N_ciclos[y] (entera, acotada [N_L,N_U]); (3) big-M exacto (binario x
     # continua) para reconstruir el producto NB[y] = N_ciclos[y] * b_bar[y].
-    def s_def(self, model, y):
-        """S[y] = energía cargada por la flota en el año y (kWh), escalada a año completo."""
+    # def s_def(self, model, y):
+    #     """S[y] = energía cargada por la flota en el año y (kWh), escalada a año completo."""
+    #     energy_repr_day = sum(
+    #         model.P[k, i, y2, d, t] * model.delta_t
+    #         for (k, i, y2, d, t) in model.ZCHARGE_DAYS_TIME_INDEX if y2 == y
+    #     )
+    #     return model.S[y] == energy_repr_day * model.scaling_factor_op_cost
+    #
+    # def n_ciclos_bits(self, model, y):
+    #     """Expansión binaria exacta: N_ciclos[y] = N_L + sum_k 2^k * b_bit[y,k]."""
+    #     return model.N_ciclos[y] == model.N_L + sum(
+    #         (2 ** k) * model.b_bit[y, k] for k in model.K_bits
+    #     )
+    #
+    # def z_upper1(self, model, y, k):
+    #     return model.z_bit[y, k] <= model.B_U * model.b_bit[y, k]
+    #
+    # def z_lower1(self, model, y, k):
+    #     return model.z_bit[y, k] >= model.B_L * model.b_bit[y, k]
+    #
+    # def z_upper2(self, model, y, k):
+    #     return model.z_bit[y, k] <= model.b_bar[y] - model.B_L * (1 - model.b_bit[y, k])
+    #
+    # def z_lower2(self, model, y, k):
+    #     return model.z_bit[y, k] >= model.b_bar[y] - model.B_U * (1 - model.b_bit[y, k])
+    #
+    # def nb_def(self, model, y):
+    #     """NB[y] = N_ciclos[y] * b_bar[y], reconstruido exacto a partir de los z_bit."""
+    #     return model.NB[y] == model.N_L * model.b_bar[y] + sum(
+    #         (2 ** k) * model.z_bit[y, k] for k in model.K_bits
+    #     )
+    #
+    # def n_ciclos_energy_link(self, model, y):
+    #     """n_elhd * N_ciclos[y] * b_bar[y] == S[y], vía el producto exacto NB[y]."""
+    #     return model.n_elhd_bd * model.NB[y] == model.S[y]
+    #
+    # def w_upper_R(self, model, y):
+    #     return model.W[y] <= model.cum_efc_max * (1 - model.R[y])
+    #
+    # def w_upper_cum(self, model, y):
+    #     return model.W[y] <= model.CumEFC[self._prev_year(y)]
+    #
+    # def w_lower(self, model, y):
+    #     return model.W[y] >= model.CumEFC[self._prev_year(y)] - model.cum_efc_max * model.R[y]
+    #
+    # def cum_efc_def(self, model, y):
+    #     """CumEFC[y] = ciclos equivalentes acumulados desde el último reemplazo:
+    #     (1-R[y])*CumEFC[y_prev] + N_ciclos[y]. En el primer año no hay arrastre."""
+    #     first_year = sorted(self.time_series.years)[0]
+    #     if y == first_year:
+    #         return model.CumEFC[y] == model.N_ciclos[y]
+    #     return model.CumEFC[y] == model.W[y] + model.N_ciclos[y]
+    #
+    # def b_bar_fade(self, model, y):
+    #     """Fade lineal: b_bar[y] = b_max - gamma_coef * CumEFC[y]."""
+    #     return model.b_bar[y] == value(model.b_max_fleet) - model.gamma_coef * model.CumEFC[y]
+
+    # ------------------------------------------------------------------ #
+    # ALTERNATIVA: degradación lineal por energía acumulada (CumS), sin
+    # expansión binaria -- ver bloque comentado equivalente en
+    # BoundRules.build_all_variables (variables CumS/gamma_lin/W_s) para la
+    # explicación completa y las instrucciones de activación. Reutiliza
+    # _prev_year de arriba.
+    # ------------------------------------------------------------------ #
+    def s_def_linear(self, model, y):
+        """S[y] = energía cargada por la flota en el año y (kWh, año
+        completo). Idéntica a s_def de la versión exacta."""
         energy_repr_day = sum(
             model.P[k, i, y2, d, t] * model.delta_t
             for (k, i, y2, d, t) in model.ZCHARGE_DAYS_TIME_INDEX if y2 == y
         )
         return model.S[y] == energy_repr_day * model.scaling_factor_op_cost
 
-    def n_ciclos_bits(self, model, y):
-        """Expansión binaria exacta: N_ciclos[y] = N_L + sum_k 2^k * b_bit[y,k]."""
-        return model.N_ciclos[y] == model.N_L + sum(
-            (2 ** k) * model.b_bit[y, k] for k in model.K_bits
-        )
-
-    def z_upper1(self, model, y, k):
-        return model.z_bit[y, k] <= model.B_U * model.b_bit[y, k]
-
-    def z_lower1(self, model, y, k):
-        return model.z_bit[y, k] >= model.B_L * model.b_bit[y, k]
-
-    def z_upper2(self, model, y, k):
-        return model.z_bit[y, k] <= model.b_bar[y] - model.B_L * (1 - model.b_bit[y, k])
-
-    def z_lower2(self, model, y, k):
-        return model.z_bit[y, k] >= model.b_bar[y] - model.B_U * (1 - model.b_bit[y, k])
-
-    def nb_def(self, model, y):
-        """NB[y] = N_ciclos[y] * b_bar[y], reconstruido exacto a partir de los z_bit."""
-        return model.NB[y] == model.N_L * model.b_bar[y] + sum(
-            (2 ** k) * model.z_bit[y, k] for k in model.K_bits
-        )
-
-    def n_ciclos_energy_link(self, model, y):
-        """n_elhd * N_ciclos[y] * b_bar[y] == S[y], vía el producto exacto NB[y]."""
-        return model.n_elhd_bd * model.NB[y] == model.S[y]
-
-    def w_upper_R(self, model, y):
-        return model.W[y] <= model.cum_efc_max * (1 - model.R[y])
-
-    def w_upper_cum(self, model, y):
-        return model.W[y] <= model.CumEFC[self._prev_year(y)]
-
-    def w_lower(self, model, y):
-        return model.W[y] >= model.CumEFC[self._prev_year(y)] - model.cum_efc_max * model.R[y]
-
-    def cum_efc_def(self, model, y):
-        """CumEFC[y] = ciclos equivalentes acumulados desde el último reemplazo:
-        (1-R[y])*CumEFC[y_prev] + N_ciclos[y]. En el primer año no hay arrastre."""
+    def cum_s_def(self, model, y):
+        """CumS[y] = energía cargada acumulada por LHD representativo desde
+        el último reemplazo: (1-R[y])*CumS[y_prev] + S[y]/n_elhd. Primer
+        año sin arrastre."""
         first_year = sorted(self.time_series.years)[0]
         if y == first_year:
-            return model.CumEFC[y] == model.N_ciclos[y]
-        return model.CumEFC[y] == model.W[y] + model.N_ciclos[y]
+            return model.CumS[y] == model.S[y] / model.n_elhd_bd
+        return model.CumS[y] == model.W_s[y] + model.S[y] / model.n_elhd_bd
 
-    def b_bar_fade(self, model, y):
-        """Fade lineal: b_bar[y] = b_max - gamma_coef * CumEFC[y]."""
-        return model.b_bar[y] == value(model.b_max_fleet) - model.gamma_coef * model.CumEFC[y]
+    def b_bar_fade_linear(self, model, y):
+        """Fade lineal por energía acumulada: b_bar[y] = b_max -
+        gamma_lin * CumS[y]."""
+        return model.b_bar[y] == value(model.b_max_fleet) - model.gamma_lin * model.CumS[y]
+
+    def w_s_upper_R(self, model, y):
+        return model.W_s[y] <= model.cum_s_max * (1 - model.R[y])
+
+    def w_s_upper_cum(self, model, y):
+        return model.W_s[y] <= model.CumS[self._prev_year(y)]
+
+    def w_s_lower(self, model, y):
+        return model.W_s[y] >= model.CumS[self._prev_year(y)] - model.cum_s_max * model.R[y]
 
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
@@ -1102,10 +1252,10 @@ class ConstraintRules(OptRules):
         model.charger_limit             = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.charger_limit)
         model.link_station_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
         model.link_charger_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
-        #model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
-        #model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
-        #model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
-        #model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
+        model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
+        model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
+        model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
+        model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                 = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
         model.max_installed_capacity    = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance             = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
@@ -1128,21 +1278,36 @@ class ConstraintRules(OptRules):
             model.bess_soc_lower   = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_lower)
             model.bess_soc_cyclic  = pyo.Constraint(model.storage_set, model.years, model.days, rule=self.bess_soc_cyclic)
 
+        # if self.mine_system.battery_degradation is not None:
+        #     model.s_def               = pyo.Constraint(model.years, rule=self.s_def)
+        #     model.n_ciclos_bits       = pyo.Constraint(model.years, rule=self.n_ciclos_bits)
+        #     model.z_upper1            = pyo.Constraint(model.years, model.K_bits, rule=self.z_upper1)
+        #     model.z_lower1            = pyo.Constraint(model.years, model.K_bits, rule=self.z_lower1)
+        #     model.z_upper2            = pyo.Constraint(model.years, model.K_bits, rule=self.z_upper2)
+        #     model.z_lower2            = pyo.Constraint(model.years, model.K_bits, rule=self.z_lower2)
+        #     model.nb_def              = pyo.Constraint(model.years, rule=self.nb_def)
+        #     model.n_ciclos_energy_link = pyo.Constraint(model.years, rule=self.n_ciclos_energy_link)
+        #     model.cum_efc_def  = pyo.Constraint(model.years, rule=self.cum_efc_def)
+        #     model.b_bar_fade   = pyo.Constraint(model.years, rule=self.b_bar_fade)
+        #     if hasattr(model, 'later_years_set'):
+        #         model.w_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_upper_R)
+        #         model.w_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_upper_cum)
+        #         model.w_lower     = pyo.Constraint(model.later_years_set, rule=self.w_lower)
+
+        # ALTERNATIVA lineal (ver bloques comentados en BoundRules.build_all_
+        # variables y en los métodos s_def_linear/cum_s_def/b_bar_fade_linear/
+        # w_s_upper_R/w_s_upper_cum/w_s_lower más arriba en esta clase): para
+        # activarla, comentar el bloque "if self.mine_system.battery_
+        # degradation is not None:" de arriba (líneas 1281-1295) y
+        # descomentar este.
         if self.mine_system.battery_degradation is not None:
-            model.s_def               = pyo.Constraint(model.years, rule=self.s_def)
-            model.n_ciclos_bits       = pyo.Constraint(model.years, rule=self.n_ciclos_bits)
-            model.z_upper1            = pyo.Constraint(model.years, model.K_bits, rule=self.z_upper1)
-            model.z_lower1            = pyo.Constraint(model.years, model.K_bits, rule=self.z_lower1)
-            model.z_upper2            = pyo.Constraint(model.years, model.K_bits, rule=self.z_upper2)
-            model.z_lower2            = pyo.Constraint(model.years, model.K_bits, rule=self.z_lower2)
-            model.nb_def              = pyo.Constraint(model.years, rule=self.nb_def)
-            model.n_ciclos_energy_link = pyo.Constraint(model.years, rule=self.n_ciclos_energy_link)
-            model.cum_efc_def  = pyo.Constraint(model.years, rule=self.cum_efc_def)
-            model.b_bar_fade   = pyo.Constraint(model.years, rule=self.b_bar_fade)
+            model.s_def_linear      = pyo.Constraint(model.years, rule=self.s_def_linear)
+            model.cum_s_def         = pyo.Constraint(model.years, rule=self.cum_s_def)
+            model.b_bar_fade_linear = pyo.Constraint(model.years, rule=self.b_bar_fade_linear)
             if hasattr(model, 'later_years_set'):
-                model.w_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_upper_R)
-                model.w_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_upper_cum)
-                model.w_lower     = pyo.Constraint(model.later_years_set, rule=self.w_lower)
+                model.w_s_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_s_upper_R)
+                model.w_s_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_s_upper_cum)
+                model.w_s_lower     = pyo.Constraint(model.later_years_set, rule=self.w_s_lower)
 
         model.daily_production      = pyo.Constraint(model.years, model.days, rule=self.daily_production)
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
