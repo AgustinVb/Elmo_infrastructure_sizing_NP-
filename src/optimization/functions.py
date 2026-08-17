@@ -895,6 +895,11 @@ class BoundRules(OptRules):
         #     model.NB    = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, N_U * B_U))
 
             years_sorted = sorted(model.years)
+            # R_y1 = 0 fijado: semantica "reemplazo al inicio de año" -- la
+            # bateria ya es nueva en el primer año (AN_{y1-1}=0 por definición,
+            # ver b_bar_fade_linear), asi que "reemplazarla" en y1 no tiene
+            # efecto sobre la capacidad y solo agregaria costo evitable.
+            model.R[years_sorted[0]].fix(0)
             later_years = years_sorted[1:]
             if later_years:
                 model.later_years_set = pyo.Set(initialize=later_years, within=model.years)
@@ -1690,8 +1695,15 @@ class ConstraintRules(OptRules):
     #     return model.CumEFC[y] == model.W_cum[y] + model.N_ciclos[y]
     #
     # def b_bar_fade(self, model, y):
-    #     """Fade lineal: b_bar[y] = b_max_pool - gamma_coef * CumEFC[y]."""
-    #     return model.b_bar[y] == value(model.b_max_pool) - model.gamma_coef * model.CumEFC[y]
+    #     """Capacidad operable del año, semántica "reemplazo al inicio de
+    #     año": usa W_cum[y]=(1-R[y])*CumEFC[y-1] (ciclos heredados al
+    #     INICIO del año, no CumEFC[y], que ya incluye el ciclado del propio
+    #     año y describiría la degradación al FINAL de este). Condición de
+    #     borde: b_bar[y1]=b_max_pool (no hay año anterior; R[y1] fijado a 0)."""
+    #     first_year = self._first_year()
+    #     if y == first_year:
+    #         return model.b_bar[y] == value(model.b_max_pool)
+    #     return model.b_bar[y] == value(model.b_max_pool) - model.gamma_coef * model.W_cum[y]
 
     # ------------------------------------------------------------------ #
     # ALTERNATIVA activa: degradación lineal por energía acumulada POR
@@ -1718,9 +1730,20 @@ class ConstraintRules(OptRules):
         return model.CumS[y] == model.W_cum_s[y] + s_y
 
     def b_bar_fade_linear(self, model, y):
-        """Fade lineal por energía acumulada: b_bar[y] = b_max_pool -
-        gamma_lin * CumS[y]."""
-        return model.b_bar[y] == value(model.b_max_pool) - model.gamma_lin * model.CumS[y]
+        """Capacidad operable del año, semántica "reemplazo al inicio de
+        año": si R[y]=1 la flota opera el año y con batería nueva
+        (b_bar[y]=b_max_pool); si no, opera con la degradación heredada del
+        año anterior. Usa W_cum_s[y]=(1-R[y])*CumS[y-1] -- la misma variable
+        que cum_s_def usa para el arrastre entre años -- y NO CumS[y], que ya
+        incluye la energía consumida en el propio año y y por lo tanto
+        describe la degradación al FINAL del año, no al inicio.
+
+        Condición de borde en y1: no hay año anterior (AN_{y1-1}=0 por
+        definición) y R[y1] está fijado a 0, por lo que b_bar[y1]=b_max_pool."""
+        first_year = self._first_year()
+        if y == first_year:
+            return model.b_bar[y] == value(model.b_max_pool)
+        return model.b_bar[y] == value(model.b_max_pool) - model.gamma_lin * model.W_cum_s[y]
 
     def w_cum_s_upper_R(self, model, y):
         return model.W_cum_s[y] <= model.cum_s_max * (1 - model.R[y])
