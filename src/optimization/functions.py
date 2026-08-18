@@ -8,12 +8,26 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system,  time_series, autonomous_mode=False):
+    def __init__(self, mine_system, time_series, autonomous_mode=False,
+                 years_override=None, exogenous_stations=None):
         self.mine_system = mine_system
         self.time_series = time_series
         # Escenario DET autonomo: durante la colacion el LHD puede ademas
         # operar (no solo cargar o estar detenido). Ver OptSets.build_sets.
         self.autonomous_mode = autonomous_mode
+        # Descomposicion Nested Benders (ver
+        # implementacion_descomposicion_carga_ob.md): years_override acota
+        # model.years a los años de un bloque (p.ej. un solo año), sin tocar
+        # time_series.years (que sigue siendo el horizonte completo, usado
+        # por year_position/annuity_factor_expr para el costo anualizado
+        # correcto de cada bloque). None preserva el comportamiento monolitico
+        # de hoy (model.years = todo el horizonte).
+        self.model_years = list(years_override) if years_override is not None else list(time_series.years)
+        self.is_decomposed_block = years_override is not None
+        # exogenous_stations: dict {(k, y): 0/1} con X fijo desde afuera (solo
+        # en modo descompuesto, donde X deja de ser estado — ver documento
+        # sec. 2.1 "Fuera del estado"). None preserva X como Var libre.
+        self.exogenous_stations = exogenous_stations
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -204,7 +218,7 @@ class OptSets(OptRules):
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
         model.days = pyo.Set(initialize=self.time_series.days_within_year)
-        model.years = pyo.Set(initialize=self.time_series.years)
+        model.years = pyo.Set(initialize=self.model_years)
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
@@ -561,8 +575,18 @@ class BoundRules(OptRules):
         # y (la que entra al costo). Ver restricciones de enlace link_station_stock
         # / link_charger_stock mas abajo, que acumulan Delta_* año a año desde
         # un stock inicial cero (escenario greenfield).
-        model.X                 = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
-        model.Delta_X           = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+        if self.exogenous_stations is None:
+            model.X          = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+            model.Delta_X    = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+        else:
+            # Modo descompuesto: X es exogeno (parametro fijo), sin ΔX ni
+            # link_station_stock asociado — ver documento sec. 2.1 "Fuera del
+            # estado". exogenous_stations: dict {(k, y): 0/1}.
+            model.X = pyo.Param(
+                model.stations_set, model.years,
+                initialize=lambda m, k, y: self.exogenous_stations[(k, y)],
+                within=pyo.Binary, mutable=False,
+            )
         model.N_chargers        = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.Delta_N_chargers  = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
@@ -799,11 +823,16 @@ class BoundRules(OptRules):
 
             # Cota de energía acumulable por LHD representativo en el
             # horizonte completo, para acotar CumS (mismo max_energy_per_year
-            # que la versión exacta, dividido por n_elhd).
+            # que la versión exacta, dividido por n_elhd). Usa SIEMPRE el largo
+            # del horizonte GLOBAL (self.time_series.years), no model.years:
+            # en un bloque anual descompuesto model.years tiene un solo año,
+            # pero CumS sigue acotada por lo que la flota podría acumular en
+            # todo el horizonte (ver implementacion_descomposicion_carga_ob.md
+            # sec. 10, "Big-M de degradación flojo").
             n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
             max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
                                     * value(model.scaling_factor_op_cost))
-            cum_s_max = (max_energy_per_year / n_elhd) * len(model.years)
+            cum_s_max = (max_energy_per_year / n_elhd) * len(self.time_series.years)
             model.cum_s_max = pyo.Param(initialize=cum_s_max, mutable=False)
 
             model.R      = pyo.Var(model.years, domain=pyo.Binary)
@@ -815,8 +844,14 @@ class BoundRules(OptRules):
             # R_y1 = 0 fijado: semantica "reemplazo al inicio de año" -- la
             # bateria ya es nueva en el primer año (AN_{y1-1}=0 por definición,
             # ver b_bar_fade_linear), asi que "reemplazarla" en y1 no tiene
-            # efecto sobre la capacidad y solo agregaria costo evitable.
-            model.R[years_sorted[0]].fix(0)
+            # efecto sobre la capacidad y solo agregaria costo evitable. Debe
+            # ser el primer año del HORIZONTE GLOBAL (self._first_year()), no
+            # years_sorted[0]: en un bloque descompuesto de un solo año y>y1,
+            # years_sorted[0] es ese año y, y R_y ahí sigue siendo una decision
+            # libre (no el borde del horizonte).
+            global_first_year = self._first_year()
+            if global_first_year in model.years:
+                model.R[global_first_year].fix(0)
             later_years = years_sorted[1:]
             if later_years:
                 model.later_years_set = pyo.Set(initialize=later_years, within=model.years)
@@ -1274,8 +1309,15 @@ class ConstraintRules(OptRules):
         model.max_n_chargers            = pyo.Constraint(model.stations_set, model.years, rule=self.max_n_chargers)
         model.station_existence_constraint = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.station_existence_constraint)
         model.charger_limit             = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.charger_limit)
-        model.link_station_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
-        model.link_charger_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
+        if self.exogenous_stations is None:
+            model.link_station_stock     = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
+        if not self.is_decomposed_block:
+            # Descomposicion: la acumulacion entre años del stock de
+            # cargadores la arma YearBlockBuilder via el parametro heredado
+            # N_chargers_hat + la copia continua N_chargers_prev (ver
+            # implementacion_descomposicion_carga_ob.md sec. 3) — no existe
+            # model.N_chargers[k, y-1] dentro de un bloque de un solo año.
+            model.link_charger_stock     = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
         model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
         model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
@@ -1289,10 +1331,12 @@ class ConstraintRules(OptRules):
         if len(list(model.gen_set)) > 0:
             model.gen_limit     = pyo.Constraint(model.gen_set, model.years, model.days, model.time_intervals_set, rule=self.gen_limit)
             model.gen_max_units = pyo.Constraint(model.gen_set, model.years, rule=self.gen_max_units)
-            model.link_gen_stock = pyo.Constraint(model.gen_set, model.years, rule=self.link_gen_stock)
+            if not self.is_decomposed_block:
+                model.link_gen_stock = pyo.Constraint(model.gen_set, model.years, rule=self.link_gen_stock)
 
         if len(list(model.storage_set)) > 0:
-            model.link_storage_stock = pyo.Constraint(model.years, rule=self.link_storage_stock)
+            if not self.is_decomposed_block:
+                model.link_storage_stock = pyo.Constraint(model.years, rule=self.link_storage_stock)
             model.max_storage_units  = pyo.Constraint(model.years, rule=self.max_storage_units)
             model.bess_power_upper = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_upper)
             model.bess_power_lower = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_lower)
@@ -1326,12 +1370,16 @@ class ConstraintRules(OptRules):
         # descomentar este.
         if self.mine_system.battery_degradation is not None:
             model.s_def_linear      = pyo.Constraint(model.years, rule=self.s_def_linear)
-            model.cum_s_def         = pyo.Constraint(model.years, rule=self.cum_s_def)
-            model.b_bar_fade_linear = pyo.Constraint(model.years, rule=self.b_bar_fade_linear)
-            if hasattr(model, 'later_years_set'):
-                model.w_s_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_s_upper_R)
-                model.w_s_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_s_upper_cum)
-                model.w_s_lower     = pyo.Constraint(model.later_years_set, rule=self.w_s_lower)
+            if not self.is_decomposed_block:
+                # Descomposicion: el arrastre CumS[y] = (1-R_y)*CumS[y-1] + ...
+                # lo arma YearBlockBuilder via CumS_hat/CumS_prev (mismo
+                # patron que link_charger_stock, ver documento sec. 3-4).
+                model.cum_s_def         = pyo.Constraint(model.years, rule=self.cum_s_def)
+                model.b_bar_fade_linear = pyo.Constraint(model.years, rule=self.b_bar_fade_linear)
+                if hasattr(model, 'later_years_set'):
+                    model.w_s_upper_R   = pyo.Constraint(model.later_years_set, rule=self.w_s_upper_R)
+                    model.w_s_upper_cum = pyo.Constraint(model.later_years_set, rule=self.w_s_upper_cum)
+                    model.w_s_lower     = pyo.Constraint(model.later_years_set, rule=self.w_s_lower)
 
         model.daily_production      = pyo.Constraint(model.years, model.days, rule=self.daily_production)
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
@@ -1383,10 +1431,18 @@ class ObjectiveRules(OptRules):
         return sum(yearly_cost_fn(y) for y in model.years)
 
     def inversion_cost(self, model):
+        # Modo descompuesto: X es exogeno y no acarrea costo de inversion
+        # propio (ΔX = 0, documento sec. 5 "Costo del año f_y") — el costo de
+        # las estaciones ya fue asumido/consignado fuera de este bloque.
+        station_cost_active = self.exogenous_stations is None
+
         def yearly(y):
-            return sum(
-                model.station_cost_k[k] * model.Delta_X[k,y]
-                + (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.Delta_N_chargers[k,y]
+            station_term = (
+                sum(model.station_cost_k[k] * model.Delta_X[k, y] for k in model.stations_set)
+                if station_cost_active else 0
+            )
+            return station_term + sum(
+                (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.Delta_N_chargers[k,y]
                 for k in model.stations_set
             )
         return self._annuitized_yearly_sum(model, yearly)
