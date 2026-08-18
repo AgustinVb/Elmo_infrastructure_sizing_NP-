@@ -74,9 +74,9 @@ class OptModel(object):
             "A_h": ["h", "y", "d", "t"],
             "R": ["y"],
             "b_bar": ["y"],
+            "D": ["y"],
             "S": ["y"],
-            "CumS": ["y"],
-            "W_s": ["y"],
+            "N_ciclos": ["y"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)
@@ -330,6 +330,11 @@ class OptModel(object):
             opt.options['Presolve'] = 2
             opt.options['FlowCoverCuts'] = 2
             opt.options['TimeLimit'] = timelimit
+            if self.constraint_rules.mine_system.battery_degradation is not None:
+                # n_ciclos_link (ver functions.py) es una igualdad bilineal
+                # (N_ciclos[y] * b_bar[y]): restricción cuadrática no convexa,
+                # Gurobi la rechaza sin este flag.
+                opt.options['NonConvex'] = 2
             return opt
 
         raise ValueError(f"Solver no soportado: {solvername}")

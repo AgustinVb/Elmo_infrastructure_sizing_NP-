@@ -48,6 +48,24 @@ class NestedBendersSolver(object):
             la validacion original solo chequeo un punto de referencia, no
             alcanza. No usar hasta corregir (ver memoria del proyecto).
         """
+        if mine_system.battery_degradation is not None:
+            # year_block.py/cuts.py todavia implementan la formulacion de
+            # degradacion VIEJA (AN_ciclos/NB/b_bar_def, con N_L/N_U vía
+            # greedy) que precede a la actual b_y_link/n_ciclos_link/
+            # d_y_fade de ConstraintRules (ver functions.py) -- nunca se
+            # portaron. Ademas b_y_link se registra en build_all_constraints
+            # sin guard is_decomposed_block, así que con datos de
+            # degradacion cargados esto rompe con un KeyError críptico al
+            # construir el primer bloque (D[prev_year] fuera de índice) en
+            # vez de este mensaje claro. Hasta que se porte la formulacion
+            # nueva a la descomposicion, modo decomposed + degradacion no
+            # esta soportado.
+            raise NotImplementedError(
+                "Modo 'decomposed' no soporta datos de BatteryDegradation todavia: "
+                "year_block.py/cuts.py usan la formulacion de degradacion vieja, "
+                "no portada a b_y_link/n_ciclos_link/d_y_fade (ver functions.py). "
+                "Usa --mode monolithic para escenarios con hoja BatteryDegradation."
+            )
         self.mine_system = mine_system
         self.time_series = time_series
         self.years = sorted(time_series.years)

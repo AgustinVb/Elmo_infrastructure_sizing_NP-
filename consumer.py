@@ -845,13 +845,13 @@ def main() -> None:
                     f"{info['b_bar_kwh']:.1f}",
                     f"{info['b_bar_pct']:.1f}%",
                     f"{info['n_ciclos']:.1f}",
-                    f"{info['cum_efc']:.1f}",
+                    f"{info['d_kwh']:.1f}",
                     "SI" if info["replaced"] else "NO",
                     f"{info['replace_cost']:.2f}",
                 ])
             print(make_table(
                 "DEGRADACION BATERIA ON-BOARD",
-                ["Año", "b_bar [kWh]", "% b_max", "EFC año", "EFC acum.", "Reemplazo", "Costo reemplazo"],
+                ["Año", "B [kWh] (inicio)", "% b_max", "EFC año", "D [kWh] (fin)", "Reemplazo", "Costo reemplazo"],
                 rows,
             ))
             print()
@@ -1627,10 +1627,13 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
 
 def calculate_battery_degradation_metrics(root: Path) -> Dict[str, Any]:
     """
-    Lee R.json, b_bar.json, N_ciclos.json, CumEFC.json y parameters.json para
+    Lee R.json, b_bar.json, D.json, N_ciclos.json y parameters.json para
     reportar, por año, la degradación de la batería on-board (fleet-wide):
-    - Capacidad b_bar [kWh] y % de la nominal (b_max)
-    - Ciclos equivalentes (EFC) del año y acumulados desde el último reemplazo
+    - Capacidad al inicio (b_bar) y al final (D) del año [kWh], y % de la
+      nominal (b_max) para b_bar
+    - Ciclos equivalentes (EFC) del propio año (N_ciclos) -- ya no hay
+      acumulado histórico explícito, el arrastre entre años lo da D[y-1]
+      (ver b_y_link en functions.py)
     - Si hubo reemplazo (R=1) ese año y su costo (c_bat_replace)
     """
     b_bar_path = find_json_in_folder(root, "b_bar.json")
@@ -1656,9 +1659,9 @@ def calculate_battery_degradation_metrics(root: Path) -> Dict[str, Any]:
         return {str(y): _as_float(v, 0.0) for y, v in raw.items()} if isinstance(raw, dict) else {}
 
     b_bar_map     = _year_map("b_bar.json")
+    d_map         = _year_map("D.json")
     r_map         = _year_map("R.json")
     n_ciclos_map  = _year_map("N_ciclos.json")
-    cum_efc_map   = _year_map("CumEFC.json")
 
     b_max          = _as_float(params_data.get("b_max_fleet"), 0.0)
     min_frac       = _as_float(params_data.get("min_capacity_fraction"), 0.0)
@@ -1690,7 +1693,7 @@ def calculate_battery_degradation_metrics(root: Path) -> Dict[str, Any]:
             "b_bar_kwh":    b_bar,
             "b_bar_pct":    (b_bar / b_max * 100.0) if b_max else 0.0,
             "n_ciclos":     n_ciclos_map.get(y, 0.0),
-            "cum_efc":      cum_efc_map.get(y, 0.0),
+            "d_kwh":        d_map.get(y, 0.0),
             "replaced":     replaced,
             "replace_cost": cost_y,
         }
