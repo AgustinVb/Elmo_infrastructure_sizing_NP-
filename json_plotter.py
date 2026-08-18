@@ -719,8 +719,8 @@ class JSONPlotter:
         # Degradación de batería del pool de swap (global, un valor por año)
         self.df_R        = load_year_indexed_df(os.path.join(json_dir, "R.json"), "R")
         self.df_b_bar    = load_year_indexed_df(os.path.join(json_dir, "b_bar.json"), "b_bar")
+        self.df_D        = load_year_indexed_df(os.path.join(json_dir, "D.json"), "D")
         self.df_N_ciclos = load_year_indexed_df(os.path.join(json_dir, "N_ciclos.json"), "N_ciclos")
-        self.df_CumEFC   = load_year_indexed_df(os.path.join(json_dir, "CumEFC.json"), "CumEFC")
 
         # Parámetros
         self.params = Parameters(os.path.join(json_dir, "parameters.json"), energy_price_scale=energy_price_scale)
@@ -2023,19 +2023,23 @@ class JSONPlotter:
     def plot_battery_degradation(self):
         """
         Degradación de batería del pool de swap (global, un valor por año).
-        Panel superior: capacidad b_bar por año (barras), con líneas de referencia
-        de b_max_pool y del piso (min_capacity_fraction*b_max_pool), y los años de
-        reemplazo (R=1) resaltados. Panel inferior: ciclos equivalentes acumulados
-        (CumEFC).
+        Panel superior: capacidad al INICIO (b_bar, barras) y al FINAL (D,
+        marcadores) de cada año, con líneas de referencia de b_max_pool y
+        del piso (min_capacity_fraction*b_max_pool), y los años de reemplazo
+        (R=1) resaltados. Panel inferior: ciclos equivalentes DEL año
+        (N_ciclos) -- el driver del fade b_bar->D vía d_y_fade (ver
+        functions.py); no es un acumulado histórico, el arrastre entre años
+        lo da D[y-1] en b_y_link.
         """
         if self.df_b_bar is None or self.df_b_bar.empty:
             print("INFO: No hay b_bar.json — omitiendo gráfico de degradación de batería.")
             return
 
-        cap_color   = "#1565C0"
+        cap_color     = "#1565C0"
+        end_color     = "#5E35B1"
         replace_color = "#F57C00"
-        efc_color   = "#00897B"
-        ref_color   = "#616161"
+        cycles_color  = "#00897B"
+        ref_color     = "#616161"
 
         years = sorted(self.df_b_bar["year"].unique().tolist())
         b_bar_vals = self.df_b_bar.set_index("year")["b_bar"].reindex(years)
@@ -2050,7 +2054,13 @@ class JSONPlotter:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(max(6, 1.2 * len(years) + 2), 7), sharex=True)
 
         bar_colors = [replace_color if y in replaced else cap_color for y in years]
-        ax1.bar([str(y) for y in years], b_bar_vals.values, color=bar_colors, width=0.6, zorder=3)
+        ax1.bar([str(y) for y in years], b_bar_vals.values, color=bar_colors, width=0.6,
+                 zorder=3, label="B (inicio de año)")
+
+        if self.df_D is not None and not self.df_D.empty:
+            d_vals = self.df_D.set_index("year")["D"].reindex(years)
+            ax1.scatter([str(y) for y in years], d_vals.values, color=end_color, marker="D",
+                        s=55, zorder=4, label="D (fin de año)")
 
         if b_max is not None:
             ax1.axhline(b_max, color=ref_color, linewidth=1.2, linestyle="--", label="b_max (nominal)")
@@ -2068,15 +2078,14 @@ class JSONPlotter:
         ax1.grid(axis="y", linestyle="--", alpha=0.4)
         ax1.legend(loc="lower left", fontsize=9, framealpha=0.85)
 
-        if self.df_CumEFC is not None and not self.df_CumEFC.empty:
-            efc_vals = self.df_CumEFC.set_index("year")["CumEFC"].reindex(years)
-            ax2.plot([str(y) for y in years], efc_vals.values, marker="o", color=efc_color,
-                      linewidth=2.0, markersize=7)
-            ax2.set_ylabel("Ciclos equiv. acumulados\n(CumEFC)", fontsize=11)
+        if self.df_N_ciclos is not None and not self.df_N_ciclos.empty:
+            n_vals = self.df_N_ciclos.set_index("year")["N_ciclos"].reindex(years)
+            ax2.bar([str(y) for y in years], n_vals.values, color=cycles_color, width=0.6, zorder=3)
+            ax2.set_ylabel("Ciclos equivalentes\ndel año (N_ciclos)", fontsize=11)
+            ax2.grid(axis="y", linestyle="--", alpha=0.4)
         else:
-            ax2.text(0.5, 0.5, "No hay CumEFC.json", ha="center", va="center", transform=ax2.transAxes)
+            ax2.text(0.5, 0.5, "No hay N_ciclos.json", ha="center", va="center", transform=ax2.transAxes)
         ax2.set_xlabel("Año", fontsize=12)
-        ax2.grid(axis="y", linestyle="--", alpha=0.4)
 
         fig.tight_layout()
         fig.savefig(os.path.join(self.plot_dir, "BatteryDegradation.png"), dpi=150, bbox_inches="tight")
