@@ -36,7 +36,7 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
     #time_series = timeseries.Timeseries(series, [1,366], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60)
-    time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
+    time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)
     mine_system = mine.Mine(model)
     if getattr(args, 'consumption_model', 'wp1') == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args)
