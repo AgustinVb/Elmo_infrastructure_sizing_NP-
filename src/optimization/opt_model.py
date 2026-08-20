@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -40,10 +40,17 @@ class OptModel(object):
         # Escenario DET autonomo: durante la colacion el LHD puede ademas
         # operar (no solo cargar o estar detenido). Ver OptSets.build_sets.
         self.autonomous_mode  = autonomous_mode
+        # Camino A (McCormick) aplicado al monolitico completo (ver
+        # degradacion_descomposicion_mccormick.md sec. 3 y
+        # ConstraintRules.build_mccormick_degradation_block en
+        # functions.py): si True, evita la restriccion cuadratica no
+        # convexa n_ciclos_link -- ver _configure_solver mas abajo, que
+        # entonces NO activa Gurobi NonConvex=2.
+        self.mccormick_degradation = mccormick_degradation
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
-        self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series)
+        self.bound_rules      = BoundRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
@@ -330,10 +337,12 @@ class OptModel(object):
             opt.options['Presolve'] = 2
             opt.options['FlowCoverCuts'] = 2
             opt.options['TimeLimit'] = timelimit
-            if self.constraint_rules.mine_system.battery_degradation is not None:
+            if self.constraint_rules.mine_system.battery_degradation is not None and not self.mccormick_degradation:
                 # n_ciclos_link (ver functions.py) es una igualdad bilineal
                 # (N_ciclos[y] * b_bar[y]): restricción cuadrática no convexa,
-                # Gurobi la rechaza sin este flag.
+                # Gurobi la rechaza sin este flag. Con mccormick_degradation=True
+                # esa restricción no existe (ver build_mccormick_degradation_block),
+                # el modelo es MILP puro y este flag sobra.
                 opt.options['NonConvex'] = 2
             return opt
 

@@ -1,5 +1,3 @@
-import math
-
 import pyomo.environ as pyo
 from pyomo.core.base import Suffix
 from pyomo.environ import value
@@ -10,6 +8,7 @@ from src.optimization.functions import (
     BoundRules,
     ConstraintRules,
     ObjectiveRules,
+    compute_n_ciclos_bounds,
 )
 
 
@@ -27,12 +26,26 @@ class YearBlockBuilder(object):
 
     Lo unico que este builder agrega por su cuenta es el acople entre años
     (sec. 3 del documento): por cada familia de estado
-    (N_chargers, G, H, CumS) declara un parametro heredado mutable
+    (N_chargers, G, H, D) declara un parametro heredado mutable
     `<estado>_hat` (actualizado entre iteraciones por el driver forward/
     backward) y una copia continua `<estado>_prev` ligada a el por
     igualdad — esa igualdad es la que produce, via su dual, el corte de
     Benders (sec. 2.3: "la copia se declara continua aunque el estado
     original sea entero, para que el dual este bien definido").
+
+    Degradacion de bateria (formulacion B_y/D_y, ver
+    degradacion_descomposicion_mccormick.md): a diferencia de N_chargers/
+    G/H, aca el estado D_y (capacidad al FINAL del año) entra en el acople
+    de forma tan simple como los demas -- D_prev == D_hat, aditivo, kind
+    "simple" -- porque el unico termino no lineal del bloque
+    (N_ciclos_y * b_bar_y == S_y, PRODUCTO DE DOS VARIABLES DEL MISMO AÑO,
+    no cruza años) se resuelve aparte con la relajacion de McCormick
+    (Camino A del documento, sec. 3) directamente en el modelo de este
+    bloque. Eso deja el subproblema anual como MILP puro y permite que el
+    mecanismo generico de duales/cortes (cuts.py) trate "D" exactamente
+    igual que "H" -- ya no hace falta el teorema de la envolvente que
+    requeria el esquema viejo AN_ciclos (donde el heredado entraba como
+    COEFICIENTE, no como constante aditiva).
     """
 
     def __init__(self, mine_system, time_series, year, is_last_year,
@@ -172,164 +185,123 @@ class YearBlockBuilder(object):
         })
 
     def _compute_n_ciclos_bounds(self, model):
-        """Cotas [N_L, N_U] de N_ciclos_y para ESTE año, adaptando a un solo
-        año el calculo greedy que el monolitico usa para su version EXACTA
-        (comentado en BoundRules.build_all_variables): N_L es la cobertura
-        minima fraccionaria del target de produccion (cota valida para
-        CUALQUIER solucion factible); N_U es la cobertura entera greedy con
-        margen de seguridad. Documento sec. 10: "Big-M de degradación
-        flojo. Recalcular la cota con el B_y del año, no con una constante
-        global, o el big-M queda flojo y debilita los cortes" -- por eso
-        esto se recalcula por bloque en vez de reusar una cota global."""
-        y = self.year
-        B_L = value(model.B_L)
-        B_U = value(model.B_U)
-        n_elhd = value(model.n_elhd_bd)
-        N_U_SAFETY_MARGIN = 1.10
-
-        def _greedy_min_cost_fractional(nodes_sorted, total_target):
-            remaining = total_target
-            energy = 0.0
-            for ratio, ppa, ub_j, e_j in nodes_sorted:
-                if remaining <= 0:
-                    break
-                tomar = min(ub_j * ppa, remaining)
-                energy += tomar * ratio
-                remaining -= tomar
-            return energy
-
-        def _greedy_min_cost_integer(nodes_sorted, total_target):
-            remaining = total_target
-            energy = 0.0
-            for ratio, ppa, ub_j, e_j in nodes_sorted:
-                if remaining <= 0:
-                    break
-                visits = min(ub_j, math.ceil(remaining / ppa))
-                energy += visits * e_j
-                remaining -= visits * ppa
-            return energy
-
-        node_lhd_pairs = {}
-        for (i2, j2, y2, d2, t2) in model.Y_INDEX:
-            node_lhd_pairs.setdefault((y2, d2, j2), []).append(i2)
-
-        e_day_low = 0.0
-        e_day_high = 0.0
-        for d in model.days:
-            nodes_info = []
-            total_target_day = 0.0
-            for j in model.nodes_set:
-                i_list = node_lhd_pairs.get((y, d, j))
-                if not i_list:
-                    continue
-                elec_i_list = [i for i in i_list if i in model.elhd_set]
-                if not elec_i_list:
-                    continue
-                i_j = elec_i_list[0]
-
-                prod_per_assign = (value(model.g_i[i_j]) * self.time_series.get_n_trips(j, i_j)
-                                    * value(model.filling_factor[i_j]))
-                target = value(model.m_j[j, y])
-                ub_j = math.ceil(target / prod_per_assign) + 1
-
-                e_j = (value(model.pe_i[i_j, j]) * value(model.d_i[i_j, j])
-                       * self.time_series.get_n_trips(j, i_j) / value(model.eta_discharge_i[i_j]))
-
-                nodes_info.append((e_j / prod_per_assign, prod_per_assign, ub_j, e_j))
-                total_target_day += target
-
-            nodes_sorted = sorted(nodes_info, key=lambda info: info[0])
-            e_day_low += _greedy_min_cost_fractional(nodes_sorted, total_target_day)
-            e_day_high += _greedy_min_cost_integer(nodes_sorted, total_target_day)
-
-        e_year_low = e_day_low * value(model.scaling_factor_op_cost)
-        e_year_high = e_day_high * value(model.scaling_factor_op_cost) * N_U_SAFETY_MARGIN
-
-        n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
-        max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
-                                * value(model.scaling_factor_op_cost))
-
-        N_L = max(math.floor(e_year_low / (n_elhd * B_U)), 0)
-        N_U_prod = math.ceil(e_year_high / (n_elhd * B_L))
-        N_U_charger = math.ceil(max_energy_per_year / (n_elhd * B_L))
-        N_U = max(min(N_U_charger, N_U_prod), N_L)
-
-        return N_L, N_U
+        """Cotas [N_L, N_U] de N_ciclos_y para ESTE año -- ver
+        compute_n_ciclos_bounds en functions.py (funcion compartida con el
+        Camino A aplicado al monolitico completo)."""
+        return compute_n_ciclos_bounds(model, self.year, self.time_series)
 
     def _add_degradation_state(self, model):
-        """Acople de degradación -- documento sec. 4 "Opción A", formulación
-        EXACTA (no la aproximación CumS/gamma_lin que usa el monolítico).
+        """Acople de degradación -- Camino A (McCormick) de
+        degradacion_descomposicion_mccormick.md, secs. 2-3.
 
-        Con la convención "reemplazo al inicio del año", B_y (capacidad
-        operable del año) depende solo de AN_ciclos_hat (heredado, un
-        PARÁMETRO conocido en esta resolución) y R_y (binaria de este
-        año) -- no de N_ciclos_y ni AN_ciclos_y propios. Eso rompe la
-        circularidad que fuerza al monolítico a usar la expansión binaria
-        completa (ver BoundRules.build_all_variables, bloque comentado:
-        "b_bar depende de N_ciclos que depende de b_bar").
+        Estado de acople: D_y (capacidad al FINAL del año), no AN_ciclos.
+        d_y_fade (D_y = b_bar_y - gamma*N_ciclos_y) y s_def (S_y = energia
+        cargada) ya quedaron registradas por ConstraintRules.
+        build_all_constraints (funciones intra-año, sin cruce de años,
+        validas tal cual para un bloque de un solo año). Lo que este
+        metodo agrega:
 
-        AN_ciclos_hat se usa como PARÁMETRO directo (no como copia
-        continua tipo "_prev") en las tres ecuaciones de abajo: así,
-        b_bar_def y arrastre quedan lineales exactos (Param × Var), y
-        energy_link queda lineal salvo un ÚNICO big-M (NB_y := R_y·N_ciclos_y,
-        binaria × continua) -- exactamente "un único big-M sobre
-        N^ciclos_y" que describe el documento.
+        1. Acople y-1 -> y (solo si `year` no es el primer año del
+           horizonte GLOBAL): copia continua D_prev ligada por igualdad al
+           parametro heredado D_hat (mismo patron que N_chargers/G/H,
+           kind "simple" -- ver docstring de la clase), y la restriccion
+           b_y_link_local: b_bar_y <= D_prev + replace_capacity_fraction *
+           b_max * R_y (doc sec. 3.3, ecuacion (2) reescrita con D_prev en
+           vez de model.D[y-1] -- ese indice no existe en un bloque de un
+           solo año, ver guard is_decomposed_block en
+           ConstraintRules.build_all_constraints).
+           Para el primer año, b_bar/R ya quedan fijados por BoundRules
+           (b_bar[y1]=b_max, R[y1]=0): no hay heredado que enlazar.
 
-        Como AN_ciclos_hat entra como COEFICIENTE (no como constante
-        aditiva), no hay un dual directo que dé su sensibilidad para el
-        corte de Benders: BendersCutManager.read_duals la calcula vía
-        teorema de la envolvente, sumando los duales de b_bar_def/
-        energy_link/arrastre ponderados por la derivada parcial analítica
-        de cada restricción respecto de AN_ciclos_hat (ver conversación de
-        diseño para la derivación completa)."""
+        2. El bilineal n_ciclos_link (n_elhd*b_bar_y*N_ciclos_y = S_y),
+           SIEMPRE (incluye el primer año -- D_y=d_y_fade lo necesita para
+           poder heredarse al año 2), reemplazado por la envolvente de
+           McCormick de la variable auxiliar w_y ~= b_bar_y*N_ciclos_y
+           (doc sec. 3.3). Las cotas [N_L,N_U] se recalculan por bloque
+           (_compute_n_ciclos_bounds, greedy) y se usan tanto como
+           coeficientes de la envolvente como para re-acotar la propia Var
+           N_ciclos -- doc sec. 10 / implementacion_descomposicion_carga_
+           ob.md sec. 10: "recalcular la cota con el B_y del año, o el
+           big-M queda flojo y debilita los cortes".
+
+        Con esto el subproblema anual es MILP puro (doc sec. 3.3, ultimo
+        parrafo): el mecanismo generico de duales de cuts.py trata "D"
+        igual que "H", sin necesidad de teorema de la envolvente."""
         if self.mine_system.battery_degradation is None:
             return
         y = self.year
 
         N_L, N_U = self._compute_n_ciclos_bounds(model)
-        an_ciclos_max = N_U * len(self.time_series.years)
+        model.N_ciclos[y].setlb(N_L)
+        model.N_ciclos[y].setub(N_U)
 
-        model.AN_ciclos_hat = pyo.Param(initialize=0.0, mutable=True)
+        B_L = value(model.B_L)
+        B_U = value(model.B_U)
 
-        model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(N_L, N_U))
-        model.AN_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, an_ciclos_max))
-        model.NB = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, N_U))
-
-        # B_y = b_max - gamma*AN_ciclos_hat + gamma*AN_ciclos_hat*R_y --
-        # Param x Var, lineal exacto (AN_ciclos_hat es coeficiente, no Var).
-        model.b_bar_def = pyo.Constraint(expr=(
-            model.b_bar[y] == model.b_max_fleet
-            - model.gamma_coef * model.AN_ciclos_hat
-            + model.gamma_coef * model.AN_ciclos_hat * model.R[y]
+        # w_deg ~= b_bar[y] * N_ciclos[y] -- envolvente convexa de
+        # McCormick (doc sec. 3.3), reemplaza el producto bilineal exacto.
+        model.w_deg = pyo.Var(domain=pyo.NonNegativeReals)
+        model.mccormick_lb1 = pyo.Constraint(expr=(
+            model.w_deg >= N_L * model.b_bar[y] + B_L * model.N_ciclos[y] - N_L * B_L
+        ))
+        model.mccormick_lb2 = pyo.Constraint(expr=(
+            model.w_deg >= N_U * model.b_bar[y] + B_U * model.N_ciclos[y] - N_U * B_U
+        ))
+        model.mccormick_ub1 = pyo.Constraint(expr=(
+            model.w_deg <= N_U * model.b_bar[y] + B_L * model.N_ciclos[y] - N_U * B_L
+        ))
+        model.mccormick_ub2 = pyo.Constraint(expr=(
+            model.w_deg <= N_L * model.b_bar[y] + B_U * model.N_ciclos[y] - N_L * B_U
+        ))
+        # n_elhd * w_deg = S_y -- version lineal (McCormick) de n_ciclos_link.
+        model.mccormick_energy = pyo.Constraint(expr=(
+            model.n_elhd_bd * model.w_deg == model.S[y]
         ))
 
-        # NB_y := R_y * N_ciclos_y -- unico big-M binaria x continua.
-        model.nb_upper_R = pyo.Constraint(expr=model.NB[y] <= N_U * model.R[y])
-        model.nb_lower_R = pyo.Constraint(expr=model.NB[y] >= N_L * model.R[y])
-        model.nb_upper_cum = pyo.Constraint(expr=model.NB[y] <= model.N_ciclos[y] - N_L * (1 - model.R[y]))
-        model.nb_lower_cum = pyo.Constraint(expr=model.NB[y] >= model.N_ciclos[y] - N_U * (1 - model.R[y]))
+        first_year = self.bound_rules._first_year()
+        if y == first_year:
+            # Condicion de borde (doc sec. 2, "Con condición de borde en
+            # y_1"): b_bar[y1]/R[y1] ya fijados por BoundRules, no hay
+            # D_hat que enlazar. Igual se registra "D" en state_links (sin
+            # hat/prev) para que extract_state() reporte D[y1] -- el año 2
+            # lo necesita como D_hat heredado (ver set_heritage).
+            self.state_links.append({
+                "state": "D", "state_var": "D", "hat": None, "prev": None,
+                "index_set": None, "kind": "simple",
+            })
+            return
 
-        # n_elhd * B_y * N_ciclos_y = S_y (forma producto para evitar la
-        # division, ec. 20 reescrita) -- lineal en las variables de
-        # decision (N_ciclos_y, NB_y) porque AN_ciclos_hat es coeficiente.
-        model.energy_link = pyo.Constraint(expr=(
-            model.n_elhd_bd * model.b_max_fleet * model.N_ciclos[y]
-            - model.n_elhd_bd * model.gamma_coef * model.AN_ciclos_hat * model.N_ciclos[y]
-            + model.n_elhd_bd * model.gamma_coef * model.AN_ciclos_hat * model.NB[y]
-            == model.S[y]
-        ))
-
-        # AN_ciclos_y = (1-R_y)*AN_ciclos_hat + N_ciclos_y -- Param x Var,
-        # lineal exacto.
-        model.arrastre = pyo.Constraint(expr=(
-            model.AN_ciclos[y] == model.AN_ciclos_hat * (1 - model.R[y]) + model.N_ciclos[y]
+        model.D_hat = pyo.Param(initialize=0.0, mutable=True)
+        model.D_prev = pyo.Var(domain=pyo.NonNegativeReals, bounds=(0, B_U))
+        model.link_D = pyo.Constraint(expr=model.D_prev == model.D_hat)
+        model.b_y_link_local = pyo.Constraint(expr=(
+            model.b_bar[y] <= model.D_prev + model.replace_capacity_fraction * model.b_max_fleet * model.R[y]
         ))
 
         self.state_links.append({
-            "state": "AN_ciclos", "state_var": "AN_ciclos",
-            "hat": "AN_ciclos_hat", "index_set": None,
-            "kind": "degradation",
+            "state": "D", "state_var": "D",
+            "hat": "D_hat", "prev": "D_prev", "index_set": None,
+            "kind": "simple",
         })
+
+    def mccormick_residual(self):
+        """Validacion obligatoria (doc sec. 3.4): residuo del bilineal
+        EXACTO evaluado en la solucion optima de la relajacion McCormick --
+        N_ciclos_y*b_bar_y - S_y/n_elhd. Cero si McCormick resulto exacto
+        en el optimo (caso tipico: uno de b_bar_y/N_ciclos_y queda pegado a
+        una de sus cotas); un residuo grande indica que conviene refinar
+        (piecewise McCormick, doc sec. 3.5) o pasar al Camino B
+        (Lagrangeano)."""
+        if self.mine_system.battery_degradation is None:
+            return None
+        y = self.year
+        n_ciclos_val = value(self.model.N_ciclos[y], exception=False)
+        b_bar_val = value(self.model.b_bar[y], exception=False)
+        s_val = value(self.model.S[y], exception=False)
+        if n_ciclos_val is None or b_bar_val is None or s_val is None:
+            return None  # bloque aun no resuelto
+        n_elhd = value(self.model.n_elhd_bd)
+        return n_ciclos_val * b_bar_val - s_val / n_elhd
 
     def _add_state_linking(self, model):
         # prev_bound: mismo tope fisico que ya usa la restriccion

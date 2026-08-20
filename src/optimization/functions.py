@@ -9,9 +9,20 @@ from pyomo.environ import quicksum, value
 class OptRules(object):
 
     def __init__(self, mine_system, time_series, autonomous_mode=False,
-                 years_override=None, exogenous_stations=None):
+                 years_override=None, exogenous_stations=None,
+                 mccormick_degradation=False):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Camino A (McCormick) aplicado al MONOLITICO completo (ver
+        # degradacion_descomposicion_mccormick.md sec. 3): si True, el
+        # bilineal n_ciclos_link se reemplaza por su envolvente convexa
+        # (mismo bloque que ya usa YearBlockBuilder para el descompuesto,
+        # ver compute_n_ciclos_bounds mas abajo) en vez de resolverse como
+        # restriccion cuadratica no convexa con Gurobi NonConvex=2. Sin
+        # efecto si is_decomposed_block=True (year_block.py ya construye
+        # su propio bloque McCormick, independiente de este flag) ni si el
+        # escenario no tiene hoja BatteryDegradation.
+        self.mccormick_degradation = mccormick_degradation
         # Escenario DET autonomo: durante la colacion el LHD puede ademas
         # operar (no solo cargar o estar detenido). Ver OptSets.build_sets.
         self.autonomous_mode = autonomous_mode
@@ -521,6 +532,97 @@ class OptParameters(OptRules):
         model.discount_rate = pyo.Param(initialize=(bd.get_discount_rate() if bd is not None else 0.0), mutable=True)
 
 
+def compute_n_ciclos_bounds(model, year, time_series):
+    """Cotas [N_L, N_U] de N_ciclos_y PARA UN AÑO DADO, validas tanto para
+    un bloque descompuesto (model.years = {year}) como para el monolitico
+    completo (model.years = todo el horizonte) -- ninguno de los sets que
+    usa (ZCHARGE_INDEX, Y_INDEX, days, time_intervals_set) necesita
+    filtrado adicional: ZCHARGE_INDEX no esta indexado por año (solo
+    (estacion, elhd)) y Y_INDEX/nodes_set se filtran explicitamente por
+    `year` mas abajo. N_L es la cobertura minima fraccionaria del target
+    de produccion (cota valida para CUALQUIER solucion factible); N_U es
+    la cobertura entera greedy con margen de seguridad. Usada tanto por
+    year_block.py (Camino A descompuesto) como por ConstraintRules
+    (Camino A aplicado al monolitico completo, ver
+    build_mccormick_degradation_block) -- recalcular por año, no reusar
+    una cota global, o el big-M/envolvente de McCormick queda flojo (ver
+    degradacion_descomposicion_mccormick.md sec. 10)."""
+    y = year
+    B_L = value(model.B_L)
+    B_U = value(model.B_U)
+    n_elhd = value(model.n_elhd_bd)
+    N_U_SAFETY_MARGIN = 1.10
+
+    def _greedy_min_cost_fractional(nodes_sorted, total_target):
+        remaining = total_target
+        energy = 0.0
+        for ratio, ppa, ub_j, e_j in nodes_sorted:
+            if remaining <= 0:
+                break
+            tomar = min(ub_j * ppa, remaining)
+            energy += tomar * ratio
+            remaining -= tomar
+        return energy
+
+    def _greedy_min_cost_integer(nodes_sorted, total_target):
+        remaining = total_target
+        energy = 0.0
+        for ratio, ppa, ub_j, e_j in nodes_sorted:
+            if remaining <= 0:
+                break
+            visits = min(ub_j, math.ceil(remaining / ppa))
+            energy += visits * e_j
+            remaining -= visits * ppa
+        return energy
+
+    node_lhd_pairs = {}
+    for (i2, j2, y2, d2, t2) in model.Y_INDEX:
+        node_lhd_pairs.setdefault((y2, d2, j2), []).append(i2)
+
+    e_day_low = 0.0
+    e_day_high = 0.0
+    for d in model.days:
+        nodes_info = []
+        total_target_day = 0.0
+        for j in model.nodes_set:
+            i_list = node_lhd_pairs.get((y, d, j))
+            if not i_list:
+                continue
+            elec_i_list = [i for i in i_list if i in model.elhd_set]
+            if not elec_i_list:
+                continue
+            i_j = elec_i_list[0]
+
+            prod_per_assign = (value(model.g_i[i_j]) * time_series.get_n_trips(j, i_j)
+                                * value(model.filling_factor[i_j]))
+            target = value(model.m_j[j, y])
+            ub_j = math.ceil(target / prod_per_assign) + 1
+
+            e_j = (value(model.pe_i[i_j, j]) * value(model.d_i[i_j, j])
+                   * time_series.get_n_trips(j, i_j) / value(model.eta_discharge_i[i_j]))
+
+            nodes_info.append((e_j / prod_per_assign, prod_per_assign, ub_j, e_j))
+            total_target_day += target
+
+        nodes_sorted = sorted(nodes_info, key=lambda info: info[0])
+        e_day_low += _greedy_min_cost_fractional(nodes_sorted, total_target_day)
+        e_day_high += _greedy_min_cost_integer(nodes_sorted, total_target_day)
+
+    e_year_low = e_day_low * value(model.scaling_factor_op_cost)
+    e_year_high = e_day_high * value(model.scaling_factor_op_cost) * N_U_SAFETY_MARGIN
+
+    n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
+    max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
+                            * value(model.scaling_factor_op_cost))
+
+    N_L = max(math.floor(e_year_low / (n_elhd * B_U)), 0)
+    N_U_prod = math.ceil(e_year_high / (n_elhd * B_L))
+    N_U_charger = math.ceil(max_energy_per_year / (n_elhd * B_L))
+    N_U = max(min(N_U_charger, N_U_prod), N_L)
+
+    return N_L, N_U
+
+
 class BoundRules(OptRules):
 
     def Z(self, model, i, y, d, t):
@@ -666,6 +768,21 @@ class BoundRules(OptRules):
             model.D        = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
             model.S        = pyo.Var(model.years, domain=pyo.NonNegativeReals)
             model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, n_ciclos_max))
+
+            if self.mccormick_degradation and not self.is_decomposed_block:
+                # Camino A aplicado al monolitico completo: recalcular
+                # [N_L, N_U] por año (greedy, compute_n_ciclos_bounds) en
+                # vez de dejar la cota global n_ciclos_max de arriba --
+                # necesario para que la envolvente de McCormick de
+                # ConstraintRules.build_mccormick_degradation_block quede
+                # ajustada (documento sec. 10: "recalcular con el B_y del
+                # año, o el big-M queda flojo"). El descompuesto ya hace
+                # esto por su cuenta (year_block.py), de ahi el guard
+                # not is_decomposed_block.
+                for y in model.years:
+                    N_L, N_U = compute_n_ciclos_bounds(model, y, self.time_series)
+                    model.N_ciclos[y].setlb(N_L)
+                    model.N_ciclos[y].setub(N_U)
 
             # B[y1] = b_max fijo (ec. 5: la batería parte nueva) y R[y1] = 0
             # fijo (reemplazar en y1 no tiene efecto sobre la capacidad y solo
@@ -1024,6 +1141,55 @@ class ConstraintRules(OptRules):
         cuadrática no convexa (Gurobi NonConvex=2), sin linealizar."""
         return model.N_ciclos[y] * model.b_bar[y] == model.S[y] / model.n_elhd_bd
 
+    def build_mccormick_degradation_block(self, model):
+        """Camino A (McCormick, degradacion_descomposicion_mccormick.md
+        sec. 3.3) aplicado al MONOLITICO completo: reemplaza la ec. 3
+        (n_ciclos_link, bilineal no convexa) por su envolvente convexa,
+        para TODOS los años del horizonte en una sola pasada -- mismo
+        principio que year_block.py::_add_degradation_state usa por
+        bloque, generalizado con Vars/Constraints indexadas por
+        model.years en vez de un componente escalar por año. Con esto el
+        modelo completo queda MILP puro: opt_model.py._configure_solver
+        ya no necesita activar NonConvex=2 (ver guard
+        self.mccormick_degradation ahi)."""
+        B_L = value(model.B_L)
+        B_U = value(model.B_U)
+        bounds_by_year = {
+            y: compute_n_ciclos_bounds(model, y, self.time_series) for y in model.years
+        }
+
+        # w_deg[y] ~= b_bar[y] * N_ciclos[y] -- variable auxiliar de la
+        # envolvente de McCormick (las cotas [N_L,N_U] de N_ciclos ya
+        # quedaron tightened por año en BoundRules.build_all_variables).
+        model.w_deg = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+
+        def _mccormick_lb1(m, y):
+            N_L, _ = bounds_by_year[y]
+            return m.w_deg[y] >= N_L * m.b_bar[y] + B_L * m.N_ciclos[y] - N_L * B_L
+
+        def _mccormick_lb2(m, y):
+            _, N_U = bounds_by_year[y]
+            return m.w_deg[y] >= N_U * m.b_bar[y] + B_U * m.N_ciclos[y] - N_U * B_U
+
+        def _mccormick_ub1(m, y):
+            _, N_U = bounds_by_year[y]
+            N_L, _ = bounds_by_year[y]
+            return m.w_deg[y] <= N_U * m.b_bar[y] + B_L * m.N_ciclos[y] - N_U * B_L
+
+        def _mccormick_ub2(m, y):
+            N_L, N_U = bounds_by_year[y]
+            return m.w_deg[y] <= N_L * m.b_bar[y] + B_U * m.N_ciclos[y] - N_L * B_U
+
+        def _mccormick_energy(m, y):
+            # Version lineal (McCormick) de n_ciclos_link.
+            return m.n_elhd_bd * m.w_deg[y] == m.S[y]
+
+        model.mccormick_lb1    = pyo.Constraint(model.years, rule=_mccormick_lb1)
+        model.mccormick_lb2    = pyo.Constraint(model.years, rule=_mccormick_lb2)
+        model.mccormick_ub1    = pyo.Constraint(model.years, rule=_mccormick_ub1)
+        model.mccormick_ub2    = pyo.Constraint(model.years, rule=_mccormick_ub2)
+        model.mccormick_energy = pyo.Constraint(model.years, rule=_mccormick_energy)
+
     def d_y_fade(self, model, y):
         """(ec. 4) D[y] = B[y] - gamma_coef * N_ciclos[y]: capacidad al
         final del año, degradada por los ciclos equivalentes del propio año
@@ -1094,10 +1260,27 @@ class ConstraintRules(OptRules):
 
         if self.mine_system.battery_degradation is not None:
             model.s_def         = pyo.Constraint(model.years, rule=self.s_def)
-            model.n_ciclos_link = pyo.Constraint(model.years, rule=self.n_ciclos_link)
             model.d_y_fade      = pyo.Constraint(model.years, rule=self.d_y_fade)
-            if hasattr(model, 'later_years_set'):
-                model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
+            if not self.is_decomposed_block:
+                # Modo descompuesto: n_ciclos_link (bilineal, mismo año) se
+                # reemplaza por la relajacion de McCormick en YearBlockBuilder
+                # (ver degradacion_descomposicion_mccormick.md sec. 3.3), y
+                # b_y_link (que referencia model.D[y-1], inexistente en un
+                # bloque de un solo año) se reemplaza por la restriccion
+                # local b_y_link_local sobre el parametro heredado D_hat
+                # (ver year_block.py::_add_degradation_state).
+                if self.mccormick_degradation:
+                    # Camino A aplicado al monolitico completo (ver
+                    # build_mccormick_degradation_block): reemplaza
+                    # n_ciclos_link por su envolvente convexa, para TODOS
+                    # los años. b_y_link no cambia -- sigue referenciando
+                    # model.D[y-1], que SI existe en el monolitico (todos
+                    # los años estan en model.years).
+                    self.build_mccormick_degradation_block(model)
+                else:
+                    model.n_ciclos_link = pyo.Constraint(model.years, rule=self.n_ciclos_link)
+                if hasattr(model, 'later_years_set'):
+                    model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
 
         model.daily_production      = pyo.Constraint(model.years, model.days, rule=self.daily_production)
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)

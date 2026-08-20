@@ -36,7 +36,9 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
     #time_series = timeseries.Timeseries(series, [1,366], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60)
-    time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)
+    #time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)
+    #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
+    time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)  # 5 años, 1 día representativo/año
     mine_system = mine.Mine(model)
     if getattr(args, 'consumption_model', 'wp1') == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args)
@@ -73,6 +75,15 @@ def main():
         action='store_true',
         help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
     )
+    parser.add_argument(
+        '--mccormick_degradation',
+        action='store_true',
+        help='[monolithic, solo si hay hoja BatteryDegradation] linealiza el bilineal '
+             'N_ciclos*b_bar con la envolvente de McCormick (Camino A, ver '
+             'degradacion_descomposicion_mccormick.md) en vez de resolverlo como '
+             'restriccion cuadratica no convexa (Gurobi NonConvex=2). El modelo queda '
+             'MILP puro -- suele ser mucho mas rapido, a costa de una aproximacion.'
+    )
     parser.add_argument('--consumption_model', choices=['wp1', 'wp2'], default='wp1',
                          help='wp1: calculo fisico interno. wp2: consumos y tiempos precalculados desde un JSON por nodo.')
     parser.add_argument('--wp2_consumption_json', default=None,
@@ -102,6 +113,20 @@ def main():
         help='[decomposed] tolerancia de gap (UB-LB)/UB para detener.'
     )
     parser.add_argument(
+        '--solve_timelimit', type=int, default=600,
+        help='[decomposed] timelimit en segundos (Gurobi TimeLimit) para CADA '
+             'resolucion individual (forward MILP o backward LP de un año). '
+             'Default 600 (10 min); antes estaba fijo en 900 (15 min).'
+    )
+    parser.add_argument(
+        '--degradation_cut_mode', choices=['mccormick', 'lagrangean'], default='mccormick',
+        help='[decomposed, solo si hay hoja BatteryDegradation] camino usado para el '
+             'corte del año con degradacion de bateria (ver '
+             'degradacion_descomposicion_mccormick.md): mccormick (Camino A, default, '
+             'barato) o lagrangean (Camino B, fisica bilineal exacta via subgradiente, '
+             'mas caro).'
+    )
+    parser.add_argument(
         '--fixed_stations_json', default=None,
         help='[decomposed, opcional] ruta a JSON {"<year>": {"<station>": 0/1, ...}, ...} '
              'con las estaciones X fijas por año -- en modo descompuesto X es exogeno '
@@ -127,6 +152,7 @@ def main():
             init_solution_folder=args.init_solution_folder,
             relax_integrality=args.relax_integrality,
             autonomous_mode=args.autonomous_mode,
+            mccormick_degradation=args.mccormick_degradation,
         )
     else:
         if args.fixed_stations_json:
@@ -148,12 +174,15 @@ def main():
             mine_system, time_series, exogenous_stations_by_year,
             gap_tol=args.gap_tol, max_iter=args.max_iter,
             autonomous_mode=args.autonomous_mode,
-            solver_kwargs={"solvername": solver_name, "gap": gap, "timelimit": 900},
+            solver_kwargs={"solvername": solver_name, "gap": gap, "timelimit": args.solve_timelimit},
+            degradation_cut_mode=args.degradation_cut_mode,
         )
         result = solver.solve()
+        interrupted_tag = " (interrumpido con Ctrl+C)" if result.get("interrupted") else ""
         print(
-            f"NestedBenders: UB={result['ub']:.4f}  LB={result['lb']:.4f}  "
-            f"gap={result['gap']:.4%}  iteraciones={result['iterations']}"
+            f"NestedBenders{interrupted_tag}: UB={result['ub']:.4f}  LB={result['lb']:.4f}  "
+            f"gap={result['gap']:.4%}  iteraciones={result['iterations']}  "
+            f"tiempo_total={result['total_time_sec']:.1f}s"
         )
 
         om_report = solver.build_report_model(output_folder)
