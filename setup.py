@@ -113,6 +113,25 @@ def main():
              'detenido. El cambio de turno (between_shifts) sigue restringido '
              'a cargar-o-detenido en ambos modos.'
     )
+    parser.add_argument(
+        '--pause_scheme',
+        choices=['det', 'dch'],
+        default='det',
+        help='det (default): esquema de pausas/detenciones DET, activo desde 2026-07-23. '
+             'dch: restaura el esquema legacy de Chuqui (maintenance_stop_all, '
+             'charge_only_meal_or_between_shifts, meal_g1/g2_no_travel) usado para '
+             'generar output/DCH_taller_julio; usar para reruns de escenarios DCH '
+             'que deban ser comparables con ese baseline.'
+    )
+    parser.add_argument(
+        '--charge_window',
+        choices=['restringida', 'libre'],
+        default='restringida',
+        help='Solo aplica con --pause_scheme dch. restringida (default): solo se '
+             'puede cargar durante colacion/entre-turnos (comportamiento historico). '
+             'libre: sin esa restriccion, se puede cargar en cualquier momento salvo '
+             'durante mantencion. Reconstruye output/DCH_taller_julio/.../Carga_libre.'
+    )
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
@@ -129,6 +148,8 @@ def main():
         init_solution_folder=args.init_solution_folder,
         relax_integrality=args.relax_integrality,
         autonomous_mode=args.autonomous_mode,
+        pause_scheme=args.pause_scheme,
+        charge_window=args.charge_window,
     )
 
 

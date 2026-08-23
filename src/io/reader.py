@@ -1,5 +1,7 @@
+import os
+import re
 from os.path import exists, join, basename, dirname, getmtime
-from configparser import ConfigParser
+from configparser import ConfigParser, Error as ConfigParserError
 from pandas import read_excel
 import pandas as pd
 import numpy as np
@@ -181,41 +183,53 @@ class Series(Reader):
                 return False
         return True
 
-    def check_same_file(self, location):
-        self.parser.read(join(self.dirname, self.conf))
-        if 'meta' in self.parser:
-            has_option = self.parser.has_option('meta', self.meta_name)
-            if has_option:
-                value = self.parser.get('meta', self.meta_name)
-                if float(value) == getmtime(location):
-                    return True
-                return False
-            else:
-                self.create_config_file()
-                return False
-        else:
-            self.create_config_file()
-            return False
+    def _read_config_safe(self):
+        """Lee series.ini en self.parser, tolerando un archivo corrupto.
 
-    def create_config_file(self):
-        file = open(join(self.dirname, self.conf), 'w')
-        if not 'meta' in self.parser:
+        --parallel_days lanza muchos procesos que construyen Series() para
+        el mismo data_folder al mismo tiempo; si dos procesos leen/escriben
+        series.ini de forma concurrente el archivo puede quedar mal formado
+        (ver _write_config_atomic). En vez de propagar la excepcion y abortar
+        toda la corrida, un parseo fallido se trata igual que un archivo
+        vacio/inexistente: se recrea limpio en la proxima escritura.
+        """
+        self.parser = ConfigParser()
+        try:
+            self.parser.read(join(self.dirname, self.conf))
+        except ConfigParserError:
+            self.parser = ConfigParser()
+        if 'meta' not in self.parser:
             self.parser.add_section('meta')
 
-        self.parser.set('meta', self.meta_name, '0')
-        self.parser.write(file)
-        file.close()
+    def _write_config_atomic(self):
+        """Escribe series.ini via archivo temporal + os.replace (atomico en
+        Windows y POSIX), para que un lector concurrente nunca vea un archivo
+        a medio escribir. El nombre temporal incluye el PID para que dos
+        procesos no trunquen el mismo archivo temporal entre si."""
+        path = join(self.dirname, self.conf)
+        tmp_path = f'{path}.tmp.{os.getpid()}'
+        with open(tmp_path, 'w') as file:
+            self.parser.write(file)
+        os.replace(tmp_path, path)
+
+    def check_same_file(self, location):
+        self._read_config_safe()
+        if not self.parser.has_option('meta', self.meta_name):
+            return False
+        value = self.parser.get('meta', self.meta_name)
+        try:
+            return float(value) == getmtime(location)
+        except ValueError:
+            return False
 
     def update_state(self, value):
-        self.parser.read(join(self.dirname, self.conf))
-        file = open(join(self.dirname, self.conf), 'w')
+        self._read_config_safe()
         self.parser.set('meta', self.meta_name, value)
-        self.parser.write(file)
-        file.close()
+        self._write_config_atomic()
 
     def get_excel_name(self, location):
         end = location.find('.xlsx')
-        start = location.rfind('\\') + 1
+        start = max(location.rfind('\\'), location.rfind('/')) + 1
         name = location[start:end]
         return name
 
@@ -223,7 +237,12 @@ class Series(Reader):
         excel_name = self.get_excel_name(location)
         base_name = 'time_creation'
         meta_name = f'{base_name}_{excel_name}'
-        return meta_name
+        # Sanitiza: configparser usa ':' y '=' como delimitadores clave-valor,
+        # asi que una ruta absoluta (C:\...) en la clave corrompe el archivo
+        # al reescribirlo. Ademas normaliza separadores para que la misma
+        # ruta invocada con '/' o '\' (relativa o absoluta) produzca siempre
+        # la misma clave de cache.
+        return re.sub(r'[^0-9a-zA-Z_]+', '_', meta_name.lower())
 
 
 class Setting(object):

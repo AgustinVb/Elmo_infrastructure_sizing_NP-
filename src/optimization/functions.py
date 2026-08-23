@@ -8,7 +8,7 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system, time_series, daily_target_override=None, autonomous_mode=False):
+    def __init__(self, mine_system, time_series, daily_target_override=None, autonomous_mode=False, pause_scheme='det', charge_window='restringida'):
         self.mine_system = mine_system
         self.time_series = time_series
         # Override opcional del target agregado de daily_production por dia,
@@ -22,6 +22,22 @@ class OptRules(object):
         # (between_shifts) siempre restringe a cargar o detenido, en ambos
         # modos.
         self.autonomous_mode = autonomous_mode
+        # Esquema de pausas/detenciones a aplicar en ConstraintRules.build_all_constraints:
+        # 'det' (default, activo sin flag desde 2026-07-23) = esquema DET unificado
+        # (det_stop_all + charge_only_meal_or_between_shifts_det).
+        # 'dch' = restaura el esquema legacy de Chuqui (maintenance_stop_all,
+        # maint_no_charge, charge_only_meal_or_between_shifts, meal_g1/g2_no_travel)
+        # usado para generar output/DCH_taller_julio, necesario para que reruns de
+        # escenarios DCH sigan siendo comparables con ese baseline.
+        self.pause_scheme = pause_scheme
+        # Solo aplica cuando pause_scheme == 'dch'. 'restringida' (default) =
+        # comportamiento historico, carga solo durante colacion/entre-turnos
+        # (charge_only_meal_or_between_shifts). 'libre' = sin esa restriccion,
+        # se puede cargar en cualquier momento salvo durante mantencion
+        # (maintenance_stop_all/maint_no_charge siguen activas). Reconstruye
+        # el esquema usado para output/DCH_taller_julio/.../Carga_libre
+        # (validado contra ese baseline, -0.55% de diferencia total).
+        self.charge_window = charge_window
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -697,8 +713,8 @@ class ConstraintRules(OptRules):
                            * pyo_value(model.filling_factor[i_rep]))
 
         target = pyo_value(model.m_j[j, d])
-        lb = math.floor(target / prod_per_assign) 
-        ub = math.ceil(target / prod_per_assign) 
+        lb = math.floor(target / prod_per_assign) - 1
+        ub = math.ceil(target / prod_per_assign)  + 1 
 
         visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
 
@@ -966,7 +982,14 @@ class ConstraintRules(OptRules):
     
     def build_all_constraints(self, model):
         model.state_unique_elhd                      = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_between_shifts_det_set, rule=self.between_shifts_elhd)
+        # Ventana de "entre turnos": bajo esquema DCH usa el set legacy (sin
+        # union con DET); bajo DET (default) usa el set especifico DET.
+        between_shifts_set = (
+            model.time_intervals_between_shifts_set
+            if self.pause_scheme == 'dch'
+            else model.time_intervals_between_shifts_det_set
+        )
+        model.between_shifts_elhd                    = pyo.Constraint(model.elhd_set, model.days, between_shifts_set, rule=self.between_shifts_elhd)
 
         model.battery_soc                       = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower =                     pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -1016,16 +1039,20 @@ class ConstraintRules(OptRules):
         model.production         = pyo.Constraint( model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, d, t: self.interval_extraction_M(m, i, j, d, t))
 
-        #Detenciones DCH
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        #model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        #model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
-        #model.charge_only_meal_or_between_shifts = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts)
-        #
-        #Detenciones DET
-        model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
+        #Detenciones: esquema seleccionado por self.pause_scheme ('dch' o 'det')
+        if self.pause_scheme == 'dch':
+            model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+            model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+            model.maintenance_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+            model.maint_no_charge      = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+            # 'restringida' (default): solo se puede cargar en colacion/entre-turnos.
+            # 'libre': sin esa restriccion (maintenance_stop_all/maint_no_charge
+            # arriba siguen prohibiendo cargar durante mantencion).
+            if self.charge_window == 'restringida':
+                model.charge_only_meal_or_between_shifts = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts)
+        else:
+            model.det_stop_all = pyo.Constraint(model.elhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+            model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
 class ObjectiveRules(OptRules):
 

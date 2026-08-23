@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, fixed_infra=None, daily_target_override=None, autonomous_mode=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, fixed_infra=None, daily_target_override=None, autonomous_mode=False, pause_scheme='det', charge_window='restringida'):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -40,10 +40,15 @@ class OptModel(object):
         # Escenario DET autonomo: durante la colacion el LHD puede ademas
         # operar (no solo cargar o estar detenido). Ver OptSets.build_sets.
         self.autonomous_mode  = autonomous_mode
+        # 'det' (default) o 'dch' (esquema legacy Chuqui). Ver
+        # ConstraintRules.build_all_constraints / OptRules.__init__.
+        self.pause_scheme     = pause_scheme
+        # Solo aplica bajo pause_scheme='dch'. Ver OptRules.__init__.
+        self.charge_window    = charge_window
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override, pause_scheme=pause_scheme, charge_window=charge_window)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()

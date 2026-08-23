@@ -220,7 +220,7 @@ def compute_master_daily_targets(full_model: Reader, series: Series, lhds_per_st
 def run_macrobloque(full_model, series, station_name, lhd_names, node_names,
                      days, delta_t, gap, solver_name, output_folder, timelimit,
                      daily_target_override=None, consumption_model='wp1', wp2_consumption_json=None,
-                     autonomous_mode=False):
+                     autonomous_mode=False, pause_scheme='det', charge_window='restringida'):
     mine_system = build_macrobloque_mine(full_model, lhd_names, station_name, node_names)
 
     time_series = timeseries.Timeseries(series, days, delta_t)
@@ -239,6 +239,8 @@ def run_macrobloque(full_model, series, station_name, lhd_names, node_names,
         timelimit=timelimit,
         daily_target_override=daily_target_override,
         autonomous_mode=autonomous_mode,
+        pause_scheme=pause_scheme,
+        charge_window=charge_window,
     )
 
 
@@ -295,7 +297,7 @@ def solve_macrobloque_day(job):
     (data_folder, model_name, series_name, station_name, lhd_names, node_names,
      day, total_n_days, delta_t, gap, solver_name, timelimit, output_folder,
      fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json,
-     autonomous_mode) = job
+     autonomous_mode, pause_scheme, charge_window) = job
 
     full_model = Reader(join(data_folder, model_name), start_in=1)
     series = _build_series_with_retry(join(data_folder, series_name))
@@ -326,6 +328,8 @@ def solve_macrobloque_day(job):
         threads=threads,
         daily_target_override=daily_target_override,
         autonomous_mode=autonomous_mode,
+        pause_scheme=pause_scheme,
+        charge_window=charge_window,
     )
 
     return {
@@ -337,7 +341,8 @@ def solve_macrobloque_day(job):
 
 
 def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, days, master_targets,
-                                     consumption_model='wp1', wp2_consumption_json=None):
+                                     consumption_model='wp1', wp2_consumption_json=None, pause_scheme='det',
+                                     charge_window='restringida'):
     delta_t = 8 / 60
     gap = 1 / 100
     n_jobs = len(lhds_per_station) * len(days)
@@ -355,7 +360,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
             output_folder, fixed_infra, threads_per_worker,
             master_targets[station_name][day],
             consumption_model, wp2_consumption_json,
-            args.autonomous_mode,
+            args.autonomous_mode, pause_scheme, charge_window,
         )
 
     # ---- Fase 1: infraestructura libre, todas las combinaciones en paralelo ----
@@ -444,6 +449,23 @@ def main():
              'detenido. El cambio de turno (between_shifts) sigue restringido '
              'a cargar-o-detenido en ambos modos.'
     )
+    parser.add_argument(
+        '--pause_scheme',
+        choices=['det', 'dch'],
+        default='det',
+        help='det (default): esquema de pausas/detenciones DET, activo desde 2026-07-23. '
+             'dch: restaura el esquema legacy de Chuqui usado para generar '
+             'output/DCH_taller_julio; usar para reruns de escenarios DCH que deban '
+             'ser comparables con ese baseline.'
+    )
+    parser.add_argument(
+        '--charge_window',
+        choices=['restringida', 'libre'],
+        default='restringida',
+        help='Solo aplica con --pause_scheme dch. restringida (default): solo se '
+             'puede cargar durante colacion/entre-turnos. libre: sin esa restriccion '
+             '(mantencion sigue prohibiendo carga). Ver output/DCH_taller_julio/.../Carga_libre.'
+    )
     args = parser.parse_args()
 
     days = [int(d) for d in args.days.split(',')]
@@ -469,7 +491,9 @@ def main():
     if args.parallel_days and len(days) > 1:
         run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, days, master_targets,
                                          consumption_model=args.consumption_model,
-                                         wp2_consumption_json=wp2_consumption_json)
+                                         wp2_consumption_json=wp2_consumption_json,
+                                         pause_scheme=args.pause_scheme,
+                                         charge_window=args.charge_window)
         return
 
     for station_name in sorted(lhds_per_station):
@@ -484,6 +508,8 @@ def main():
             consumption_model=args.consumption_model,
             wp2_consumption_json=wp2_consumption_json,
             autonomous_mode=args.autonomous_mode,
+            pause_scheme=args.pause_scheme,
+            charge_window=args.charge_window,
         )
 
 

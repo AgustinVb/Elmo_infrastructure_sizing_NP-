@@ -55,6 +55,14 @@ def main():
         '--autonomous_mode', action='store_true',
         help='Debe coincidir con el flag usado para generar los *_stage1 existentes.'
     )
+    parser.add_argument(
+        '--pause_scheme', choices=['det', 'dch'], default='det',
+        help='Debe coincidir con el esquema usado para generar los *_stage1 existentes.'
+    )
+    parser.add_argument(
+        '--charge_window', choices=['restringida', 'libre'], default='restringida',
+        help='Debe coincidir con la ventana de carga usada para generar los *_stage1 existentes.'
+    )
     args = parser.parse_args()
 
     days = [int(d) for d in args.days.split(',')]
@@ -89,7 +97,7 @@ def main():
             output_folder, fixed_infra, threads_per_worker,
             master_targets[station_name][day],
             args.consumption_model, wp2_consumption_json,
-            args.autonomous_mode,
+            args.autonomous_mode, args.pause_scheme, args.charge_window,
         )
 
     # ---- Reusar Fase 1 ya calculada: leer N_chargers/X desde *_stage1 ----
