@@ -1108,8 +1108,15 @@ class JSONPlotter:
             month = self._rep_day_label(d)
             fig.suptitle(f"{month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
 
+            # En modo DET, matplotlib rellena las columnas de la leyenda en orden
+            # column-major: con ncol=3 sobre 6 handles ordenados como
+            # [Charge Power, Peak hours, Between Shifts, Meal, Road Clearing, Maintenance]
+            # se obtienen dos filas: arriba Charge Power/Between Shifts/Road Clearing,
+            # abajo Peak hours/Meal/Maintenance.
+            legend_ncol = 3 if self.mode == "DET" else len(handles)
+
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
-                       ncol=len(handles), fontsize=legend_fs, frameon=True)
+                       ncol=legend_ncol, fontsize=legend_fs, frameon=True)
 
             plt.tight_layout()
             fig.subplots_adjust(top=0.82)
