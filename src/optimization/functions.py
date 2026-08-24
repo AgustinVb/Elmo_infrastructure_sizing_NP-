@@ -8,7 +8,8 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system, time_series, daily_target_override=None, autonomous_mode=False):
+    def __init__(self, mine_system, time_series, daily_target_override=None, autonomous_mode=False,
+                 pause_scheme='det', swap_window='restringida'):
         self.mine_system = mine_system
         self.time_series = time_series
         # Override opcional del target agregado de daily_production por dia,
@@ -22,6 +23,18 @@ class OptRules(object):
         # (between_shifts) siempre restringe a swap o detenido, en ambos
         # modos.
         self.autonomous_mode = autonomous_mode
+        # Esquema de pausas/detenciones en ConstraintRules.build_all_constraints:
+        # 'det' (default, comportamiento actual) = det_stop_all +
+        # swap_only_meal_or_between_shifts_det. 'dch' = esquema legacy DCH
+        # (maintenance_stop_all + maint_no_swap + meal_g1/g2_no_travel),
+        # portado desde el mismo toggle en carga_on_board.
+        self.pause_scheme = pause_scheme
+        # Solo aplica con pause_scheme='dch'. 'restringida' (default): solo se
+        # puede hacer swap durante colacion/entre-turnos
+        # (swap_only_meal_or_between_shifts). 'libre': sin esa restriccion,
+        # se puede hacer swap en cualquier momento salvo mantencion
+        # (maintenance_stop_all + maint_no_swap siguen prohibiendolo ahi).
+        self.swap_window = swap_window
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -816,8 +829,8 @@ class ConstraintRules(OptRules):
                            * pyo_value(model.filling_factor[i_rep]))
 
         target = pyo_value(model.m_j[j, d])
-        lb = math.floor(target / prod_per_assign) 
-        ub = math.ceil(target / prod_per_assign)
+        lb = math.floor(target / prod_per_assign) - 1
+        ub = math.ceil(target / prod_per_assign) + 1
 
         visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
 
@@ -1050,7 +1063,16 @@ class ConstraintRules(OptRules):
         if t not in model.time_intervals_maintenance_set:
             return pyo.Constraint.Skip
         return model.Z[i, d, t] == 1
-    
+
+    def maint_no_swap(self, model, k, i, d, t):
+        """Prohibe Z_swap durante mantencion. Necesario porque
+        state_unique_elhd_swap se saltea cuando 'nodes' esta vacio, dejando
+        Z_swap sin restriccion pese a Z==1 (analogo a maint_no_charge en
+        carga_on_board)."""
+        if t not in model.time_intervals_maintenance_set:
+            return pyo.Constraint.Skip
+        return model.Z_swap[k, i, d, t] == 0
+
     def det_stop_all(self, model, i, d, t):
         """En intervalos DET (meal + maintenance + road_clearing) todos los LHD deben estar estacionados (Z = 1) o haciendo swap (Z_swap = 1)."""
         valid_k_list = [k for (k, i2) in model.ZSWAP_INDEX if i2 == i]
@@ -1258,10 +1280,17 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
+        # Ventana de "entre turnos": bajo esquema DCH usa el set legacy (sin
+        # union con DET); bajo DET (default) usa el set especifico DET.
+        between_shifts_set_swap = (
+            model.time_intervals_between_shifts_set
+            if self.pause_scheme == 'dch'
+            else model.time_intervals_between_shifts_det_set
+        )
         model.between_shifts_elhd_swap = pyo.Constraint(
             model.slhd_set,
             model.days,
-            model.time_intervals_between_shifts_det_set,
+            between_shifts_set_swap,
             rule=self.between_shifts_elhd_swap,
         )
         #model.assign_state = pyo.Constraint(
@@ -1345,21 +1374,30 @@ class ConstraintRules(OptRules):
             rule=self.daily_extraction_M,
         )
 
-        # 6) Pausas operacionales DCH
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-
-        #model.maintenance_stop_all = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.maint_stop_all,
-        #)
-        #Pausas DET
-        model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
-            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
-        )
+        # 6) Pausas operacionales: esquema seleccionado por self.pause_scheme ('dch' o 'det')
+        if self.pause_scheme == 'dch':
+            model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+            model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+            model.maintenance_stop_all = pyo.Constraint(
+                model.slhd_set,
+                model.days,
+                model.time_intervals_set,
+                rule=self.maint_stop_all,
+            )
+            model.maint_no_swap = pyo.Constraint(model.ZSWAP_DAYS_TIME, rule=self.maint_no_swap)
+            # 'restringida' (default): solo se puede hacer swap en colacion/entre-turnos.
+            # 'libre': sin esa restriccion (maintenance_stop_all/maint_no_swap
+            # arriba siguen prohibiendo swap durante mantencion).
+            if self.swap_window == 'restringida':
+                model.swap_only_meal_or_between_shifts = pyo.Constraint(
+                    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+                )
+        else:
+            #Pausas DET
+            model.det_stop_all = pyo.Constraint(model.slhd_set, model.days, model.time_intervals_set, rule=self.det_stop_all)
+            model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
+                model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
+            )
 
         # 7) Balance de potencia y generación / BESS
         model.power_balance = pyo.Constraint(model.days, model.time_intervals_set, rule=self.power_balance)

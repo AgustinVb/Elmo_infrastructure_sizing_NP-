@@ -1,0 +1,84 @@
+
+Gurobi 12.0.3 (win64) logging started Mon Aug 24 00:34:34 2026
+
+Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_agosto\Costo_variable\Swap_restringido\Swap_variable_3estaciones_640kW_Descomp\station_2_d152_stage1\ELMO_log.txt"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
+
+Non-default parameters:
+TimeLimit  1200
+MIPGap  0.05
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  1
+
+Optimize a model with 26933 rows, 54733 columns and 248401 nonzeros
+Model fingerprint: 0x52ab9366
+Variable types: 2129 continuous, 52604 integer (19481 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 6e+02]
+  Objective range  [1e-02, 9e+04]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 1e+04]
+Presolve removed 25355 rows and 45295 columns
+Presolve time: 0.14s
+Presolved: 1578 rows, 9438 columns, 29810 nonzeros
+Variable types: 216 continuous, 9222 integer (8676 binary)
+Root relaxation presolved: 1578 rows, 9438 columns, 29810 nonzeros
+
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root relaxation: objective 2.649847e+05, 4421 iterations, 0.05 seconds (0.07 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 264984.732    0   41          - 264984.732      -     -    0s
+H    0     0                    343659.01227 264984.732  22.9%     -    0s
+H    0     0                    342898.70638 264984.732  22.7%     -    0s
+H    0     0                    342513.01538 264984.732  22.6%     -    0s
+H    0     0                    342269.23574 264984.732  22.6%     -    0s
+H    0     0                    342252.92292 264984.732  22.6%     -    0s
+H    0     0                    341883.54474 264984.732  22.5%     -    0s
+     0     0 264984.732    0   49 341883.545 264984.732  22.5%     -    0s
+     0     0 265294.699    0   49 341883.545 265294.699  22.4%     -    1s
+     0     0 265294.699    0   49 341883.545 265294.699  22.4%     -    1s
+     0     0 265294.699    0   33 341883.545 265294.699  22.4%     -    1s
+     0     0 265294.699    0   39 341883.545 265294.699  22.4%     -    1s
+     0     0 265294.699    0   37 341883.545 265294.699  22.4%     -    2s
+     0     0 265294.699    0   32 341883.545 265294.699  22.4%     -    2s
+     0     0 265294.699    0   33 341883.545 265294.699  22.4%     -    2s
+     0     0 265294.699    0   33 341883.545 265294.699  22.4%     -    2s
+H    0     0                    341867.23192 265294.699  22.4%     -    3s
+     0     2 265294.699    0   26 341867.232 265294.699  22.4%     -    3s
+    22    24 265294.699    5   68 341867.232 265294.699  22.4%   638    5s
+   100   102 265294.699   14   32 341867.232 265294.699  22.4%   338   10s
+   208   210 265294.699   44   20 341867.232 265294.699  22.4%   216   16s
+   297   299 265294.699   60   34 341867.232 265294.699  22.4%   169   22s
+   425   427 265294.699   52   18 341867.232 265294.699  22.4%   139   25s
+   518   517 265294.699   54   33 341867.232 265294.699  22.4%   124   30s
+   527   523 265304.335   10   70 341867.232 265304.335  22.4%   122   35s
+H  529   497                    267366.67041 265309.047  0.77%   122   36s
+
+Cutting planes:
+  Gomory: 39
+  Lift-and-project: 1
+  Flow cover: 4
+
+Explored 529 nodes (108040 simplex iterations) in 36.42 seconds (54.87 work units)
+Thread count was 1 (of 32 available processors)
+
+Solution count 10: 267367 341867 341867 ... 342899
+
+Optimal solution found (tolerance 5.00e-02)
+Best objective 2.673666704066e+05, best bound 2.653090468705e+05, gap 0.7696%

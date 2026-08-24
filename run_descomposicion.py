@@ -230,7 +230,7 @@ def compute_master_daily_targets(full_model: Reader, series: Series, lhds_per_st
 def run_macrobloque(full_model, series, station_name, lhd_names, node_names,
                      days, delta_t, gap, solver_name, output_folder, timelimit,
                      daily_target_override=None, consumption_model='wp1', wp2_consumption_json=None,
-                     autonomous_mode=False):
+                     autonomous_mode=False, pause_scheme='det', swap_window='restringida'):
     mine_system = build_macrobloque_mine(full_model, lhd_names, station_name, node_names)
 
     time_series = timeseries.Timeseries(series, days, delta_t)
@@ -249,6 +249,8 @@ def run_macrobloque(full_model, series, station_name, lhd_names, node_names,
         timelimit=timelimit,
         daily_target_override=daily_target_override,
         autonomous_mode=autonomous_mode,
+        pause_scheme=pause_scheme,
+        swap_window=swap_window,
     )
 
 
@@ -319,7 +321,7 @@ def solve_macrobloque_day(job):
     (data_folder, model_name, series_name, station_name, lhd_names, node_names,
      day, total_n_days, delta_t, gap, solver_name, timelimit, output_folder,
      fixed_infra, threads, daily_target_value, consumption_model, wp2_consumption_json,
-     series_lock, init_solution_folder, autonomous_mode) = job
+     series_lock, init_solution_folder, autonomous_mode, pause_scheme, swap_window) = job
 
     full_model = Reader(join(data_folder, model_name), start_in=1)
     series = _build_series_with_retry(join(data_folder, series_name), lock=series_lock)
@@ -352,6 +354,8 @@ def solve_macrobloque_day(job):
         init_solution_folder=init_solution_folder,
         warmstart_hard_only=True,
         autonomous_mode=autonomous_mode,
+        pause_scheme=pause_scheme,
+        swap_window=swap_window,
     )
 
     result = {'station': station_name, 'day': day}
@@ -361,9 +365,10 @@ def solve_macrobloque_day(job):
 
 
 def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, days, master_targets,
-                                     consumption_model='wp1', wp2_consumption_json=None):
+                                     consumption_model='wp1', wp2_consumption_json=None,
+                                     pause_scheme='det', swap_window='restringida'):
     delta_t = 8 / 60
-    gap = 1 / 100
+    gap = args.gap
     n_jobs = len(lhds_per_station) * len(days)
     n_workers = args.n_workers or min(os.cpu_count() or 1, n_jobs)
     # Reparte los hilos de Gurobi entre los workers concurrentes para no
@@ -389,7 +394,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
             master_targets[station_name][day],
             consumption_model, wp2_consumption_json,
             series_lock, init_solution_folder,
-            args.autonomous_mode,
+            args.autonomous_mode, pause_scheme, swap_window,
         )
 
     def run_stage(stage_jobs, stage_label):
@@ -492,6 +497,7 @@ def main():
     parser.add_argument('--solver', default='gurobi')
     parser.add_argument('--days', default='1', help='Dias significativos separados por coma, ej: 1,32,60')
     parser.add_argument('--timelimit', type=int, default=3600)
+    parser.add_argument('--gap', type=float, default=0.01, help='MIPGap objetivo para Gurobi (default: 0.01 = 1%%)')
     parser.add_argument(
         '--parallel_days', action='store_true',
         help='Ademas de por estacion, descompone por dia y resuelve cada (estacion,dia) '
@@ -527,6 +533,22 @@ def main():
              'detenido. El cambio de turno (between_shifts) sigue restringido '
              'a swap-o-detenido en ambos modos.'
     )
+    parser.add_argument(
+        '--pause_scheme',
+        choices=['det', 'dch'],
+        default='det',
+        help='det (default): esquema de pausas/detenciones DET. dch: restaura '
+             'el esquema legacy (maintenance_stop_all, maint_no_swap, '
+             'meal_g1/g2_no_travel), portado desde carga_on_board.'
+    )
+    parser.add_argument(
+        '--swap_window',
+        choices=['restringida', 'libre'],
+        default='restringida',
+        help='Solo aplica con --pause_scheme dch. restringida (default): solo '
+             'se puede hacer swap durante colacion/entre-turnos. libre: sin esa '
+             'restriccion, se puede hacer swap en cualquier momento salvo mantencion.'
+    )
     args = parser.parse_args()
 
     days = [int(d) for d in args.days.split(',')]
@@ -536,7 +558,7 @@ def main():
     lhds_per_station, nodes_per_station = get_lhds_and_nodes_per_station(series)
 
     delta_t = 8 / 60
-    gap = 1 / 100
+    gap = args.gap
 
     wp2_consumption_json = None
     if args.consumption_model == 'wp2':
@@ -552,7 +574,9 @@ def main():
     if args.parallel_days and len(days) > 1:
         run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, days, master_targets,
                                          consumption_model=args.consumption_model,
-                                         wp2_consumption_json=wp2_consumption_json)
+                                         wp2_consumption_json=wp2_consumption_json,
+                                         pause_scheme=args.pause_scheme,
+                                         swap_window=args.swap_window)
         return
 
     for station_name in sorted(lhds_per_station):
@@ -567,6 +591,8 @@ def main():
             consumption_model=args.consumption_model,
             wp2_consumption_json=wp2_consumption_json,
             autonomous_mode=args.autonomous_mode,
+            pause_scheme=args.pause_scheme,
+            swap_window=args.swap_window,
         )
 
 

@@ -358,17 +358,23 @@ class OptModel(object):
                 print("⚠️ Could not read log file for summary:", e)
 
     def __init__(self, mine_system, time_series, output_folder, y_init_path=None, init_solution_folder=None,
-                 warmstart_hard_only=False, fixed_infra=None, daily_target_override=None, autonomous_mode=False):
+                 warmstart_hard_only=False, fixed_infra=None, daily_target_override=None, autonomous_mode=False,
+                 pause_scheme='det', swap_window='restringida'):
         self.output_folder   = output_folder
         self.time_series     = time_series
         self.mine_system     = mine_system
         # Escenario DET autonomo: durante la colacion el LHD puede ademas
         # operar (no solo hacer swap o estar detenido). Ver OptSets.build_sets.
         self.autonomous_mode  = autonomous_mode
+        # 'det' (default) o 'dch' (esquema legacy). 'swap_window' solo aplica
+        # bajo 'dch'. Ver ConstraintRules.build_all_constraints / OptRules.__init__.
+        self.pause_scheme     = pause_scheme
+        self.swap_window      = swap_window
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, daily_target_override=daily_target_override,
+                                                 pause_scheme=pause_scheme, swap_window=swap_window)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
@@ -411,6 +417,12 @@ class OptModel(object):
         self._load_y_warmstart(y_init_path)
 
     def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False, threads=24):
+        start_time = time.time()
+        # Default seguro: si el branch de un solver no llega a fijarlo
+        # (ej. glpk, que hoy no llama opt.solve), evita un AttributeError
+        # mas abajo y en write_summary_txt (via getattr(..., None)).
+        self.solution_status = None
+        result = None
         # Log file now in output folder to avoid conflicts
         # Normalize output_folder path to avoid double backslashes
         output_folder_normalized = os.path.normpath(self.output_folder)
@@ -456,3 +468,47 @@ class OptModel(object):
             except Exception as e:
                 print(f"⚠️ Ocurrió un error inesperado: {e}")
                 self.solution_status = TerminationCondition.error
+
+        self.time_total = time.time() - start_time
+
+        # Extrae costo/gap para write_summary_txt (src/io/printer.py lee
+        # self.opt_cost_result / self.mip_gap / self.time_total por
+        # getattr(..., None); antes de este fix nunca se seteaban aca y
+        # summary.txt quedaba con "Total Cost: (not available)" incluso en
+        # corridas optimas).
+        condiciones_aceptables = (
+            TerminationCondition.optimal,
+            TerminationCondition.maxTimeLimit,
+            TerminationCondition.feasible,
+        )
+        self.opt_cost_result = None
+        if self.solution_status in condiciones_aceptables:
+            try:
+                if hasattr(model_to_solve, 'obj') and value(model_to_solve.obj) is not None:
+                    self.opt_cost_result = value(model_to_solve.obj)
+                    print(f"✅ Solution time [sec]: {self.time_total:.2f}")
+                    print(f"📊 Status: {self.solution_status}")
+                    print("💰 Operation Cost:", self.opt_cost_result)
+                else:
+                    print("⚠️ Se detuvo el proceso, pero no se encontró ninguna solución factible todavía.")
+                    self.limited_infeasible_log(model_to_solve, log_file=os.path.join(output_folder_normalized, "infeasible_log.txt"))
+            except Exception as e:
+                print(f"⚠️ No se pudo leer el valor de la función objetivo: {e}")
+        else:
+            print(f"⚠️ Termination condition: {self.solution_status}")
+            self.limited_infeasible_log(model_to_solve, timeout=60, log_file=os.path.join(output_folder_normalized, "infeasible_log.txt"))
+
+        # result.solver.relative_gap no existe con solver_io="python" (el
+        # objeto result.solver que devuelve el plugin directo de Gurobi es
+        # minimal). El gap real queda en el modelo gurobipy subyacente,
+        # expuesto por Pyomo como opt._solver_model.MIPGap tras resolver.
+        self.mip_gap = None
+        try:
+            if result is not None and getattr(result.solver, 'relative_gap', None) is not None:
+                self.mip_gap = result.solver.relative_gap
+            else:
+                solver_model = getattr(opt, '_solver_model', None)
+                if solver_model is not None:
+                    self.mip_gap = solver_model.MIPGap
+        except Exception:
+            self.mip_gap = None

@@ -12,7 +12,9 @@ class OptimizationModel(object):
                  fixed_infra=None,
                  threads=24,
                  daily_target_override=None,
-                 autonomous_mode=False):
+                 autonomous_mode=False,
+                 pause_scheme='det',
+                 swap_window='restringida'):
 
         t0 = time.time()
 
@@ -27,6 +29,8 @@ class OptimizationModel(object):
             fixed_infra=fixed_infra,
             daily_target_override=daily_target_override,
             autonomous_mode=autonomous_mode,
+            pause_scheme=pause_scheme,
+            swap_window=swap_window,
         )
         print('formulation time:', time.time() - t0)
         self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality, threads=threads)

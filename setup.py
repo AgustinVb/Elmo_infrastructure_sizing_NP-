@@ -112,6 +112,22 @@ def main():
              'detenido. El cambio de turno (between_shifts) sigue restringido '
              'a swap-o-detenido en ambos modos.'
     )
+    parser.add_argument(
+        '--pause_scheme',
+        choices=['det', 'dch'],
+        default='det',
+        help='det (default): esquema de pausas/detenciones DET. dch: restaura '
+             'el esquema legacy (maintenance_stop_all, maint_no_swap, '
+             'meal_g1/g2_no_travel), portado desde carga_on_board.'
+    )
+    parser.add_argument(
+        '--swap_window',
+        choices=['restringida', 'libre'],
+        default='restringida',
+        help='Solo aplica con --pause_scheme dch. restringida (default): solo '
+             'se puede hacer swap durante colacion/entre-turnos. libre: sin esa '
+             'restriccion, se puede hacer swap en cualquier momento salvo mantencion.'
+    )
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
@@ -131,6 +147,8 @@ def main():
         relax_integrality=args.relax_integrality,
         warmstart_hard_only=args.warmstart_hard_only,
         autonomous_mode=args.autonomous_mode,
+        pause_scheme=args.pause_scheme,
+        swap_window=args.swap_window,
     )
 
 
