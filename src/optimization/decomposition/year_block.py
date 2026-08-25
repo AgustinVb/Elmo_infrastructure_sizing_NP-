@@ -255,7 +255,7 @@ class YearBlockBuilder(object):
         ))
         # n_elhd * w_deg = S_y -- version lineal (McCormick) de n_ciclos_link.
         model.mccormick_energy = pyo.Constraint(expr=(
-            model.n_elhd_bd * model.w_deg == model.S[y]
+            model.n_elhd_bd[y] * model.w_deg == model.S[y]
         ))
 
         first_year = self.bound_rules._first_year()
@@ -300,7 +300,7 @@ class YearBlockBuilder(object):
         s_val = value(self.model.S[y], exception=False)
         if n_ciclos_val is None or b_bar_val is None or s_val is None:
             return None  # bloque aun no resuelto
-        n_elhd = value(self.model.n_elhd_bd)
+        n_elhd = value(self.model.n_elhd_bd[y])
         return n_ciclos_val * b_bar_val - s_val / n_elhd
 
     def _add_state_linking(self, model):

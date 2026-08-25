@@ -4,10 +4,20 @@
 # Salida:   /ruta/a/carpeta_con_json/plots/*.png
 
 import os
+import sys
 import json
 import argparse
 import itertools
 from typing import Dict, Any, List, Tuple, Optional
+
+# En Windows la consola suele quedar en cp1252, que no puede codificar los
+# emojis usados en los prints de progreso (ℹ️/⚠️/✔) -- eso lanzaba
+# UnicodeEncodeError y abortaba create_all_plots() a mitad de camino,
+# salteando silenciosamente los graficos que iban despues en el orden
+# (p.ej. plot_battery_degradation).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 import numpy as np
 import pandas as pd
@@ -709,6 +719,17 @@ class JSONPlotter:
                 sources.append(sorted(df["year"].dropna().unique().tolist()))
         return sorted({int(y) for lst in sources for y in lst}) if sources else [1]
 
+    # Año calendario correspondiente al índice de año 1 en modo DET (año 1 = 2033).
+    DET_CALENDAR_YEAR_BASE = 2032
+
+    def _year_label(self, y: int) -> str:
+        """Etiqueta de año para títulos: en modo DET, el año 1 del modelo
+        corresponde al año calendario 2033, el año 2 a 2034, etc. En los
+        demás modos se mantiene la etiqueta 'Y{y}' basada en el índice."""
+        if self.mode == "DET":
+            return str(self.DET_CALENDAR_YEAR_BASE + int(y))
+        return f"Y{y}"
+
     def _detect_days(self) -> List[int]:
         sources = []
         for df in [self.df_B, self.df_Y, self.df_P, self.df_C, self.df_E, self.df_M]:
@@ -1119,7 +1140,7 @@ class JSONPlotter:
                     handles.insert(1, line_price)
 
             month = self._rep_day_label(d)
-            fig.suptitle(f"Y{y} {month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
+            fig.suptitle(f"{self._year_label(y)} {month} – Total Charge Power vs Energy Price", fontsize=title_fs, y=1.06)
 
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.99),
                        ncol=len(handles), fontsize=legend_fs, frameon=True)
@@ -1408,7 +1429,7 @@ class JSONPlotter:
                 ax_task.grid(False)
 
                 month = self._rep_day_label(day)
-                fig.suptitle(f"LHD {lhd} Y{y} {month}", y=0.96, fontsize=18)
+                fig.suptitle(f"LHD {lhd} {self._year_label(y)} {month}", y=0.96, fontsize=18)
 
                 fig.savefig(os.path.join(self.plot_dir, f"SoC_vs_price_LHD-{lhd}_Y{y}_day-{day}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig)
@@ -1587,7 +1608,7 @@ class JSONPlotter:
             ax.set_xlabel("Extraction Point (j)", fontsize=12)
             
             month_label = self._rep_day_label(d)
-            ax.set_title(f"Material Extraction - All Nodes - Y{y} {month_label}",
+            ax.set_title(f"Material Extraction - All Nodes - {self._year_label(y)} {month_label}",
                         fontsize=14, pad=15)
 
             ax.grid(axis='y', linestyle=':', alpha=0.6)
@@ -1619,7 +1640,7 @@ class JSONPlotter:
             ax.set_ylabel("Total Material [t]", fontsize=13)
             ax.set_xlabel("Extraction Point (j)", fontsize=13)
             
-            ax.set_title(f"Material Extraction - Top {top_n} Nodes - Y{y} {month_label}",
+            ax.set_title(f"Material Extraction - Top {top_n} Nodes - {self._year_label(y)} {month_label}",
                         fontsize=15, pad=15)
 
             ax.grid(axis='y', linestyle=':', alpha=0.6)
@@ -1647,9 +1668,22 @@ class JSONPlotter:
             print("INFO: Faltan G_g.json o parameters.json — omitiendo perfil de capacidad solar.")
             return
 
-        # G_g: unidades instaladas por generador
-        gg_raw = gg_data.get("_1", gg_data)
-        gg: Dict[str, float] = {str(g): float(v) for g, v in gg_raw.items()} if isinstance(gg_raw, dict) else {}
+        # G_g: unidades instaladas por generador, indexadas ademas por año
+        # (esquema multi-año: g -> "y" -> año -> valor). Se guarda por año
+        # en vez de aplanar a un escalar, porque el stock instalado puede
+        # crecer año a año (ver link_gen_stock en functions.py).
+        gg_raw = gg_data.get("g", gg_data.get("_1", gg_data))
+        gg: Dict[str, Dict[int, float]] = {}
+        if isinstance(gg_raw, dict):
+            for g, v in gg_raw.items():
+                if isinstance(v, dict):
+                    year_map = v.get("y", v)
+                    try:
+                        gg[str(g)] = {int(yr): float(val) for yr, val in year_map.items()}
+                    except (TypeError, ValueError):
+                        gg[str(g)] = {}
+                else:
+                    gg[str(g)] = {y: float(v) for y in self.years}
 
         # p_max_g: potencia nominal por unidad [kW]
         p_max_raw = params_data.get("p_max_g", {})
@@ -1661,7 +1695,8 @@ class JSONPlotter:
         alpha_root = params_data.get("alpha_g", {}).get("_1", {})
 
         gen_set = [str(g) for g in params_data.get("gen_set", list(gg.keys()))]
-        active_gens = [g for g in gen_set if gg.get(g, 0.0) > 0 and p_max.get(g, 0.0) > 0]
+        active_gens = [g for g in gen_set
+                       if any(v > 0 for v in gg.get(g, {}).values()) and p_max.get(g, 0.0) > 0]
 
         if not active_gens:
             print("INFO: No hay generadores instalados — omitiendo perfil de capacidad.")
@@ -1689,7 +1724,7 @@ class JSONPlotter:
             handles = []
 
             for g in active_gens:
-                units = gg.get(g, 0.0)
+                units = gg.get(g, {}).get(y, 0.0)
                 pmax  = p_max.get(g, 0.0)
                 cap_total = units * pmax   # kW máximos instalados
 
@@ -1737,7 +1772,7 @@ class JSONPlotter:
                     )
 
             month = self._rep_day_label(d)
-            ax.set_title(f"Perfil de capacidad solar disponible — Y{y} {month}", fontsize=14)
+            ax.set_title(f"Perfil de capacidad solar disponible — {self._year_label(y)} {month}", fontsize=14)
             ax.set_xlabel("Hora", fontsize=12)
             ax.set_ylabel("Potencia [kW]", fontsize=12)
             ax.set_xlim(0, 24)
@@ -1750,7 +1785,7 @@ class JSONPlotter:
             ax.set_xticklabels(labels, rotation=45, fontsize=9, ha="right")
 
             # Anotación con potencia pico instalada
-            peak = max((gg.get(g, 0) * p_max.get(g, 0) for g in active_gens), default=0)
+            peak = max((gg.get(g, {}).get(y, 0) * p_max.get(g, 0) for g in active_gens), default=0)
             ax.axhline(peak, color="gray", linewidth=0.8, linestyle=":", alpha=0.6)
             ax.text(0.5, peak, f"  Pico inst. {peak:,.0f} kW",
                     va="bottom", ha="left", fontsize=8, color="gray", transform=ax.get_yaxis_transform())
@@ -1876,7 +1911,7 @@ class JSONPlotter:
 
             # --- decoracion ---
             month = self._rep_day_label(d)
-            ax.set_title(f"Despacho de potencia — Y{y} {month}", fontsize=14)
+            ax.set_title(f"Despacho de potencia — {self._year_label(y)} {month}", fontsize=14)
             ax.set_xlabel("Hora", fontsize=12)
             ax.set_ylabel("Potencia [kW]", fontsize=12)
             ax.set_xlim(0, 24)
@@ -1948,7 +1983,7 @@ class JSONPlotter:
                     ax2.tick_params(axis="y", labelcolor=charge_color, labelsize=10)
 
                 month = self._rep_day_label(d)
-                ax1.set_title(f"Estado de energía BESS — {h} — Y{y} {month}", fontsize=14)
+                ax1.set_title(f"Estado de energía BESS — {h} — {self._year_label(y)} {month}", fontsize=14)
                 ax1.set_xlabel("Hora", fontsize=12)
                 ax1.set_ylabel("Energía almacenada [kWh]", fontsize=12, color=bess_color)
                 ax1.tick_params(axis="y", labelcolor=bess_color, labelsize=10)

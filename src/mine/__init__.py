@@ -6,6 +6,7 @@ from src.mine.chargers import Chargers
 from src.mine.generators import Generators
 from src.mine.storage import StorageSystems
 from src.mine.degradation import BatteryDegradation
+from src.mine.fleet import FleetByYear
 
 
 class Mine(object):
@@ -60,6 +61,15 @@ class Mine(object):
             self.battery_degradation = BatteryDegradation(model['BatteryDegradation'])
         else:
             self.battery_degradation = None
+
+        # 9) Flota de LHD electricos activos por año (opcional) -- solo si
+        # la hoja 'FleetByYear' existe en el Excel. Si no existe,
+        # n_elhd_bd usa el fleet completo (len(elhd_set)) para todos los
+        # años, mismo comportamiento que antes de esta hoja.
+        if 'FleetByYear' in model.container:
+            self.fleet_by_year = FleetByYear(model['FleetByYear'])
+        else:
+            self.fleet_by_year = None
 
     # ------------------------------------------------------------------ #
     # Nodo / Layout

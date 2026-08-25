@@ -214,11 +214,13 @@ class OptSets(OptRules):
             a = start_min - base_minutes
             b = end_min - base_minutes
 
-            # Marcar intervalos t que se SOLAPAN con [a,b)
+            # Marcar el intervalo t si su PUNTO MEDIO cae dentro de [a,b).
+            # Redondea al intervalo mas cercano (error maximo dt/2 por borde)
+            # en vez de "cualquier solape cuenta" (que redondea siempre hacia
+            # arriba en ambos extremos e infla el tiempo bloqueado).
             for t in range(1, max_t + 1):
-                s = (t - 1) * dt_minutes
-                e = t * dt_minutes
-                if max(s, a) < min(e, b):
+                mid = (t - 1) * dt_minutes + dt_minutes / 2
+                if a <= mid < b:
                     indices.add(t)
 
         return sorted(indices)
@@ -550,8 +552,8 @@ def compute_n_ciclos_bounds(model, year, time_series):
     y = year
     B_L = value(model.B_L)
     B_U = value(model.B_U)
-    n_elhd = value(model.n_elhd_bd)
-    N_U_SAFETY_MARGIN = 1.10
+    n_elhd = value(model.n_elhd_bd[year])
+    N_U_SAFETY_MARGIN = 1.20
 
     def _greedy_min_cost_fractional(nodes_sorted, total_target):
         remaining = total_target
@@ -745,7 +747,17 @@ class BoundRules(OptRules):
 
             model.B_L = pyo.Param(initialize=B_L, mutable=False)
             model.B_U = pyo.Param(initialize=B_U, mutable=False)
-            model.n_elhd_bd = pyo.Param(initialize=n_elhd, mutable=False)
+            # n_elhd_bd por año: si existe la hoja 'FleetByYear' (flota
+            # activa variable, ej. ramp-up), se usa esa; si no, se
+            # mantiene el fleet nominal completo para todos los años
+            # (comportamiento previo a esta hoja). Year-indexado porque un
+            # fleet activo mas chico implica MAS ciclos equivalentes por
+            # unidad para la misma energia S[y] -- ver n_ciclos_link.
+            if self.mine_system.fleet_by_year is not None:
+                n_elhd_by_year = {y: self.mine_system.fleet_by_year.get_n_active(y) for y in model.years}
+            else:
+                n_elhd_by_year = {y: n_elhd for y in model.years}
+            model.n_elhd_bd = pyo.Param(model.years, initialize=n_elhd_by_year, mutable=False)
             # Fracción de capacidad nominal que se recupera al reemplazar la
             # batería (0.3 = 30%, constante del modelo, no un dato cargado).
             model.replace_capacity_fraction = pyo.Param(initialize=0.3, mutable=True)
@@ -758,16 +770,23 @@ class BoundRules(OptRules):
             # N_ciclos[y]*B[y] en n_ciclos_link) -- no requiere el cálculo
             # greedy ajustado que usaban las alternativas linealizadas,
             # porque aquí no se traduce en ningún bit/expansión binaria.
+            # Year-indexada por la misma razón que n_elhd_bd: con fleet
+            # activo variable, un año con menos LHD admite MAS ciclos por
+            # unidad dentro de la misma energia maxima cargable -- una cota
+            # global unica (con el fleet nominal completo) quedaria
+            # demasiado ajustada para los años de fleet chico (mismo tipo
+            # de bug que N_U_SAFETY_MARGIN, ver compute_n_ciclos_bounds).
             n_slots_per_year = len(model.ZCHARGE_INDEX) * len(model.days) * len(model.time_intervals_set)
             max_energy_per_year = (n_slots_per_year * value(model.p_charger) * value(model.delta_t)
                                     * value(model.scaling_factor_op_cost))
-            n_ciclos_max = max_energy_per_year / (n_elhd * B_L)
+            n_ciclos_max_by_year = {y: max_energy_per_year / (n_elhd_by_year[y] * B_L) for y in model.years}
 
             model.R        = pyo.Var(model.years, domain=pyo.Binary)
             model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
             model.D        = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
             model.S        = pyo.Var(model.years, domain=pyo.NonNegativeReals)
-            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, n_ciclos_max))
+            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals,
+                                      bounds=lambda m, y: (0, n_ciclos_max_by_year[y]))
 
             if self.mccormick_degradation and not self.is_decomposed_block:
                 # Camino A aplicado al monolitico completo: recalcular
@@ -1139,7 +1158,7 @@ class ConstraintRules(OptRules):
         """(ec. 3) N_ciclos[y] * B[y] == S[y] / n_elhd -- bilineal (producto
         de dos variables continuas), resuelto directo como restricción
         cuadrática no convexa (Gurobi NonConvex=2), sin linealizar."""
-        return model.N_ciclos[y] * model.b_bar[y] == model.S[y] / model.n_elhd_bd
+        return model.N_ciclos[y] * model.b_bar[y] == model.S[y] / model.n_elhd_bd[y]
 
     def build_mccormick_degradation_block(self, model):
         """Camino A (McCormick, degradacion_descomposicion_mccormick.md
@@ -1182,7 +1201,7 @@ class ConstraintRules(OptRules):
 
         def _mccormick_energy(m, y):
             # Version lineal (McCormick) de n_ciclos_link.
-            return m.n_elhd_bd * m.w_deg[y] == m.S[y]
+            return m.n_elhd_bd[y] * m.w_deg[y] == m.S[y]
 
         model.mccormick_lb1    = pyo.Constraint(model.years, rule=_mccormick_lb1)
         model.mccormick_lb2    = pyo.Constraint(model.years, rule=_mccormick_lb2)
@@ -1210,7 +1229,11 @@ class ConstraintRules(OptRules):
 
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
+        # Esquema DET activo: usa el set de entre-turnos especifico DET, no el
+        # legacy DCH (time_intervals_between_shifts_set), igual que det_stop_all
+        # y charge_only_meal_or_between_shifts_det (ver carga_on_board commit
+        # 9943fdc7a / build_all_constraints con pause_scheme='det').
+        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_det_set, rule=self.between_shifts_elhd)
 
         model.battery_soc               = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower             = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -1232,8 +1255,15 @@ class ConstraintRules(OptRules):
             model.link_charger_stock     = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
         model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
-        model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
-        model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
+        # Desactivadas: min_assign_duration (min. 2 intervalos consecutivos por
+        # asignacion Y, analogo a min_charge_duration) choca con el esquema DET
+        # (15 detenciones/dia vs 6 en DCH, huecos libres mas fragmentados) --
+        # confirmado via IIS de Gurobi que infactibiliza LH518B_7/año4/día196
+        # (state_unique_elhd + det_stop_all + production). No existen activas
+        # en carga_on_board (el baseline factible de referencia); quedan
+        # definidas pero sin registrar, igual que alli.
+        #model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
+        #model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                 = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
         model.max_installed_capacity    = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance             = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
@@ -1286,19 +1316,17 @@ class ConstraintRules(OptRules):
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, y, d, t: self.interval_extraction_M(m, i, j, y, d, t))
 
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
-        model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
+        # Esquema DCH (legacy): reemplazado por el esquema DET de abajo para
+        # el caso data/DET (ver det_stop_all / charge_only_meal_or_between_shifts_det).
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        #model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
 
-        # Esquema DET (redefinido, con base_hour y modo autonomo): definido pero
-        # NO activo todavia en esta rama -- el esquema DCH de arriba sigue siendo
-        # el que corre. Para activarlo, descomentar estas dos lineas y comentar
-        # el bloque DCH (meal_g1/g2, maintenance_stop_all, maint_no_charge,
-        # charge_only_meal_or_shift_change), igual que en carga_on_board.
-        #model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        #model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
+        # Esquema DET (redefinido, con base_hour y modo autonomo), activo.
+        model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
       
 class ObjectiveRules(OptRules):
@@ -1385,13 +1413,14 @@ class ObjectiveRules(OptRules):
         """Costo de reemplazo de batería: evento puntual del año y (no una
         anualidad recurrente, por eso no usa annuity_factor_expr). c_bat_replace
         es el costo TOTAL de UNA sola batería, por lo que se escala por la
-        cantidad de LHD eléctricos (una batería por LHD) para obtener el costo
-        de reemplazar la flota completa."""
+        cantidad de LHD eléctricos ACTIVOS ese año (n_elhd_bd[y], una batería
+        por LHD) para obtener el costo de reemplazar la flota -- no el fleet
+        nominal completo, para no cobrar el reemplazo de baterías de LHD
+        que ese año no están operando (ver FleetByYear)."""
         if self.mine_system.battery_degradation is None:
             return 0
-        n_elhd = len(model.elhd_set)
         return sum(
-            n_elhd * model.R[y] * model.c_bat_replace * self._discount_factor(model, y)
+            model.n_elhd_bd[y] * model.R[y] * model.c_bat_replace * self._discount_factor(model, y)
             for y in model.years
         )
 

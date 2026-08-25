@@ -7,11 +7,21 @@ from src.optimization.decomposition.driver import NestedBendersSolver
 import argparse, pprint
 import json
 import os
+import sys
 import pandas as pd
 from os.path import join
 import xlrd
 xlrd.xlsx.ensure_elementtree_imported(False, None)
 xlrd.xlsx.Element_has_iter = True
+
+# En Windows la consola suele quedar en cp1252, que no puede codificar los
+# emojis usados en los prints de progreso (✅/⚠️/etc.) a lo largo del
+# pipeline (opt_model.py, printer.py, ...) -- eso lanzaba UnicodeEncodeError
+# DESPUES de que Gurobi ya hubiera resuelto el modelo, abortando antes de
+# escribir cualquier resultado a disco.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def resolve_wp2_json_path(args):
@@ -34,11 +44,13 @@ def build_mine(args):
     series = Series(args.data_folder+args.series)
     #time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)  # 5 años, 4 día representativo/año
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
-    #time_series = timeseries.Timeseries(series, [1,366], 8/60)
+    #time_series = timeseries.Timeseries(series, [1,91], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60)
     #time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
-    time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)  # 5 años, 1 día representativo/año
+    #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)  # 5 años, 1 día representativo/año
+    #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186], 8/60)  # 4 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
     mine_system = mine.Mine(model)
     if getattr(args, 'consumption_model', 'wp1') == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args)
