@@ -131,12 +131,28 @@ def main():
              'Default 600 (10 min); antes estaba fijo en 900 (15 min).'
     )
     parser.add_argument(
+        '--threads', type=int, default=None,
+        help='[decomposed, solo con --solver gurobi] cota de threads (Gurobi '
+             'Threads) para CADA resolucion individual. Por defecto (sin '
+             'pasar el flag), Gurobi decide solo (tipicamente usa todos los '
+             'cores fisicos) -- en una maquina compartida con otros '
+             'usuarios activos puede convenir acotarlo.'
+    )
+    parser.add_argument(
         '--degradation_cut_mode', choices=['mccormick', 'lagrangean'], default='mccormick',
         help='[decomposed, solo si hay hoja BatteryDegradation] camino usado para el '
              'corte del año con degradacion de bateria (ver '
              'degradacion_descomposicion_mccormick.md): mccormick (Camino A, default, '
              'barato) o lagrangean (Camino B, fisica bilineal exacta via subgradiente, '
              'mas caro).'
+    )
+    parser.add_argument(
+        '--block_build_jobs', type=int, default=None,
+        help='[decomposed] procesos en paralelo para construir los bloques '
+             'anuales antes de arrancar el loop forward/backward (ver '
+             'NestedBendersSolver._build_blocks). Por defecto: min(anios, '
+             'cpus disponibles). Usar 1 para forzar construccion secuencial '
+             '(comportamiento anterior, util para debug).'
     )
     parser.add_argument(
         '--fixed_stations_json', default=None,
@@ -182,12 +198,17 @@ def main():
             # cuando se quiera forzar un layout distinto.
             exogenous_stations_by_year = None
 
+        solver_kwargs = {"solvername": solver_name, "gap": gap, "timelimit": args.solve_timelimit}
+        if args.threads is not None:
+            solver_kwargs["extra_options"] = {"Threads": args.threads}
+
         solver = NestedBendersSolver(
             mine_system, time_series, exogenous_stations_by_year,
             gap_tol=args.gap_tol, max_iter=args.max_iter,
             autonomous_mode=args.autonomous_mode,
-            solver_kwargs={"solvername": solver_name, "gap": gap, "timelimit": args.solve_timelimit},
+            solver_kwargs=solver_kwargs,
             degradation_cut_mode=args.degradation_cut_mode,
+            block_build_jobs=args.block_build_jobs,
         )
         result = solver.solve()
         interrupted_tag = " (interrumpido con Ctrl+C)" if result.get("interrupted") else ""
@@ -197,9 +218,16 @@ def main():
             f"tiempo_total={result['total_time_sec']:.1f}s"
         )
 
-        om_report = solver.build_report_model(output_folder)
-        printer = Printer(om_report, output_folder, time_series, mine_system)
-        printer.create_all_plots()
+        if result.get("best_solution") is None:
+            print(
+                "NestedBenders: no hay ninguna solucion factible que reportar "
+                "(interrumpido u horizonte roto antes de completar la primera "
+                "iteracion) -- se omite build_report_model/Printer."
+            )
+        else:
+            om_report = solver.build_report_model(output_folder)
+            printer = Printer(om_report, output_folder, time_series, mine_system)
+            printer.create_all_plots()
 
 
 if __name__ == '__main__':

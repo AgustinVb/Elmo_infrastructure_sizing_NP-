@@ -1,3 +1,4 @@
+import os
 import signal
 import sys
 import time
@@ -6,6 +7,49 @@ from src.optimization.decomposition import passes as passes_module
 from src.optimization.decomposition.year_block import YearBlockBuilder
 from src.optimization.decomposition.cuts import BendersCutManager
 from src.optimization.decomposition.passes import ForwardPass, BackwardPass
+
+# Los workers de construccion de bloques (ver _build_blocks) reciben
+# mine_system/time_series/autonomous_mode via Pool(initializer=...): en
+# 'fork' (default en Linux) eso es gratis -- initargs se hereda por
+# copy-on-write al hacer fork(), sin pasar por pickle -- asi que no importa
+# que estos objetos no sean serializables. Lo unico que SI viaja por pickle
+# entre procesos son los payloads por tarea (year, is_last_year,
+# exogenous_stations: livianos) y el YearBlockBuilder ya construido que
+# vuelve al proceso principal. Ese YearBlockBuilder contiene reglas Pyomo
+# armadas con lambdas/closures locales (year_block.py, functions.py) que el
+# modulo estandar `pickle` no soporta -- de ahi que este modulo dependa de
+# `multiprocess` (mismo API que la libreria estandar `multiprocessing`, pero
+# serializa con `dill`, que si soporta closures) en vez de
+# `concurrent.futures`/`multiprocessing` a secas.
+#
+# El limite de recursion default de Python (1000) no alcanza para que dill
+# recorra el grafo de objetos de un YearBlockBuilder ya construido (Pyomo
+# encadena referencias component -> parent_block -> model -> ... a lo largo
+# de miles de ConstraintData/VarData) -- confirmado con un caso real: revienta
+# con RecursionError en el paso de retorno worker -> proceso principal
+# ("Error sending result", ver commit que agrego esto) y 5000 alcanzaba para
+# el bloque de prueba. 10000 deja margen para escenarios con bloques mas
+# grandes (mas dias representativos/año). Hace falta subirlo en AMBOS lados:
+# el worker serializa (dill.dumps) el resultado antes de devolverlo, y el
+# proceso principal lo deserializa (dill.loads) al recibirlo.
+_RECURSION_LIMIT_FOR_DILL = 10000
+_worker_state = {}
+
+
+def _init_year_block_worker(mine_system, time_series, autonomous_mode):
+    sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
+    _worker_state["mine_system"] = mine_system
+    _worker_state["time_series"] = time_series
+    _worker_state["autonomous_mode"] = autonomous_mode
+
+
+def _build_year_block_task(payload):
+    year, is_last_year, exogenous_stations = payload
+    return YearBlockBuilder(
+        _worker_state["mine_system"], _worker_state["time_series"], year=year,
+        is_last_year=is_last_year, exogenous_stations=exogenous_stations,
+        autonomous_mode=_worker_state["autonomous_mode"],
+    )
 
 
 def infer_exogenous_stations(mine_system, time_series):
@@ -34,7 +78,8 @@ class NestedBendersSolver(object):
 
     def __init__(self, mine_system, time_series, exogenous_stations_by_year=None,
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
-                 strengthen=False, degradation_cut_mode="mccormick", lagrangean_kwargs=None):
+                 strengthen=False, degradation_cut_mode="mccormick", lagrangean_kwargs=None,
+                 block_build_jobs=None):
         """
         :param exogenous_stations_by_year: dict {year: {k: 0/1}} -- X fijo
             por año y estacion (documento sec. 2.1; ver decision de diseño
@@ -68,6 +113,17 @@ class NestedBendersSolver(object):
         :param lagrangean_kwargs: dict opcional con max_iter/eps_gap/
             eps_stall para el subgradiente del Camino B (ver
             BackwardPass._lagrangean_subgradient_cut).
+        :param block_build_jobs: cuantos procesos usar para construir los
+            bloques anuales EN PARALELO antes de arrancar el loop forward/
+            backward (ver _build_blocks). None (default) = min(años,
+            cpus disponibles). 1 = secuencial (comportamiento original,
+            util para debug ya que corre en el proceso principal). Los
+            bloques son independientes entre si (cada uno solo depende de
+            mine_system/time_series/su propio año), por eso son
+            embarrassingly parallel -- construirlos es Pyomo puro-Python
+            (miles de llamadas a `rule=` por indice), CPU-bound y de un
+            solo hilo cada uno, sin nada que solapar con el forward/
+            backward que viene despues.
         """
         self.mine_system = mine_system
         self.time_series = time_series
@@ -82,15 +138,7 @@ class NestedBendersSolver(object):
         )
         self.autonomous_mode = autonomous_mode
 
-        self.blocks = [
-            YearBlockBuilder(
-                mine_system, time_series, year=y,
-                is_last_year=(y == self.years[-1]),
-                exogenous_stations=self.exogenous_stations_by_year[y],
-                autonomous_mode=autonomous_mode,
-            )
-            for y in self.years
-        ]
+        self.blocks = self._build_blocks(block_build_jobs)
 
         self.cut_manager = BendersCutManager()
         self.forward_pass = ForwardPass(self.blocks, solver_kwargs=self.solver_kwargs)
@@ -106,6 +154,45 @@ class NestedBendersSolver(object):
         self.best_full_solution = None
         self.gap_history = []
         self.iterations_run = 0
+
+    def _build_blocks(self, block_build_jobs):
+        """Construye self.blocks (un YearBlockBuilder por año). Secuencial
+        si block_build_jobs == 1 o hay un solo año; en paralelo (Pool de
+        `multiprocess`) en caso contrario -- ver comentario junto a
+        _worker_state/_init_year_block_worker/_build_year_block_task mas
+        arriba sobre por que hace falta `multiprocess` (serializa con dill)
+        en vez de `multiprocessing`/`concurrent.futures` a secas."""
+        tasks = [
+            (y, y == self.years[-1], self.exogenous_stations_by_year[y])
+            for y in self.years
+        ]
+
+        n_jobs = block_build_jobs
+        if n_jobs is None:
+            n_jobs = min(len(self.years), os.cpu_count() or 1)
+
+        if n_jobs <= 1 or len(self.years) <= 1:
+            return [
+                YearBlockBuilder(
+                    self.mine_system, self.time_series, year=year,
+                    is_last_year=is_last_year, exogenous_stations=exogenous_stations,
+                    autonomous_mode=self.autonomous_mode,
+                )
+                for year, is_last_year, exogenous_stations in tasks
+            ]
+
+        import multiprocess
+
+        # El proceso principal tambien deserializa (dill.loads) cada
+        # resultado dentro de pool.map() -- necesita el mismo limite alto
+        # que el worker (ver _RECURSION_LIMIT_FOR_DILL mas arriba).
+        sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
+
+        with multiprocess.Pool(
+            processes=n_jobs, initializer=_init_year_block_worker,
+            initargs=(self.mine_system, self.time_series, self.autonomous_mode),
+        ) as pool:
+            return pool.map(_build_year_block_task, tasks)
 
     def solve(self, verbose=True):
         """Documento sec. 7-8. Ctrl+C (SIGINT) en cualquier punto -- en
