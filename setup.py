@@ -34,7 +34,10 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [1,91,181,271], 8/60)
     #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60) #12 dias significativos
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
-    time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
+    #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
+    time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    #time_series = timeseries.Timeseries(series, [1, 91], 8/60)
+    #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821], 8/60)  # PRUEBA: 3 años, 2 días representativos/año
     mine_system = mine.Mine(model)
     if args.consumption_model == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args)

@@ -475,6 +475,24 @@ class OptParameters(OptRules):
         model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
         model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.battery_cost = pyo.Param(initialize=self.mine_system.chargers.get_battery_cost(), mutable=False)
+        # Cantidad de LHD swap efectivamente activos (con al menos un nodo
+        # asignado) en cada año, segun NodeAssignment (fuente ya validada de
+        # la rampa de flota -- ver hoja FleetByYear). Usado en n_battery_fleet_def
+        # (ConstraintRules) para la flota fisica de baterias a degradar/
+        # reemplazar: antes se usaba len(model.slhd_set) (roster completo,
+        # constante en todos los años), lo que sobrestimaba las baterias
+        # instaladas en los años en que todavia no esta activo todo el roster.
+        _na_active = self.time_series.mapper['NodeAssignment']
+        _slhd_names = set(model.slhd_set)
+        model.n_active_slhd = pyo.Param(
+            model.years,
+            initialize={
+                y: len(set(_na_active.loc[_na_active['year'] == y, 'elhd_name']) & _slhd_names)
+                for y in model.years
+            },
+            within=pyo.NonNegativeIntegers,
+            mutable=False,
+        )
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
         model.demand_charge_coef = pyo.Param(initialize=12 * 10, mutable=True)
         #Parametros estaciones de carga
@@ -750,7 +768,12 @@ class BoundRules(OptRules):
         # por eso (mejor comportamiento práctico de Gurobi con esta
         # instancia, no por una relajación matemáticamente más ajustada).
         if self.mine_system.battery_degradation is not None:
-            n_elhd = len(list(model.slhd_set))
+            # Flota de LHD swap ACTIVA por año (no el roster completo, ver
+            # model.n_active_slhd en OptParameters) -- usada para las cotas
+            # del tamaño físico de la flota de baterías por año.
+            n_elhd_by_year = {y: int(value(model.n_active_slhd[y])) for y in model.years}
+            n_elhd_min = min(n_elhd_by_year.values())
+            n_elhd_max = max(n_elhd_by_year.values())
 
             # Inversion multi-año, arranque greenfield: N_batteries[k,y] parte
             # en 0 (sin piso de 1 por estación), por lo que N_min=0. La cota
@@ -767,17 +790,23 @@ class BoundRules(OptRules):
 
             # N_batteries_total[y] = tamaño del pool en estación al año y
             # (suma de N_batteries[k,y] por estación) — NO es el total de
-            # baterías físicas: cada LHD swap tiene además su propia batería
-            # instalada en todo momento (n_elhd, constante). La flota física
-            # completa a degradar/reemplazar es
-            # n_battery_fleet[y] = N_batteries_total[y] + n_elhd.
+            # baterías físicas: cada LHD swap ACTIVO ese año tiene además su
+            # propia batería instalada. La flota física completa a
+            # degradar/reemplazar es
+            # n_battery_fleet[y] = N_batteries_total[y] + n_active_slhd[y]
+            # (flota swap ACTIVA ese año, no el roster completo -- ver
+            # n_elhd_by_year arriba).
             model.N_batteries_total = pyo.Var(model.years, domain=pyo.NonNegativeIntegers, bounds=(N_min, N_max))
 
-            NF_min = N_min + n_elhd
-            NF_max = N_max + n_elhd
-            model.n_battery_fleet = pyo.Var(model.years, domain=pyo.NonNegativeIntegers, bounds=(NF_min, NF_max))
+            NF_max = N_max + n_elhd_max
+            model.n_battery_fleet = pyo.Var(
+                model.years, domain=pyo.NonNegativeIntegers,
+                bounds=lambda m, y: (N_min + n_elhd_by_year[y], N_max + n_elhd_by_year[y]),
+            )
             # NF_max_param se sigue usando en z_repl_upper2 (costo de
-            # reemplazo, sin relación con la ec. 3 de degradación).
+            # reemplazo, sin relación con la ec. 3 de degradación). Es un
+            # big-M global (max sobre años de NF_max), no necesita ser
+            # ajustado por año -- solo debe ser una cota válida en todos.
             model.NF_max_param = pyo.Param(initialize=NF_max, mutable=False)
 
             b_max_val = value(model.b_max_pool)
@@ -799,10 +828,15 @@ class BoundRules(OptRules):
             max_energy_per_year = n_slots_per_year * value(model.p_charger) * value(model.delta_t)
 
             # Cota (holgada) de N_ciclos[y]: peor caso = máxima energía anual
-            # posible / mínima capacidad total instalada posible (NF_min*B_L).
-            # Necesaria para que Gurobi arme la relajación McCormick de los
-            # bilineales de n_ciclos_link/n_total_def.
-            n_ciclos_max = (max_energy_per_year * value(model.scaling_factor_op_cost)) / (NF_min * B_L)
+            # posible / mínima capacidad total instalada posible en CUALQUIER
+            # año (N_min + n_elhd_min * B_L). Se usa el mínimo de flota activa
+            # entre años (no un año fijo) para que la cota sea válida en
+            # todos; se resguarda con max(.,1) por si algún año tuviera 0 LHD
+            # swap activos (evita división por cero). Necesaria para que
+            # Gurobi arme la relajación McCormick de los bilineales de
+            # n_ciclos_link/n_total_def.
+            nf_min_for_bound = N_min + max(n_elhd_min, 1)
+            n_ciclos_max = (max_energy_per_year * value(model.scaling_factor_op_cost)) / (nf_min_for_bound * B_L)
 
             model.R        = pyo.Var(model.years, domain=pyo.Binary)
             model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
@@ -1127,8 +1161,8 @@ class ConstraintRules(OptRules):
                            * pyo_value(model.filling_factor[i_rep]))
 
         target = pyo_value(model.m_j[j, y])
-        lb = math.floor(target / prod_per_assign) - 1
-        ub = math.ceil(target / prod_per_assign) + 1
+        lb = math.floor(target / prod_per_assign) 
+        ub = math.ceil(target / prod_per_assign)  
 
         visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
 
@@ -1517,9 +1551,11 @@ class ConstraintRules(OptRules):
 
     def n_battery_fleet_def(self, model, y):
         """n_battery_fleet[y] = N_batteries_total[y] (pool en estación) + una
-        batería instalada en cada LHD swap (constante, siempre hay una
-        puesta) = flota física total a degradar/reemplazar al año y."""
-        return model.n_battery_fleet[y] == model.N_batteries_total[y] + len(model.slhd_set)
+        batería instalada en cada LHD swap ACTIVO ese año (n_active_slhd[y],
+        ver OptParameters -- no el roster completo, que puede no estar
+        totalmente activo aún según NodeAssignment/FleetByYear) = flota
+        física total a degradar/reemplazar al año y."""
+        return model.n_battery_fleet[y] == model.N_batteries_total[y] + model.n_active_slhd[y]
 
     def energy_consumed_def(self, model, y):
         """EnergyConsumed[y] = energía consumida (descarga real) por todos
@@ -1704,11 +1740,14 @@ class ConstraintRules(OptRules):
             model.slhd_set,
             model.years,
             model.days,
-            model.time_intervals_between_shifts_set,
+            model.time_intervals_between_shifts_det_set,
             rule=self.between_shifts_elhd_swap,
         )
-        model.swap_only_meal_or_between_shifts = pyo.Constraint(
-            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        #model.swap_only_meal_or_between_shifts = pyo.Constraint(
+        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        #)
+        model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
+            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
         )
         #model.assign_state = pyo.Constraint(
         #    model.slhd_set,
@@ -1802,21 +1841,19 @@ class ConstraintRules(OptRules):
             rule=self.daily_extraction_M,
         )
 
-        # 6) Pausas operacionales DCH
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        # 6) Pausas operacionales DET (esquema activo). DCH queda comentado
+        # mas abajo, sin registrar.
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
-        #Pausas DET (esquema alternativo, portado desde battery_swapping pero
-        # dejado sin registrar: DCH sigue siendo el esquema activo aqui).
-        #model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        #model.swap_only_meal_or_between_shifts_det = pyo.Constraint(model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det)
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.years,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.maint_stop_all,
+        #)
+        model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Balance de potencia y generación / BESS
         model.power_balance = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
@@ -1976,9 +2013,9 @@ class ObjectiveRules(OptRules):
         evento puntual del año y (no una anualidad recurrente, por eso no usa
         annuity_factor_expr). c_bat_replace es el costo TOTAL de UNA sola
         batería; Z_repl[y] ya linealiza R[y] * n_battery_fleet[y] (n_battery_fleet[y]
-        = N_batteries_total[y] + n_slhd, la flota física completa: pool de
+        = N_batteries_total[y] + n_active_slhd[y], la flota física completa: pool de
         estación (stock acumulado al año y) + una batería siempre instalada
-        en cada LHD swap — ver
+        en cada LHD swap ACTIVO ese año — ver
         z_repl_upper1/upper2/lower), así que no hace falta sumar nada más acá."""
         if self.mine_system.battery_degradation is None:
             return 0
