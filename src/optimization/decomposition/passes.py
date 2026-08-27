@@ -74,22 +74,40 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
         opt = SolverFactory(solvername)
 
     result = opt.solve(model, tee=tee, load_solutions=True)
-    if _interrupt_requested or result.solver.status == SolverStatus.aborted:
-        # Ver comentario junto a _interrupt_requested. Dos señales, no una
-        # sola -- confirmado con una corrida real que la primera no
-        # alcanza: cuando el SIGINT llega en medio de un solve activo,
-        # Gurobi lo atrapa el mismo a nivel nativo (imprime su propio
-        # "Interrupt request received") SIN que nuestro signal.signal()
-        # de Python llegue siquiera a ejecutarse -- ahi _interrupt_requested
-        # nunca se activa porque el handler nunca corrio. La señal
-        # confiable en ese caso es result.solver.status == SolverStatus.
-        # aborted (la MISMA condicion detras del WARNING "Loading a
-        # SolverResults object with an 'aborted' status, but containing a
-        # solution" que se ve en todas estas interrupciones, incluida la
-        # del monolitico) -- Pyomo la usa especificamente para "el solver
-        # fue detenido antes de terminar", no para errores de computo
-        # (esos vendrian como excepcion de opt.solve() o SolverStatus.error).
+    # Ver comentario junto a _interrupt_requested. Dos señales, no una sola
+    # -- confirmado con una corrida real que la primera no alcanza: cuando
+    # el SIGINT llega en medio de un solve activo, Gurobi lo atrapa el
+    # mismo a nivel nativo (imprime su propio "Interrupt request received")
+    # SIN que nuestro signal.signal() de Python llegue siquiera a
+    # ejecutarse -- ahi _interrupt_requested nunca se activa porque el
+    # handler nunca corrio.
+    #
+    # PERO result.solver.status == SolverStatus.aborted NO es exclusivo de
+    # una interrupcion real: pyomo/solvers/plugins/solvers/gurobi_direct.py
+    # le asigna el MISMO SolverStatus.aborted tanto a grb.INTERRUPTED (Ctrl+C
+    # real, termination_condition=error) como a grb.TIME_LIMIT (el bloque
+    # llego al TimeLimit configurado SIN cerrar el MIPGap -- un desenlace
+    # normal y ya contemplado como aceptable via TerminationCondition.
+    # maxTimeLimit en _ACCEPTABLE, arriba). Confiar solo en `status` hacia
+    # que cualquier año cuyo MILP no cerrara el gap en el TimeLimit fuera
+    # tratado como si el usuario hubiera apretado Ctrl+C, abortando toda la
+    # corrida (bug real: reproducido con el año 7 del escenario 960kW_2dias,
+    # que sistematicamente no cierra el gap en el TimeLimit configurado).
+    # La señal confiable de interrupcion real es termination_condition
+    # (error/otro no-aceptable), no status por si solo.
+    aborted_by_interrupt = (
+        result.solver.status == SolverStatus.aborted
+        and result.solver.termination_condition not in _ACCEPTABLE
+    )
+    if _interrupt_requested or aborted_by_interrupt:
         raise KeyboardInterrupt(f"Interrumpido por el usuario durante el solve ({label}).")
+    if result.solver.termination_condition == TerminationCondition.maxTimeLimit:
+        ub = result.problem.upper_bound
+        lb = result.problem.lower_bound
+        if ub not in (None, 0) and lb is not None:
+            gap_rel = abs(ub - lb) / abs(ub)
+            print(f"[NestedBenders] {label}  TimeLimit alcanzado sin cerrar MIPGap: "
+                  f"UB={ub:,.2f}  LB={lb:,.2f}  gap={gap_rel:.4%}")
     if result.solver.termination_condition not in _ACCEPTABLE:
         raise RuntimeError(
             f"Solve no llego a una solucion aceptable ({label}): "

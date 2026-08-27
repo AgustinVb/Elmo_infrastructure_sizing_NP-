@@ -31,6 +31,16 @@ def resolve_wp2_json_path(args):
     return json_path
 
 
+# 14 años, 2 días representativos/año (verano sin cobro potencia + invierno
+# con cobro potencia). Cada año aporta un par consecutivo de dias en esta
+# lista (dia_verano, dia_invierno); --n_years trunca tomando los primeros
+# N pares, o sea los primeros N años del horizonte.
+FULL_HORIZON_DAYS = [
+    1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281,
+    2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836,
+]
+
+
 def build_mine(args):
     """ building power system base function
 
@@ -42,15 +52,11 @@ def build_mine(args):
 
     model = Reader(args.data_folder+args.model, start_in=1)
     series = Series(args.data_folder+args.series)
-    #time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)  # 5 años, 4 día representativo/año
-    #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
-    #time_series = timeseries.Timeseries(series, [1,91], 8/60)
-    #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60)
-    #time_series = timeseries.Timeseries(series, [15, 105, 196, 288, 380, 470, 561, 653, 745, 835, 926, 1018, 1110, 1200, 1291, 1383, 1475, 1565, 1656, 1748], 8/60)
-    #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)  # 5 años, 1 día representativo/año
-    #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)  # 5 años, 1 día representativo/año
-    #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186], 8/60)  # 4 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
-    time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    days = FULL_HORIZON_DAYS
+    n_years = getattr(args, 'n_years', None)
+    if n_years is not None:
+        days = days[:n_years * 2]
+    time_series = timeseries.Timeseries(series, days, 8/60)
     mine_system = mine.Mine(model)
     if getattr(args, 'consumption_model', 'wp1') == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args)
@@ -76,6 +82,14 @@ def main():
     parser.add_argument('--output_folder', default='output/')
     parser.add_argument('--solver', default='glpk')
     parser.add_argument('--y_init_path', default=None, help='Ruta opcional a Y.json para warm start puntual')
+    parser.add_argument(
+        '--n_years', type=int, default=None,
+        help='Trunca el horizonte a los primeros N años (tomando los primeros '
+             'N pares de dias representativos de FULL_HORIZON_DAYS en setup.py) '
+             'en vez de los 14 años completos. Util para reproducir/depurar un '
+             'problema con una corrida chica antes de escalar al horizonte '
+             'completo.'
+    )
     parser.add_argument(
         '--init_solution_folder', '--warm_start_folder',
         dest='init_solution_folder',
