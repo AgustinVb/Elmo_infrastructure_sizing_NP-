@@ -32,11 +32,13 @@ class OptRules(object):
         end = time.time()
         print(object_name, end - start)
 
-    def _build_intervals_from_clock_windows(self, windows, start_hour: int = 9):
+    def _build_intervals_from_clock_windows(self, windows, start_hour=None):
         """Convert a list of (HH:MM, HH:MM) windows into interval indices.
 
         Uses self.time_series.delta_t (hours) and self.time_series.time_intervals.
-        start_hour is the hour (0-23) considered as interval 1 start (default 9).
+        start_hour is the hour (can be fractional, e.g. 8.5) considered as
+        interval 1 start. Defaults to self.time_series.base_hour (columna
+        'base_hour' de la hoja Shifts del escenario).
         """
         if not hasattr(self.time_series, "time_intervals") or len(self.time_series.time_intervals) == 0:
             return []
@@ -45,8 +47,11 @@ class OptRules(object):
         if dt_minutes <= 0:
             return []
 
+        if start_hour is None:
+            start_hour = self.time_series.base_hour
+
         max_t = int(max(self.time_series.time_intervals))
-        base_minutes = int(start_hour) * 60
+        base_minutes = int(round(start_hour * 60))
 
         def _parse_hhmm(s):
             hh, mm = s.strip().split(":")
@@ -75,10 +80,11 @@ class OptRules(object):
         allowed = set(int(v) for v in self.time_series.time_intervals)
         return sorted(v for v in out if v in allowed)
 
-    def _get_peak_intervals(self, windows: list = None, start_hour: int = 9):
+    def _get_peak_intervals(self, windows: list = None, start_hour=None):
         """Return sorted list of interval indices considered peak-hours.
 
-        If windows is None a sensible default is used.
+        If windows is None a sensible default is used. start_hour defaults
+        to self.time_series.base_hour (hoja Shifts del escenario).
         """
         if windows is None:
             windows = [("18:00", "22:00")]
@@ -230,11 +236,13 @@ class OptSets(OptRules):
 
         return sorted(indices)
 
-    def _build_intervals_from_clock_windows(self, windows, start_hour: int = 9):
+    def _build_intervals_from_clock_windows(self, windows, start_hour=None):
         """Convert a list of (HH:MM, HH:MM) windows into interval indices.
 
         Uses self.time_series.delta_t (hours) and self.time_series.time_intervals.
-        start_hour is the hour (0-23) considered as interval 1 start (default 9).
+        start_hour is the hour (can be fractional, e.g. 8.5) considered as
+        interval 1 start. Defaults to self.time_series.base_hour (columna
+        'base_hour' de la hoja Shifts del escenario).
         """
         if not hasattr(self.time_series, "time_intervals") or len(self.time_series.time_intervals) == 0:
             return []
@@ -243,8 +251,11 @@ class OptSets(OptRules):
         if dt_minutes <= 0:
             return []
 
+        if start_hour is None:
+            start_hour = self.time_series.base_hour
+
         max_t = int(max(self.time_series.time_intervals))
-        base_minutes = int(start_hour) * 60
+        base_minutes = int(round(start_hour * 60))
 
         def _parse_hhmm(s):
             hh, mm = s.strip().split(":")
@@ -273,10 +284,11 @@ class OptSets(OptRules):
         allowed = set(int(v) for v in self.time_series.time_intervals)
         return sorted(v for v in out if v in allowed)
 
-    def _get_peak_intervals(self, windows: list = None, start_hour: int = 9):
+    def _get_peak_intervals(self, windows: list = None, start_hour=None):
         """Return sorted list of interval indices considered peak-hours.
 
-        If windows is None a sensible default is used.
+        If windows is None a sensible default is used. start_hour defaults
+        to self.time_series.base_hour (hoja Shifts del escenario).
         """
         if windows is None:
             # sensible default peak windows (adjust if needed)
