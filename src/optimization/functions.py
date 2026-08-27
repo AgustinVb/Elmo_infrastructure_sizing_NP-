@@ -72,9 +72,11 @@ class OptRules(object):
             b_rel = b - base_minutes
 
             for t in range(1, max_t + 1):
-                s = (t - 1) * dt_minutes
-                e = t * dt_minutes
-                if max(s, a_rel) < min(e, b_rel):
+                # Punto medio del intervalo (redondeo al mas cercano, en vez
+                # del sesgo sistematico hacia arriba del solape) -- mismo
+                # criterio que _get_time_intervals_for_pause_type.
+                mid = (t - 1) * dt_minutes + dt_minutes / 2
+                if a_rel <= mid < b_rel:
                     out.add(t)
 
         allowed = set(int(v) for v in self.time_series.time_intervals)
@@ -276,9 +278,11 @@ class OptSets(OptRules):
             b_rel = b - base_minutes
 
             for t in range(1, max_t + 1):
-                s = (t - 1) * dt_minutes
-                e = t * dt_minutes
-                if max(s, a_rel) < min(e, b_rel):
+                # Punto medio del intervalo (redondeo al mas cercano, en vez
+                # del sesgo sistematico hacia arriba del solape) -- mismo
+                # criterio que _get_time_intervals_for_pause_type.
+                mid = (t - 1) * dt_minutes + dt_minutes / 2
+                if a_rel <= mid < b_rel:
                     out.add(t)
 
         allowed = set(int(v) for v in self.time_series.time_intervals)
