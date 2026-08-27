@@ -220,10 +220,13 @@ class OptSets(OptRules):
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
         base_minutes = int(round(self.time_series.base_hour * 60))
+        _peak_dt_minutes = int(round(self.time_series.delta_t * 60))
         model.time_intervals_peak_set = pyo.Set(
             initialize=[
                 t for t in self.time_series.time_intervals
-                if 18 * 60 <= ((base_minutes + (t - 1) * int(round(self.time_series.delta_t * 60))) % 1440) < 22 * 60
+                # Punto medio del intervalo (mismo criterio que
+                # _get_time_intervals_for_pause_type), no "inicio en ventana".
+                if 18 * 60 <= ((base_minutes + (t - 1) * _peak_dt_minutes + _peak_dt_minutes / 2) % 1440) < 22 * 60
             ]
         )
         model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
