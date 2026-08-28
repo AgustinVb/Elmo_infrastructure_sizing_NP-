@@ -24,6 +24,14 @@ plt.rcParams["axes.grid"] = True
 
 DEFAULT_ENERGY_PRICE_SCALE = 1.0
 
+# Año 1 del horizonte del modelo corresponde al año calendario 2033.
+BASE_CALENDAR_YEAR = 2033
+
+
+def calendar_year(model_year) -> int:
+    """Convierte un año relativo del modelo (1, 2, 3, ...) al año calendario real."""
+    return BASE_CALENDAR_YEAR + (int(model_year) - 1)
+
 
 # -------------------- Utils --------------------
 
@@ -2269,14 +2277,12 @@ class JSONPlotter:
 
     def plot_battery_degradation(self):
         """
-        Degradación de batería del pool de swap (global, un valor por año).
-        Panel superior: capacidad al INICIO (b_bar, barras) y al FINAL (D,
-        marcadores) de cada año, con líneas de referencia de b_max_pool y
-        del piso (min_capacity_fraction*b_max_pool), y los años de reemplazo
-        (R=1) resaltados. Panel inferior: ciclos equivalentes DEL año
-        (N_ciclos) -- el driver del fade b_bar->D vía d_y_fade (ver
-        functions.py); no es un acumulado histórico, el arrastre entre años
-        lo da D[y-1] en b_y_link.
+        Degradación de batería del pool de swap (global, un valor por año):
+        capacidad al INICIO (b_bar, barras) y al FINAL (D, marcadores) de
+        cada año, con líneas de referencia de b_max_pool y del piso
+        (min_capacity_fraction*b_max_pool), y los años de reemplazo (R=1)
+        resaltados. Los ciclos equivalentes del año van en un gráfico aparte
+        (ver plot_battery_cycles).
         """
         if self.df_b_bar is None or self.df_b_bar.empty:
             print("INFO: No hay b_bar.json — omitiendo gráfico de degradación de batería.")
@@ -2285,10 +2291,10 @@ class JSONPlotter:
         cap_color     = "#1565C0"
         end_color     = "#5E35B1"
         replace_color = "#F57C00"
-        cycles_color  = "#00897B"
         ref_color     = "#616161"
 
         years = sorted(self.df_b_bar["year"].unique().tolist())
+        year_labels = [str(calendar_year(y)) for y in years]
         b_bar_vals = self.df_b_bar.set_index("year")["b_bar"].reindex(years)
 
         replaced = set()
@@ -2298,15 +2304,15 @@ class JSONPlotter:
         b_max = self.params.b_max_pool
         min_frac = self.params.min_capacity_fraction
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(max(6, 1.2 * len(years) + 2), 7), sharex=True)
+        fig, ax1 = plt.subplots(figsize=(max(6, 1.2 * len(years) + 2), 5.5))
 
         bar_colors = [replace_color if y in replaced else cap_color for y in years]
-        ax1.bar([str(y) for y in years], b_bar_vals.values, color=bar_colors, width=0.6,
+        ax1.bar(year_labels, b_bar_vals.values, color=bar_colors, width=0.6,
                  zorder=3, label="B (inicio de año)")
 
         if self.df_D is not None and not self.df_D.empty:
             d_vals = self.df_D.set_index("year")["D"].reindex(years)
-            ax1.scatter([str(y) for y in years], d_vals.values, color=end_color, marker="D",
+            ax1.scatter(year_labels, d_vals.values, color=end_color, marker="D",
                         s=55, zorder=4, label="D (fin de año)")
 
         if b_max is not None:
@@ -2315,27 +2321,47 @@ class JSONPlotter:
             ax1.axhline(min_frac * b_max, color=ref_color, linewidth=1.2, linestyle=":",
                         label=f"Piso ({min_frac:.0%}·b_max)")
 
-        for y in years:
+        for y, y_label in zip(years, year_labels):
             if y in replaced:
-                ax1.text(str(y), b_bar_vals[y], "Reemplazo", ha="center", va="bottom",
+                ax1.text(y_label, b_bar_vals[y], "Reemplazo", ha="center", va="bottom",
                           fontsize=9, color=replace_color, fontweight="bold")
 
         ax1.set_ylabel("Capacidad batería pool [kWh]", fontsize=11)
-        ax1.set_title("Degradación de batería — pool de swap (global)", fontsize=14)
+        ax1.set_xlabel("Año", fontsize=12)
+        ax1.set_title("Degradación de baterías battery-swapping", fontsize=14)
         ax1.grid(axis="y", linestyle="--", alpha=0.4)
         ax1.legend(loc="lower left", fontsize=9, framealpha=0.85)
 
-        if self.df_N_ciclos is not None and not self.df_N_ciclos.empty:
-            n_vals = self.df_N_ciclos.set_index("year")["N_ciclos"].reindex(years)
-            ax2.bar([str(y) for y in years], n_vals.values, color=cycles_color, width=0.6, zorder=3)
-            ax2.set_ylabel("Ciclos equivalentes\ndel año (N_ciclos)", fontsize=11)
-            ax2.grid(axis="y", linestyle="--", alpha=0.4)
-        else:
-            ax2.text(0.5, 0.5, "No hay N_ciclos.json", ha="center", va="center", transform=ax2.transAxes)
-        ax2.set_xlabel("Año", fontsize=12)
-
         fig.tight_layout()
         fig.savefig(os.path.join(self.plot_dir, "BatteryDegradation.png"), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    def plot_battery_cycles(self):
+        """
+        Ciclos equivalentes DEL año (N_ciclos) para el pool de baterías de
+        swap -- el driver del fade b_bar->D vía d_y_fade (ver functions.py);
+        no es un acumulado histórico, el arrastre entre años lo da D[y-1]
+        en b_y_link. Gráfico separado de plot_battery_degradation.
+        """
+        if self.df_N_ciclos is None or self.df_N_ciclos.empty:
+            print("INFO: No hay N_ciclos.json — omitiendo gráfico de ciclos de batería.")
+            return
+
+        cycles_color = "#00897B"
+
+        years = sorted(self.df_N_ciclos["year"].unique().tolist())
+        year_labels = [str(calendar_year(y)) for y in years]
+        n_vals = self.df_N_ciclos.set_index("year")["N_ciclos"].reindex(years)
+
+        fig, ax = plt.subplots(figsize=(max(6, 1.2 * len(years) + 2), 4.5))
+        ax.bar(year_labels, n_vals.values, color=cycles_color, width=0.6, zorder=3)
+        ax.set_ylabel("Ciclos equivalentes\ndel año (N_ciclos)", fontsize=11)
+        ax.set_xlabel("Año", fontsize=12)
+        ax.set_title("Ciclos equivalentes por año — battery-swapping", fontsize=14)
+        ax.grid(axis="y", linestyle="--", alpha=0.4)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(self.plot_dir, "BatteryCycles.png"), dpi=150, bbox_inches="tight")
         plt.close(fig)
 
     def create_all_plots(self):
@@ -2352,6 +2378,7 @@ class JSONPlotter:
             self.plot_gen_capacity_profile,
             self.plot_bess_energy_state,
             self.plot_battery_degradation,
+            self.plot_battery_cycles,
         ]
         for plot_method in plot_methods:
             try:
