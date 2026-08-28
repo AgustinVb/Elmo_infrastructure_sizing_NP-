@@ -87,6 +87,18 @@ def main():
              'detenido. El cambio de turno (between_shifts) sigue restringido '
              'a swap-o-detenido en ambos modos.'
     )
+    parser.add_argument(
+        '--mccormick_degradation',
+        action='store_true',
+        help='[solo si hay hoja BatteryDegradation] linealiza los dos '
+             'bilineales encadenados de la degradacion del pool de swap '
+             '(N_ciclos*n_battery_fleet, N_total*b_bar) con la envolvente de '
+             'McCormick (Camino A, ver degradacion_descomposicion_mccormick.md '
+             'en la rama carga_ob_multiaño) en vez de resolverlos como '
+             'restricciones cuadraticas no convexas (Gurobi NonConvex=2). El '
+             'modelo queda MILP puro -- suele ser mas rapido, a costa de una '
+             'aproximacion.'
+    )
 
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
@@ -105,6 +117,7 @@ def main():
         init_solution_folder=init_solution_folder,
         relax_integrality=args.relax_integrality,
         autonomous_mode=args.autonomous_mode,
+        mccormick_degradation=args.mccormick_degradation,
     )
 
 

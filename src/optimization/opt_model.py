@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -37,10 +37,16 @@ class OptModel(object):
         self.init_solution_folder = init_solution_folder if init_solution_folder is not None else warm_start_folder
         self.relax_integrality = relax_integrality
         self.has_warm_start = False
+        # Camino A (McCormick) del bloque de degradacion del pool de swap
+        # (ver ConstraintRules.build_mccormick_degradation_block en
+        # functions.py). Si False (default), n_total_def/n_ciclos_link se
+        # resuelven como bilineales exactos -> requiere Gurobi NonConvex=2
+        # (ver guard en _configure_solver).
+        self.mccormick_degradation = mccormick_degradation
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
@@ -330,6 +336,14 @@ class OptModel(object):
             opt.options['Presolve'] = 2
             opt.options['FlowCoverCuts'] = 2
             opt.options['TimeLimit'] = timelimit
+            if self.constraint_rules.mine_system.battery_degradation is not None and not self.mccormick_degradation:
+                # n_total_def/n_ciclos_link quedan como bilineales exactos
+                # (N_ciclos*n_battery_fleet, N_total*b_bar) -- Gurobi los
+                # rechaza sin este flag. Con mccormick_degradation=True esas
+                # restricciones no existen (ver
+                # ConstraintRules.build_mccormick_degradation_block) y el
+                # modelo es MILP puro, sin necesitar NonConvex=2.
+                opt.options['NonConvex'] = 2
             return opt
 
         raise ValueError(f"Solver no soportado: {solvername}")

@@ -8,7 +8,8 @@ from pyomo.environ import quicksum, value
 
 class OptRules(object):
 
-    def __init__(self, mine_system,  time_series, autonomous_mode=False):
+    def __init__(self, mine_system,  time_series, autonomous_mode=False,
+                 mccormick_degradation=False):
         self.mine_system = mine_system
         self.time_series = time_series
         # Escenario DET: False (default) = modo normal, la colacion solo
@@ -17,6 +18,14 @@ class OptRules(object):
         # (between_shifts) siempre restringe a swap o detenido, en ambos
         # modos.
         self.autonomous_mode = autonomous_mode
+        # Camino A (McCormick, ver degradacion_descomposicion_mccormick.md
+        # sec. 3 en la rama carga_ob_multiaño): si True, los dos bilineales
+        # encadenados de la degradacion del pool de swap (n_total_def,
+        # n_ciclos_link -- ver ConstraintRules.build_mccormick_degradation_block)
+        # se reemplazan por su envolvente convexa en vez de resolverse como
+        # restricciones cuadraticas no convexas (Gurobi NonConvex=2). Sin
+        # efecto si el escenario no tiene hoja BatteryDegradation.
+        self.mccormick_degradation = mccormick_degradation
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -708,7 +717,34 @@ class BoundRules(OptRules):
         # N�mero de bater�as cargadas en el intervalo t en la estaci�n k
         model.S = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # N�mero de bater�as que comienzan a cargar en a y siguen conectadas en t en la estaci�n k
-        model.Sv = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
+        #
+        # Sv[k,y,d,t,a] solo puede ser distinto de 0 si "a" (inicio de carga)
+        # cae dentro de la ventana de duracion de carga que termina en t:
+        # a en [max(t0, t-t_charge+1), t-1] -- fuera de esa ventana,
+        # charging_duration_rule (mas abajo) lo fija en 0 de todas formas, y
+        # Sv no aparece en la funcion objetivo (solo en restricciones <= y en
+        # power_balance), asi que esas combinaciones nunca tienen incentivo a
+        # ser > 0. Antes se declaraba sobre el producto cartesiano COMPLETO
+        # time_intervals_set x time_intervals_set (t_charge suele ser una
+        # fraccion pequeña de la cantidad total de intervalos del dia), lo que
+        # generaba una cantidad de variables/restricciones triviales ("=0")
+        # cuadratica en el numero de intervalos y dominaba el tiempo de
+        # construccion del modelo. SV_INDEX solo contiene las combinaciones
+        # (k,y,d,t,a) fisicamente posibles.
+        def _init_SV_INDEX(m):
+            intervals = sorted(int(t) for t in m.time_intervals_set)
+            t0 = intervals[0]
+            t_charge = int(value(m.t_charge))
+            for k in m.stations_set:
+                for y in m.years:
+                    for d in m.days:
+                        for t in intervals:
+                            lo = max(t0, t - t_charge + 1)
+                            hi = t - 1
+                            for a in range(lo, hi + 1):
+                                yield (k, y, d, t, a)
+        model.SV_INDEX = pyo.Set(dimen=5, initialize=_init_SV_INDEX)
+        model.Sv = pyo.Var(model.SV_INDEX, domain=pyo.NonNegativeIntegers)
         # N�mero de bater�as descargadas en el intervalo t en la estaci�n k
         model.X_dch = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # N�mero de bater�as que comienzan a cargar al inicio del intervalo t en la estaci�n k
@@ -1300,17 +1336,47 @@ class ConstraintRules(OptRules):
     def station_existence_constraint_swap(self, model, k, i, y, d, t):
         return model.Z_swap[k, i, y, d, t] <= model.X[k, y]
 
+    def _sv_a_window(self, model, t):
+        """Ventana valida de 'a' (inicio de carga) para Sv[k,y,d,t,a] en el
+        intervalo t -- misma formula que BoundRules.build_all_variables usa
+        para construir SV_INDEX: [max(t0, t-t_charge+1), t-1]. Fuera de esa
+        ventana Sv no existe como variable (ver comentario ahi), asi que las
+        sumas sobre 'a' deben iterar solo esta ventana en vez de todo
+        model.time_intervals_set."""
+        t = int(t)
+        t0 = int(self.time_series.get_time_intervals()[0])
+        t_charge = int(value(model.t_charge))
+        lo = max(t0, t - t_charge + 1)
+        hi = t - 1
+        return range(lo, hi + 1)
+
     def charger_limit_swap(self, model, k, y, d, t):
         # Para cada estaci�n k, d�a d y intervalo t, la suma de bater�as
         # conectadas (para todos los inicios a) en t no puede exceder los cargadores
-        return sum(model.Sv[k, y, d, t, a] for a in model.time_intervals_set) <= model.N_chargers[k, y]
+        a_window = self._sv_a_window(model, t)
+        if not a_window:
+            # Ventana vacia (t = primer intervalo del dia): ningun Sv existe
+            # todavia, la suma es 0 y la restriccion es trivialmente valida
+            # (N_chargers >= 0) -- se omite para no comparar dos constantes.
+            return pyo.Constraint.Skip
+        return sum(model.Sv[k, y, d, t, a] for a in a_window) <= model.N_chargers[k, y]
 
     #  Sistemas distribuci�n
     def max_installed_capacity_swap(self, model, k, y, d, t):
-        return sum(model.Sv[k, y, d, t, a]*model.p_charger for a in model.time_intervals_set) <= model.p_max_k[k]
+        a_window = self._sv_a_window(model, t)
+        if not a_window:
+            return pyo.Constraint.Skip
+        return sum(model.Sv[k, y, d, t, a]*model.p_charger for a in a_window) <= model.p_max_k[k]
 
     def peak_power_swap(self, model, y, d, t):
-        return sum(model.Sv[k, y, d, t, a]*model.p_charger for k in model.stations_set for a in model.time_intervals_set) <= model.p_peak
+        a_window = self._sv_a_window(model, t)
+        if not a_window:
+            return pyo.Constraint.Skip
+        return sum(
+            model.Sv[k, y, d, t, a]*model.p_charger
+            for k in model.stations_set
+            for a in a_window
+        ) <= model.p_peak
 
     def power_peak_limit(self, model, y, d, t):
         """Demand-charge constraint: grid power during peak hours <= P_pot.
@@ -1380,22 +1446,17 @@ class ConstraintRules(OptRules):
 
     # 4. Duraci�n de la carga (L�gica interna del cargador)
     def charging_duration_rule(self, model, k, y, d, t, a):
-        tf = self.time_series.get_time_intervals()[-1]
-        if t == tf:
-            return pyo.Constraint.Skip
-        # Caso 1: La carga ya termin� (o no deber�a haber nada)
-        if a <= t - model.t_charge + 1:
-            return model.Sv[k, y, d, t+1, a] == 0
-        
-        # Caso 2: La carga est� en proceso (se mantiene el valor anterior)
-        elif (t - model.t_charge + 1) <= a <= (t - 1):
-            return model.Sv[k, y, d, t+1, a] == model.Sv[k, y, d, t, a]
-        
-        # Caso 3: La carga acaba de iniciar en este instante t (a==t)
-        elif t == a:
-            return model.Sv[k, y, d, t+1, a] == model.X_ini[k, y, d, t]
-            
-        return pyo.Constraint.Skip
+        """(k,y,d,t,a) recorre model.SV_INDEX (ver
+        BoundRules.build_all_variables): a < t siempre (ventana valida), asi
+        que solo quedan los dos casos no triviales de la version densa --
+        el caso "a fuera de ventana => Sv=0" ya no hace falta porque esas
+        combinaciones directamente no existen como variable."""
+        t_prev = t - 1
+        if a == t_prev:
+            # Caso 3: la carga recien empez� en t_prev (a == t_prev).
+            return model.Sv[k, y, d, t, a] == model.X_ini[k, y, d, t_prev]
+        # Caso 2: la carga sigue en proceso, se mantiene el valor anterior.
+        return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, t_prev, a]
 
     # Condiciones de inventario c�clico
     def CI_S(self, model, k, y, d, t):
@@ -1495,7 +1556,7 @@ class ConstraintRules(OptRules):
         demand = sum(
             model.Sv[k, y, d, t, a] * model.p_charger
             for k in model.stations_set
-            for a in model.time_intervals_set
+            for a in self._sv_a_window(model, t)
         )
         gen = (sum(model.P_gen[g, y, d, t] for g in model.gen_set)
                if len(list(model.gen_set)) > 0 else 0)
@@ -1620,6 +1681,84 @@ class ConstraintRules(OptRules):
         trilineal original (N_ciclos[y]*B[y]*n_battery_fleet[y]); junto con
         n_total_def reconstruye exactamente esa ecuación sin aproximar."""
         return model.N_total[y] * model.b_bar[y] == model.EnergyConsumed[y] * model.scaling_factor_op_cost
+
+    def build_mccormick_degradation_block(self, model):
+        """Camino A (McCormick, ver degradacion_descomposicion_mccormick.md
+        sec. 3 en la rama carga_ob_multiaño) aplicado al pool de swap: la
+        ec. 3 (N_ciclos[y]*b_bar[y]*n_battery_fleet[y] == EnergyConsumed[y]*
+        scaling_factor_op_cost) es un TRILINEAL reducido a DOS bilineales
+        encadenados (n_total_def, n_ciclos_link -- ver comentario en
+        BoundRules y ConstraintRules.energy_consumed_def). Este bloque
+        reemplaza AMBOS por su envolvente convexa de McCormick, dejando el
+        modelo MILP puro (sin necesitar Gurobi NonConvex=2, ver guard en
+        OptModel._configure_solver).
+
+        Las cotas usadas son las YA declaradas en BoundRules para cada
+        variable (N_ciclos, n_battery_fleet, N_total, b_bar) -- N_ciclos usa
+        una cota GLOBAL (n_ciclos_max), no ajustada por año como
+        compute_n_ciclos_bounds hace en carga_ob_multiaño para el caso
+        on-board. Si el residuo de McCormick resulta grande, ajustar esa
+        cota por año (mismo principio, sec. 3.5 del documento) es el
+        siguiente paso natural."""
+        NC_bounds = {y: (float(model.N_ciclos[y].lb), float(model.N_ciclos[y].ub)) for y in model.years}
+        NF_bounds = {y: (float(model.n_battery_fleet[y].lb), float(model.n_battery_fleet[y].ub)) for y in model.years}
+        NT_bounds = {y: (float(model.N_total[y].lb), float(model.N_total[y].ub)) for y in model.years}
+        B_L = value(model.B_L)
+        B_U = value(model.B_U)
+
+        # --- Bilineal 1 (ec. 3a): N_total[y] ~= N_ciclos[y] * n_battery_fleet[y] ---
+        def _mc_n_total_lb1(m, y):
+            NC_L, _ = NC_bounds[y]
+            NF_L, _ = NF_bounds[y]
+            return m.N_total[y] >= NC_L * m.n_battery_fleet[y] + NF_L * m.N_ciclos[y] - NC_L * NF_L
+
+        def _mc_n_total_lb2(m, y):
+            _, NC_U = NC_bounds[y]
+            _, NF_U = NF_bounds[y]
+            return m.N_total[y] >= NC_U * m.n_battery_fleet[y] + NF_U * m.N_ciclos[y] - NC_U * NF_U
+
+        def _mc_n_total_ub1(m, y):
+            _, NC_U = NC_bounds[y]
+            NF_L, _ = NF_bounds[y]
+            return m.N_total[y] <= NC_U * m.n_battery_fleet[y] + NF_L * m.N_ciclos[y] - NC_U * NF_L
+
+        def _mc_n_total_ub2(m, y):
+            NC_L, _ = NC_bounds[y]
+            _, NF_U = NF_bounds[y]
+            return m.N_total[y] <= NC_L * m.n_battery_fleet[y] + NF_U * m.N_ciclos[y] - NC_L * NF_U
+
+        model.mc_n_total_lb1 = pyo.Constraint(model.years, rule=_mc_n_total_lb1)
+        model.mc_n_total_lb2 = pyo.Constraint(model.years, rule=_mc_n_total_lb2)
+        model.mc_n_total_ub1 = pyo.Constraint(model.years, rule=_mc_n_total_ub1)
+        model.mc_n_total_ub2 = pyo.Constraint(model.years, rule=_mc_n_total_ub2)
+
+        # --- Bilineal 2 (ec. 3b): w_deg[y] ~= N_total[y] * b_bar[y] == EnergyConsumed[y]*scaling ---
+        model.w_deg = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+
+        def _mc_w_deg_lb1(m, y):
+            NT_L, _ = NT_bounds[y]
+            return m.w_deg[y] >= NT_L * m.b_bar[y] + B_L * m.N_total[y] - NT_L * B_L
+
+        def _mc_w_deg_lb2(m, y):
+            _, NT_U = NT_bounds[y]
+            return m.w_deg[y] >= NT_U * m.b_bar[y] + B_U * m.N_total[y] - NT_U * B_U
+
+        def _mc_w_deg_ub1(m, y):
+            _, NT_U = NT_bounds[y]
+            return m.w_deg[y] <= NT_U * m.b_bar[y] + B_L * m.N_total[y] - NT_U * B_L
+
+        def _mc_w_deg_ub2(m, y):
+            NT_L, _ = NT_bounds[y]
+            return m.w_deg[y] <= NT_L * m.b_bar[y] + B_U * m.N_total[y] - NT_L * B_U
+
+        def _mc_w_deg_energy(m, y):
+            return m.w_deg[y] == m.EnergyConsumed[y] * m.scaling_factor_op_cost
+
+        model.mc_w_deg_lb1    = pyo.Constraint(model.years, rule=_mc_w_deg_lb1)
+        model.mc_w_deg_lb2    = pyo.Constraint(model.years, rule=_mc_w_deg_lb2)
+        model.mc_w_deg_ub1    = pyo.Constraint(model.years, rule=_mc_w_deg_ub1)
+        model.mc_w_deg_ub2    = pyo.Constraint(model.years, rule=_mc_w_deg_ub2)
+        model.mc_w_deg_energy = pyo.Constraint(model.years, rule=_mc_w_deg_energy)
 
     def d_y_fade(self, model, y):
         """(ec. 4) D[y] = B[y] - gamma_coef*N_ciclos[y]: capacidad POR
@@ -1820,11 +1959,7 @@ class ConstraintRules(OptRules):
             rule=self.inventory_charged_batteries_rule,
         )
         model.charging_duration = pyo.Constraint(
-            model.stations_set,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            model.time_intervals_set,
+            model.SV_INDEX,
             rule=self.charging_duration_rule,
         )
         model.CI_X_dch = pyo.Constraint(
@@ -1913,8 +2048,14 @@ class ConstraintRules(OptRules):
             model.n_battery_fleet_def = pyo.Constraint(model.years, rule=self.n_battery_fleet_def)
             model.energy_consumed_def = pyo.Constraint(model.years, rule=self.energy_consumed_def)
 
-            model.n_total_def   = pyo.Constraint(model.years, rule=self.n_total_def)
-            model.n_ciclos_link = pyo.Constraint(model.years, rule=self.n_ciclos_link)
+            if self.mccormick_degradation:
+                # Camino A: reemplaza n_total_def + n_ciclos_link (bilineales
+                # no convexos) por su envolvente convexa de McCormick -- ver
+                # build_mccormick_degradation_block.
+                self.build_mccormick_degradation_block(model)
+            else:
+                model.n_total_def   = pyo.Constraint(model.years, rule=self.n_total_def)
+                model.n_ciclos_link = pyo.Constraint(model.years, rule=self.n_ciclos_link)
             model.d_y_fade      = pyo.Constraint(model.years, rule=self.d_y_fade)
             if hasattr(model, 'later_years_set'):
                 model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
