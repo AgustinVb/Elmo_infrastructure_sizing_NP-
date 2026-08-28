@@ -83,6 +83,14 @@ class OptModel(object):
             "W":        ["k", "y", "d", "t"],
             "M":        ["i", "j", "y", "d"],
             "P_red":    ["y", "d", "t"],
+            "N_batteries_total": ["y"],
+            "n_battery_fleet": ["y"],
+            "Z_repl":   ["y"],
+            "D":        ["y"],
+            "EnergyConsumed": ["y"],
+            "N_ciclos": ["y"],
+            "N_total":  ["y"],
+            "P_bbar_zagg": ["i", "y", "d", "t"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)
