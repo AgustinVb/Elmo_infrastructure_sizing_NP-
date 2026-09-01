@@ -1321,6 +1321,7 @@ def main() -> None:
                 ["Costo energía carga real (USD)",   f"{costs.get('real_energy_cost', 0.0):.2f}"],
                 ["Costo potencia pico (USD)",        f"{costs.get('peak_power_cost', 0.0):.2f}"],
                 ["Costo inversión estaciones (USD)", f"{costs['investment_cost']:.2f}"],
+                ["Costo inversión subestación (USD)", f"{costs.get('substation_cost', 0.0):.2f}"],
                 ["Costo inversión generación (USD)", f"{costs.get('gen_inv_cost', 0.0):.2f}"],
                 ["Costo operación generación (USD)", f"{costs.get('gen_op_cost', 0.0):.2f}"],
                 ["Costo inversión BESS (USD)",       f"{costs.get('bess_inv_cost', 0.0):.2f}"],
@@ -1358,15 +1359,6 @@ def _has_degradation_data(params: Dict) -> bool:
     return "gamma_coef" in params
 
 
-def _annuity_factor(r: float, years: int) -> float:
-    """AF(r,Y) = sum_{k=1..Y} 1/(1+r)^k — igual a annuity_factor_expr en functions.py."""
-    if years <= 0:
-        return 0.0
-    if r == 0:
-        return float(years)
-    return sum(1.0 / (1.0 + r) ** k for k in range(1, years + 1))
-
-
 def _year_discount_factor(r: float, year: Any, years_sorted: List[int]) -> float:
     """1/(1+r)^pos(year) — igual a _discount_factor en ObjectiveRules (functions.py)."""
     if r == 0:
@@ -1375,22 +1367,10 @@ def _year_discount_factor(r: float, year: Any, years_sorted: List[int]) -> float
     return 1.0 / (1.0 + r) ** pos
 
 
-def _annuity_factor_year(r: float, pos_y: int, n_years: int) -> float:
-    """AF_y(r,Y) = sum_{n=pos_y..n_years} 1/(1+r)^n — igual a annuity_factor_expr(model, y)
-    en functions.py (inversion multi-año: NPV de un costo anualizado que
-    empieza a devengarse en el año de posicion pos_y y se mantiene hasta el
-    fin del horizonte, sin retiro)."""
-    if n_years <= 0 or pos_y > n_years:
-        return 0.0
-    if r == 0:
-        return float(n_years - pos_y + 1)
-    return sum(1.0 / (1.0 + r) ** n for n in range(pos_y, n_years + 1))
-
-
 def _indexed_vars_by_year(path: Optional[Path], outer_candidates: Tuple[str, ...] = ("k", "_1")) -> Dict[str, Dict[str, float]]:
     """Lee un JSON con estructura {outer_axis: {id: {'y': {year: val}}}}
     (variables de inversion multi-año Delta_X/Delta_N_bays/Delta_N_chargers/
-    Delta_N_batteries/Delta_G_g, indexadas por (id, y)) y devuelve
+    Delta_N_batteries/Delta_N_max_k, indexadas por (id, y)) y devuelve
     {id: {year_str: val}}. Devuelve {} si el archivo no existe/esta vacio o
     no calza con la estructura esperada."""
     if not path or is_effectively_empty_json(path):
@@ -1417,8 +1397,9 @@ def _indexed_vars_by_year(path: Optional[Path], outer_candidates: Tuple[str, ...
 
 
 def _year_only_vars(path: Optional[Path]) -> Dict[str, float]:
-    """Lee un JSON con estructura {'y': {year: val}} (variables de inversion
-    multi-año sin eje adicional, como Delta_H/H) y devuelve {year_str: val}."""
+    """Lee un JSON con estructura {'y': {year: val}} (variables sin eje
+    adicional, indexadas solo por año -- p.ej. N_batteries_total,
+    n_battery_fleet, Z_repl) y devuelve {year_str: val}."""
     if not path or is_effectively_empty_json(path):
         return {}
     data = load_json(path)
@@ -1426,6 +1407,38 @@ def _year_only_vars(path: Optional[Path]) -> Dict[str, float]:
         return {}
     inner = data.get("y", data)
     return {str(y): _as_float(v, 0.0) for y, v in inner.items()} if isinstance(inner, dict) else {}
+
+
+def _indexed_vars_flat(path: Optional[Path], outer_candidates: Tuple[str, ...] = ("g", "_1")) -> Dict[str, float]:
+    """Lee un JSON con estructura {outer_axis: {id: val}} (variable SIN
+    indice de año, como G_g desde que se elimino Delta_G_g/el indice de año
+    -- ver BoundRules en functions.py: G_g[g] se decide una sola vez para
+    todo el horizonte) y devuelve {id: val}."""
+    if not path or is_effectively_empty_json(path):
+        return {}
+    data = load_json(path)
+    if not isinstance(data, dict):
+        return {}
+    outer = None
+    for candidate in outer_candidates:
+        if candidate in data:
+            outer = data[candidate]
+            break
+    if not isinstance(outer, dict):
+        return {}
+    return {str(k): _as_float(v, 0.0) for k, v in outer.items()}
+
+
+def _scalar_var(path: Optional[Path]) -> float:
+    """Lee un JSON de una variable Pyomo escalar (sin ningun indice, como H
+    desde que se elimino Delta_H/el indice de año -- ver BoundRules en
+    functions.py: H se decide una sola vez para todo el horizonte). El
+    Printer exporta un escalar como el numero JSON crudo (Printer.
+    _export_single_variable_json, rama "not var_comp.is_indexed()"), no
+    como un dict anidado."""
+    if not path or is_effectively_empty_json(path):
+        return 0.0
+    return _as_float(load_json(path), 0.0)
 
 
 def calculate_lhd_charge_cost(root: Path) -> float:
@@ -1625,8 +1638,9 @@ def calculate_investment_cost(root: Path) -> float:
     Calcula el costo de inversión en estaciones (multi-año), idéntico a
     inversion_cost() de functions.py: usa las variables de INCREMENTO
     Delta_X/Delta_N_bays/Delta_N_chargers/Delta_N_batteries de cada año y,
-    anualizadas con AF_y(r,Y):
-      Σ_y AF_y(r,Y) Σ_k  station_cost_k[k] * Delta_X[k,y]
+    pagadas una sola vez al año de compra y descontadas a valor presente, NO
+    anualizadas -- ver _one_time_discounted_yearly_sum:
+      Σ_y discount_factor(y) Σ_k  station_cost_k[k] * Delta_X[k,y]
            + (c_bays_k[k] + c_crane_k[k]) * Delta_N_bays[k,y]
            + (charger_cost + c_charger_space_k[k]) * Delta_N_chargers[k,y]
            + (battery_cost + c_battery_space_k[k]) * Delta_N_batteries[k,y]
@@ -1657,7 +1671,6 @@ def calculate_investment_cost(root: Path) -> float:
     )
 
     years_sorted = _get_years_sorted(params_data)
-    n_years = len(years_sorted)
     has_degradation = _has_degradation_data(params_data)
     discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
 
@@ -1674,7 +1687,7 @@ def calculate_investment_cost(root: Path) -> float:
         dch = delta_ch_by_station.get(k, {})
         dbt = delta_bat_by_station.get(k, {})
 
-        for pos_y, y in enumerate(years_sorted, start=1):
+        for y in years_sorted:
             y_key = str(y)
             yearly = (
                 c_station * dx.get(y_key, 0.0)
@@ -1682,10 +1695,49 @@ def calculate_investment_cost(root: Path) -> float:
                 + (charger_cost + c_char_sp) * dch.get(y_key, 0.0)
                 + (battery_cost + c_bat_sp) * dbt.get(y_key, 0.0)
             )
-            af = _annuity_factor_year(discount_r, pos_y, n_years) if has_degradation else 1.0
-            total_cost += yearly * af
+            df = _year_discount_factor(discount_r, y, years_sorted)
+            total_cost += yearly * df
 
     return total_cost
+
+
+def calculate_substation_cost(root: Path) -> float:
+    """Costo de inversión en potencia de subestación (idéntico a
+    substation_investment_cost() de functions.py): usa Delta_N_max_k[k,y]
+    (conteo entero de baterías cargando en paralelo, variable de INCREMENTO
+    año a año, sin cota física) y c_inv_ssee_k ($/kW), multiplicado por
+    p_charger para expresar el costo en $/kW aunque la variable de decision
+    sea un conteo entero de baterias, pagada una sola vez al año de compra y
+    descontada a valor presente:
+      Σ_y discount_factor(y) * Σ_k  c_inv_ssee_k[k] * p_charger * Delta_N_max_k[k,y]
+    """
+    params_path = find_json_in_folder(root, "parameters.json")
+    delta_nmax_path = find_json_in_folder(root, "Delta_N_max_k.json")
+
+    if not params_path or is_effectively_empty_json(params_path):
+        return 0.0
+    if not delta_nmax_path or is_effectively_empty_json(delta_nmax_path):
+        return 0.0
+
+    params_data = load_json(params_path)
+
+    c_inv_ssee = _unwrap_named_tree(params_data.get("c_inv_ssee_k", {}))
+    p_charger  = _as_float(params_data.get("p_charger", 0.0))
+    delta_nmax_by_station = _indexed_vars_by_year(delta_nmax_path)
+
+    years_sorted = _get_years_sorted(params_data)
+    has_degradation = _has_degradation_data(params_data)
+    discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
+
+    total = 0.0
+    for k, by_year in delta_nmax_by_station.items():
+        c_k = _as_float(c_inv_ssee.get(k, 0.0)) if isinstance(c_inv_ssee, dict) else 0.0
+        for y in years_sorted:
+            dval = by_year.get(str(y), 0.0)
+            df = _year_discount_factor(discount_r, y, years_sorted)
+            total += c_k * p_charger * dval * df
+
+    return total
 
 
 def calculate_penalty_cost(root: Path) -> float:
@@ -1728,19 +1780,21 @@ def calculate_penalty_cost(root: Path) -> float:
 
 def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     """
-    Lee Delta_G_g.json (inversión por año), G_g.json (stock acumulado, para
-    reportar unidades instaladas al final del horizonte) y parameters.json.
+    Lee G_g.json y parameters.json. G_g[g] ya no tiene indice de año ni
+    Delta_G_g asociado (eliminados) -- se decide UNA sola vez para todo el
+    horizonte (ver BoundRules en functions.py), asi que G_g.json es
+    directamente {"g": {gen_name: unidades_instaladas}}, sin niveles "y".
 
-    Costo multi-año (idéntico a gen_investment_cost/gen_op_cost de
-    functions.py): sum_y AF_y(r,Y) * Delta_G_g[g,y] * c_inv_g[g]/c_op_g[g] * p_max_g[g].
+    Costo (idéntico a gen_investment_cost/gen_op_cost de functions.py):
+      inv_cost = discount_factor(primer_año) * G_g[g] * c_inv_g[g] * p_max_g[g]  (pago unico)
+      op_cost  = sum_y discount_factor(y) * G_g[g] * c_op_g[g] * p_max_g[g]      (recurrente)
     """
-    delta_gg_path = find_json_in_folder(root, "Delta_G_g.json")
-    gg_path       = find_json_in_folder(root, "G_g.json")
-    params_path   = find_json_in_folder(root, "parameters.json")
+    gg_path     = find_json_in_folder(root, "G_g.json")
+    params_path = find_json_in_folder(root, "parameters.json")
 
-    if not delta_gg_path or not params_path:
+    if not gg_path or not params_path:
         return {}
-    if is_effectively_empty_json(delta_gg_path) or is_effectively_empty_json(params_path):
+    if is_effectively_empty_json(gg_path) or is_effectively_empty_json(params_path):
         return {}
 
     params_data = load_json(params_path)
@@ -1750,17 +1804,15 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
         inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
         return {str(g): _as_float(v, 0.0) for g, v in inner.items()} if isinstance(inner, dict) else {}
 
-    delta_gg_by_gen = _indexed_vars_by_year(delta_gg_path, outer_candidates=("g", "_1"))
-    stock_gg_by_gen = _indexed_vars_by_year(gg_path, outer_candidates=("g", "_1"))
+    gg_by_gen = _indexed_vars_flat(gg_path, outer_candidates=("g", "_1"))
 
     c_inv = _extract_param("c_inv_g")
     c_op  = _extract_param("c_op_g")
     p_max = _extract_param("p_max_g")
-    gen_set = [str(g) for g in params_data.get("gen_set", list(delta_gg_by_gen.keys()))]
+    gen_set = [str(g) for g in params_data.get("gen_set", list(gg_by_gen.keys()))]
 
     years_sorted = _get_years_sorted(params_data)
-    n_years = len(years_sorted)
-    last_year_key = str(years_sorted[-1]) if years_sorted else None
+    first_year = years_sorted[0] if years_sorted else None
     has_degradation = _has_degradation_data(params_data)
     discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
 
@@ -1768,19 +1820,18 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     total_inv = total_op = total_power = 0.0
 
     for g in gen_set:
-        deltas = delta_gg_by_gen.get(g, {})
-        inv = op = 0.0
-        for pos_y, y in enumerate(years_sorted, start=1):
-            dval = deltas.get(str(y), 0.0)
-            af = _annuity_factor_year(discount_r, pos_y, n_years) if has_degradation else 1.0
-            inv += dval * c_inv.get(g, 0.0) * p_max.get(g, 0.0) * af
-            op  += dval * c_op.get(g, 0.0)  * p_max.get(g, 0.0) * af
-
-        # Unidades acumuladas al final del horizonte (= total construido, sin
-        # retiro de activos); fallback a la suma de incrementos si G_g.json
-        # no esta disponible.
-        units = stock_gg_by_gen.get(g, {}).get(last_year_key, 0.0) if last_year_key else sum(deltas.values())
+        units = gg_by_gen.get(g, 0.0)
         power = units * p_max.get(g, 0.0)
+
+        inv = 0.0
+        if first_year is not None:
+            inv = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0) \
+                * _year_discount_factor(discount_r, first_year, years_sorted)
+
+        op = sum(
+            units * c_op.get(g, 0.0) * p_max.get(g, 0.0) * _year_discount_factor(discount_r, y, years_sorted)
+            for y in years_sorted
+        )
 
         gens[g] = {"units": units, "p_max_unit": p_max.get(g, 0.0), "power_kw": power,
                    "inv_cost": inv, "op_cost": op}
@@ -1794,20 +1845,23 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
 
 def calculate_bess_costs(root: Path) -> Dict[str, Any]:
     """
-    Lee Delta_H.json (inversión del cluster BESS por año, sin eje h -- el
-    modelo asume un único cluster candidato), H.json (stock acumulado, para
-    reportar unidades instaladas al final del horizonte) y parameters.json.
+    Lee H.json y parameters.json. H ya no tiene indice de año ni Delta_H
+    asociado (eliminados) -- se decide UNA sola vez para todo el horizonte,
+    como una VARIABLE ESCALAR (sin ningun indice, ni siquiera "y") -- ver
+    BoundRules en functions.py. El Printer exporta un escalar como el
+    numero JSON crudo (no un dict anidado), asi que H.json es directamente
+    un numero.
 
-    Costo multi-año (idéntico a bess_investment_cost/bess_op_cost de
-    functions.py): sum_y AF_y(r,Y) * Delta_H[y] * c_inv_h[h]/c_op_h[h].
+    Costo (idéntico a bess_investment_cost/bess_op_cost de functions.py):
+      inv_cost = discount_factor(primer_año) * H * c_inv_h[h]  (pago unico)
+      op_cost  = sum_y discount_factor(y) * H * c_op_h[h]      (recurrente)
     """
-    delta_h_path = find_json_in_folder(root, "Delta_H.json")
-    h_path       = find_json_in_folder(root, "H.json")
-    params_path  = find_json_in_folder(root, "parameters.json")
+    h_path      = find_json_in_folder(root, "H.json")
+    params_path = find_json_in_folder(root, "parameters.json")
 
-    if not delta_h_path or not params_path:
+    if not h_path or not params_path:
         return {}
-    if is_effectively_empty_json(delta_h_path) or is_effectively_empty_json(params_path):
+    if is_effectively_empty_json(h_path) or is_effectively_empty_json(params_path):
         return {}
 
     params_data = load_json(params_path)
@@ -1817,8 +1871,7 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
         inner = raw.get("_1", raw) if isinstance(raw, dict) else {}
         return {str(h): _as_float(v, 0.0) for h, v in inner.items()} if isinstance(inner, dict) else {}
 
-    delta_h_by_year = _year_only_vars(delta_h_path)
-    h_by_year       = _year_only_vars(h_path)
+    units_final = _scalar_var(h_path)
 
     c_inv    = _extract_param("c_inv_h")
     c_op     = _extract_param("c_op_h")
@@ -1828,25 +1881,22 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
     stor_set = [str(h) for h in params_data.get("storage_set", list(c_inv.keys()))]
 
     years_sorted = _get_years_sorted(params_data)
-    n_years = len(years_sorted)
-    last_year_key = str(years_sorted[-1]) if years_sorted else None
+    first_year = years_sorted[0] if years_sorted else None
     has_degradation = _has_degradation_data(params_data)
     discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
-
-    # Unidades acumuladas del cluster al final del horizonte (sin retiro de
-    # activos); fallback a la suma de incrementos si H.json no esta disponible.
-    units_final = h_by_year.get(last_year_key, 0.0) if last_year_key else sum(delta_h_by_year.values())
 
     units_info: Dict[str, Dict[str, float]] = {}
     total_inv = total_op = 0.0
 
     for h in stor_set:
-        inv = op = 0.0
-        for pos_y, y in enumerate(years_sorted, start=1):
-            dval = delta_h_by_year.get(str(y), 0.0)
-            af = _annuity_factor_year(discount_r, pos_y, n_years) if has_degradation else 1.0
-            inv += dval * c_inv.get(h, 0.0) * af
-            op  += dval * c_op.get(h, 0.0) * af
+        inv = 0.0
+        if first_year is not None:
+            inv = units_final * c_inv.get(h, 0.0) * _year_discount_factor(discount_r, first_year, years_sorted)
+
+        op = sum(
+            units_final * c_op.get(h, 0.0) * _year_discount_factor(discount_r, y, years_sorted)
+            for y in years_sorted
+        )
         units_info[h] = {"installed": units_final, "p_max_kw": p_max.get(h, 0.0),
                          "a_max_kwh": a_max.get(h, 0.0), "a_min_kwh": a_min.get(h, 0.0),
                          "inv_cost": inv, "op_cost": op}
@@ -2022,7 +2072,13 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
     except Exception as ex:
         print(f"Advertencia al calcular costo de inversión: {ex}")
         investment_cost = 0.0
-    
+
+    try:
+        substation_cost = calculate_substation_cost(root)
+    except Exception as ex:
+        print(f"Advertencia al calcular costo de inversión en subestación: {ex}")
+        substation_cost = 0.0
+
     try:
         penalty_cost = calculate_penalty_cost(root)
     except Exception as ex:
@@ -2070,12 +2126,13 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         print(f"Advertencia al calcular costo de reemplazo de batería: {ex}")
         battery_replace_cost = 0.0
 
-    # Todas las componentes (investment_cost, peak_power_cost, gen_*, bess_*,
-    # grid_energy_cost, battery_replace_cost) aplican el mismo descuento NPV
-    # (annuity_factor_expr/_discount_factor) que usa la función objetivo
-    # cuando hay datos de BatteryDegradation cargados, así que este
-    # total_cost debería coincidir con el objetivo reportado por Gurobi.
-    total_cost = (investment_cost + grid_energy_cost + penalty_cost + peak_power_cost
+    # Todas las componentes (investment_cost, substation_cost, peak_power_cost,
+    # gen_*, bess_*, grid_energy_cost, battery_replace_cost) aplican el mismo
+    # descuento NPV (_discount_factor, pago unico o recurrente segun el
+    # concepto -- ver functions.py) que usa la función objetivo cuando hay
+    # datos de BatteryDegradation cargados, así que este total_cost debería
+    # coincidir con el objetivo reportado por Gurobi.
+    total_cost = (investment_cost + substation_cost + grid_energy_cost + penalty_cost + peak_power_cost
                   + gen_inv_cost + gen_op_cost + bess_inv_cost + bess_op_cost
                   + battery_replace_cost)
 
@@ -2085,6 +2142,7 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         "grid_energy_kwh":      grid_energy_kwh,
         "real_energy_cost":     real_energy_cost,
         "investment_cost":      investment_cost,
+        "substation_cost":      substation_cost,
         "penalty_cost":         penalty_cost,
         "peak_power_cost":      peak_power_cost,
         "gen_inv_cost":         gen_inv_cost,
