@@ -495,9 +495,25 @@ class OptParameters(OptRules):
         model.filling_factor = pyo.Param(model.lhd_set,        initialize={i: self.mine_system.elhd.get_filling_factor(i)      for i in model.lhd_set}, mutable=False)
          
         #Par�metros problema de inversi�n
-        model.p_charger = pyo.Param(initialize=self.mine_system.chargers.get_charger_power(), mutable=False)
+        _p_charger_val = self.mine_system.chargers.get_charger_power()
+        model.p_charger = pyo.Param(initialize=_p_charger_val, mutable=False)
         model.p_max_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_p_max_ssee(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
+        # Cantidad maxima de baterias cargando en paralelo equivalente a
+        # p_max_k / p_peak, redondeada hacia abajo: usar esta cota entera
+        # directamente sobre Sv (en vez de Sv*p_charger <= potencia) da una
+        # relajacion lineal mas apretada cuando el cociente no es entero.
+        model.n_max_k = pyo.Param(
+            model.stations_set,
+            initialize={k: math.floor(self.mine_system.stations.get_p_max_ssee(k) / _p_charger_val) for k in model.stations_set},
+            mutable=False,
+            within=pyo.NonNegativeIntegers,
+        )
+        model.n_peak_max = pyo.Param(
+            initialize=math.floor(self.mine_system.chargers.get_p_peak_dist() / _p_charger_val),
+            mutable=False,
+            within=pyo.NonNegativeIntegers,
+        )
         model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.battery_cost = pyo.Param(initialize=self.mine_system.chargers.get_battery_cost(), mutable=False)
         # Cantidad de LHD swap efectivamente activos (con al menos un nodo
@@ -1363,20 +1379,28 @@ class ConstraintRules(OptRules):
 
     #  Sistemas distribuci�n
     def max_installed_capacity_swap(self, model, k, y, d, t):
+        """Potencia maxima de la subestacion k, expresada como cota entera
+        sobre la cantidad de baterias cargando en paralelo (n_max_k =
+        floor(p_max_k[k]/p_charger)) en vez de Sv*p_charger <= p_max_k[k]:
+        misma restriccion sobre soluciones enteras, pero relajacion lineal
+        mas apretada cuando el cociente no es entero."""
         a_window = self._sv_a_window(model, t)
         if not a_window:
             return pyo.Constraint.Skip
-        return sum(model.Sv[k, y, d, t, a]*model.p_charger for a in a_window) <= model.p_max_k[k]
+        return sum(model.Sv[k, y, d, t, a] for a in a_window) <= model.n_max_k[k]
 
     def peak_power_swap(self, model, y, d, t):
+        """Potencia peak de distribucion, expresada como cota entera sobre
+        la cantidad total de baterias cargando en paralelo (n_peak_max =
+        floor(p_peak/p_charger)) -- ver max_installed_capacity_swap."""
         a_window = self._sv_a_window(model, t)
         if not a_window:
             return pyo.Constraint.Skip
         return sum(
-            model.Sv[k, y, d, t, a]*model.p_charger
+            model.Sv[k, y, d, t, a]
             for k in model.stations_set
             for a in a_window
-        ) <= model.p_peak
+        ) <= model.n_peak_max
 
     def power_peak_limit(self, model, y, d, t):
         """Demand-charge constraint: grid power during peak hours <= P_pot.
