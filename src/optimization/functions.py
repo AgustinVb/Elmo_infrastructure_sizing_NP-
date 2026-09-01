@@ -1375,11 +1375,23 @@ class ObjectiveRules(OptRules):
     def gen_investment_cost(self, model):
         """Costo de inversión en generación: G_g[g] se decide una sola vez
         para todo el horizonte (ver BoundRules), asi que se paga una unica
-        vez, descontado al primer año."""
+        vez, descontado al primer año.
+
+        Guard `first_year in model.years`: en modo descompuesto, ObjectiveRules.
+        total_cost se evalua UNA VEZ POR BLOQUE-AÑO (ver YearBlockBuilder._build),
+        cada uno con su propia copia de G_g[g] (libre en el bloque origen, fijada
+        por igualdad en los demas -- ver _add_global_once_state en year_block.py).
+        Sin este guard, CADA bloque cobraria el costo de inversion completo (no
+        solo el bloque origen), sobre-contando por un factor de n_years en el
+        UB/LB de la descomposicion. En el monolitico (model.years = horizonte
+        completo) el guard nunca se activa, sin cambio de comportamiento."""
         if len(list(model.gen_set)) == 0:
             return 0
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
         return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set) \
-            * self._discount_factor(model, self._first_year())
+            * self._discount_factor(model, first_year)
 
     def gen_op_cost(self, model):
         """Costo de O&M anual de generación: recurre cada año del horizonte
@@ -1393,11 +1405,16 @@ class ObjectiveRules(OptRules):
 
     def bess_investment_cost(self, model):
         """Costo de inversión BESS: H se decide una sola vez para todo el
-        horizonte, se paga una unica vez, descontado al primer año."""
+        horizonte, se paga una unica vez, descontado al primer año. Mismo
+        guard `first_year in model.years` que gen_investment_cost, y por
+        la misma razon (evitar sobre-contar en modo descompuesto)."""
         if len(list(model.storage_set)) == 0:
             return 0
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
         return sum(model.H * model.c_inv_h[h] for h in model.storage_set) \
-            * self._discount_factor(model, self._first_year())
+            * self._discount_factor(model, first_year)
 
     def bess_op_cost(self, model):
         """Costo de O&M anual BESS: recurre cada año del horizonte sobre la

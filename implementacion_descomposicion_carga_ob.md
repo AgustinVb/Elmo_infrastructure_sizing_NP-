@@ -26,11 +26,16 @@ inferior del costo total se cierran hasta una tolerancia prefijada.
 
 Tres hechos hacen que este problema sea un caso favorable:
 
-1. **Todos los acoplamientos temporales son adyacentes** (`y-1 → y`). Al no haber
-   retiro de activos (vida útil > horizonte), no existen enlaces `y-LT → y`; cada
-   corte se agrega al año inmediatamente anterior, sin desfases.
-2. **El estado es compacto.** Cuatro familias de variables de estado, de las cuales
-   solo una es entera.
+1. **Casi todos los acoplamientos temporales son adyacentes** (`y-1 → y`): al no
+   haber retiro de activos (vida útil > horizonte), no existen enlaces `y-LT → y`;
+   cada corte se agrega al año inmediatamente anterior, sin desfases. La excepción es
+   generación/almacenamiento (`G_g`/`H`), que se decide una única vez en el bloque
+   del primer año y se hereda fija (sin acumulación) por el resto del horizonte --
+   ver 2.1bis; el corte hacia ese bloque sigue propagándose sin desfases, solo cambia
+   la semántica del enlace (no es "año anterior + incremento", es "el mismo valor").
+2. **El estado es compacto.** Cinco familias de variables de estado (`N^C`, `P^{max}`,
+   `AN^ciclos` adyacentes; `G`, `H` de decisión única), de las cuales solo una
+   (`N^C`) es entera.
 3. **Recurso completo garantizado sin holguras.** La red eléctrica abastece el balance
    de potencia (54), de modo que cualquier estado heredado admite una operación
    factible: no hace falta agregar variables de holgura penalizadas.
@@ -47,85 +52,129 @@ subproblemas anuales. En este modelo:
 | Estado `x_y`        | Dominio            | Reemplaza a  | Balance origen | Decisión local asociada     |
 |---------------------|--------------------|--------------|----------------|-----------------------------|
 | `N^C_{k,y}`         | entero ≥ 0         | `N^C_k`      | (3)            | `ΔN^C_{k,y}`                |
-| `G_{g,y}`           | continuo ≥ 0       | `G_g`        | (4)            | `ΔG_{g,y}`                 |
-| `H_y`               | **continuo ≥ 0**   | `H_h`        | (5)            | `ΔH_y`                     |
+| `P^{max}_{k,y}`     | continuo ≥ 0       | `p^{max}_k`  | (3bis)         | `ΔP^{max}_{k,y}`            |
 | `AN^ciclos_y`       | continuo ≥ 0       | —            | (21)–(22)      | `R_y`, `N^ciclos_y`         |
 
-> **Único estado entero: `N^C_{k,y}`** (cargadores acumulados). `H_y` es continuo,
-> `G_y` y `AN^ciclos_y` también. Esto es relevante para la elección de corte
+> **Único estado entero: `N^C_{k,y}`** (cargadores acumulados). `P^{max}_y` y
+> `AN^ciclos_y` son continuos. Esto es relevante para la elección de corte
 > (Sección 6): la relajación lineal solo afloja una familia de variables de estado,
 > lo que favorece al corte de Benders.
+
+`G_g` y `H` (generación/almacenamiento) **ya no son estado adyacente año a año** --
+desde que se eliminó `ΔG_{g,y}`/`ΔH_y` del monolítico (se deciden una única vez para
+todo el horizonte, no año a año), pasaron a un tercer patrón de acople, ni "adyacente"
+ni "exógeno fijo": ver **2.1bis "Estados de decisión única"** más abajo.
 
 **Fuera del estado:**
 
 - Las estaciones `X_{k,y}` están **fijas** en esta configuración: entran como
   parámetro exógeno en (7)–(8), no como variable de estado. La restricción de acople
   (2) y su incremento `ΔX_{k,y}` no se generan.
-- Las variables de incremento `Δ(·)_y` son **locales**, no de estado. A diferencia
-  de la referencia (donde `ngb` era estado por el retiro a `t+LT`), aquí ningún año
-  futuro observa los incrementos: solo afectan el balance de acumulación del propio
-  año y su costo de inversión (1).
+- Las variables de incremento `Δ(·)_y` (de las familias adyacentes) son **locales**,
+  no de estado. A diferencia de la referencia (donde `ngb` era estado por el retiro a
+  `t+LT`), aquí ningún año futuro observa los incrementos: solo afectan el balance de
+  acumulación del propio año y su costo de inversión (1).
+
+### 2.1bis Estados de decisión única (`G`, `H`)
+
+Patrón nuevo, distinto tanto del acople adyacente (2.1) como de "fuera del estado"
+(`X`): la variable real (`G_g` o `H`, **sin índice de año** en el monolítico) se
+decide **una sola vez**, en el bloque del **primer año del horizonte global**, y se
+**hereda fija** (sin incremento, sin acumulación) por todos los años siguientes --
+implementado en `YearBlockBuilder._add_global_once_state` (`kind="global_once"` en
+`state_links`, ver `year_block.py`), a diferencia de `_add_linear_state`
+(`kind="simple"`) que usan `N^C`/`P^{max}`/`AN^ciclos`.
+
+- **Año 1 (origen):** `G_g`/`H` quedan como variable libre (la crea `BoundRules`,
+  sin cambios) -- no hay `hat`/`prev` para este bloque, solo se registra la entrada
+  en `state_links` para que `extract_state()` reporte el valor óptimo.
+- **Años siguientes:** se fuerza `G_g = Ĝ_g` / `H = Ĥ` **directo sobre la variable
+  real** (sin una copia `prev` separada, porque no hay ninguna aritmética de
+  acumulación que mantener aparte del valor heredado -- el heredado ES el valor).
+  El dual de esa igualdad alimenta el corte de Benders igual que cualquier otra
+  familia (`cuts.py::add_cut`, con el mismo manejo genérico salvo que referencia la
+  variable real sin agregar el año al índice).
+
+Esto significa que el corte que llega al bloque del año 1 sí incorpora la
+sensibilidad de `G_g`/`H` sobre el costo de TODOS los años siguientes (vía la cadena
+de cortes backward, igual que cualquier estado adyacente) -- solo cambia que no hay
+"stock que crece año a año", sino un único valor que se reusa idéntico en cada
+bloque.
 
 ### 2.2 Variables locales `y_y`
 
 Todo lo demás intra-anual:
 
-- Incrementos de inversión `ΔN^C_{k,y}`, `ΔG_{g,y}`, `ΔH_y`.
+- Incrementos de inversión `ΔN^C_{k,y}`, `ΔP^{max}_{k,y}`.
 - Operación horaria completa: `P_{k,i,y,d,t}`, `Z^charge`, `Y_{i,j,y,d,t}`,
   `Z_{i,y,d,t}`, `Start/EndCharge`, `Start/EndAssign`, `M_{i,j,y,d,t}`.
 - Estado de energía de baterías `B_{i,y,d,t}`.
 - Potencias de red / generación / batería: `P^red`, `P^gen`, `P^bat`, `Curt`, `A`.
 - Decisiones de degradación del año: `R_y` (binaria), `N^ciclos_y`, `B_y`, `S_y`.
 
+`G_g`/`H` ya no tienen incremento local (`ΔG_g`/`ΔH` se eliminaron, ver 2.1bis).
+
 ### 2.3 Copias del estado previo `z_y`
 
 Variables continuas duplicadas que representan el estado del año anterior dentro del
-subproblema del año `y`:
+subproblema del año `y`, para las familias con acople **adyacente** (2.1):
 
-`z_y = (N^{C,prev}_{k,y}, G^{prev}_{g,y}, H^{prev}_y, AN^{ciclos,prev}_y)`
+`z_y = (N^{C,prev}_{k,y}, P^{max,prev}_{k,y}, AN^{ciclos,prev}_y)`
 
 **Se declaran continuas aunque el estado original sea entero.** Esto es lo que
 garantiza que la restricción de enlace tenga un dual bien definido al relajar el
 subproblema.
 
+Las familias de **decisión única** (`G_g`, `H`, ver 2.1bis) NO tienen copia `prev`
+separada: la igualdad de enlace en los años no-origen se plantea directo sobre la
+variable real (`G_g = Ĝ_g`), porque no hay ninguna acumulación (`prev + Δ`) que
+mantener aparte del valor heredado.
+
 ---
 
 ## 3. Restricciones de acople
 
-Cada estado del año anterior se duplica en una copia continua, fijada por igualdad a
-un parámetro que contiene el valor heredado del forward pass. El dual de esa igualdad
-es el que forma el corte.
+Cada estado **adyacente** del año anterior se duplica en una copia continua, fijada
+por igualdad a un parámetro que contiene el valor heredado del forward pass. El dual
+de esa igualdad es el que forma el corte.
 
 ```
 # Infraestructura (adyacente, y-1 → y)
 N^{C,prev}_{k,y} = N̂^C_{k,y-1}     ← μ^{NC}_{k,y}
 N^C_{k,y}        = N^{C,prev}_{k,y} + ΔN^C_{k,y}
 
-G^{prev}_{g,y}   = Ĝ_{g,y-1}        ← μ^{G}_{g,y}
-G_{g,y}          = G^{prev}_{g,y}   + ΔG_{g,y}
-
-H^{prev}_y       = Ĥ_{y-1}          ← μ^{H}_{y}
-H_y              = H^{prev}_y       + ΔH_y
-H_y              ≤ n^{H,max}
+P^{max,prev}_{k,y} = P̂^{max}_{k,y-1}   ← μ^{Pmax}_{k,y}
+P^{max}_{k,y}      = P^{max,prev}_{k,y} + ΔP^{max}_{k,y}
 
 # Degradación (adyacente, y-1 → y)
 AN^{ciclos,prev}_y = ÂN^ciclos_{y-1}   ← μ^{AN}_{y}
 AN^ciclos_y        = (1 - R_y)·AN^{ciclos,prev}_y + N^ciclos_y
 ```
 
-**Condición de borde (`y = y_1`).** Las copias se fijan a los stocks iniciales:
+Las familias de **decisión única** (`G_g`, `H` -- ver 2.1bis) usan una igualdad más
+simple, sin incremento ni copia `prev`, y solo en los años que NO son el origen del
+horizonte:
 
 ```
-N̂^C_{k,y_0} = n^{C,0}_k      (0 en greenfield)
-Ĝ_{g,y_0}   = g^0_g          (0 en greenfield)
-Ĥ_{y_0}     = h^0            (0 en greenfield)
+# Generación / almacenamiento (decisión única, se fija en TODOS los años salvo y_1)
+G_{g,y}  = Ĝ_g     ← μ^{G}_{g,y}      (y != y_1; en y_1, G_g es libre, sin esta igualdad)
+H_y      = Ĥ       ← μ^{H}_{y}        (y != y_1; en y_1, H es libre, sin esta igualdad)
+```
+
+**Condición de borde (`y = y_1`).** Las copias adyacentes se fijan a los stocks
+iniciales; `G_g`/`H` no tienen condición de borde propiamente tal -- simplemente no
+existe la igualdad de enlace en el bloque del año 1 (es el bloque que las decide):
+
+```
+N̂^C_{k,y_0}    = n^{C,0}_k   (0 en greenfield)
+P̂^{max}_{k,y_0} = 0          (0 en greenfield -- sin cota fisica)
 ÂN^ciclos_{y_0} = 0          (batería nueva → B_{y_1} = b^max)
-R_{y_1}     = 0  (fijado; no tiene sentido reemplazar batería nueva)
+R_{y_1}         = 0  (fijado; no tiene sentido reemplazar batería nueva)
 ```
 
-Los cuatro parámetros `(N̂^C, Ĝ, Ĥ, ÂN^ciclos)` son los que se actualizan entre
-iteraciones con el valor del forward pass. **En el subproblema son parámetros
-mutables, no variables.**
+Los parámetros heredados `(N̂^C, P̂^{max}, ÂN^ciclos, Ĝ, Ĥ)` son los que se actualizan
+entre iteraciones con el valor del forward pass (`Ĝ`/`Ĥ` solo aplican a los bloques
+de años != y_1). **En el subproblema son parámetros mutables, no variables.**
 
 ---
 
@@ -182,7 +231,7 @@ Forma concisa del subproblema `(P_{y,k})` para el año `y` en la iteración `k`:
 
 **Región factible `X_y`** = todas las restricciones del año, ya desacopladas:
 
-- Acoples y balances de acumulación (Sección 3) + cota `H_y ≤ n^{H,max}`.
+- Acoples y balances de acumulación (Sección 3) + cotas `H ≤ n^{H,max}`, `G_g ≤ g^{max}_g`.
 - Estaciones / cargadores (7)–(14) sobre el stock `N^C_{k,y}` (`X_{k,y}` fijo).
 - Operación de baterías (15)–(18) con `B_y` la capacidad del año.
 - Degradación linealizada (Sección 4).
@@ -193,17 +242,36 @@ Forma concisa del subproblema `(P_{y,k})` para el año `y` en la iteración `k`:
 - Generación y almacenamiento (52)–(59), si el escenario las define.
 
 **Costo del año `f_y(x_y, y_y)`** = el término correspondiente de la suma sobre `y`
-en (1):
+en (1). Ya **no hay anualidad** (`AF_y` se eliminó, ver `functions.py`): todo capex
+se paga **una sola vez, descontado a valor presente con `1/(1+r)^{pos(y)}`**, no
+anualizado sobre el resto del horizonte:
 
-- inversión anualizada del año: `AF_y(r,Y) · [c^s·ΔX + (...)·ΔN^C + (c^inv+c^op)·ΔG + (...)·ΔH]`
-  (los `Δ(·)` locales; `ΔX = 0` porque las estaciones están fijas),
+- inversión (pago único, descontada al año de compra): `1/(1+r)^{pos(y)} ·
+  [c^s·ΔX + (...)·ΔN^C + c^{ssee}·ΔP^{max}]` (los `Δ(·)` locales; `ΔX = 0` porque las
+  estaciones están fijas),
+- inversión en generación/almacenamiento (pago único, **solo en el bloque del primer
+  año del horizonte GLOBAL**, `y = y_1`; cero en los demás bloques -- ver nota más
+  abajo): `1/(1+r)^{pos(y_1)} · [(c^inv_g)·G_g + (c^inv_h)·H]`,
 - operación descontada por `1/(1+r)^{pos(y)}`: energía `c^elec·P^red`, potencia
-  contratada `c^Pelec·P^pot·12`,
+  contratada `c^Pelec·P^pot·12`, O&M de generación/almacenamiento `(c^op_g)·G_g +
+  (c^op_h)·H` (esta sí recurre TODOS los años, incluidos los que no son `y_1`),
 - reemplazo puntual descontado: `n^elhd · c^bat · R_y`.
 
-> El costo de inversión se devenga sobre los **incrementos** `Δ(·)_y` (locales), no
-> sobre el stock acumulado. Por eso el costo total es separable por año sin doble
-> conteo: cada activo paga una sola vez, el año en que se construye.
+> El costo de inversión de estaciones/cargadores/subestación se devenga sobre los
+> **incrementos** `Δ(·)_y` (locales), no sobre el stock acumulado. Por eso ese costo
+> es separable por año sin doble conteo: cada activo paga una sola vez, el año en
+> que se construye.
+>
+> **`G_g`/`H` no tienen `Δ(·)_y` local** (ver 2.1bis): son la MISMA variable
+> compartida (vía la igualdad de enlace) en todos los bloques del horizonte, así que
+> `gen_investment_cost`/`bess_investment_cost` (`functions.py`, `ObjectiveRules`)
+> llevan un guard explícito `first_year in model.years` -- sin él, **cada bloque
+> volvería a cobrar el costo de inversión completo**, sobre-contando por un factor
+> de `n_years` en el `UB`/`LB` de la descomposición. El guard hace que el término
+> sea cero en todo bloque salvo el del año `y_1`, preservando la separabilidad por
+> año pese a que la variable no sea local. El O&M (`gen_op_cost`/`bess_op_cost`) no
+> necesita el guard porque ya recorre `model.years`, que en un bloque descompuesto
+> es el singleton `{y}` -- cada bloque aporta naturalmente solo su propio año.
 
 **Rol dual de cada año** (no hay maestro/subproblema separados):
 
@@ -239,7 +307,9 @@ Se convexifica el subproblema `y+1` por su **relajación lineal**. El corte usa 
 ```
 
 donde `Φ^LP` y `μ` provienen de resolver la relajación lineal del subproblema `y+1`,
-leyendo los duales de las cuatro igualdades de acople.
+leyendo los duales de todas las igualdades de acople activas en ese bloque (las
+adyacentes de 2.1, más la de decisión única de `G`/`H` si `y+1` no es el año origen
+del horizonte -- ver 2.1bis).
 
 **Por qué empezar con Benders en este modelo:**
 
@@ -371,8 +441,9 @@ adaptada al caso determinista (sin árbol de escenarios).
 
 1. **Un bloque por año, construido una sola vez.** El modelo se instancia al inicio
    y nunca se reconstruye; entre iteraciones solo cambian valores de parámetros.
-2. **Estado heredado como parámetro mutable.** Los cuatro `(N̂^C, Ĝ, Ĥ, ÂN^ciclos)`
-   son `Param(mutable=True)` dentro de la igualdad de enlace. Actualizarlos es una
+2. **Estado heredado como parámetro mutable.** `(N̂^C, P̂^{max}, ÂN^ciclos)` (adyacentes,
+   2.1) y `(Ĝ, Ĥ)` (decisión única, 2.1bis -- solo en bloques `y != y_1`) son todos
+   `Param(mutable=True)` dentro de la igualdad de enlace. Actualizarlos es una
    asignación; la estructura no se toca.
 3. **Listas de restricciones vacías al construir.** Enlaces y cortes viven en
    `ConstraintList` que empiezan vacías y se llenan sobre la marcha.
@@ -410,8 +481,15 @@ adaptada al caso determinista (sin árbol de escenarios).
 - **Recurso completo.** Confirmado sin holguras porque la red abastece (54); si en
   el futuro se limita la potencia de red (`p^peak` muy bajo), reevaluar y agregar
   slacks penalizados en (54).
-- **Cota de estado.** Aunque `H_y` sea continuo, mantener `H_y ≤ n^{H,max}` como
-  restricción local: acota el subproblema y evita duales degenerados.
+- **Cota de estado.** Mantener `H ≤ n^{H,max}`/`G_g ≤ g^{max}_g` como restricción
+  local en cada bloque (`max_storage_units`/`gen_max_units`, sin índice de año desde
+  que `H`/`G_g` son decisión única): acota el subproblema y evita duales degenerados.
+- **Cortes de `G`/`H` (decisión única, 2.1bis) silenciosamente mal armados.** Es la
+  parte más fácil de romper sin que truene: un corte mal indexado no da error, solo
+  hace que el algoritmo converja a una solución subóptima. Verificar explícitamente
+  que `add_cut`/`read_duals` referencien la variable real SIN agregar el año al
+  índice para estas dos familias (a diferencia de las adyacentes) -- ver validación
+  1 (contra el monolítico) en un escenario con generación/almacenamiento.
 
 ---
 
