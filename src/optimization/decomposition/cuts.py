@@ -52,11 +52,18 @@ class BendersCutManager(object):
                 continue
             state_var = getattr(model, link["state_var"])
             mu_fam = mu[state_name]
+            # "global_once" (G, H): la variable real no tiene indice de año
+            # (decidida una sola vez para todo el horizonte, ver
+            # year_block.py::_add_global_once_state) -- se referencia
+            # directo, sin agregar el año del bloque padre al indice.
+            is_global_once = link.get("kind") == "global_once"
             if link["index_set"] is None:
-                expr += mu_fam * (x_hat_base[state_name] - state_var[y])
+                state_val = state_var if is_global_once else state_var[y]
+                expr += mu_fam * (x_hat_base[state_name] - state_val)
             else:
                 for idx, mu_v in mu_fam.items():
-                    expr += mu_v * (x_hat_base[state_name][idx] - state_var[idx, y])
+                    state_val = state_var[idx] if is_global_once else state_var[idx, y]
+                    expr += mu_v * (x_hat_base[state_name][idx] - state_val)
 
         model.cuts.add(model.alpha >= expr)
 
