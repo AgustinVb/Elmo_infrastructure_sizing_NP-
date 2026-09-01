@@ -56,11 +56,25 @@ import json
 import math
 import os
 import random
+import sys
 import time
 from os import makedirs
 from os.path import join
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
+
+# En Windows, cuando stdout/stderr no son una consola real (pipe/redirect),
+# Python usa el codepage ANSI local (cp1252) en vez de UTF-8, lo que revienta
+# con UnicodeEncodeError en cualquier print con emojis (los usa opt_model.py
+# al reportar resultados). Esto mata el worker de ProcessPoolExecutor y con
+# el toda la corrida, incluso los subproblemas ya resueltos. Forzamos UTF-8
+# aca (nivel de modulo) para que tambien aplique en los procesos hijos
+# ('spawn' en Windows reimporta este modulo antes de ejecutar el __main__ guard).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from src import mine
 from src.io.reader import Reader, Series

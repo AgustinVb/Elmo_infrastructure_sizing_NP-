@@ -713,8 +713,8 @@ class ConstraintRules(OptRules):
                            * pyo_value(model.filling_factor[i_rep]))
 
         target = pyo_value(model.m_j[j, d])
-        lb = math.floor(target / prod_per_assign) - 1
-        ub = math.ceil(target / prod_per_assign)  + 1 
+        lb = math.floor(target / prod_per_assign) 
+        ub = math.ceil(target / prod_per_assign)   
 
         visits = sum(model.Y[i2, j, d, t2] for i2, t2 in y_pairs)
 
