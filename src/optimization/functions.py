@@ -503,8 +503,9 @@ class OptParameters(OptRules):
         # sobre Sv (en vez de Sv*p_charger <= potencia) da una relajacion
         # lineal mas apretada cuando el cociente no es entero. p_max_k/
         # n_max_k (potencia/conteo maximo POR ESTACION) se eliminaron: esa
-        # capacidad ahora es una decision de inversion (N_max_k/Delta_N_max_k
-        # mas abajo), sin cota fisica -- ver link_ssee_stock.
+        # capacidad ahora es una decision de inversion (N_max_k mas abajo,
+        # decidida UNA sola vez para todo el horizonte, sin cota fisica --
+        # mismo patron que G_g/H).
         model.n_peak_max = pyo.Param(
             initialize=math.floor(self.mine_system.chargers.get_p_peak_dist() / _p_charger_val),
             mutable=False,
@@ -720,10 +721,10 @@ class BoundRules(OptRules):
         model.Delta_N_chargers = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         # Potencia de subestacion, expresada como conteo entero de baterias
         # cargando en paralelo (mismo conteo que usa max_installed_capacity_
-        # swap) en vez de kW -- misma decision de inversion año a año que
-        # N_chargers (ver link_ssee_stock), sin cota fisica.
-        model.N_max_k       = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
-        model.Delta_N_max_k = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
+        # swap) en vez de kW -- decidida UNA sola vez para todo el horizonte
+        # (sin indice de año, sin Delta), mismo patron que G_g/H, sin cota
+        # fisica.
+        model.N_max_k = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         #Inicio de una carga on-board
         #model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
         # Indica si termina una carga en t
@@ -1332,11 +1333,6 @@ class ConstraintRules(OptRules):
             return model.N_chargers[k, y] == model.Delta_N_chargers[k, y]
         return model.N_chargers[k, y] == model.N_chargers[k, self._prev_year(y)] + model.Delta_N_chargers[k, y]
 
-    def link_ssee_stock(self, model, k, y):
-        if y == self._first_year():
-            return model.N_max_k[k, y] == model.Delta_N_max_k[k, y]
-        return model.N_max_k[k, y] == model.N_max_k[k, self._prev_year(y)] + model.Delta_N_max_k[k, y]
-
     def link_battery_stock(self, model, k, y):
         if y == self._first_year():
             return model.N_batteries[k, y] == model.Delta_N_batteries[k, y]
@@ -1377,16 +1373,16 @@ class ConstraintRules(OptRules):
     #  Sistemas distribuci�n
     def max_installed_capacity_swap(self, model, k, y, d, t):
         """Potencia maxima de la subestacion k, expresada como cota entera
-        sobre la cantidad de baterias cargando en paralelo -- N_max_k[k,y]
-        es una variable de decision (inversion año a año, ver
-        link_ssee_stock/substation_investment_cost), no un parametro fijo:
+        sobre la cantidad de baterias cargando en paralelo -- N_max_k[k]
+        es una variable de decision (decidida UNA sola vez para todo el
+        horizonte, ver substation_investment_cost), no un parametro fijo:
         misma restriccion en unidades de conteo de baterias que antes,
         pero ahora la capacidad se construye (y se paga) en vez de venir
         dada por p_max_ssee."""
         a_window = self._sv_a_window(model, t)
         if not a_window:
             return pyo.Constraint.Skip
-        return sum(model.Sv[k, y, d, t, a] for a in a_window) <= model.N_max_k[k, y]
+        return sum(model.Sv[k, y, d, t, a] for a in a_window) <= model.N_max_k[k]
 
     def peak_power_swap(self, model, y, d, t):
         """Potencia peak de distribucion, expresada como cota entera sobre
@@ -1884,7 +1880,6 @@ class ConstraintRules(OptRules):
         model.link_station_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
         model.link_bays_stock    = pyo.Constraint(model.stations_set, model.years, rule=self.link_bays_stock)
         model.link_charger_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
-        model.link_ssee_stock    = pyo.Constraint(model.stations_set, model.years, rule=self.link_ssee_stock)
         model.link_battery_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_battery_stock)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
@@ -2143,19 +2138,17 @@ class ObjectiveRules(OptRules):
         return self._one_time_discounted_yearly_sum(model, yearly)
 
     def substation_investment_cost(self, model):
-        """Costo de inversión en potencia de subestación: N_max_k[k,y]
+        """Costo de inversión en potencia de subestación: N_max_k[k]
         (conteo entero de baterías cargando en paralelo, ver
-        max_installed_capacity_swap) sigue el mismo patron stock+Delta que
-        estaciones/cargadores (link_ssee_stock), pagado una sola vez por
-        incremento, descontado al año de compra. Se multiplica por
-        p_charger para expresar el costo en $/kW aunque la variable de
-        decision sea un conteo entero de baterias."""
-        def yearly(y):
-            return sum(
-                model.c_inv_ssee_k[k] * model.p_charger * model.Delta_N_max_k[k, y]
-                for k in model.stations_set
-            )
-        return self._one_time_discounted_yearly_sum(model, yearly)
+        max_installed_capacity_swap) se decide una sola vez para todo el
+        horizonte (mismo patron que G_g/H), asi que se paga una unica vez,
+        descontado al primer año. Se multiplica por p_charger para expresar
+        el costo en $/kW aunque la variable de decision sea un conteo
+        entero de baterias."""
+        return sum(
+            model.c_inv_ssee_k[k] * model.p_charger * model.N_max_k[k]
+            for k in model.stations_set
+        ) * self._discount_factor(model, self._first_year())
 
     def gen_investment_cost(self, model):
         """Costo de inversión en generación: G_g[g] se decide una sola vez

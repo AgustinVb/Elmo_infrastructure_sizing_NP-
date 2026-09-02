@@ -1370,7 +1370,7 @@ def _year_discount_factor(r: float, year: Any, years_sorted: List[int]) -> float
 def _indexed_vars_by_year(path: Optional[Path], outer_candidates: Tuple[str, ...] = ("k", "_1")) -> Dict[str, Dict[str, float]]:
     """Lee un JSON con estructura {outer_axis: {id: {'y': {year: val}}}}
     (variables de inversion multi-año Delta_X/Delta_N_bays/Delta_N_chargers/
-    Delta_N_batteries/Delta_N_max_k, indexadas por (id, y)) y devuelve
+    Delta_N_batteries, indexadas por (id, y)) y devuelve
     {id: {year_str: val}}. Devuelve {} si el archivo no existe/esta vacio o
     no calza con la estructura esperada."""
     if not path or is_effectively_empty_json(path):
@@ -1703,39 +1703,43 @@ def calculate_investment_cost(root: Path) -> float:
 
 def calculate_substation_cost(root: Path) -> float:
     """Costo de inversión en potencia de subestación (idéntico a
-    substation_investment_cost() de functions.py): usa Delta_N_max_k[k,y]
-    (conteo entero de baterías cargando en paralelo, variable de INCREMENTO
-    año a año, sin cota física) y c_inv_ssee_k ($/kW), multiplicado por
-    p_charger para expresar el costo en $/kW aunque la variable de decision
-    sea un conteo entero de baterias, pagada una sola vez al año de compra y
-    descontada a valor presente:
-      Σ_y discount_factor(y) * Σ_k  c_inv_ssee_k[k] * p_charger * Delta_N_max_k[k,y]
+    substation_investment_cost() de functions.py): N_max_k[k] (conteo
+    entero de baterías cargando en paralelo) ya no tiene índice de año ni
+    Delta_N_max_k asociado (eliminados) -- se decide UNA sola vez para todo
+    el horizonte, igual que G_g/H (ver BoundRules en functions.py), asi que
+    N_max_k.json es directamente {"k": {station: conteo}}, sin niveles "y".
+    Se multiplica por p_charger para expresar el costo en $/kW aunque la
+    variable de decision sea un conteo entero de baterias. Pagada una sola
+    vez, descontada al primer año:
+      discount_factor(primer_año) * Σ_k c_inv_ssee_k[k] * p_charger * N_max_k[k]
     """
     params_path = find_json_in_folder(root, "parameters.json")
-    delta_nmax_path = find_json_in_folder(root, "Delta_N_max_k.json")
+    nmax_path = find_json_in_folder(root, "N_max_k.json")
 
     if not params_path or is_effectively_empty_json(params_path):
         return 0.0
-    if not delta_nmax_path or is_effectively_empty_json(delta_nmax_path):
+    if not nmax_path or is_effectively_empty_json(nmax_path):
         return 0.0
 
     params_data = load_json(params_path)
 
     c_inv_ssee = _unwrap_named_tree(params_data.get("c_inv_ssee_k", {}))
     p_charger  = _as_float(params_data.get("p_charger", 0.0))
-    delta_nmax_by_station = _indexed_vars_by_year(delta_nmax_path)
+    nmax_by_station = _indexed_vars_flat(nmax_path, outer_candidates=("k", "_1"))
 
     years_sorted = _get_years_sorted(params_data)
+    first_year = years_sorted[0] if years_sorted else None
     has_degradation = _has_degradation_data(params_data)
     discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
 
+    if first_year is None:
+        return 0.0
+
+    df = _year_discount_factor(discount_r, first_year, years_sorted)
     total = 0.0
-    for k, by_year in delta_nmax_by_station.items():
+    for k, val in nmax_by_station.items():
         c_k = _as_float(c_inv_ssee.get(k, 0.0)) if isinstance(c_inv_ssee, dict) else 0.0
-        for y in years_sorted:
-            dval = by_year.get(str(y), 0.0)
-            df = _year_discount_factor(discount_r, y, years_sorted)
-            total += c_k * p_charger * dval * df
+        total += c_k * p_charger * val * df
 
     return total
 
