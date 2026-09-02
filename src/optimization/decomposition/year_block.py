@@ -28,17 +28,16 @@ class YearBlockBuilder(object):
     (sec. 3 del documento). Dos mecanismos, segun como se decide cada
     estado en el monolitico (ver functions.py):
 
-    - Stock+Delta acumulado año a año (N_chargers, P_max_k, y D con
-      matices -- ver mas abajo), via `_add_linear_state`: declara un
-      parametro heredado mutable `<estado>_hat` (actualizado entre
-      iteraciones por el driver forward/backward) y una copia continua
-      `<estado>_prev` ligada a el por igualdad — esa igualdad es la que
-      produce, via su dual, el corte de Benders (sec. 2.3: "la copia se
-      declara continua aunque el estado original sea entero, para que el
-      dual este bien definido"), mas la restriccion de acumulacion local
-      stock=prev+delta.
-    - Decision unica para todo el horizonte (G, H -- desde que se
-      eliminaron Delta_G_g/Delta_H del monolitico), via
+    - Stock+Delta acumulado año a año (N_chargers, y D con matices -- ver
+      mas abajo), via `_add_linear_state`: declara un parametro heredado
+      mutable `<estado>_hat` (actualizado entre iteraciones por el driver
+      forward/backward) y una copia continua `<estado>_prev` ligada a el
+      por igualdad — esa igualdad es la que produce, via su dual, el corte
+      de Benders (sec. 2.3: "la copia se declara continua aunque el estado
+      original sea entero, para que el dual este bien definido"), mas la
+      restriccion de acumulacion local stock=prev+delta.
+    - Decision unica para todo el horizonte (G, H, P_max_k -- desde que se
+      eliminaron Delta_G_g/Delta_H/Delta_P_max_k del monolitico), via
       `_add_global_once_state`: el bloque del primer año del horizonte
       GLOBAL es el unico que decide el valor (variable libre, sin
       hat/prev); los bloques siguientes fijan la variable real == el
@@ -47,7 +46,7 @@ class YearBlockBuilder(object):
     Degradacion de bateria (formulacion B_y/D_y, ver
     degradacion_descomposicion_mccormick.md): aca el estado D_y (capacidad
     al FINAL del año) entra en el acople con el mecanismo stock+Delta
-    (kind "simple", igual que N_chargers/P_max_k, no "global_once") --
+    (kind "simple", igual que N_chargers, no "global_once") --
     D_prev == D_hat, aditivo -- porque el unico termino no lineal del
     bloque (N_ciclos_y * b_bar_y == S_y, PRODUCTO DE DOS VARIABLES DEL
     MISMO AÑO, no cruza años) se resuelve aparte con la relajacion de
@@ -141,16 +140,16 @@ class YearBlockBuilder(object):
                            prev_bound=None):
         """Acople generico 'stock = copia_continua_del_año_anterior + incremento
         local', para las familias de estado con acumulacion simple año a
-        año (N_chargers, P_max_k) -- ver documento sec. 3, ecuaciones
-        adyacentes (y-1 -> y). G/H usan en cambio _add_global_once_state
+        año (N_chargers) -- ver documento sec. 3, ecuaciones adyacentes
+        (y-1 -> y). G/H/P_max_k usan en cambio _add_global_once_state
         (decision unica para todo el horizonte, sin Delta). CumS tiene su
         propia linealizacion (ver _add_degradation_state) porque incluye
         el big-M de reemplazo R_y.
 
         state_name: nombre logico del estado (usado para <estado>_hat/_prev
         y para la clave del corte). state_var_name: nombre del componente
-        Pyomo real que guarda el stock (p.ej. "P_max_k" para el estado
-        "P_max_k").
+        Pyomo real que guarda el stock (p.ej. "N_chargers" para el estado
+        "N_chargers").
 
         prev_bound: cota superior fisica de "prev" (mismo Param que ya
         acota el stock acumulado en otra restriccion del modelo, p.ej.
@@ -164,12 +163,7 @@ class YearBlockBuilder(object):
         no tiene nada que lo frene antes de crecer sin limite economico
         real (ver conversacion de diseño: la relajacion sin cota daba un
         corte valido pero inutil, -158900 en vez de un valor cercano al
-        de la relajacion LP). P_max_k se registra con prev_bound=None
-        (el monolitico tampoco le pone cota fisica, ver functions.py) --
-        Strengthened Benders quedaria igual de mal planteado para P_max_k
-        si algun dia se habilita `strengthen=True`; por ahora es
-        irrelevante porque esa ruta esta deshabilitada por defecto
-        (driver.py)."""
+        de la relajacion LP)."""
         y = self.year
         hat_name = f"{state_name}_hat"
         prev_name = f"{state_name}_prev"
@@ -206,14 +200,15 @@ class YearBlockBuilder(object):
 
     def _add_global_once_state(self, model, state_name, state_var_name, index_set):
         """Acople para un estado que se decide UNA sola vez para todo el
-        horizonte (G_g, H desde que se eliminaron Delta_G_g/Delta_H del
-        monolitico -- ver ObjectiveRules.gen_investment_cost/bess_investment_
-        cost en functions.py): a diferencia de _add_linear_state no hay
-        Delta ni acumulacion stock=prev+delta.
+        horizonte (G_g, H, P_max_k desde que se eliminaron Delta_G_g/
+        Delta_H/Delta_P_max_k del monolitico -- ver ObjectiveRules.
+        gen_investment_cost/bess_investment_cost/substation_investment_cost
+        en functions.py): a diferencia de _add_linear_state no hay Delta ni
+        acumulacion stock=prev+delta.
 
         Bloque del PRIMER año del horizonte GLOBAL (origen): no hace nada
-        extra -- state_var (model.G_g/model.H, ya creada libre por
-        BoundRules) queda como la UNICA variable de decision; solo se
+        extra -- state_var (model.G_g/model.H/model.P_max_k, ya creada libre
+        por BoundRules) queda como la UNICA variable de decision; solo se
         registra la entrada en state_links sin hat/prev (mismo patron de
         borde que usa "D" en el primer año, ver _add_degradation_state),
         para que extract_state() reporte el valor optimo y el driver lo
@@ -381,13 +376,10 @@ class YearBlockBuilder(object):
                                 model.Delta_N_chargers, model.N_chargers, model.stations_set,
                                 prev_bound=model.max_bays_k)
 
-        # Potencia de subestacion: mismo patron stock+Delta año a año que
-        # N_chargers (ver link_ssee_stock en functions.py), sin cota fisica
-        # (el monolitico tampoco la tiene -- el costo es lo unico que
-        # limita cuanto se construye).
-        self._add_linear_state(model, "P_max_k", "P_max_k",
-                                model.Delta_P_max_k, model.P_max_k, model.stations_set,
-                                prev_bound=None)
+        # Potencia de subestacion: decidida UNA sola vez para todo el
+        # horizonte (ya no Delta/stock año a año, ver BoundRules en
+        # functions.py) -- usa el acople "global_once", igual que G_g/H.
+        self._add_global_once_state(model, "P_max_k", "P_max_k", model.stations_set)
 
         if len(list(model.gen_set)) > 0:
             # G_g ya no tiene Delta/indice de año (decidida una sola vez

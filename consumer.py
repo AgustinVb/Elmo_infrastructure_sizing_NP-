@@ -942,7 +942,7 @@ def _year_discount_factor(r: float, year: int, years_sorted: List[int]) -> float
 
 def _indexed_vars_by_year(path: Optional[Path], outer_candidates: Tuple[str, ...] = ("k", "_1")) -> Dict[str, Dict[str, float]]:
     """Lee un JSON con estructura {outer_axis: {id: {'y': {year: val}}}}
-    (variables de inversion multi-año Delta_X/Delta_N_chargers/Delta_P_max_k,
+    (variables de inversion multi-año Delta_X/Delta_N_chargers,
     indexadas por (id, y)) y devuelve {id: {year_str: val}}. Devuelve {} si
     el archivo no existe/esta vacio o no calza con la estructura esperada."""
     if not path or is_effectively_empty_json(path):
@@ -1232,18 +1232,19 @@ def calculate_investment_cost(root: Path) -> float:
 
 def calculate_substation_cost(root: Path) -> float:
     """Costo de inversión en potencia de subestación (idéntico a
-    substation_investment_cost() de functions.py): usa Delta_P_max_k[k,y]
-    (variable de INCREMENTO año a año, sin cota física) y c_inv_ssee_k
-    ($/kW), pagada una sola vez al año de compra y descontada a valor
-    presente:
-      Σ_y discount_factor(y) * Σ_k  c_inv_ssee_k[k] * Delta_P_max_k[k,y]
+    substation_investment_cost() de functions.py): P_max_k[k] ya no tiene
+    índice de año ni Delta_P_max_k asociado (eliminados) -- se decide UNA
+    sola vez para todo el horizonte, igual que G_g/H (ver BoundRules en
+    functions.py), asi que P_max_k.json es directamente {"k": {station: kW}},
+    sin niveles "y". Pagada una sola vez, descontada al primer año:
+      discount_factor(primer_año) * Σ_k c_inv_ssee_k[k] * P_max_k[k]
     """
     params_path = find_json_in_folder(root, "parameters.json")
-    delta_pmax_path = find_json_in_folder(root, "Delta_P_max_k.json")
+    pmax_path = find_json_in_folder(root, "P_max_k.json")
 
     if not params_path or is_effectively_empty_json(params_path):
         return 0.0
-    if not delta_pmax_path or is_effectively_empty_json(delta_pmax_path):
+    if not pmax_path or is_effectively_empty_json(pmax_path):
         return 0.0
 
     params = load_json(params_path)
@@ -1255,20 +1256,18 @@ def calculate_substation_cost(root: Path) -> float:
         return {str(k): _as_float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
 
     c_inv_ssee = _station_param("c_inv_ssee_k")
-    delta_pmax_by_station = _indexed_vars_by_year(delta_pmax_path)
+    pmax_by_station = _indexed_vars_flat(pmax_path, outer_candidates=("k", "_1"))
 
     years_sorted = _get_years_sorted(params)
+    first_year = years_sorted[0] if years_sorted else None
     has_degradation = _has_degradation_data(params)
     discount_r = _get_discount_rate(params) if has_degradation else 0.0
 
-    total = 0.0
-    for k, by_year in delta_pmax_by_station.items():
-        for y in years_sorted:
-            dval = by_year.get(str(y), 0.0)
-            df = _year_discount_factor(discount_r, y, years_sorted)
-            total += c_inv_ssee.get(k, 0.0) * dval * df
+    if first_year is None:
+        return 0.0
 
-    return total
+    df = _year_discount_factor(discount_r, first_year, years_sorted)
+    return sum(c_inv_ssee.get(k, 0.0) * v * df for k, v in pmax_by_station.items())
 
 
 def calculate_penalty_cost(root: Path) -> float:

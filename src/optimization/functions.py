@@ -685,12 +685,11 @@ class BoundRules(OptRules):
             )
         model.N_chargers        = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.Delta_N_chargers  = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
-        # Potencia de subestacion (kW) como decision de inversion año a año,
-        # mismo patron stock+Delta que N_chargers -- ver link_ssee_stock. Sin
-        # cota fisica (igual que N_chargers): el costo es lo unico que limita
+        # Potencia de subestacion (kW): decidida UNA sola vez para todo el
+        # horizonte (sin indice de año, sin Delta) -- mismo patron que G_g/H.
+        # Sin cota fisica (igual que antes): el costo es lo unico que limita
         # cuanto se construye.
-        model.P_max_k        = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeReals)
-        model.Delta_P_max_k  = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeReals)
+        model.P_max_k        = pyo.Var(model.stations_set, domain=pyo.NonNegativeReals)
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
         model.EndCharge   = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
@@ -937,11 +936,6 @@ class ConstraintRules(OptRules):
             return model.N_chargers[k,y] == model.Delta_N_chargers[k,y]
         return model.N_chargers[k,y] == model.N_chargers[k, self._prev_year(y)] + model.Delta_N_chargers[k,y]
 
-    def link_ssee_stock(self, model, k, y):
-        if y == self._first_year():
-            return model.P_max_k[k,y] == model.Delta_P_max_k[k,y]
-        return model.P_max_k[k,y] == model.P_max_k[k, self._prev_year(y)] + model.Delta_P_max_k[k,y]
-
     def max_storage_units(self, model):
         return model.H <= model.h_max
 
@@ -995,7 +989,7 @@ class ConstraintRules(OptRules):
         station_elhds = [i for (k2, i) in model.ZCHARGE_INDEX if k2 == k]
         if not station_elhds:
             return pyo.Constraint.Skip
-        return sum(model.P[k,i,y,d,t] for i in station_elhds) <= model.P_max_k[k,y]
+        return sum(model.P[k,i,y,d,t] for i in station_elhds) <= model.P_max_k[k]
 
     def power_cost_peak_limit(self, model, y, d, t):
         if not (91 <= d <= 244):
@@ -1245,9 +1239,6 @@ class ConstraintRules(OptRules):
             # implementacion_descomposicion_carga_ob.md sec. 3) — no existe
             # model.N_chargers[k, y-1] dentro de un bloque de un solo año.
             model.link_charger_stock     = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
-            # Mismo mecanismo para la potencia de subestacion (ver
-            # link_ssee_stock / _add_linear_state en YearBlockBuilder).
-            model.link_ssee_stock        = pyo.Constraint(model.stations_set, model.years, rule=self.link_ssee_stock)
         model.charge_state              = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_state)
         model.min_charge_duration       = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_charge_duration)
         # Desactivadas: min_assign_duration (min. 2 intervalos consecutivos por
@@ -1365,12 +1356,18 @@ class ObjectiveRules(OptRules):
         return self._one_time_discounted_yearly_sum(model, yearly)
 
     def substation_investment_cost(self, model):
-        """Costo de inversión en potencia de subestación: P_max_k[k,y] sigue
-        el mismo patron stock+Delta que estaciones/cargadores (link_ssee_stock),
-        pagado una sola vez por incremento, descontado al año de compra."""
-        def yearly(y):
-            return sum(model.c_inv_ssee_k[k] * model.Delta_P_max_k[k,y] for k in model.stations_set)
-        return self._one_time_discounted_yearly_sum(model, yearly)
+        """Costo de inversión en potencia de subestación: P_max_k[k] se
+        decide una sola vez para todo el horizonte (mismo patron que G_g/H,
+        ver BoundRules), asi que se paga una unica vez, descontado al primer
+        año. Mismo guard `first_year in model.years` que gen_investment_cost/
+        bess_investment_cost, y por la misma razon (evitar sobre-contar en
+        modo descompuesto, donde ObjectiveRules.total_cost se evalua una vez
+        por bloque-año)."""
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
+        return sum(model.c_inv_ssee_k[k] * model.P_max_k[k] for k in model.stations_set) \
+            * self._discount_factor(model, first_year)
 
     def gen_investment_cost(self, model):
         """Costo de inversión en generación: G_g[g] se decide una sola vez
