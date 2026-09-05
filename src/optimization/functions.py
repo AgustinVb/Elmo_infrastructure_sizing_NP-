@@ -1981,6 +1981,13 @@ class ConstraintRules(OptRules):
             model.SV_INDEX,
             rule=self.charging_duration_rule,
         )
+        model.CI_S = pyo.Constraint(
+            model.stations_set,
+            model.years,
+            model.days,
+            model.time_intervals_set,
+            rule=self.CI_S,
+        )
         model.CI_X_dch = pyo.Constraint(
             model.stations_set,
             model.years,
