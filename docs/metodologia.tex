@@ -377,12 +377,13 @@ Cuando el escenario incorpora degradación de batería, la capacidad utilizable 
     & \change{S_{k,y,d,t+1} = S_{k,y,d,t} - W_{k,y,d,t+1}}, &&& \forall k,y,d,\, t-t_{charge}+1< t_{ini},\, t<t_{fin} \label{eq:evol_cargadas_borde} \\[10pt]
     & \change{Sv_{k,y,d,t,a} = X^{ini}_{k,y,d,t-1}}, &&& \forall k,y,d,t,\; a=t-1 \label{eq:def_sv} \\[10pt]
     & \change{Sv_{k,y,d,t,a} = Sv_{k,y,d,t-1,a}}, &&& \forall k,y,d,t,\; a<t-1 \label{eq:def_sv_carry} \\[10pt]
+    & \change{S_{k,y,d,t_{ini}} = S_{k,y,d,t_{fin}}}, &&& \forall k,y,d \label{eq:borde_s} \\[10pt]
     & \change{X^{dch}_{k,y,d,t_{ini}} = X^{dch}_{k,y,d,t_{fin}}}, &&& \forall k,y,d \label{eq:borde_dch} \\[10pt]
     & \change{S_{k,y,d,t_{ini}} + X^{dch}_{k,y,d,t_{ini}}  =  N^{bat}_{k,y}}, &&& \forall k,y,d \label{eq:inventario_total} \\[10pt]
     & \change{\sum_{k\,:\,(k,i)\in\mathcal{KI}_s} Z_{k,i,y,d,t}^{swap} \leq 1}, &&& \forall i \in I_s, y,d,t \label{eq:limite_swaps}
 \end{flalign}
 
-\noindent \change{No se impone condición de borde diaria explícita sobre $S$ por sí sola (solo sobre $X^{dch}$, \eqref{eq:borde_dch}): la identidad de inventario total \eqref{eq:inventario_total}, evaluada en $t_{ini}$ para todo día representativo, junto con \eqref{eq:borde_dch}, ya implica el cierre cíclico de $S$ en $t_{ini}$. $Sv_{k,y,d,t,a}$ solo existe como variable para $a$ dentro de la ventana válida $\mathcal{A}(t)$ (Sección \ref{sec:estaciones}); \eqref{eq:def_sv}/\eqref{eq:def_sv_carry} se aplican solo dentro de esa ventana.}
+\noindent \change{El cierre cíclico de $S$ \eqref{eq:borde_s} se impone de forma explícita, análoga a la de $X^{dch}$ \eqref{eq:borde_dch}: no basta con \eqref{eq:inventario_total} evaluada en $t_{ini}$ junto con \eqref{eq:borde_dch}, porque esa identidad omite $Sv$. Sumando $Sv$, la cantidad $X^{dch}_{k,y,d,t}+S_{k,y,d,t}+\sum_a Sv_{k,y,d,t,a}$ sí se conserva exactamente en cada paso (por construcción de \eqref{eq:evol_dch}, \eqref{eq:evol_cargadas}/\eqref{eq:evol_cargadas_borde} y \eqref{eq:def_sv}/\eqref{eq:def_sv_carry}), de modo que junto con \eqref{eq:borde_dch} se obtiene $S_{k,y,d,t_{fin}} + \sum_a Sv_{k,y,d,t_{fin},a} = S_{k,y,d,t_{ini}}$: $S_{k,y,d,t_{ini}}=S_{k,y,d,t_{fin}}$ solo se sigue si además $Sv_{k,y,d,t_{fin},a}=0\;\forall a$ (ninguna batería a medio cargar en el último intervalo), lo que el modelo no garantiza por sí solo. \eqref{eq:borde_s} lo impone directamente. $Sv_{k,y,d,t,a}$ solo existe como variable para $a$ dentro de la ventana válida $\mathcal{A}(t)$ (Sección \ref{sec:estaciones}); \eqref{eq:def_sv}/\eqref{eq:def_sv_carry} se aplican solo dentro de esa ventana.}
 
 \subsection{Sistema de distribución eléctrica}
 \label{sec:distribucion}
