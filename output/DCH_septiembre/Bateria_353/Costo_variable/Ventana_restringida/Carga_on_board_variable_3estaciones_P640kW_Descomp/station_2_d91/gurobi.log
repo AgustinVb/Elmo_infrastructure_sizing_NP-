@@ -1,5 +1,5 @@
 
-Gurobi 12.0.0 (win64) logging started Mon Sep  7 03:45:52 2026
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 19:28:41 2026
 
 Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_353\Costo_variable\Ventana_restringida\Carga_on_board_variable_3estaciones_P640kW_Descomp/station_2_d91\gurobi.log"
 Set parameter Threads to value 1
@@ -8,7 +8,7 @@ Set parameter MIPFocus to value 3
 Set parameter Presolve to value 2
 Set parameter FlowCoverCuts to value 2
 Set parameter TimeLimit to value 1200
-Gurobi Optimizer version 12.0.0 build v12.0.0rc1 (win64 - Windows 11+.0 (26200.2))
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
 
 CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
 Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
@@ -23,7 +23,7 @@ Presolve  2
 Threads  1
 
 Optimize a model with 24316 rows, 39247 columns and 116352 nonzeros
-Model fingerprint: 0xc1cb8576
+Model fingerprint: 0xc5e58186
 Variable types: 18325 continuous, 20922 integer (20921 binary)
 Coefficient statistics:
   Matrix range     [1e-01, 6e+02]
@@ -31,7 +31,7 @@ Coefficient statistics:
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 1e+04]
 Presolve removed 23245 rows and 29962 columns
-Presolve time: 0.23s
+Presolve time: 0.24s
 Presolved: 1071 rows, 9285 columns, 27879 nonzeros
 Variable types: 233 continuous, 9052 integer (9052 binary)
 Root relaxation presolved: 1071 rows, 9285 columns, 27879 nonzeros
@@ -39,39 +39,35 @@ Root relaxation presolved: 1071 rows, 9285 columns, 27879 nonzeros
 
 Use crossover to convert LP symmetric solution to basic solution...
 
-Root relaxation: objective 1.656673e+05, 3128 iterations, 0.07 seconds (0.04 work units)
+Root relaxation: objective 1.826182e+05, 3255 iterations, 0.06 seconds (0.04 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 165667.264    0   45          - 165667.264      -     -    0s
-H    0     0                    199301.78208 165667.264  16.9%     -    0s
-H    0     0                    192856.17063 165667.264  14.1%     -    0s
-H    0     0                    190702.83275 165667.264  13.1%     -    0s
-     0     0 165667.264    0   33 190702.833 165667.264  13.1%     -    1s
-H    0     0                    188958.20718 165667.264  12.3%     -    1s
-H    0     0                    180308.98059 165667.264  8.12%     -    1s
-H    0     0                    176363.85070 165667.264  6.07%     -    1s
-     0     0 165667.264    0   40 176363.851 165667.264  6.07%     -    1s
-H    0     0                    172398.90287 165667.264  3.90%     -    1s
+     0     0 182618.243    0   33          - 182618.243      -     -    0s
+H    0     0                    226531.95167 182618.243  19.4%     -    0s
+H    0     0                    198257.03868 182618.243  7.89%     -    0s
+     0     0 182618.243    0   31 198257.039 182618.243  7.89%     -    1s
+H    0     0                    198251.09288 182618.243  7.89%     -    1s
+H    0     0                    197545.37626 182618.243  7.56%     -    1s
+     0     0 182618.243    0   26 197545.376 182618.243  7.56%     -    1s
+H    0     0                    195784.46944 182618.243  6.72%     -    1s
+     0     0 182618.243    0   44 195784.469 182618.243  6.72%     -    2s
+H    0     0                    192457.39387 182618.243  5.11%     -    2s
+H    0     0                    190885.59519 182618.243  4.33%     -    2s
 
 Cutting planes:
-  Gomory: 12
-  Lift-and-project: 2
-  Cover: 3
-  Implied bound: 8
+  Gomory: 1
+  Cover: 1
   Projected implied bound: 1
-  Clique: 1
-  MIR: 1
-  Flow cover: 4
-  Zero half: 1
-  RLT: 4
-  Relax-and-lift: 9
+  Flow cover: 1
+  Relax-and-lift: 2
+  PSD: 1
 
-Explored 1 nodes (7978 simplex iterations) in 1.61 seconds (1.28 work units)
+Explored 1 nodes (12879 simplex iterations) in 2.25 seconds (1.84 work units)
 Thread count was 1 (of 32 available processors)
 
-Solution count 7: 172399 176364 180309 ... 199302
+Solution count 7: 190886 192457 195784 ... 226532
 
 Optimal solution found (tolerance 5.00e-02)
-Best objective 1.723989028723e+05, best bound 1.656672636600e+05, gap 3.9047%
+Best objective 1.908855951854e+05, best bound 1.826182427164e+05, gap 4.3311%

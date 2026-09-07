@@ -1,5 +1,5 @@
 
-Gurobi 12.0.0 (win64) logging started Mon Sep  7 03:45:14 2026
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 19:28:04 2026
 
 Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_353\Costo_variable\Ventana_restringida\Carga_on_board_variable_3estaciones_P640kW_Descomp/station_2_d60_stage1\gurobi.log"
 Set parameter Threads to value 1
@@ -8,7 +8,7 @@ Set parameter MIPFocus to value 3
 Set parameter Presolve to value 2
 Set parameter FlowCoverCuts to value 2
 Set parameter TimeLimit to value 1200
-Gurobi Optimizer version 12.0.0 build v12.0.0rc1 (win64 - Windows 11+.0 (26200.2))
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
 
 CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
 Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
@@ -23,7 +23,7 @@ Presolve  2
 Threads  1
 
 Optimize a model with 24286 rows, 39247 columns and 117194 nonzeros
-Model fingerprint: 0x88f088b6
+Model fingerprint: 0xd382de7b
 Variable types: 18325 continuous, 20922 integer (20921 binary)
 Coefficient statistics:
   Matrix range     [1e-01, 6e+02]
@@ -31,7 +31,7 @@ Coefficient statistics:
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 1e+04]
 Presolve removed 23074 rows and 29961 columns
-Presolve time: 0.18s
+Presolve time: 0.21s
 Presolved: 1212 rows, 9286 columns, 28120 nonzeros
 Variable types: 232 continuous, 9054 integer (9053 binary)
 Root relaxation presolved: 1212 rows, 9286 columns, 28120 nonzeros
@@ -39,18 +39,29 @@ Root relaxation presolved: 1212 rows, 9286 columns, 28120 nonzeros
 
 Use crossover to convert LP symmetric solution to basic solution...
 
-Root relaxation: objective 1.000886e+05, 3341 iterations, 0.07 seconds (0.06 work units)
+Root relaxation: objective 1.109014e+05, 3323 iterations, 0.07 seconds (0.07 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 155620.368    0  107          - 155620.368      -     -    0s
-H    0     0                    156229.42519 155620.368  0.39%     -    0s
+     0     0 156999.856    0   82          - 156999.856      -     -    0s
+     0     0 156999.856    0   15          - 156999.856      -     -    1s
+H    0     0                    272032.53094 156999.856  42.3%     -    1s
+H    0     0                    157087.23833 156999.856  0.06%     -    1s
 
-Explored 1 nodes (7368 simplex iterations) in 0.88 seconds (0.82 work units)
+Cutting planes:
+  Gomory: 9
+  Lift-and-project: 16
+  Cover: 2
+  Clique: 1
+  MIR: 1
+  Flow cover: 1
+  Relax-and-lift: 2
+
+Explored 1 nodes (6625 simplex iterations) in 1.52 seconds (1.20 work units)
 Thread count was 1 (of 32 available processors)
 
-Solution count 1: 156229 
+Solution count 2: 157087 272033 
 
 Optimal solution found (tolerance 5.00e-02)
-Best objective 1.562294251920e+05, best bound 1.556203683638e+05, gap 0.3898%
+Best objective 1.570872383329e+05, best bound 1.569998558136e+05, gap 0.0556%

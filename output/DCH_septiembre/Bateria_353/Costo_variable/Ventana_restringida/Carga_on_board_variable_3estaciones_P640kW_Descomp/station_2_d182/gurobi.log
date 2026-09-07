@@ -1,5 +1,5 @@
 
-Gurobi 12.0.0 (win64) logging started Mon Sep  7 03:45:52 2026
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 19:28:40 2026
 
 Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_353\Costo_variable\Ventana_restringida\Carga_on_board_variable_3estaciones_P640kW_Descomp/station_2_d182\gurobi.log"
 Set parameter Threads to value 1
@@ -8,7 +8,7 @@ Set parameter MIPFocus to value 3
 Set parameter Presolve to value 2
 Set parameter FlowCoverCuts to value 2
 Set parameter TimeLimit to value 1200
-Gurobi Optimizer version 12.0.0 build v12.0.0rc1 (win64 - Windows 11+.0 (26200.2))
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
 
 CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
 Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
@@ -23,7 +23,7 @@ Presolve  2
 Threads  1
 
 Optimize a model with 24316 rows, 39247 columns and 116352 nonzeros
-Model fingerprint: 0x4392ace8
+Model fingerprint: 0x07d96cb0
 Variable types: 18325 continuous, 20922 integer (20921 binary)
 Coefficient statistics:
   Matrix range     [1e-01, 6e+02]
@@ -31,7 +31,7 @@ Coefficient statistics:
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 1e+04]
 Presolve removed 23245 rows and 29962 columns
-Presolve time: 0.23s
+Presolve time: 0.20s
 Presolved: 1071 rows, 9285 columns, 27879 nonzeros
 Variable types: 233 continuous, 9052 integer (9052 binary)
 Root relaxation presolved: 1071 rows, 9285 columns, 27879 nonzeros
@@ -39,43 +39,38 @@ Root relaxation presolved: 1071 rows, 9285 columns, 27879 nonzeros
 
 Use crossover to convert LP symmetric solution to basic solution...
 
-Root relaxation: objective 1.651562e+05, 3148 iterations, 0.05 seconds (0.04 work units)
+Root relaxation: objective 1.818164e+05, 3323 iterations, 0.06 seconds (0.04 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 165156.212    0   36          - 165156.212      -     -    0s
-H    0     0                    216015.05109 165156.212  23.5%     -    0s
-H    0     0                    181927.69704 165156.212  9.22%     -    0s
-H    0     0                    181897.70105 165156.212  9.20%     -    0s
-     0     0 165156.212    0   37 181897.701 165156.212  9.20%     -    1s
-H    0     0                    179026.56562 165156.212  7.75%     -    1s
-H    0     0                    177688.92572 165156.212  7.05%     -    1s
-     0     0 165156.212    0   53 177688.926 165156.212  7.05%     -    1s
-H    0     0                    177093.09172 165156.212  6.74%     -    1s
-H    0     0                    177000.45506 165156.212  6.69%     -    1s
-     0     0 165156.212    0   72 177000.455 165156.212  6.69%     -    2s
-     0     0 165156.212    0   79 177000.455 165156.212  6.69%     -    2s
-     0     0 165156.212    0   56 177000.455 165156.212  6.69%     -    2s
-     0     0 165156.212    0   56 177000.455 165156.212  6.69%     -    2s
-H    0     0                    171022.00452 165156.212  3.43%     -    2s
+     0     0 181816.388    0   36          - 181816.388      -     -    0s
+     0     0 181816.388    0   44          - 181816.388      -     -    1s
+H    0     0                    212521.81809 181816.388  14.4%     -    1s
+H    0     0                    198815.30302 181816.388  8.55%     -    1s
+     0     0 181816.388    0   38 198815.303 181816.388  8.55%     -    1s
+     0     0 181816.388    0   48 198815.303 181816.388  8.55%     -    1s
+H    0     0                    198703.50471 181816.388  8.50%     -    1s
+     0     0 181816.388    0   48 198703.505 181816.388  8.50%     -    1s
+     0     0 181816.388    0   37 198703.505 181816.388  8.50%     -    2s
+     0     0 181816.388    0   37 198703.505 181816.388  8.50%     -    2s
+     0     0 181816.388    0   37 198703.505 181816.388  8.50%     -    2s
+H    0     0                    183050.12112 181816.388  0.67%     -    2s
 
 Cutting planes:
-  Gomory: 9
-  Cover: 5
-  Implied bound: 7
+  Gomory: 10
+  Cover: 4
+  Implied bound: 5
   Clique: 2
-  Flow cover: 15
-  Zero half: 7
-  RLT: 1
-  Relax-and-lift: 11
-  BQP: 2
-  PSD: 1
+  Zero half: 3
+  RLT: 2
+  Relax-and-lift: 6
+  PSD: 4
 
-Explored 1 nodes (12757 simplex iterations) in 2.93 seconds (2.83 work units)
+Explored 1 nodes (14376 simplex iterations) in 2.97 seconds (2.66 work units)
 Thread count was 1 (of 32 available processors)
 
-Solution count 8: 171022 177000 177093 ... 216015
+Solution count 4: 183050 198704 198815 212522 
 
 Optimal solution found (tolerance 5.00e-02)
-Best objective 1.710220045195e+05, best bound 1.651562116056e+05, gap 3.4298%
+Best objective 1.830501211239e+05, best bound 1.818163879081e+05, gap 0.6740%

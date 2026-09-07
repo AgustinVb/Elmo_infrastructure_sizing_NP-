@@ -1,5 +1,5 @@
 
-Gurobi 12.0.0 (win64) logging started Mon Sep  7 03:41:23 2026
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 19:23:56 2026
 
 Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_353\Costo_variable\Carga_libre\Carga_on_board_variable_3estaciones_P160kW_Descomp/station_1_d182_stage1\gurobi.log"
 Set parameter Threads to value 1
@@ -8,7 +8,7 @@ Set parameter MIPFocus to value 3
 Set parameter Presolve to value 2
 Set parameter FlowCoverCuts to value 2
 Set parameter TimeLimit to value 1200
-Gurobi Optimizer version 12.0.0 build v12.0.0rc1 (win64 - Windows 11+.0 (26200.2))
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
 
 CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
 Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
@@ -23,7 +23,7 @@ Presolve  2
 Threads  1
 
 Optimize a model with 22770 rows, 37249 columns and 110686 nonzeros
-Model fingerprint: 0x4b77edc1
+Model fingerprint: 0xacefaf5e
 Variable types: 17323 continuous, 19926 integer (19925 binary)
 Coefficient statistics:
   Matrix range     [1e-01, 2e+02]
@@ -31,42 +31,52 @@ Coefficient statistics:
   Bounds range     [1e+00, 1e+00]
   RHS range        [1e+00, 1e+04]
 Presolve removed 19951 rows and 26950 columns
-Presolve time: 0.22s
+Presolve time: 0.24s
 Presolved: 2819 rows, 10299 columns, 31535 nonzeros
 Variable types: 841 continuous, 9458 integer (9457 binary)
 Root relaxation presolved: 2819 rows, 10299 columns, 31535 nonzeros
 
 
-Root relaxation: objective 9.414174e+04, 6252 iterations, 0.62 seconds (0.77 work units)
+Root relaxation: objective 1.043122e+05, 5175 iterations, 0.67 seconds (0.75 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0 112008.606    0  115          - 112008.606      -     -    3s
-     0     0 112041.259    0   50          - 112041.259      -     -    4s
-     0     0 112041.259    0   48          - 112041.259      -     -    4s
-     0     0 112041.259    0   55          - 112041.259      -     -    5s
-     0     0 112041.259    0   81          - 112041.259      -     -    5s
-     0     0 112041.259    0   48          - 112041.259      -     -    6s
-     0     0 112041.259    0   38          - 112041.259      -     -    7s
-     0     0 112041.259    0   29          - 112041.259      -     -    8s
-H    0     0                    186033.69805 112041.259  39.8%     -    8s
-H    0     0                    173288.72302 112041.259  35.3%     -    8s
-H    0     0                    116848.98181 112041.259  4.11%     -    8s
+     0     0 120313.552    0  314          - 120313.552      -     -    3s
+     0     0 120481.596    0  292          - 120481.596      -     -    4s
+     0     0 120538.664    0  311          - 120538.664      -     -    5s
+     0     0 120538.664    0  314          - 120538.664      -     -    7s
+     0     0 120538.664    0  296          - 120538.664      -     -    8s
+     0     0 120538.664    0  302          - 120538.664      -     -    9s
+     0     0 120538.664    0  302          - 120538.664      -     -    9s
+H    0     0                    192259.94109 120538.664  37.3%     -    9s
+H    0     0                    177695.86734 120538.664  32.2%     -    9s
+H    0     0                    177557.24917 120538.664  32.1%     -    9s
+H    0     0                    177280.01281 120538.664  32.0%     -   10s
+H    0     0                    177199.82300 120538.664  32.0%     -   10s
+H    0     0                    175100.03862 120538.664  31.2%     -   10s
+H    0     0                    169919.78329 120538.664  29.1%     -   10s
+H    0     0                    168089.40013 120538.664  28.3%     -   10s
+     0     2 120538.664    0  301 168089.400 120538.664  28.3%     -   10s
+H    8     6                    158165.53055 155825.047  1.48%  1253   12s
 
 Cutting planes:
-  Gomory: 4
-  Lift-and-project: 4
-  Cover: 4
-  Flow cover: 2
-  Zero half: 19
-  RLT: 2
-  Relax-and-lift: 2
+  Gomory: 3
+  Lift-and-project: 11
+  Cover: 32
+  Implied bound: 104
+  Clique: 14
+  MIR: 108
+  Mixing: 75
+  Flow cover: 157
+  Zero half: 126
+  RLT: 1
+  Relax-and-lift: 73
 
-Explored 1 nodes (34121 simplex iterations) in 8.42 seconds (7.66 work units)
+Explored 9 nodes (51380 simplex iterations) in 12.31 seconds (13.13 work units)
 Thread count was 1 (of 32 available processors)
 
-Solution count 3: 116849 173289 186034 
+Solution count 9: 158166 168089 169920 ... 192260
 
 Optimal solution found (tolerance 5.00e-02)
-Best objective 1.168489818095e+05, best bound 1.120412592076e+05, gap 4.1145%
+Best objective 1.581655305451e+05, best bound 1.558250470433e+05, gap 1.4798%
