@@ -30,9 +30,9 @@ class OptRules(object):
         # implementacion_descomposicion_carga_ob.md): years_override acota
         # model.years a los años de un bloque (p.ej. un solo año), sin tocar
         # time_series.years (que sigue siendo el horizonte completo, usado
-        # por year_position/annuity_factor_expr para el costo anualizado
-        # correcto de cada bloque). None preserva el comportamiento monolitico
-        # de hoy (model.years = todo el horizonte).
+        # por year_position para el descuento correcto de cada bloque). None
+        # preserva el comportamiento monolitico de hoy (model.years = todo
+        # el horizonte).
         self.model_years = list(years_override) if years_override is not None else list(time_series.years)
         self.is_decomposed_block = years_override is not None
         # exogenous_stations: dict {(k, y): 0/1} con X fijo desde afuera (solo
@@ -50,17 +50,6 @@ class OptRules(object):
         """Posicion 1-indexada de y dentro del horizonte modelado (1, 2, 3, ...),
         para exponente de descuento — desacoplado del valor real de y."""
         return sorted(self.time_series.years).index(y) + 1
-
-    def annuity_factor_expr(self, model, y):
-        """AF_y(r,Y) = sum_{n=pos(y)}^{|Y|} 1/(1+r)^n. Escalar (expresion en
-        model.discount_rate) para convertir un costo anualizado recurrente que
-        empieza a devengarse en el año y (y se mantiene hasta el fin del
-        horizonte, sin retiro) en su NPV. AF_{y1}(r,Y) reproduce la anualidad
-        original de horizonte-unico (pos(y1)=1)."""
-        Y = len(self.time_series.years)
-        pos_y = self.year_position(y)
-        r = model.discount_rate
-        return sum(1 / (1 + r) ** n for n in range(pos_y, Y + 1))
 
     def _first_year(self):
         return sorted(self.time_series.years)[0]
@@ -423,12 +412,12 @@ class OptParameters(OptRules):
          
         #ParÃ¡metros problema de inversiÃ³n
         model.p_charger = pyo.Param(initialize=self.mine_system.chargers.get_charger_power(), mutable=False)
-        model.p_max_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_p_max_ssee(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.p_peak = pyo.Param(initialize=self.mine_system.chargers.get_p_peak_dist(), mutable=False)
         model.charger_cost = pyo.Param(initialize=self.mine_system.chargers.get_charger_cost(), mutable=False)
         model.scaling_factor_op_cost = pyo.Param(initialize=self.time_series.scaling_factor_op_cost, mutable=True)
         #Parametros estaciones de carga
         model.station_cost_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_station_cost(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
+        model.c_inv_ssee_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_inv_ssee(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.c_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_bays(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.c_charger_space_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_c_charger_space(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
         model.max_bays_k = pyo.Param(model.stations_set, initialize={k: self.mine_system.stations.get_max_bays(k) for k in model.stations_set}, mutable=False, within=pyo.Reals)
@@ -696,6 +685,11 @@ class BoundRules(OptRules):
             )
         model.N_chargers        = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.Delta_N_chargers  = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
+        # Potencia de subestacion (kW): decidida UNA sola vez para todo el
+        # horizonte (sin indice de año, sin Delta) -- mismo patron que G_g/H.
+        # Sin cota fisica (igual que antes): el costo es lo unico que limita
+        # cuanto se construye.
+        model.P_max_k        = pyo.Var(model.stations_set, domain=pyo.NonNegativeReals)
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
         model.EndCharge   = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
@@ -703,10 +697,10 @@ class BoundRules(OptRules):
         model.EndAssign   = pyo.Var(model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
         if len(list(model.gen_set)) > 0:
-            # G_g = stock acumulado (fraccion de p_max_g) al año y; Delta_G_g =
-            # capacidad instalada en el año y (ver link_gen_stock).
-            model.G_g       = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeReals)
-            model.Delta_G_g = pyo.Var(model.gen_set, model.years, domain=pyo.NonNegativeReals)
+            # G_g = capacidad instalada (fraccion de p_max_g), decidida UNA
+            # sola vez para todo el horizonte (sin indice de año, sin Delta) —
+            # mismo patron que la rama de horizonte unico battery_swapping.
+            model.G_g    = pyo.Var(model.gen_set, domain=pyo.NonNegativeReals)
             model.P_gen  = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
             model.Curt_g = pyo.Var(model.gen_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
 
@@ -714,14 +708,13 @@ class BoundRules(OptRules):
 
         if len(list(model.storage_set)) > 0:
             # Un unico cluster de almacenamiento (ver guardia de cardinalidad en
-            # build_parameters): H = unidades acumuladas del cluster al año y,
-            # Delta_H = unidades construidas en el año y (ver link_storage_stock).
-            # Sin indice h a diferencia de la formulacion de horizonte unico
-            # (H_h binaria) — el indice h se mantiene solo en las restricciones
-            # operativas (P_bat, A_h) por si en el futuro se admite mas de un
-            # cluster candidato.
-            model.H       = pyo.Var(model.years, domain=pyo.NonNegativeReals)
-            model.Delta_H = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+            # build_parameters): H = unidades instaladas del cluster, decidida
+            # UNA sola vez para todo el horizonte (sin indice de año, sin
+            # Delta) -- mismo patron que G_g. Sin indice h a diferencia de la
+            # formulacion de horizonte unico (H_h binaria) — el indice h se
+            # mantiene solo en las restricciones operativas (P_bat, A_h) por
+            # si en el futuro se admite mas de un cluster candidato.
+            model.H     = pyo.Var(domain=pyo.NonNegativeReals)
             model.P_bat = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set, domain=pyo.Reals)
             model.A_h   = pyo.Var(model.storage_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
 
@@ -905,8 +898,8 @@ class ConstraintRules(OptRules):
                            * self.time_series.get_n_trips(j, i_rep)
                            * pyo_value(model.filling_factor[i_rep]))
         target = pyo_value(model.m_j[j, y])
-        lb = math.floor(target / prod_per_assign) 
-        ub = math.ceil(target / prod_per_assign) 
+        lb = math.floor(target / prod_per_assign) - 1
+        ub = math.ceil(target / prod_per_assign) + 2
         visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
         return pyo.inequality(lb, visits, ub)
 
@@ -943,18 +936,8 @@ class ConstraintRules(OptRules):
             return model.N_chargers[k,y] == model.Delta_N_chargers[k,y]
         return model.N_chargers[k,y] == model.N_chargers[k, self._prev_year(y)] + model.Delta_N_chargers[k,y]
 
-    def link_gen_stock(self, model, g, y):
-        if y == self._first_year():
-            return model.G_g[g,y] == model.Delta_G_g[g,y]
-        return model.G_g[g,y] == model.G_g[g, self._prev_year(y)] + model.Delta_G_g[g,y]
-
-    def link_storage_stock(self, model, y):
-        if y == self._first_year():
-            return model.H[y] == model.Delta_H[y]
-        return model.H[y] == model.H[self._prev_year(y)] + model.Delta_H[y]
-
-    def max_storage_units(self, model, y):
-        return model.H[y] <= model.h_max
+    def max_storage_units(self, model):
+        return model.H <= model.h_max
 
     def charge_state(self, model, k, i, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -1006,7 +989,7 @@ class ConstraintRules(OptRules):
         station_elhds = [i for (k2, i) in model.ZCHARGE_INDEX if k2 == k]
         if not station_elhds:
             return pyo.Constraint.Skip
-        return sum(model.P[k,i,y,d,t] for i in station_elhds) <= model.p_max_k[k]
+        return sum(model.P[k,i,y,d,t] for i in station_elhds) <= model.P_max_k[k]
 
     def power_cost_peak_limit(self, model, y, d, t):
         if not (91 <= d <= 244):
@@ -1026,10 +1009,10 @@ class ConstraintRules(OptRules):
 
     def gen_limit(self, model, g, y, d, t):
         return (model.P_gen[g,y,d,t] + model.Curt_g[g,y,d,t]
-                == model.G_g[g,y] * model.p_max_g[g] * model.alpha_g[g,y,d,t])
+                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g,y,d,t])
 
-    def gen_max_units(self, model, g, y):
-        return model.G_g[g,y] <= model.g_max_g[g]
+    def gen_max_units(self, model, g):
+        return model.G_g[g] <= model.g_max_g[g]
 
     def initial_condition_station(self, model):
         # No registrada en build_all_constraints (dead code, ya lo era antes
@@ -1058,10 +1041,10 @@ class ConstraintRules(OptRules):
         return sum(model.Y[i,j,y,d,t] for j in nodes) == 0
 
     def bess_power_upper(self, model, h, y, d, t):
-        return model.P_bat[h,y,d,t] <= model.p_max_h[h] * model.H[y]
+        return model.P_bat[h,y,d,t] <= model.p_max_h[h] * model.H
 
     def bess_power_lower(self, model, h, y, d, t):
-        return model.P_bat[h,y,d,t] >= -model.p_max_h[h] * model.H[y]
+        return model.P_bat[h,y,d,t] >= -model.p_max_h[h] * model.H
 
     def bess_soc_balance(self, model, h, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -1072,10 +1055,10 @@ class ConstraintRules(OptRules):
         return model.A_h[h,y,d,0] == 0
 
     def bess_soc_upper(self, model, h, y, d, t):
-        return model.A_h[h,y,d,t] <= model.a_max_h[h] * model.H[y]
+        return model.A_h[h,y,d,t] <= model.a_max_h[h] * model.H
 
     def bess_soc_lower(self, model, h, y, d, t):
-        return model.A_h[h,y,d,t] >= model.a_min_h[h] * model.H[y]
+        return model.A_h[h,y,d,t] >= model.a_min_h[h] * model.H
 
     def bess_soc_cyclic(self, model, h, y, d):
         t_ini = self.time_series.get_time_intervals()[0]
@@ -1232,11 +1215,11 @@ class ConstraintRules(OptRules):
 
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        # Esquema DET activo: usa el set de entre-turnos especifico DET, no el
-        # legacy DCH (time_intervals_between_shifts_set), igual que det_stop_all
-        # y charge_only_meal_or_between_shifts_det (ver carga_on_board commit
-        # 9943fdc7a / build_all_constraints con pause_scheme='det').
-        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_det_set, rule=self.between_shifts_elhd)
+        # Esquema DCH activo: usa el set de entre-turnos legacy
+        # (time_intervals_between_shifts_set), no el especifico DET (ver
+        # carga_on_board commit 9943fdc7a / build_all_constraints con
+        # pause_scheme='dch').
+        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
 
         model.battery_soc               = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower             = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -1275,14 +1258,10 @@ class ConstraintRules(OptRules):
 
         if len(list(model.gen_set)) > 0:
             model.gen_limit     = pyo.Constraint(model.gen_set, model.years, model.days, model.time_intervals_set, rule=self.gen_limit)
-            model.gen_max_units = pyo.Constraint(model.gen_set, model.years, rule=self.gen_max_units)
-            if not self.is_decomposed_block:
-                model.link_gen_stock = pyo.Constraint(model.gen_set, model.years, rule=self.link_gen_stock)
+            model.gen_max_units = pyo.Constraint(model.gen_set, rule=self.gen_max_units)
 
         if len(list(model.storage_set)) > 0:
-            if not self.is_decomposed_block:
-                model.link_storage_stock = pyo.Constraint(model.years, rule=self.link_storage_stock)
-            model.max_storage_units  = pyo.Constraint(model.years, rule=self.max_storage_units)
+            model.max_storage_units  = pyo.Constraint(rule=self.max_storage_units)
             model.bess_power_upper = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_upper)
             model.bess_power_lower = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_power_lower)
             model.bess_soc_balance = pyo.Constraint(model.storage_set, model.years, model.days, model.time_intervals_set, rule=self.bess_soc_balance)
@@ -1319,17 +1298,20 @@ class ConstraintRules(OptRules):
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, y, d, t: self.interval_extraction_M(m, i, j, y, d, t))
 
-        # Esquema DCH (legacy): reemplazado por el esquema DET de abajo para
-        # el caso data/DET (ver det_stop_all / charge_only_meal_or_between_shifts_det).
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        #model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        #model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
-        #model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
+        # Esquema DCH (legacy), activo para el caso data/Escenarios_Gx (ver
+        # meal_g1_no_travel_group1/meal_g2_no_travel_group2/maint_stop_all/
+        # maint_no_charge/charge_only_meal_or_shift_change).
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
 
-        # Esquema DET (redefinido, con base_hour y modo autonomo), activo.
-        model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
+        # Esquema DET (redefinido, con base_hour y modo autonomo): reemplazado
+        # por el esquema DCH de arriba para el caso data/Escenarios_Gx (ver
+        # det_stop_all / charge_only_meal_or_between_shifts_det).
+        #model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        #model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
       
 class ObjectiveRules(OptRules):
@@ -1350,17 +1332,14 @@ class ObjectiveRules(OptRules):
         ) * model.delta_t
         return cost_el * model.scaling_factor_op_cost
 
-    def _annuitized_yearly_sum(self, model, yearly_cost_fn):
-        """sum_y AF_y(r,Y) * yearly_cost_fn(y) si hay datos de degradacion/
-        descuento cargados; si no, suma cruda sin anualizar ni descontar
-        (replica el comportamiento de un unico año representativo sin
-        descuento). yearly_cost_fn(y) debe usar las variables de INCREMENTO
-        (Delta_*) del año y, no el stock acumulado, para no contar de nuevo
-        cada año el costo de un activo ya construido — ver
-        docs/restricciones_modelo.tex ec. costo_total."""
-        if self.mine_system.battery_degradation is not None:
-            return sum(self.annuity_factor_expr(model, y) * yearly_cost_fn(y) for y in model.years)
-        return sum(yearly_cost_fn(y) for y in model.years)
+    def _one_time_discounted_yearly_sum(self, model, yearly_cost_fn):
+        """sum_y yearly_cost_fn(y) * discount_factor(y): costo de inversion
+        pagado UNA sola vez en el año de compra, descontado a valor presente
+        (mismo patron que battery_replace_cost). yearly_cost_fn(y) debe usar
+        las variables de INCREMENTO (Delta_*) del año y, no el stock
+        acumulado, para no contar de nuevo cada año el costo de un activo ya
+        construido."""
+        return sum(yearly_cost_fn(y) * self._discount_factor(model, y) for y in model.years)
 
     def inversion_cost(self, model):
         # Modo descompuesto: X es exogeno y no acarrea costo de inversion
@@ -1377,45 +1356,84 @@ class ObjectiveRules(OptRules):
                 (model.c_bays_k[k] + model.charger_cost + model.c_charger_space_k[k]) * model.Delta_N_chargers[k,y]
                 for k in model.stations_set
             )
-        return self._annuitized_yearly_sum(model, yearly)
+        return self._one_time_discounted_yearly_sum(model, yearly)
+
+    def substation_investment_cost(self, model):
+        """Costo de inversión en potencia de subestación: P_max_k[k] se
+        decide una sola vez para todo el horizonte (mismo patron que G_g/H,
+        ver BoundRules), asi que se paga una unica vez, descontado al primer
+        año. Mismo guard `first_year in model.years` que gen_investment_cost/
+        bess_investment_cost, y por la misma razon (evitar sobre-contar en
+        modo descompuesto, donde ObjectiveRules.total_cost se evalua una vez
+        por bloque-año)."""
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
+        return sum(model.c_inv_ssee_k[k] * model.P_max_k[k] for k in model.stations_set) \
+            * self._discount_factor(model, first_year)
 
     def gen_investment_cost(self, model):
+        """Costo de inversión en generación: G_g[g] se decide una sola vez
+        para todo el horizonte (ver BoundRules), asi que se paga una unica
+        vez, descontado al primer año.
+
+        Guard `first_year in model.years`: en modo descompuesto, ObjectiveRules.
+        total_cost se evalua UNA VEZ POR BLOQUE-AÑO (ver YearBlockBuilder._build),
+        cada uno con su propia copia de G_g[g] (libre en el bloque origen, fijada
+        por igualdad en los demas -- ver _add_global_once_state en year_block.py).
+        Sin este guard, CADA bloque cobraria el costo de inversion completo (no
+        solo el bloque origen), sobre-contando por un factor de n_years en el
+        UB/LB de la descomposicion. En el monolitico (model.years = horizonte
+        completo) el guard nunca se activa, sin cambio de comportamiento."""
         if len(list(model.gen_set)) == 0:
             return 0
-        def yearly(y):
-            return sum(model.Delta_G_g[g,y] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set)
-        return self._annuitized_yearly_sum(model, yearly)
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
+        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set) \
+            * self._discount_factor(model, first_year)
 
     def gen_op_cost(self, model):
+        """Costo de O&M anual de generación: recurre cada año del horizonte
+        sobre la capacidad fija G_g[g]."""
         if len(list(model.gen_set)) == 0:
             return 0
-        def yearly(y):
-            return sum(model.Delta_G_g[g,y] * model.c_op_g[g] * model.p_max_g[g] for g in model.gen_set)
-        return self._annuitized_yearly_sum(model, yearly)
+        return sum(
+            model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] * self._discount_factor(model, y)
+            for g in model.gen_set for y in model.years
+        )
 
     def bess_investment_cost(self, model):
-        """Costo de inversión BESS: sum_h c_inv_h * Delta_H[y] — ec. costo_total."""
+        """Costo de inversión BESS: H se decide una sola vez para todo el
+        horizonte, se paga una unica vez, descontado al primer año. Mismo
+        guard `first_year in model.years` que gen_investment_cost, y por
+        la misma razon (evitar sobre-contar en modo descompuesto)."""
         if len(list(model.storage_set)) == 0:
             return 0
-        def yearly(y):
-            return sum(model.Delta_H[y] * model.c_inv_h[h] for h in model.storage_set)
-        return self._annuitized_yearly_sum(model, yearly)
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
+        return sum(model.H * model.c_inv_h[h] for h in model.storage_set) \
+            * self._discount_factor(model, first_year)
 
     def bess_op_cost(self, model):
-        """Costo de O&M anual BESS: sum_h c_op_h * Delta_H[y] — ec. costo_total."""
+        """Costo de O&M anual BESS: recurre cada año del horizonte sobre la
+        capacidad fija H."""
         if len(list(model.storage_set)) == 0:
             return 0
-        def yearly(y):
-            return sum(model.Delta_H[y] * model.c_op_h[h] for h in model.storage_set)
-        return self._annuitized_yearly_sum(model, yearly)
+        return sum(
+            model.H * model.c_op_h[h] * self._discount_factor(model, y)
+            for h in model.storage_set for y in model.years
+        )
 
     def power_cost(self, model):
         return sum(model.P_pot[y] * 12 * 10 * self._discount_factor(model, y) for y in model.years)
 
     def battery_replace_cost(self, model):
-        """Costo de reemplazo de batería: evento puntual del año y (no una
-        anualidad recurrente, por eso no usa annuity_factor_expr). c_bat_replace
-        es el costo TOTAL de UNA sola batería, por lo que se escala por la
+        """Costo de reemplazo de batería: evento puntual del año y, descontado
+        con _discount_factor (mismo patron que inversion_cost/gen_investment_
+        cost/bess_investment_cost). c_bat_replace es el costo TOTAL de UNA sola
+        batería, por lo que se escala por la
         cantidad de LHD eléctricos ACTIVOS ese año (n_elhd_bd[y], una batería
         por LHD) para obtener el costo de reemplazar la flota -- no el fleet
         nominal completo, para no cobrar el reemplazo de baterías de LHD
@@ -1430,6 +1448,7 @@ class ObjectiveRules(OptRules):
     def total_cost(self, model):
         return (self.lhd_charge_cost(model)
                 + self.inversion_cost(model)
+                + self.substation_investment_cost(model)
                 + self.gen_investment_cost(model)
                 + self.gen_op_cost(model)
                 + self.bess_investment_cost(model)

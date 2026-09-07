@@ -187,7 +187,7 @@ class BackwardPass(object):
     de una misma iteracion (ver year_block.py, mutacion in-place de
     model.cuts).
 
-    Tres tipos de corte para el año con degradacion de bateria (ver
+    Dos tipos de corte para el año con degradacion de bateria (ver
     degradacion_descomposicion_mccormick.md), seleccionables via
     `degradation_cut_mode`:
 
@@ -201,26 +201,26 @@ class BackwardPass(object):
       la fisica EXACTA (bilineal no convexa) del bloque -- mas caro (varios
       MIQCP no convexos por año e iteracion) pero no aproxima el producto
       N_ciclos*b_bar.
-    - "disjunctive": AGREGA (no reemplaza) un corte big-M sobre la
-      disyuncion R_y=0/R_y=1 del año con reemplazo de bateria (ver
-      _disjunctive_replace_cut). Util cuando ni "mccormick" ni
-      "lagrangean" logran mover el UB: el costo-to-go real como funcion
-      del estado heredado es concavo (minimo de una funcion y una
-      constante) por la propia disyuncion de reemplazar-o-no, y NINGUN
-      corte lineal (ni LP ni Lagrangeano, ambos dualizan sin resolver la
-      disyuncion) puede representarlo globalmente -- confirmado en una
-      corrida real del escenario 960kW_2dias donde mu_D salia no-nulo
-      pero el UB quedaba exactamente igual iteracion tras iteracion."""
+
+    Un tercer camino, "disjunctive" (corte big-M sobre la disyuncion
+    R_y=0/R_y=1 del reemplazo de bateria, ver _disjunctive_replace_cut),
+    quedo implementado en este archivo pero PAUSADO/no seleccionable
+    (merge 2026-08 con origin/carga_ob_multiaño): origin reestructuro G/H
+    a estado "global_once" en year_block.py/cuts.py, cambiando el terreno
+    sobre el que se diagnostico el problema original (mu=0 para
+    N_chargers/G/H). Antes de reactivarlo (ver comentarios "PAUSADO" en
+    BackwardPass.run) hay que re-evaluar si el diagnostico sigue
+    aplicando con el modelo nuevo."""
 
     def __init__(self, blocks, cut_manager=None, solver_kwargs=None,
                  degradation_cut_mode="mccormick", lagrangean_kwargs=None):
         self.blocks = blocks
         self.cut_manager = cut_manager or BendersCutManager()
         self.solver_kwargs = solver_kwargs or {}
-        if degradation_cut_mode not in ("mccormick", "lagrangean", "disjunctive"):
+        if degradation_cut_mode not in ("mccormick", "lagrangean"):
             raise ValueError(
-                f"degradation_cut_mode debe ser 'mccormick', 'lagrangean' o "
-                f"'disjunctive', recibido: {degradation_cut_mode!r}"
+                f"degradation_cut_mode debe ser 'mccormick' o 'lagrangean', "
+                f"recibido: {degradation_cut_mode!r}"
             )
         self.degradation_cut_mode = degradation_cut_mode
         self.lagrangean_kwargs = lagrangean_kwargs or {}
@@ -793,24 +793,38 @@ class BackwardPass(object):
                 )
             else:
                 phi_cut, mu_cut = phi_lp, mu
-                if strengthen:
-                    if verbose:
-                        print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
-                              f"fortaleciendo corte (Lagrangeano con subgradiente sobre MILP completo)...")
-                    phi_cut, mu_cut = self._strengthened_subgradient_cut(
-                        child, x_hat_by_year[parent.year], mu_init=mu,
-                        verbose=verbose, label_prefix=f"{k_tag}",
-                    )
+                # PAUSADO (merge 2026-08 con origin/carga_ob_multiaño): origin
+                # reestructuro G/H a estado "global_once" (decision unica al
+                # inicio del horizonte, ver year_block.py/cuts.py), lo que
+                # cambia el terreno sobre el que se diagnostico el problema
+                # original (mu=0 para N_chargers/G/H bajo "recurso completo
+                # garantizado"). Antes de reactivar esto hay que re-evaluar si
+                # el diagnostico y el fix siguen aplicando con el modelo
+                # nuevo. La implementacion (_strengthened_subgradient_cut,
+                # _build_strengthened_relaxation) sigue intacta mas abajo.
+                # if strengthen:
+                #     if verbose:
+                #         print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
+                #               f"fortaleciendo corte (Lagrangeano con subgradiente sobre MILP completo)...")
+                #     phi_cut, mu_cut = self._strengthened_subgradient_cut(
+                #         child, x_hat_by_year[parent.year], mu_init=mu,
+                #         verbose=verbose, label_prefix=f"{k_tag}",
+                #     )
 
             self.cut_manager.add_cut(
                 parent, phi_cut, mu_cut, x_hat_by_year[parent.year], iteration=iteration
             )
 
-            if self.degradation_cut_mode == "disjunctive":
-                self._disjunctive_replace_cut(
-                    child, parent, x_hat_by_year, mu,
-                    iteration=iteration, verbose=verbose, label_prefix=k_tag,
-                )
+            # PAUSADO (mismo motivo que arriba, ver comentario junto a
+            # `strengthen`): el corte disyuntivo R=0/R=1 (_disjunctive_replace_cut)
+            # tambien depende de como year_block.py modela los estados, y
+            # degradation_cut_mode ya no acepta "disjunctive" (ver __init__)
+            # hasta que se retome este trabajo.
+            # if self.degradation_cut_mode == "disjunctive":
+            #     self._disjunctive_replace_cut(
+            #         child, parent, x_hat_by_year, mu,
+            #         iteration=iteration, verbose=verbose, label_prefix=k_tag,
+            #     )
 
         # LB_k = Phi_1 relajado, con el corte que se le acaba de agregar
         # (documento sec. 7.2/8). Si el horizonte tiene un solo año, el

@@ -40,6 +40,14 @@ FULL_HORIZON_DAYS = [
     2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836,
 ]
 
+# 11 años, 2 días representativos/año (verano sin cobro potencia + invierno
+# con cobro potencia). Cada año aporta un par consecutivo de dias en esta
+# lista (dia_verano, dia_invierno); --n_years trunca tomando los primeros
+# N pares, o sea los primeros N años del horizonte.
+FULL_HORIZON_DAYS = [
+    1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281,
+    2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741,
+]
 
 def build_mine(args):
     """ building power system base function
@@ -153,27 +161,12 @@ def main():
              'usuarios activos puede convenir acotarlo.'
     )
     parser.add_argument(
-        '--degradation_cut_mode', choices=['mccormick', 'lagrangean', 'disjunctive'],
-        default='mccormick',
+        '--degradation_cut_mode', choices=['mccormick', 'lagrangean'], default='mccormick',
         help='[decomposed, solo si hay hoja BatteryDegradation] camino usado para el '
              'corte del año con degradacion de bateria (ver '
              'degradacion_descomposicion_mccormick.md): mccormick (Camino A, default, '
              'barato) o lagrangean (Camino B, fisica bilineal exacta via subgradiente, '
-             'mas caro). disjunctive AGREGA (sobre el corte mccormick normal) un corte '
-             'big-M sobre la disyuncion R_y=0/R_y=1 del año de reemplazo de bateria -- '
-             'util cuando el UB queda estancado entre iteraciones aunque el dual de D '
-             'no sea cero (el costo-to-go real es concavo por esa disyuncion, ver '
-             'BackwardPass._disjunctive_replace_cut).'
-    )
-    parser.add_argument(
-        '--strengthen_benders', action='store_true',
-        help='[decomposed] activa Strengthened Benders (ver '
-             'NestedBendersSolver `strengthen`, documento sec. 6.2): ademas '
-             'del corte LP barato, busca con subgradiente un corte MILP-'
-             'informado sobre N_chargers/G/H/D. Util cuando la relajacion '
-             'LP queda degenerada (mu=0) por "recurso completo garantizado" '
-             '-- ahi el corte LP no mueve el forward pass entre iteraciones. '
-             'Mas caro por año/iteracion (hasta ~10 MILP adicionales).'
+             'mas caro).'
     )
     parser.add_argument(
         '--block_build_jobs', type=int, default=None,
@@ -236,7 +229,6 @@ def main():
             gap_tol=args.gap_tol, max_iter=args.max_iter,
             autonomous_mode=args.autonomous_mode,
             solver_kwargs=solver_kwargs,
-            strengthen=args.strengthen_benders,
             degradation_cut_mode=args.degradation_cut_mode,
             block_build_jobs=args.block_build_jobs,
         )
