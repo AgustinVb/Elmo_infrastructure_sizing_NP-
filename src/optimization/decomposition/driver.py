@@ -87,29 +87,54 @@ class NestedBendersSolver(object):
             automaticamente de la asignacion LHD-estacion de los datos de
             entrada (infer_exogenous_stations): se construye toda estacion
             con al menos un LHD asignado.
-        :param strengthen: EXPERIMENTAL, default False -- deshabilitado por
-            una falla de correccion encontrada en una corrida real de 5
-            años (LB > UB en la iteracion 2, imposible en un Benders/
-            L-shaped correcto). Evalua el Lagrangeano sobre el MILP
-            completo con N_chargers/G/H relajadas y `prev` acotado por el
-            punto de linealizacion de esa resolucion (documento sec. 6.2,
-            "Strengthened Benders"), pero ese acotamiento solo garantiza
-            validez LOCAL (cerca del punto donde se calibro), no GLOBAL --
-            la validacion original solo chequeo un punto de referencia, no
-            alcanza. No usar hasta corregir (ver memoria del proyecto).
-            No afecta al estado de degradacion "D" (ver degradation_cut_mode
-            mas abajo) -- son mecanismos distintos, ver docstring de
-            BackwardPass._lagrangian_relax_and_solve.
-        :param degradation_cut_mode: "mccormick" (default) o "lagrangean" --
-            camino usado para el corte del año con datos de
-            BatteryDegradation (degradacion_descomposicion_mccormick.md):
+        :param strengthen: default False. Cuando True, el corte de cada año
+            (documento sec. 6.2, "Strengthened Benders") ya no es solo el
+            de la relajacion LP (barato pero puede quedar degenerado --
+            mu=0 -- si el modelo garantiza "recurso completo": confirmado
+            en una corrida real del escenario 960kW_2dias, donde N_chargers/
+            G/H salian con mu=0 en TODAS las iteraciones porque la red
+            electrica siempre puede cubrir el balance sin depender de la
+            infraestructura heredada, lo que dejaba el forward pass
+            atascado en la misma trayectoria miope iteracion tras
+            iteracion, sin mover nunca la UB). Ahora ademas busca, con
+            subgradiente, un mu MILP-informado sobre TODAS las familias de
+            estado "simple" (N_chargers/G/H/D) a la vez -- un MILP con
+            integralidad completa puede tener sensibilidad Lagrangeana no
+            nula donde la relajacion LP es degenerada (ver
+            BackwardPass._strengthened_subgradient_cut). Mas caro por año/
+            iteracion (hasta 10 MILP adicionales por defecto, ver
+            lagrangean_kwargs-style max_iter/eps_gap/eps_stall dentro del
+            metodo) pero SIN el bug de version anteriores: 'prev' se acota
+            por su cota FISICA propia (max_bays_k/g_max_g/h_max/B_U, ya
+            declarada en year_block.py), no por el punto de linealizacion
+            de la iteracion -- eso es lo que garantiza validez GLOBAL del
+            corte por dualidad debil de Lagrange (antes solo era valido
+            localmente cerca de donde se calibro, lo que causaba LB>UB en
+            una corrida real de 5 años -- ver memoria del proyecto/git log
+            para el diagnostico original).
+            Independiente de degradation_cut_mode mas abajo: si D tiene
+            hoja BatteryDegradation Y degradation_cut_mode="lagrangean", el
+            Camino B (fisica exacta, mas caro) reemplaza el tratamiento de
+            SOLO "D" descrito ahi; `strengthen` sigue aplicando a las demas
+            familias (N_chargers/G/H) en simultaneo sin conflicto.
+        :param degradation_cut_mode: "mccormick" (default), "lagrangean" o
+            "disjunctive" -- camino usado para el corte del año con datos
+            de BatteryDegradation (degradacion_descomposicion_mccormick.md):
             "mccormick" relaja el bilineal N_ciclos*b_bar con la envolvente
             convexa (Camino A) y usa el corte de Benders estandar, barato;
             "lagrangean" mantiene la fisica bilineal EXACTA y genera el
             corte via subgradiente Lagrangeano (Camino B, sec. 4), mas caro
             (varios MIQCP no convexos por año e iteracion) pero sin la
-            aproximacion de McCormick. Sin efecto si el escenario no tiene
-            hoja BatteryDegradation.
+            aproximacion de McCormick; "disjunctive" AGREGA (sobre el corte
+            "mccormick" normal) un corte big-M sobre la disyuncion R_y=0/
+            R_y=1 del reemplazo de bateria -- el costo-to-go real es
+            concavo en el estado heredado por esa disyuncion (min de una
+            funcion y una constante), asi que ni "mccormick" ni
+            "lagrangean" (ambos lineales) pueden representarlo aunque el
+            dual sea no-nulo (ver BackwardPass._disjunctive_replace_cut).
+            Util especificamente cuando el UB queda estancado entre
+            iteraciones pese a que mu_D no es cero. Sin efecto ninguno de
+            los tres si el escenario no tiene hoja BatteryDegradation.
         :param lagrangean_kwargs: dict opcional con max_iter/eps_gap/
             eps_stall para el subgradiente del Camino B (ver
             BackwardPass._lagrangean_subgradient_cut).

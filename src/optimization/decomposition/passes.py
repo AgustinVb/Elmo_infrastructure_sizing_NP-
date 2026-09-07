@@ -187,7 +187,7 @@ class BackwardPass(object):
     de una misma iteracion (ver year_block.py, mutacion in-place de
     model.cuts).
 
-    Dos tipos de corte para el año con degradacion de bateria (ver
+    Tres tipos de corte para el año con degradacion de bateria (ver
     degradacion_descomposicion_mccormick.md), seleccionables via
     `degradation_cut_mode`:
 
@@ -200,17 +200,27 @@ class BackwardPass(object):
       por un corte Lagrangeano con subgradiente (sec. 4.3), resuelto sobre
       la fisica EXACTA (bilineal no convexa) del bloque -- mas caro (varios
       MIQCP no convexos por año e iteracion) pero no aproxima el producto
-      N_ciclos*b_bar."""
+      N_ciclos*b_bar.
+    - "disjunctive": AGREGA (no reemplaza) un corte big-M sobre la
+      disyuncion R_y=0/R_y=1 del año con reemplazo de bateria (ver
+      _disjunctive_replace_cut). Util cuando ni "mccormick" ni
+      "lagrangean" logran mover el UB: el costo-to-go real como funcion
+      del estado heredado es concavo (minimo de una funcion y una
+      constante) por la propia disyuncion de reemplazar-o-no, y NINGUN
+      corte lineal (ni LP ni Lagrangeano, ambos dualizan sin resolver la
+      disyuncion) puede representarlo globalmente -- confirmado en una
+      corrida real del escenario 960kW_2dias donde mu_D salia no-nulo
+      pero el UB quedaba exactamente igual iteracion tras iteracion."""
 
     def __init__(self, blocks, cut_manager=None, solver_kwargs=None,
                  degradation_cut_mode="mccormick", lagrangean_kwargs=None):
         self.blocks = blocks
         self.cut_manager = cut_manager or BendersCutManager()
         self.solver_kwargs = solver_kwargs or {}
-        if degradation_cut_mode not in ("mccormick", "lagrangean"):
+        if degradation_cut_mode not in ("mccormick", "lagrangean", "disjunctive"):
             raise ValueError(
-                f"degradation_cut_mode debe ser 'mccormick' o 'lagrangean', "
-                f"recibido: {degradation_cut_mode!r}"
+                f"degradation_cut_mode debe ser 'mccormick', 'lagrangean' o "
+                f"'disjunctive', recibido: {degradation_cut_mode!r}"
             )
         self.degradation_cut_mode = degradation_cut_mode
         self.lagrangean_kwargs = lagrangean_kwargs or {}
@@ -255,16 +265,21 @@ class BackwardPass(object):
         """Clon EXACTO (ver _make_exact_clone) con TODAS las familias de
         estado "simple" (N_chargers/G/H/D) relajadas y penalizadas en el
         objetivo con `mu` (documento sec. 4.2, `z_y` = el vector de estado
-        completo). `prev` de cada familia se acota por x_hat_base -- mismo
-        argumento que _lagrangian_relax_and_solve mas abajo: sin cota, el
-        Lagrangeano puede "inventar" estado heredado por encima de lo
-        economicamente sensato y el corte sale valido pero inutil.
+        completo). `prev` de cada familia queda con su cota FISICA propia
+        (ya declarada en year_block.py via prev_bound: max_bays_k/g_max_g/
+        h_max/B_U), NO por x_hat_base -- acotar por el punto de
+        linealizacion de la iteracion en curso solo garantiza validez
+        LOCAL del corte resultante (cerca de donde se calibro mu), no
+        GLOBAL, y causo LB>UB en una corrida real de 5 años (bug ya
+        corregido tambien en _build_strengthened_relaxation, mismo
+        patron -- ver su docstring para la derivacion completa de por que
+        la cota fisica es la unica que preserva dualidad debil de
+        Lagrange para cualquier x, no solo el x_hat evaluado).
 
         Convencion de signo: penalizacion +mu*prev en el objetivo (NO
-        -mu*(prev-x_hat)) -- la misma que ya usa (y valido empiricamente)
-        _lagrangian_relax_and_solve para N_chargers/G/H. Con esta
-        convencion L(mu) = valor_objetivo_aca - mu*x_hat_base (restado
-        DESPUES de resolver, ver _lagrangean_subgradient_cut)."""
+        -mu*(prev-x_hat)). Con esta convencion L(mu) = valor_objetivo_aca
+        - mu*x_hat_base (restado DESPUES de resolver, ver
+        _lagrangean_subgradient_cut)."""
         clone = self._make_exact_clone(block)
         penalty_terms = []
         for link in block.state_links:
@@ -277,11 +292,9 @@ class BackwardPass(object):
             prev = getattr(clone, link["prev"])
             mu_fam = mu[state_name]
             if link["index_set"] is None:
-                prev.setub(x_hat_base[state_name])
                 penalty_terms.append(mu_fam * prev)
             else:
                 for idx, mu_v in mu_fam.items():
-                    prev[idx].setub(x_hat_base[state_name][idx])
                     penalty_terms.append(mu_v * prev[idx])
 
         clone.obj.deactivate()
@@ -306,8 +319,9 @@ class BackwardPass(object):
 
         Convencion de signo -- OJO, opuesta a la formula literal del
         documento: con la penalizacion +mu*prev en el objetivo (ver
-        _build_lagrangian_relaxation, validada empiricamente para este
-        backend Pyomo/Gurobi en _lagrangian_relax_and_solve), el ascenso de
+        _build_lagrangian_relaxation, misma convencion validada
+        empiricamente en _build_strengthened_relaxation/
+        _strengthened_subgradient_cut), el ascenso de
         subgradiente correcto es mu <- mu + step*(prev*(mu) - x_hat_base),
         NO mu <- mu - step*(...) como aparece literal en el documento (que
         asume la convencion de signo opuesta, -mu*(z-x_hat) dentro del
@@ -399,77 +413,353 @@ class BackwardPass(object):
 
         return best_L, best_mu
 
-    def _lagrangian_relax_and_solve(self, block, mu, x_hat_base, label):
-        """Corte Strengthened Benders (documento sec. 6.2, opcion 2):
-        h^MILP(mu) - mu*x_hat_lin, donde h^MILP(mu) = min_x { f(x) + mu*prev(x) }
-        se resuelve como MILP COMPLETO (integralidad restaurada), con las
-        restricciones de enlace de las familias "simple" (N_chargers/G/H)
-        RELAJADAS -- no fijas al heredado, penalizadas en el objetivo con
-        +mu*prev usando el MISMO mu que ya se leyo en la relajacion LP
-        (casi el mismo costo: reusa mu, sin busqueda de subgradiente).
+    def _build_strengthened_relaxation(self, block, mu, fix_vars=None):
+        """Como _build_lagrangian_relaxation (Camino B) pero sobre el MILP
+        ESTANDAR del bloque (McCormick para degradacion si corresponde,
+        sin restaurar la fisica bilineal exacta) -- para el Strengthened
+        Benders GENERICO (documento sec. 6.2, opcion 2) aplicado a
+        cualquier familia de estado "simple" con prev (N_chargers/G/H/D),
+        no solo degradacion. No hace falta NonConvex=2 ni _make_exact_clone:
+        el bloque ya es MILP puro, mucho mas barato que el Camino B.
 
-        "D" (degradacion) NO participa aca aunque ahora sea kind "simple"
-        -- es un mecanismo distinto y ya deshabilitado (ver `strengthen` en
-        driver.py) del Camino B (Lagrangeano con subgradiente,
-        degradacion_descomposicion_mccormick.md sec. 4, implementado en
-        _lagrangean_subgradient_cut): mezclarlos aca reusaria McCormick (no
-        la fisica exacta) sin el beneficio que motiva al Camino B, y
-        arrastraria el mismo bug de cota conocido de esta ruta.
+        'prev' queda con su cota FISICA propia -- la misma que ya declara
+        year_block.py via prev_bound (max_bays_k/g_max_g/h_max/B_U) al
+        construir el bloque, INDEPENDIENTE de la iteracion. Es la unica
+        cota que garantiza validez GLOBAL del corte por dualidad debil de
+        Lagrange (Phi(x) >= h^MILP(mu) - mu*x_hat + mu*x para TODO x, no
+        solo cerca de donde se calibro mu).
 
-        Por dualidad debil de Lagrange, h^MILP(mu) >= h^LP(mu) siempre en
-        teoria -- PERO solo si "prev" queda acotado de forma economicamente
-        sensata: en este modelo el costo de inversion se cobra sobre el
-        INCREMENTO (Delta), nunca sobre el stock acumulado, asi que al
-        relajar la igualdad "prev" no tiene ningun freno propio hasta su
-        tope fisico (g_max_g/h_max/max_bays_k) -- que resulto ser
-        demasiado generoso (ver conversacion de diseño: sin acotar mas,
-        el Lagrangeano "inventa" capacidad heredada muy por encima de lo
-        economicamente sensato y da un corte valido pero inutil).
-        Se acota "prev" en ESTA resolucion por el propio punto de
-        linealizacion x_hat_base -- no le permite a la relajacion suponer
-        mas capacidad heredada de la que el forward pass de esta iteracion
-        realmente produjo.
+        Version anterior (ya removida) acotaba 'prev' por el punto de
+        linealizacion x_hat_base de la iteracion en curso -- eso rompia la
+        validez GLOBAL (solo quedaba correcto localmente, cerca de ese
+        punto) y causo LB>UB en una corrida real de 5 años (ver memoria
+        del proyecto / docstring viejo de `strengthen` en driver.py). La
+        cota fisica es mas floja que x_hat_base, pero SIEMPRE valida.
 
-        Devuelve un valor compatible con el parametro `phi_lp` de
-        add_cut: "el valor de Phi evaluado en el punto de linealizacion",
-        para poder reusar exactamente la misma formula de corte."""
+        fix_vars: dict opcional {(nombre_var, indice_o_None): valor} para
+        fijar variables ADICIONALES en el clon antes de resolver -- p.ej.
+        R[y]=0 para aislar la rama "no reemplazar" del corte disyuntivo
+        de reemplazo de bateria (ver _disjunctive_replace_cut). No
+        interfiere con las familias relajadas/penalizadas de arriba."""
         clone = block.model.clone()
-
         penalty_terms = []
-        penalty_at_lin_point = 0.0
         for link in block.state_links:
-            if link.get("kind") != "simple":
+            if link.get("kind") != "simple" or link.get("prev") is None:
                 continue
             state_name = link["state"]
-            if state_name == "D":
-                continue
             if state_name not in mu:
                 continue
             getattr(clone, f"link_{state_name}").deactivate()
-
             prev = getattr(clone, link["prev"])
             mu_fam = mu[state_name]
             if link["index_set"] is None:
-                prev.setub(x_hat_base[state_name])
                 penalty_terms.append(mu_fam * prev)
-                penalty_at_lin_point += mu_fam * x_hat_base[state_name]
             else:
                 for idx, mu_v in mu_fam.items():
-                    prev[idx].setub(x_hat_base[state_name][idx])
                     penalty_terms.append(mu_v * prev[idx])
-                    penalty_at_lin_point += mu_v * x_hat_base[state_name][idx]
 
         clone.obj.deactivate()
         clone.obj_lagrangian = pyo.Objective(
             expr=clone.obj.expr + sum(penalty_terms), sense=pyo.minimize
         )
+        if fix_vars:
+            for (var_name, idx), val in fix_vars.items():
+                var_comp = getattr(clone, var_name)
+                if idx is None:
+                    var_comp.fix(val)
+                else:
+                    var_comp[idx].fix(val)
+        return clone
 
-        # MILP completo -- SIN relajar integralidad (a diferencia de
-        # _relax_and_solve): la fuerza extra viene justamente de resolver
-        # con integralidad, no con la relajacion LP.
+    def _strengthened_subgradient_cut(self, child, x_hat_base, mu_init,
+                                       max_iter=10, eps_gap=1e-3, eps_stall=1e-4,
+                                       verbose=True, label_prefix="",
+                                       fix_vars=None, target=None):
+        """Strengthened Benders generico (documento sec. 6.2, opcion 2)
+        sobre TODAS las familias de estado "simple" con prev a la vez
+        (N_chargers/G/H/D) -- no solo degradacion (esa es
+        _lagrangean_subgradient_cut, Camino B, que ademas restaura la
+        fisica bilineal exacta y necesita NonConvex=2).
+
+        Reusa `mu_init` (los duales de la relajacion LP, ver read_duals)
+        solo como PUNTO DE PARTIDA del ascenso de subgradiente -- no como
+        el mu final: en este modelo el "recurso completo garantizado"
+        (documento sec. 1) hace que la relajacion LP quede degenerada y
+        mu salga sistematicamente ~0 para N_chargers/G/H (confirmado en
+        una corrida real: mu=0 en las 3 primeras iteraciones del
+        escenario 960kW_2dias), lo cual no aporta ninguna guia al forward
+        pass. Un MILP con integralidad completa SI puede tener
+        sensibilidad Lagrangeana no nula donde el LP relajado es
+        degenerado -- de ahi la busqueda, no solo reusar mu_init tal
+        cual (que es lo que hacia la version anterior, ya removida).
+
+        target: si se omite, Phi(x_hat_base) = value(child.model.obj), ya
+        conocido porque `child` fue resuelto con heritage=x_hat_base en el
+        forward pass de ESTA iteracion -- no hace falta re-resolver un
+        "Phi_OP" aparte como en _lagrangean_subgradient_cut (esa SI
+        necesita re-resolver porque su target es la fisica EXACTA,
+        distinta del bloque ya resuelto con McCormick). Pasar `target`
+        explicito cuando `fix_vars` cambia el problema respecto del ya
+        resuelto en el forward pass (p.ej. R[y] fijo a un valor distinto
+        del que eligio el forward -- ver _disjunctive_replace_cut): en
+        ese caso el llamador debe resolver aparte el punto fijo
+        correspondiente (_fixed_branch_value) y pasarlo aca, porque
+        value(child.model.obj) ya no representa ese branch.
+
+        fix_vars: ver _build_strengthened_relaxation -- se propaga tal
+        cual a cada clon de cada iteracion del subgradiente.
+
+        Misma convencion de signo y formula de paso de Polyak que
+        _lagrangean_subgradient_cut (ver su docstring para la derivacion
+        completa)."""
+        y = child.year
+        if target is None:
+            target = value(child.model.obj)
+
+        dualized_links = [
+            link for link in child.state_links
+            if link.get("kind") == "simple" and link.get("prev") is not None
+            and link["state"] in mu_init
+        ]
+        if not dualized_links:
+            return target, mu_init
+
+        mu = {k: (dict(v) if isinstance(v, dict) else v) for k, v in mu_init.items()}
+        best_L = float("-inf")
+        best_mu = mu
+        prev_L = None
+        gap_scale = max(abs(target), 1.0)
+
+        for it in range(1, max_iter + 1):
+            clone = self._build_strengthened_relaxation(child, mu, fix_vars=fix_vars)
+            _solve(clone, label=f"{label_prefix}strengthened it={it} y={y}", **self.solver_kwargs)
+
+            L_mu = value(clone.obj_lagrangian)
+            for link in dualized_links:
+                state_name = link["state"]
+                if link["index_set"] is None:
+                    L_mu -= mu[state_name] * x_hat_base[state_name]
+                else:
+                    L_mu -= sum(mu[state_name][idx] * x_hat_base[state_name][idx]
+                                 for idx in link["index_set"])
+
+            if verbose:
+                print(f"[NestedBenders] {label_prefix}Strengthened y={y} it={it}  "
+                      f"Phi={target:,.2f}  L(mu)={L_mu:,.2f}  gap={target - L_mu:,.2f}")
+
+            if L_mu > best_L:
+                best_L = L_mu
+                best_mu = {k: (dict(v) if isinstance(v, dict) else v) for k, v in mu.items()}
+
+            if target - L_mu <= eps_gap * gap_scale:
+                break
+            if prev_L is not None and abs(L_mu - prev_L) <= eps_stall * gap_scale:
+                break
+            prev_L = L_mu
+
+            grad = {}
+            sq_norm = 0.0
+            for link in dualized_links:
+                state_name = link["state"]
+                prev_var = getattr(clone, link["prev"])
+                if link["index_set"] is None:
+                    g = value(prev_var) - x_hat_base[state_name]
+                    grad[state_name] = g
+                    sq_norm += g * g
+                else:
+                    grad[state_name] = {}
+                    for idx in link["index_set"]:
+                        g = value(prev_var[idx]) - x_hat_base[state_name][idx]
+                        grad[state_name][idx] = g
+                        sq_norm += g * g
+
+            if sq_norm <= 1e-12:
+                # Subgradiente nulo: mu ya reproduce el estado heredado
+                # exacto, no hay progreso posible por esta via.
+                break
+            step = max(target - L_mu, 0.0) / sq_norm
+
+            for state_name, g in grad.items():
+                if isinstance(g, dict):
+                    for idx, gv in g.items():
+                        mu[state_name][idx] = mu[state_name][idx] + step * gv
+                else:
+                    mu[state_name] = mu[state_name] + step * g
+
+        return best_L, best_mu
+
+    def _fixed_branch_value(self, block, fix_vars, label, catch_infeasible=False):
+        """Resuelve un clon de block.model con variables ADICIONALES fijas
+        (p.ej. R[y]=0) y el enlace de estado TAL COMO ESTA (activo:
+        prev=hat del heredado actual) -- da el costo EXACTO de ese branch
+        en el punto de esta iteracion. Usado como target del subgradiente
+        de la rama "no reemplazar" en _disjunctive_replace_cut.
+
+        catch_infeasible=True: devuelve None en vez de propagar la
+        excepcion si el solve no llega a una solucion aceptable -- caso
+        real y esperado con R=0 fijo: si la bateria heredada ya llego
+        demasiado degradada, operar SIN reemplazar puede ser
+        directamente INFACTIBLE (no solo suboptimo) en el punto de esta
+        iteracion. Ver _disjunctive_replace_cut para como se maneja ese
+        caso."""
+        clone = block.model.clone()
+        for (var_name, idx), val in fix_vars.items():
+            var_comp = getattr(clone, var_name)
+            if idx is None:
+                var_comp.fix(val)
+            else:
+                var_comp[idx].fix(val)
+        if catch_infeasible:
+            try:
+                _solve(clone, label=label, **self.solver_kwargs)
+            except RuntimeError:
+                return None
+        else:
+            _solve(clone, label=label, **self.solver_kwargs)
+        return value(clone.obj)
+
+    def _replace_branch_cost(self, child, label):
+        """C1 = Phi_y^{R=1}(D_prev): costo de `child` SI reemplaza la
+        bateria este año, para CUALQUIER D_prev -- ver
+        _disjunctive_replace_cut. Reemplazar borra la degradacion
+        heredada (b_y_link_local deja de depender realmente de D_prev
+        cuando R=1, ver year_block.py/_add_degradation_state), asi que
+        se libera D_prev (se desactiva link_D) en vez de fijarlo al
+        heredado de esta iteracion: minimizar tambien sobre D_prev da un
+        valor <= el que se obtendria con D_prev fijo a cualquier valor
+        particular, lo que vuelve a C1 una cota inferior valida de
+        Phi_y^{R=1}(D_prev) para TODO D_prev (no solo el de esta
+        iteracion) -- es decir, una constante SIEMPRE valida, no solo
+        localmente."""
+        clone = child.model.clone()
+        link_D = getattr(clone, "link_D", None)
+        if link_D is not None:
+            link_D.deactivate()
+        clone.R[child.year].fix(1)
         _solve(clone, label=label, **self.solver_kwargs)
-        h_milp = value(clone.obj_lagrangian)
-        return h_milp - penalty_at_lin_point
+        return value(clone.obj)
+
+    def _disjunctive_replace_cut(self, child, parent, x_hat_by_year, mu,
+                                  iteration=None, verbose=True, label_prefix=""):
+        """Corte disyuntivo R=0/R=1 para el año de reemplazo de bateria
+        (degradation_cut_mode="disjunctive", ver conversacion de diseño).
+
+        La funcion de costo-to-go real del estado de degradacion es
+
+            Phi_y(D_prev) = min( Phi_y^{R=0}(D_prev), Phi_y^{R=1} )
+
+        -- el minimo de una funcion de D_prev y una CONSTANTE (reemplazar
+        borra la degradacion heredada, ver _replace_branch_cost). El
+        minimo de una afin y una constante es CONCAVO, no convexo: ningun
+        corte LINEAL (ni el LP barato de Camino A ni el Lagrangeano de
+        Camino B, que solo dualizan sin resolver la disyuncion) puede
+        representarlo globalmente por mas que se refine con mas
+        iteraciones -- una tangente a una funcion concava queda por
+        ENCIMA de ella en el resto del dominio, asi que el "corte" mas
+        ajustado en un punto es invalido en otros (confirmado empirica-
+        mente: mu_D no nulo en el escenario 960kW_2dias, pero el UB no se
+        movio en 5 iteraciones -- ver memoria del proyecto). Por eso hace
+        falta una desigualdad DISYUNTIVA (big-M) en vez de una lineal:
+
+            alpha_parent >= f0_cut(D) - M*z
+            alpha_parent >= C1        - M*(1-z)
+
+        con z binaria nueva. Por monotonia del minimo (f0_cut <=
+        Phi_y^{R=0} punto a punto, C1 <= Phi_y^{R=1} siempre), el lado
+        derecho de esta disyuncion es <= Phi_y(D) para TODO D, sin
+        importar que z elija el solver -- corte GLOBALMENTE valido.
+
+        f0_cut se calcula con _strengthened_subgradient_cut restringido a
+        SOLO la familia "D" y con R[child.year] fijo a 0 (rama "no
+        reemplazar" aislada, sin mezclar regimenes). C1 con
+        _replace_branch_cost (rama "reemplazar", constante).
+
+        No reemplaza el corte lineal estandar de "D" que ya agrega
+        BackwardPass.run mas arriba (sigue siendo valido, solo mas flojo)
+        -- este es un corte ADICIONAL, mas fuerte especificamente en la
+        zona donde reemplazar-o-no es la decision relevante.
+
+        Caso especial -- R=0 INFACTIBLE: si la bateria heredada ya llego
+        demasiado degradada, "no reemplazar" puede ser directamente
+        imposible (no solo caro) en el punto x_hat de esta iteracion
+        (confirmado en una corrida real, año 3 del escenario
+        960kW_2dias). Ahi no hay target para el subgradiente -- se prueba
+        primero la version RELAJADA (D_prev libre en su cota fisica, sin
+        refinar mu): si esa tambien es infactible, "no reemplazar" no es
+        opcion para NINGUN D_prev fisicamente posible este año, y el
+        corte colapsa a la version sin disyuncion `alpha >= C1` (sigue
+        siendo valido: Phi_y(D) = C1 para todo D en ese caso).
+
+        Devuelve True si agrego el corte, False si `child` no tiene
+        degradacion o "D" no esta en `mu` (nada que hacer)."""
+        if child.mine_system.battery_degradation is None:
+            return False
+        if "D" not in mu:
+            return False
+
+        y = child.year
+        x_hat_base = x_hat_by_year[parent.year]
+        x_hat_D = x_hat_base["D"]
+
+        if verbose:
+            print(f"[NestedBenders] {label_prefix}BACKWARD anio {y}  "
+                  f"corte disyuntivo R=0/R=1 (reemplazo bateria)...")
+
+        C1 = self._replace_branch_cost(child, label=f"{label_prefix}replace-branch y={y}")
+
+        phi0_target = self._fixed_branch_value(
+            child, fix_vars={("R", y): 0}, label=f"{label_prefix}no-replace-branch y={y}",
+            catch_infeasible=True,
+        )
+
+        if phi0_target is None:
+            relaxed = self._build_strengthened_relaxation(
+                child, {"D": mu["D"]}, fix_vars={("R", y): 0}
+            )
+            try:
+                _solve(relaxed, label=f"{label_prefix}no-replace-branch-relaxed y={y}",
+                       **self.solver_kwargs)
+            except RuntimeError:
+                relaxed = None
+
+            if relaxed is None:
+                parent.model.cuts.add(parent.model.alpha >= C1)
+                if verbose:
+                    print(f"[NestedBenders] {label_prefix}corte disyuntivo y={y}  "
+                          f"R=0 infactible para CUALQUIER D_prev fisicamente posible -- "
+                          f"reemplazo obligatorio, corte colapsa a alpha >= C1={C1:,.2f}")
+                return True
+
+            mu0_D = mu["D"]
+            phi0_cut = value(relaxed.obj_lagrangian) - mu0_D * x_hat_D
+        else:
+            phi0_cut, mu0 = self._strengthened_subgradient_cut(
+                child, x_hat_base, mu_init={"D": mu["D"]},
+                verbose=verbose, label_prefix=f"{label_prefix}[R=0] ",
+                fix_vars={("R", y): 0}, target=phi0_target,
+            )
+            mu0_D = mu0["D"]
+
+        # M: cota superior segura para ambos lados de la disyuncion.
+        # f0(D) = phi0_cut + mu0_D*(x_hat_base_D - D) es afin en D, asi
+        # que su maximo en el rango fisico [0, D_U] cae en un extremo.
+        D_U = value(parent.model.B_U)
+        f0_max = phi0_cut + mu0_D * x_hat_D - mu0_D * (D_U if mu0_D < 0 else 0.0)
+        M = 2.0 * max(f0_max, C1, 0.0) + 1.0
+
+        z = pyo.Var(domain=pyo.Binary)
+        setattr(parent.model, f"_replace_disjunct_y{y}_k{iteration}", z)
+
+        D_var = getattr(parent.model, "D")
+        expr_f0 = phi0_cut + mu0_D * (x_hat_D - D_var[parent.year])
+        parent.model.cuts.add(parent.model.alpha >= expr_f0 - M * z)
+        parent.model.cuts.add(parent.model.alpha >= C1 - M * (1 - z))
+
+        if verbose:
+            print(f"[NestedBenders] {label_prefix}corte disyuntivo y={y}  "
+                  f"C1(reemplazar)={C1:,.2f}  f0_cut(no reemplazar)@x_hat={phi0_cut:,.2f}  "
+                  f"mu_D={mu0_D:.6g}  M={M:,.2f}")
+        return True
 
     def run(self, x_hat_by_year, iteration=None, verbose=True, current_ub=None, current_lb=None,
             strengthen=True):
@@ -506,14 +796,21 @@ class BackwardPass(object):
                 if strengthen:
                     if verbose:
                         print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
-                              f"fortaleciendo corte (Lagrangeano sobre MILP completo)...")
-                    phi_cut = self._lagrangian_relax_and_solve(
-                        child, mu, x_hat_by_year[parent.year], label=f"strengthened y={child.year}"
+                              f"fortaleciendo corte (Lagrangeano con subgradiente sobre MILP completo)...")
+                    phi_cut, mu_cut = self._strengthened_subgradient_cut(
+                        child, x_hat_by_year[parent.year], mu_init=mu,
+                        verbose=verbose, label_prefix=f"{k_tag}",
                     )
 
             self.cut_manager.add_cut(
                 parent, phi_cut, mu_cut, x_hat_by_year[parent.year], iteration=iteration
             )
+
+            if self.degradation_cut_mode == "disjunctive":
+                self._disjunctive_replace_cut(
+                    child, parent, x_hat_by_year, mu,
+                    iteration=iteration, verbose=verbose, label_prefix=k_tag,
+                )
 
         # LB_k = Phi_1 relajado, con el corte que se le acaba de agregar
         # (documento sec. 7.2/8). Si el horizonte tiene un solo año, el
