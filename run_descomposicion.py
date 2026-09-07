@@ -358,7 +358,7 @@ def run_parallel_by_station_and_day(args, lhds_per_station, nodes_per_station, d
                                      consumption_model='wp1', wp2_consumption_json=None, pause_scheme='det',
                                      charge_window='restringida'):
     delta_t = 8 / 60
-    gap = 1 / 100
+    gap = args.gap
     n_jobs = len(lhds_per_station) * len(days)
     n_workers = args.n_workers or min(os.cpu_count() or 1, n_jobs)
     # Reparte los hilos de Gurobi entre los workers concurrentes para no
@@ -434,6 +434,7 @@ def main():
     parser.add_argument('--solver', default='gurobi')
     parser.add_argument('--days', default='1', help='Dias significativos separados por coma, ej: 1,32,60')
     parser.add_argument('--timelimit', type=int, default=172800)
+    parser.add_argument('--gap', type=float, default=0.01, help='MIPGap objetivo para Gurobi (default: 0.01 = 1%%). Antes fijo en el codigo (1/100); ahora configurable igual que en la rama battery_swapping.')
     parser.add_argument(
         '--parallel_days', action='store_true',
         help='Ademas de por estacion, descompone por dia y resuelve cada (estacion,dia) '
@@ -489,7 +490,7 @@ def main():
     lhds_per_station, nodes_per_station = get_lhds_and_nodes_per_station(series)
 
     delta_t = 8 / 60
-    gap = 1 / 100
+    gap = args.gap
 
     wp2_consumption_json = None
     if args.consumption_model == 'wp2':
