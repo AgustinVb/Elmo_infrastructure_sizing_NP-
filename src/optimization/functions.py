@@ -31,6 +31,13 @@ class OptRules(object):
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_station(mine_system.get_system_stations())
 
+    def _first_year(self):
+        """Primer anio del horizonte modelado. Vive en la base porque lo usan
+        tanto ConstraintRules (cotas de stock inicial) como ObjectiveRules
+        (substation/gen/bess_investment_cost, pagos unicos descontados al
+        primer anio)."""
+        return sorted(self.time_series.years)[0]
+
     def create_pyo_object(self, object_type, model, object_name, sets, rule, domain=pyo.Reals):
         start = time.time()
         if object_type == "Var":
@@ -1232,8 +1239,8 @@ class ConstraintRules(OptRules):
                            * pyo_value(model.filling_factor[i_rep]))
 
         target = pyo_value(model.m_j[j, y])
-        lb = math.floor(target / prod_per_assign) 
-        ub = math.ceil(target / prod_per_assign)  
+        lb = math.floor(target / prod_per_assign) - 1
+        ub = math.ceil(target / prod_per_assign)  + 2
 
         visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
 
@@ -1636,9 +1643,6 @@ class ConstraintRules(OptRules):
         years_sorted = sorted(self.time_series.years)
         return years_sorted[years_sorted.index(y) - 1]
 
-    def _first_year(self):
-        return sorted(self.time_series.years)[0]
-
     def n_batteries_total_def(self, model, y):
         """N_batteries_total[y] = suma de N_batteries[k,y] por estación
         (stock acumulado, tamaño del pool en estación al año y — NO es la
@@ -1910,19 +1914,24 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
+        # Esquema DCH activo: la ventana entre turnos se toma de la hoja
+        # Shifts (time_intervals_between_shifts_set), no de la lista de
+        # pausas DET.
         model.between_shifts_elhd_swap = pyo.Constraint(
             model.slhd_set,
             model.years,
             model.days,
-            model.time_intervals_between_shifts_det_set,
+            model.time_intervals_between_shifts_set,
             rule=self.between_shifts_elhd_swap,
         )
-        #model.swap_only_meal_or_between_shifts = pyo.Constraint(
-        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
-        #)
-        model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
-            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
+        # Swap restringido (DCH): solo se permite Z_swap durante la colacion
+        # DCH (time_intervals_meal_set) o entre turnos.
+        model.swap_only_meal_or_between_shifts = pyo.Constraint(
+            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
         )
+        #model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
+        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
+        #)
         #model.assign_state = pyo.Constraint(
         #    model.slhd_set,
         #    model.years,
@@ -2018,19 +2027,20 @@ class ConstraintRules(OptRules):
             rule=self.daily_extraction_M,
         )
 
-        # 6) Pausas operacionales DET (esquema activo). DCH queda comentado
+        # 6) Pausas operacionales DCH (esquema activo). DET queda comentado
         # mas abajo, sin registrar.
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
 
-        #model.maintenance_stop_all = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.years,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.maint_stop_all,
-        #)
-        model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.maintenance_stop_all = pyo.Constraint(
+            model.slhd_set,
+            model.years,
+            model.days,
+            model.time_intervals_set,
+            rule=self.maint_stop_all,
+        )
+        # Pausas DET (inactivas con el esquema DCH)
+        #model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # 7) Balance de potencia y generación / BESS
         model.power_balance = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
