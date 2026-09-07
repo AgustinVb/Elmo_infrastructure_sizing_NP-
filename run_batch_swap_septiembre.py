@@ -47,7 +47,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 DATA_ROOT = REPO_ROOT / "data" / "Escenarios_DCH_septiembre"
-OUTPUT_ROOT = REPO_ROOT / "output" / "DCH_septiembre"
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / "output" / "DCH_septiembre"
 
 DAYS = "1,32,60,91,121,152,182,213,244,274,305,335"
 SOLVER = "gurobi"
@@ -199,6 +199,12 @@ def main():
         help="Timelimit en segundos por subproblema, pasado a run_descomposicion.py --timelimit (default: 1200)."
     )
     parser.add_argument(
+        "--output_root", default=str(DEFAULT_OUTPUT_ROOT),
+        help="Carpeta raiz de salida (default: output/DCH_septiembre). Usar otra permite "
+             "re-correr la campana sin pisar los resultados anteriores; los logs por corrida "
+             "van a output/_batch_logs/<nombre de la carpeta raiz>/."
+    )
+    parser.add_argument(
         "--dry_run", action="store_true",
         help="Solo imprime los 24 (o menos, segun filtros) comandos que se ejecutarian, sin correr nada."
     )
@@ -208,6 +214,8 @@ def main():
     windows = [w.strip() for w in args.windows.split(",")]
     skip_existing = args.skip_existing == "true"
     days_list = DAYS.split(",")
+    output_root = Path(args.output_root).expanduser().resolve()
+    log_root = REPO_ROOT / "output" / "_batch_logs" / output_root.name
 
     scenarios = discover_scenarios(only=only)
     if not scenarios:
@@ -219,6 +227,8 @@ def main():
         print(f"  {battery_dir}/{cost_dir}/{scenario_path.name}")
     print(f"Ventanas: {windows}")
     print(f"skip_existing={skip_existing}  dry_run={args.dry_run}  gap={args.gap}  timelimit={args.timelimit}")
+    print(f"output_root={output_root}")
+    print(f"log_root={log_root}")
 
     results = []
     t_batch_start = time.time()
@@ -229,8 +239,8 @@ def main():
         for window in windows:
             run_idx += 1
             window_out_name = WINDOW_OUTPUT_NAME[window]
-            output_folder = OUTPUT_ROOT / battery_dir / cost_dir / window_out_name / f"{scenario_path.name}_Descomp"
-            log_path = REPO_ROOT / "output" / "_batch_logs" / f"{battery_dir}_{cost_dir}_{scenario_path.name}_{window}.log"
+            output_folder = output_root / battery_dir / cost_dir / window_out_name / f"{scenario_path.name}_Descomp"
+            log_path = log_root / f"{battery_dir}_{cost_dir}_{scenario_path.name}_{window}.log"
 
             print(f"\n[{run_idx}/{total_runs}] (quedan {total_runs - run_idx} despues de esta)")
 
