@@ -1,0 +1,89 @@
+
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 03:02:40 2026
+
+Set parameter LogFile to value "output\DCH_septiembre\Bateria_482\Costo_fijo\Swap_libre\Swap_fixed_3estaciones_160kW_Descomp\station_3_d1_stage1\ELMO_log.txt"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
+
+Non-default parameters:
+TimeLimit  1200
+MIPGap  0.05
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  1
+
+Optimize a model with 26328 rows, 53707 columns and 245441 nonzeros
+Model fingerprint: 0x56951e21
+Variable types: 2099 continuous, 51608 integer (18485 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 4e+02]
+  Objective range  [4e-01, 8e+04]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 1e+04]
+Presolve removed 23458 rows and 43783 columns
+Presolve time: 0.21s
+Presolved: 2870 rows, 9924 columns, 33763 nonzeros
+Variable types: 824 continuous, 9100 integer (8472 binary)
+Root relaxation presolved: 2870 rows, 9924 columns, 33763 nonzeros
+
+
+Root relaxation: objective 1.808868e+05, 7885 iterations, 0.60 seconds (0.62 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 180886.848    0   50          - 180886.848      -     -    1s
+     0     0 180886.848    0   33          - 180886.848      -     -    2s
+     0     0 180887.294    0   66          - 180887.294      -     -    2s
+     0     0 180887.294    0   60          - 180887.294      -     -    3s
+     0     0 180887.294    0   71          - 180887.294      -     -    3s
+     0     0 180887.294    0   30          - 180887.294      -     -    4s
+     0     0 180887.294    0   30          - 180887.294      -     -    5s
+     0     2 180887.294    0   30          - 180887.294      -     -   15s
+    61    63 180887.294   18  179          - 180887.294      -   603   20s
+   134   136 180887.294   20   54          - 180887.294      -   658   25s
+   206   208 180887.294    7  158          - 180887.294      -   661   30s
+   268   270 180887.294    9  192          - 180887.294      -   675   35s
+   326   328 181203.153   12  141          - 180887.294      -   698   40s
+H  367   367                    293963.88889 180887.294  38.5%   661   41s
+H  367   367                    292795.88889 180887.294  38.2%   661   41s
+H  367   367                    291627.88889 180887.294  38.0%   661   41s
+H  367   367                    291238.55556 180887.294  37.9%   661   41s
+   417   419 181506.126   26   83 291238.556 180887.294  37.9%   655   45s
+H  497   497                    291108.77778 180887.294  37.9%   654   48s
+H  511   512                    289940.77778 180887.294  37.6%   654   49s
+   512   513 181222.982   11   30 289940.778 180887.294  37.6%   653   50s
+   517   516 180887.294   39   36 289940.778 180887.294  37.6%   646   56s
+   522   520 180968.170   32   16 289940.778 180887.294  37.6%   640   61s
+   526   522 181517.064   28   19 289940.778 180887.294  37.6%   635   65s
+   574   556 180887.294   23   76 289940.778 180887.294  37.6%   680   70s
+H  591   539                    182913.88889 180887.294  1.11%   674   71s
+
+Cutting planes:
+  Gomory: 41
+  Lift-and-project: 15
+  Implied bound: 25
+  MIR: 102
+  Mixing: 4
+  StrongCG: 1
+  Flow cover: 584
+  Zero half: 1
+  RLT: 26
+  Relax-and-lift: 54
+
+Explored 592 nodes (425662 simplex iterations) in 71.92 seconds (109.72 work units)
+Thread count was 1 (of 32 available processors)
+
+Solution count 7: 182914 289941 291109 ... 293964
+
+Optimal solution found (tolerance 5.00e-02)
+Best objective 1.829138888889e+05, best bound 1.808872935890e+05, gap 1.1080%

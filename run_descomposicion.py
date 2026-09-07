@@ -61,11 +61,28 @@ import math
 import multiprocessing
 import os
 import random
+import sys
 import time
 from os import makedirs
 from os.path import join
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
+
+# src/optimization/opt_model.py imprime emojis (checkmarks, warnings) en el
+# reporte de cada solve. En Windows, stdout/stderr redirigidos a archivo (o a
+# una consola con code page no UTF-8) usan cp1252 por defecto, que no puede
+# codificar esos caracteres -> UnicodeEncodeError. Sin este fix, CUALQUIER
+# subproblema que llegue a imprimir el resumen (incluidos los que resuelven
+# bien) revienta ahi mismo, matando el proceso completo con ProcessPoolExecutor
+# ANTES de guardar resultados (el .json de resultados se escribe despues de
+# ese print). Va a nivel de modulo (no dentro de main()) porque
+# ProcessPoolExecutor en Windows usa 'spawn': cada worker reimporta este
+# archivo desde cero, asi que el fix debe correr en el import, no solo en el
+# proceso principal.
+if sys.stdout.encoding is not None and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if sys.stderr.encoding is not None and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from src import mine
 from src.io.reader import Reader, Series

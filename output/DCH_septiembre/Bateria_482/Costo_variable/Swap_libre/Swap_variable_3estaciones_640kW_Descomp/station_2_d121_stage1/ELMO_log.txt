@@ -1,0 +1,74 @@
+
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 02:54:54 2026
+
+Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_482\Costo_variable\Swap_libre\Swap_variable_3estaciones_640kW_Descomp\station_2_d121_stage1\ELMO_log.txt"
+Set parameter Threads to value 1
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Gurobi Optimizer version 12.0.3 build v12.0.3rc0 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 1 threads
+
+Non-default parameters:
+TimeLimit  1200
+MIPGap  0.05
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+Presolve  2
+Threads  1
+
+Optimize a model with 26388 rows, 54733 columns and 248206 nonzeros
+Model fingerprint: 0x557cb0cd
+Variable types: 2129 continuous, 52604 integer (19481 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 6e+02]
+  Objective range  [8e-03, 8e+04]
+  Bounds range     [1e+00, 1e+01]
+  RHS range        [1e+00, 1e+04]
+Presolve removed 23283 rows and 44119 columns
+Presolve time: 0.16s
+Presolved: 3105 rows, 10614 columns, 34094 nonzeros
+Variable types: 824 continuous, 9790 integer (8984 binary)
+Root relaxation presolved: 3105 rows, 10614 columns, 34094 nonzeros
+
+
+Root relaxation: objective 2.308861e+05, 11138 iterations, 0.72 seconds (1.37 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 230886.141    0   46          - 230886.141      -     -    1s
+H    0     0                    310892.68958 230886.141  25.7%     -    1s
+H    0     0                    309473.10070 230886.141  25.4%     -    1s
+H    0     0                    309472.63775 230886.141  25.4%     -    1s
+H    0     0                    309449.55924 230886.141  25.4%     -    1s
+     0     0 230886.145    0   28 309449.559 230886.145  25.4%     -    2s
+     0     0 230886.145    0   59 309449.559 230886.145  25.4%     -    2s
+     0     0 230886.145    0  159 309449.559 230886.145  25.4%     -    3s
+     0     0 230886.145    0  159 309449.559 230886.145  25.4%     -    3s
+H    0     0                    307913.87798 230886.145  25.0%     -    3s
+     0     2 230886.145    0  159 307913.878 230886.145  25.0%     -    4s
+H    4     4                    237372.61636 230886.145  2.73%   261    4s
+
+Cutting planes:
+  Gomory: 20
+  Implied bound: 5
+  MIR: 4
+  Mixing: 1
+  StrongCG: 2
+  Flow cover: 58
+  Mod-K: 1
+  RLT: 4
+  Relax-and-lift: 4
+
+Explored 5 nodes (20675 simplex iterations) in 4.28 seconds (6.24 work units)
+Thread count was 1 (of 32 available processors)
+
+Solution count 6: 237373 307914 309450 ... 310893
+
+Optimal solution found (tolerance 5.00e-02)
+Best objective 2.373726163650e+05, best bound 2.308861450604e+05, gap 2.7326%
