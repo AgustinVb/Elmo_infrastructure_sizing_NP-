@@ -40,6 +40,14 @@ FULL_HORIZON_DAYS = [
     2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836,
 ]
 
+# 11 años, 2 días representativos/año (verano sin cobro potencia + invierno
+# con cobro potencia). Cada año aporta un par consecutivo de dias en esta
+# lista (dia_verano, dia_invierno); --n_years trunca tomando los primeros
+# N pares, o sea los primeros N años del horizonte.
+FULL_HORIZON_DAYS = [
+    1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281,
+    2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741,
+]
 
 def build_mine(args):
     """ building power system base function
