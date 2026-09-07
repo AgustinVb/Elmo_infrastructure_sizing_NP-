@@ -6,15 +6,11 @@ Bateria_482, cada uno con Costo_fijo + Costo_variable x potencias) en las dos
 ventanas de carga DCH: restringida (solo colacion/entre-turnos) y libre
 (cualquier momento salvo mantencion).
 
-IMPORTANTE -- verificado antes de escribir este script: data/Escenarios_DCH_
-septiembre NO EXISTE todavia en esta rama (carga_on_board), solo
-data/Escenarios_DCH_agosto (Costo_fijo/Costo_variable x P320kW/P640kW, sin eje
-de bateria). Este script asume que la data de septiembre para on-board, una
-vez creada, sigue la misma convencion de carpetas que agosto
-(Carga_on_board_{fixed,variable}_3estaciones_P{potencia}kW) mas el nivel extra
-Bateria_353/Bateria_482 (mismo patron que se agrego en battery_swapping). Si
-las potencias o baterias reales difieren, ajustar POWERS/BATTERY_DIRS abajo.
-No hay nada que correr hasta que esa data exista.
+Son 12 escenarios (2 baterias x 2 esquemas de costo x 3 potencias) x 2
+ventanas = 24 corridas, cada una de 36 subproblemas (3 estaciones x 12 dias x
+2 fases). La potencia que distingue P160/P320/P640 vive en la hoja 'chargers'
+(charger_power, con charger_cost escalado), NO en la columna charge_power de
+la hoja LHD (esa es propiedad del vehiculo y no varia entre escenarios).
 
 Adaptado desde run_batch_dch_agosto.py (mismo repo, rama carga_on_board) +
 run_batch_swap_septiembre.py (rama battery_swapping):
@@ -22,14 +18,12 @@ run_batch_swap_septiembre.py (rama battery_swapping):
 - Salida sigue la convencion de agosto para on-board: Ventana_restringida /
   Carga_libre (NO Swap_restringido/Swap_libre, que es la convencion del lado
   swap).
-- POWERS = ['320kW','640kW'] (no incluye 160kW: agosto nunca corrio esa
-  potencia para on-board, a diferencia de swap).
 - run_descomposicion.py en esta rama no exponia --gap (estaba fijo en 1/100
-  en el codigo) ni el fix de encoding UTF-8 que ya se necesito en
-  battery_swapping (emojis en opt_model.py + stdout redirigido en Windows =
-  UnicodeEncodeError que mata el proceso completo, incluso en subproblemas
-  que resuelven bien, ANTES de guardar resultados). Se portaron ambos fixes a
-  este run_descomposicion.py como parte de este cambio.
+  en el codigo); se agrego como flag. El fix de encoding UTF-8 que se necesito
+  en battery_swapping (emojis en opt_model.py + stdout redirigido en Windows =
+  UnicodeEncodeError que mata el proceso completo, incluso en subproblemas que
+  resuelven bien, ANTES de guardar resultados) ya estaba resuelto en esta rama
+  de forma independiente.
 
 gap/timelimit por defecto: 0.05 / 1200s, igual que en battery_swapping (no el
 1%/172800s que traia el codigo antes) -- con el defecto anterior, un
@@ -227,12 +221,7 @@ def main():
 
     scenarios = discover_scenarios(only=only)
     if not scenarios:
-        sys.exit(
-            f"No se encontraron escenarios en {DATA_ROOT} con --only={args.only!r}.\n"
-            f"Nota: esta carpeta no existia en carga_on_board al escribir este script -- "
-            f"confirmar que la data de Escenarios_DCH_septiembre (con el eje Bateria_353/"
-            f"Bateria_482) ya fue agregada a esta rama antes de correr esto."
-        )
+        sys.exit(f"No se encontraron escenarios en {DATA_ROOT} con --only={args.only!r}")
 
     total_runs = len(scenarios) * len(windows)
     print(f"Escenarios a correr ({len(scenarios)}) x ventanas ({len(windows)}) = {total_runs} corridas:")
