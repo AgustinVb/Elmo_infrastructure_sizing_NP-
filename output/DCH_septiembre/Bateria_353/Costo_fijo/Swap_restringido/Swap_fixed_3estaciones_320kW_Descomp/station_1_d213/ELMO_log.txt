@@ -1,5 +1,5 @@
 
-Gurobi 12.0.3 (win64) logging started Sun Sep  6 21:24:46 2026
+Gurobi 12.0.3 (win64) logging started Mon Sep  7 22:38:18 2026
 
 Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_353\Costo_fijo\Swap_restringido\Swap_fixed_3estaciones_320kW_Descomp\station_1_d213\ELMO_log.txt"
 Set parameter Threads to value 1
@@ -22,38 +22,46 @@ Presolve  2
 Threads  1
 
 Optimize a model with 26902 rows, 53707 columns and 242775 nonzeros
-Model fingerprint: 0xcbf7a0c7
+Model fingerprint: 0x7631f45e
 Variable types: 2099 continuous, 51608 integer (18485 binary)
 Coefficient statistics:
   Matrix range     [1e+00, 3e+02]
   Objective range  [4e-01, 1e+02]
-  Bounds range     [1e+00, 3e+00]
+  Bounds range     [1e+00, 2e+00]
   RHS range        [1e+00, 1e+04]
 
 Warning: Completing partial solution with 50884 unfixed non-continuous variables out of 51608
-User MIP start produced solution with objective 238125 (0.03s)
-Loaded user MIP start with objective 238125
+User MIP start produced solution with objective 365467 (0.05s)
+Loaded user MIP start with objective 365467
 
-Presolve removed 25624 rows and 44958 columns
-Presolve time: 0.11s
-Presolved: 1278 rows, 8749 columns, 27924 nonzeros
-Variable types: 216 continuous, 8533 integer (8368 binary)
-Root relaxation presolved: 1278 rows, 8749 columns, 27924 nonzeros
+Presolve removed 25624 rows and 44950 columns
+Presolve time: 0.15s
+Presolved: 1278 rows, 8757 columns, 27249 nonzeros
+Variable types: 216 continuous, 8541 integer (8304 binary)
+Root relaxation presolved: 1278 rows, 8757 columns, 27249 nonzeros
 
 
 Use crossover to convert LP symmetric solution to basic solution...
 
-Root relaxation: objective 1.998806e+05, 3668 iterations, 0.04 seconds (0.06 work units)
+Root relaxation: objective 3.246313e+05, 3047 iterations, 0.04 seconds (0.04 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0          -    0      238125.111 237382.853  0.31%     -    0s
+     0     0 324631.302    0   24 365467.222 324631.302  11.2%     -    0s
+     0     0 324634.260    0   24 365467.222 324634.260  11.2%     -    0s
+H    0     0                    327067.22222 324634.260  0.74%     -    0s
 
-Explored 1 nodes (4482 simplex iterations) in 0.28 seconds (0.49 work units)
+Cutting planes:
+  Gomory: 5
+  Cover: 1
+  Flow cover: 1
+  RLT: 1
+
+Explored 1 nodes (6049 simplex iterations) in 0.97 seconds (1.04 work units)
 Thread count was 1 (of 32 available processors)
 
-Solution count 1: 238125 
+Solution count 2: 327067 365467 
 
 Optimal solution found (tolerance 5.00e-02)
-Best objective 2.381251111111e+05, best bound 2.373828529131e+05, gap 0.3117%
+Best objective 3.270672222222e+05, best bound 3.246342597381e+05, gap 0.7439%

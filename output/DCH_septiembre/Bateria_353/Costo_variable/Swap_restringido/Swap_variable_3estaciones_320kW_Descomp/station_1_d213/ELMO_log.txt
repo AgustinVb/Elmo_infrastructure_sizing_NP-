@@ -1,5 +1,5 @@
 
-Gurobi 12.0.3 (win64) logging started Sun Sep  6 23:20:36 2026
+Gurobi 12.0.3 (win64) logging started Tue Sep  8 01:21:50 2026
 
 Set parameter LogFile to value "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\output\DCH_septiembre\Bateria_353\Costo_variable\Swap_restringido\Swap_variable_3estaciones_320kW_Descomp\station_1_d213\ELMO_log.txt"
 Set parameter Threads to value 1
@@ -22,38 +22,61 @@ Presolve  2
 Threads  1
 
 Optimize a model with 26902 rows, 53707 columns and 242775 nonzeros
-Model fingerprint: 0x1bbce2cd
+Model fingerprint: 0xe008df7d
 Variable types: 2099 continuous, 51608 integer (18485 binary)
 Coefficient statistics:
   Matrix range     [1e+00, 3e+02]
   Objective range  [8e-03, 1e+02]
-  Bounds range     [1e+00, 3e+00]
+  Bounds range     [1e+00, 2e+00]
   RHS range        [1e+00, 1e+04]
 
 Warning: Completing partial solution with 50884 unfixed non-continuous variables out of 51608
-User MIP start produced solution with objective 237369 (0.05s)
-Loaded user MIP start with objective 237369
+User MIP start produced solution with objective 398959 (0.03s)
+Loaded user MIP start with objective 398959
 
-Presolve removed 25624 rows and 44958 columns
-Presolve time: 0.16s
-Presolved: 1278 rows, 8749 columns, 27924 nonzeros
-Variable types: 216 continuous, 8533 integer (8368 binary)
-Root relaxation presolved: 1278 rows, 8749 columns, 27924 nonzeros
+Presolve removed 25624 rows and 44950 columns
+Presolve time: 0.11s
+Presolved: 1278 rows, 8757 columns, 27249 nonzeros
+Variable types: 216 continuous, 8541 integer (8260 binary)
+Root relaxation presolved: 1278 rows, 8757 columns, 27249 nonzeros
 
 
 Use crossover to convert LP symmetric solution to basic solution...
 
-Root relaxation: objective 2.005633e+05, 3785 iterations, 0.05 seconds (0.06 work units)
+Root relaxation: objective 3.573698e+05, 3129 iterations, 0.03 seconds (0.04 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-     0     0          -    0      237368.574 236022.917  0.57%     -    0s
+     0     0 357369.835    0   19 398959.118 357369.835  10.4%     -    0s
+     0     0 357516.205    0   12 398959.118 357516.205  10.4%     -    0s
+H    0     0                    398257.50421 357516.205  10.2%     -    0s
+H    0     0                    397833.55706 357516.205  10.1%     -    0s
+H    0     0                    397788.65031 357516.205  10.1%     -    0s
+     0     0 357516.205    0   12 397788.650 357516.205  10.1%     -    0s
+     0     0 357516.205    0   20 397788.650 357516.205  10.1%     -    1s
+     0     0 357516.205    0   22 397788.650 357516.205  10.1%     -    1s
+     0     0 357516.205    0   29 397788.650 357516.205  10.1%     -    1s
+     0     0 357516.205    0   32 397788.650 357516.205  10.1%     -    1s
+     0     0 357516.205    0   37 397788.650 357516.205  10.1%     -    1s
+     0     0 357516.205    0   37 397788.650 357516.205  10.1%     -    2s
+     0     2 357516.205    0   37 397788.650 357516.205  10.1%     -    2s
+    63    65 357516.205   25   22 397788.650 357516.205  10.1%   151    5s
+   214   216 357516.205   51   26 397788.650 357516.205  10.1%   100   10s
+   356   358 357516.205   50   12 397788.650 357516.205  10.1%  91.6   15s
+   475   477 357516.205   66   50 397788.650 357516.205  10.1%  99.4   20s
+H  519   492                    361564.71433 357516.205  1.12%   111   23s
 
-Explored 1 nodes (4875 simplex iterations) in 0.38 seconds (0.47 work units)
+Cutting planes:
+  Gomory: 7
+  Lift-and-project: 10
+  Flow cover: 3
+  RLT: 5
+
+Explored 519 nodes (83182 simplex iterations) in 23.90 seconds (43.84 work units)
 Thread count was 1 (of 32 available processors)
 
-Solution count 1: 237369 
+Solution count 5: 361565 397789 397834 ... 398959
 
 Optimal solution found (tolerance 5.00e-02)
-Best objective 2.373685738634e+05, best bound 2.360229174969e+05, gap 0.5669%
+Best objective 3.615647143256e+05, best bound 3.575162054077e+05, gap 1.1197%
