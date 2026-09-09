@@ -874,7 +874,7 @@ class JSONPlotter:
         comenzando en start_hour y cerrando en start_hour del día siguiente.
         """
         ticks = list(range(0, 25))
-        labels = [f"{(start_hour + h) % 24:02d}:00" for h in ticks]
+        labels = [f"{int(start_hour + h) % 24:02d}:00" for h in ticks]
         return ticks, labels
 
     def _build_intervals_from_clock_windows(self, windows: List[Tuple[str, str]], start_hour: int = 9) -> List[int]:
@@ -998,7 +998,7 @@ class JSONPlotter:
         maintenance_alpha = 0.15
 
         peak_intervals = None
-        det_intervals_available = (
+        det_intervals_available = self.mode == "DET" and (
             self.params.meal_det
             or self.params.maintenance_det
             or self.params.road_clearing

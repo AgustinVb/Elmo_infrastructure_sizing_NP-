@@ -398,12 +398,26 @@ class Timeseries(object):
         return self.mapper['Nodes_assigned_at_interval'].get((year, day, interval, elhd_name), [])
 
     def get_node_assignment(self, elhds: list) -> int:
+        # _nodes_for_elhd_year(elhd, year) depende SOLO de (elhd, year), no
+        # de day/interval -- antes se recalculaba (con un filtro de pandas
+        # sobre NodeAssignment) una vez por cada combinacion de
+        # year x day x interval x elhd, repitiendo el mismo resultado
+        # len(days_within_year)*len(time_intervals) veces de mas. Se
+        # precalcula una sola vez por (year, elhd) y se reusa la MISMA
+        # lista para todos los (day, interval) -- seguro porque nada rio
+        # abajo muta estas listas (solo se leen/iteran, ver
+        # Nodes_assigned_at_interval en functions.py).
+        nodes_by_year_elhd = {
+            (year, elhd): self._nodes_for_elhd_year(elhd, year)
+            for year in self.years
+            for elhd in elhds
+        }
         node_assign_dict = {}
         for year in self.years:
             for day in self.days_within_year:
                 for interval in self.time_intervals:
                     for elhd in elhds:
-                        node_assign_dict[(year, day, interval, elhd)] = self._nodes_for_elhd_year(elhd, year)
+                        node_assign_dict[(year, day, interval, elhd)] = nodes_by_year_elhd[(year, elhd)]
         self.mapper['Nodes_assigned_at_interval'] = node_assign_dict
         return 0
 
@@ -556,14 +570,29 @@ class Timeseries(object):
         self.mapper['Trips'] = trips
         return trips
 
+    def _trips_row(self, node_name: str, elhd_name: str):
+        # get_n_trips/get_n_intervals_trip/get_energy_consumption se llaman
+        # millones de veces durante la construccion del modelo (una vez por
+        # cada combinacion de dia/intervalo/año que involucra este par
+        # nodo-LHD), pero el resultado depende SOLO de (elhd_name, node_name)
+        # -- cachear la fila evita rehacer el lookup de pandas (.loc, con
+        # su overhead de alineacion de indice) en cada llamada repetida.
+        cache = self.__dict__.setdefault('_trips_row_cache', {})
+        key = (elhd_name, node_name)
+        row = cache.get(key)
+        if row is None:
+            row = self.mapper['Trips'].loc[elhd_name, node_name]
+            cache[key] = row
+        return row
+
     def get_n_intervals_trip(self, node_name: str, elhd_name: str) -> float:
-        return self.mapper['Trips'].loc[elhd_name, node_name]['travel_duration']
+        return self._trips_row(node_name, elhd_name)['travel_duration']
 
     def get_n_trips(self, node_name: str, elhd_name: str) -> float:
-        return self.mapper['Trips'].loc[elhd_name, node_name]['n_trips']
+        return self._trips_row(node_name, elhd_name)['n_trips']
 
     def get_energy_consumption(self, node_name: str, elhd_name: str) -> float:
-        return self.mapper['Trips'].loc[elhd_name, node_name]['energy_consumption']
+        return self._trips_row(node_name, elhd_name)['energy_consumption']
 
     def get(self, start_col=None, end_col=None, keys=None):
         """

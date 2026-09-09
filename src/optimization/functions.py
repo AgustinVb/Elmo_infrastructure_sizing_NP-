@@ -780,8 +780,6 @@ class BoundRules(OptRules):
         model.W = pyo.Var(model.stations_set, model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeIntegers)
         # Variable de potencia pico contratada / demand charge
         model.P_pot = pyo.Var(model.years, domain=pyo.NonNegativeReals)
-        #extracci�n total del equipo i en el d�a d.
-        model.M = pyo.Var(model.slhd_set, model.nodes_set, model.years, model.days, domain=pyo.NonNegativeReals)
         # Potencia comprada a la red en (d,t) [kW] — siempre presente
         model.P_red = pyo.Var(model.years, model.days, model.time_intervals_set, domain=pyo.NonNegativeReals)
         # Variables de generación renovable (solo si existen generadores)
@@ -1264,26 +1262,6 @@ class ConstraintRules(OptRules):
         # Z_pen <= Y  ?  Z_pen=0 cuando no hay viaje
         return model.Z_pen[i, j ,d, t] <= model.Y[i, j ,d, t]    
  
-
-    def daily_extraction_M(self, model, i, j, y, d):
-        """
-        M[i,j,d] = extracci�n total del equipo i al nodo j en el d�a d,
-        descontando la producci�n perdida por swaps simult�neos (Z_pen).
-        Misma unidad que el t�rmino de producci�n (g_i * n_trips * f_i).
-        """
-        term = sum(
-            model.Y[i2, j2, y2, d2, t2] * model.g_i[i2]
-            * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-            for (i2, j2, y2, d2, t2) in model.Y_INDEX
-            if i2 == i and y2 == y and d2 == d and j2 == j
-        )
-        #pen = sum(
-        #    model.Z_pen[i2, j2, d2, t2] * model.g_i[i2]
-        #    * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
-        #    for (i2, j2, d2, t2) in model.Y_INDEX
-        #    if i2 == i and d2 == d and j2 == j
-        #)
-        return model.M[i, j, y, d] == term #- pen
 
     # ==========================================================
     # 4) Infraestructura de estaciones y red el�ctrica
@@ -2019,13 +1997,6 @@ class ConstraintRules(OptRules):
             rule=self.daily_production,
         )
         model.production = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
-        model.daily_extraction_M = pyo.Constraint(
-            model.slhd_set,
-            model.nodes_set,
-            model.years,
-            model.days,
-            rule=self.daily_extraction_M,
-        )
 
         # 6) Pausas operacionales DCH (esquema activo). DET queda comentado
         # mas abajo, sin registrar.
