@@ -623,6 +623,14 @@ class Parameters:
         maint_raw = data.get("time_intevals_maintenance_set", data.get("time_intervals_maintenance_set", []))
         self.maintenance = sorted(int(v) for v in maint_raw)
 
+        # Ventana tarifaria de punta tal como la construyo el modelo
+        # (time_intervals_peak_set). Vacia en corridas que no la exportan -> el
+        # plotter cae al calculo local por punto medio.
+        peak_raw = data.get("time_intervals_peak_set", [])
+        if isinstance(peak_raw, dict):
+            peak_raw = list(peak_raw.get("_1", peak_raw).keys())
+        self.peak = sorted(int(float(v)) for v in peak_raw)
+
         # DET-specific sets (written by Printer when model exposes them)
         self.meal_det = sorted(int(v) for v in data.get("time_intervals_meal_det_set", []))
         self.maintenance_det = sorted(int(v) for v in data.get("time_intervals_maintenance_det_set", []))
@@ -843,9 +851,12 @@ class JSONPlotter:
             b = end_min - base_minutes
 
             for t in range(1, max_t + 1):
-                s = int(round((t - 1) * dt_minutes))
-                e = int(round(t * dt_minutes))
-                if max(s, a) < min(e, b):
+                # PUNTO MEDIO del intervalo, mismo criterio que
+                # _build_intervals_from_clock_windows / time_intervals_peak_set
+                # en functions.py. Con el traslape que habia antes, cualquier
+                # intervalo que solo pisara el borde entraba en la ventana y el
+                # sombreado quedaba mas ancho que los sets reales del modelo.
+                if a <= (t - 1) * dt_minutes + dt_minutes / 2 < b:
                     out.add(t)
 
         allowed = set(int(v) for v in self.intervals)
@@ -993,8 +1004,10 @@ class JSONPlotter:
                     (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
                     (maintenance_intervals_det, *self.DET_SHADE_COLORS["maintenance"]),
                 ]
+                # El set exportado por el modelo manda; el calculo local (mismo
+                # criterio de punto medio) es el fallback para corridas viejas.
                 peak_windows = [("18:00", "22:00")]
-                peak_intervals = self._build_intervals_from_clock_windows(peak_windows, start_hour=self.start_hour)
+                peak_intervals = list(getattr(self.params, "peak", []) or []) or                     self._build_intervals_from_clock_windows(peak_windows, start_hour=self.start_hour)
             else:
                 between_shifts_intervals = (
                     self.params.between_shifts

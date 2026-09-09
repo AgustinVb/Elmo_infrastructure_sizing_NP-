@@ -597,18 +597,48 @@ def _year_of_day(day: int) -> int:
     return ((int(day) - 1) // 365) + 1
 
 
+def _exported_peak_interval_set(params_data) -> set:
+    """Devuelve time_intervals_peak_set tal como lo exporto el modelo
+    (write_parameters_json vuelca todos los pyo.Set), o set() si la corrida no
+    lo trae. Es la fuente de verdad: re-derivar la ventana en el lector es lo
+    que produjo la desalineacion con model.time_intervals_peak_set."""
+    raw = params_data.get("time_intervals_peak_set")
+    if not raw:
+        return set()
+    if isinstance(raw, dict):
+        inner = raw.get("_1") if isinstance(raw.get("_1"), dict) else raw
+        tokens = list(inner.keys())
+    elif isinstance(raw, list):
+        tokens = raw
+    else:
+        return set()
+    out = set()
+    for tok in tokens:
+        try:
+            out.add(int(float(tok)))
+        except Exception:
+            continue
+    return out
+
+
 def _peak_clock_interval_set(delta_t: float, max_t: int, base_hour: float = 8.5) -> set:
     """Replica el calculo de model.time_intervals_peak_set en
     OptSets.build_sets (functions.py): horizonte operativo arranca a
     base_hour (leido de parameters.json, escrito desde Shifts.base_hour),
-    ventana punta 18:00-22:00."""
+    ventana punta 18:00-22:00.
+
+    Usa el PUNTO MEDIO del intervalo (+ dt/2), igual que functions.py. Antes
+    usaba el borde izquierdo, lo que corria la ventana un intervalo en ambos
+    extremos: con base_hour=9 y delta_t=8min daba t=69..98 en vez de 68..97,
+    o sea sobraba t=98 (21:56-22:04, que el modelo deja libre y aca se cobraba
+    ex post) y faltaba t=68 (17:56-18:04, que el modelo si factura)."""
     dt_minutes = int(round(delta_t * 60))
     if dt_minutes <= 0:
         return set()
     base_minutes = int(round(base_hour * 60))
     out = set()
     for t in range(1, max_t + 1):
-        clock = (base_minutes + (t - 1) * dt_minutes) % 1440
+        clock = (base_minutes + (t - 1) * dt_minutes + dt_minutes / 2) % 1440
         if 18 * 60 <= clock < 22 * 60:
             out.add(t)
     return out
@@ -631,6 +661,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
     delta_t = None
     base_hour = 8.5
     demand_charge_coef = 12 * 10
+    exported_peak_set: set = set()
 
     for sub in subfolders:
         pred_path = find_json_in_folder(sub, "P_red.json")
@@ -644,6 +675,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         if delta_t is None:
             delta_t = _as_float(params_data.get("delta_t", 0.0))
             base_hour = _as_float(params_data.get("base_hour", 8.5))
+            exported_peak_set = _exported_peak_interval_set(params_data)
 
         pred_data = load_json(pred_path)
         d_block = pred_data.get("d", pred_data)
@@ -671,7 +703,9 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         return 0.0, {"note": "No se pudo calcular (faltan P_red.json/parameters.json)"}
 
     max_t = max(t for day_map in combined.values() for t in day_map)
-    peak_t_set = _peak_clock_interval_set(delta_t, max_t, base_hour)
+    # El set exportado por el modelo manda; el re-calculo local (mismo criterio
+    # de punto medio) es solo el fallback para corridas viejas que no lo traen.
+    peak_t_set = exported_peak_set or _peak_clock_interval_set(delta_t, max_t, base_hour)
 
     p_pot_ex_post: Dict[int, float] = {}
     for day, t_map in combined.items():
