@@ -575,6 +575,7 @@ class Parameters:
         self.maintenance_det: List[int] = []
         self.road_clearing: List[int] = []
         self.between_shifts_det: List[int] = []
+        self.peak: List[int] = []
 
         self._load()
 
@@ -700,6 +701,10 @@ class Parameters:
         self.maintenance_det = _as_interval_list(data.get("time_intervals_maintenance_det_set", []))
         self.road_clearing = _as_interval_list(data.get("time_intervals_road_clearing_det_set", []))
         self.between_shifts_det = _as_interval_list(data.get("time_intervals_between_shifts_det_set", []))
+        # Ventana tarifaria de punta tal como la construyo el modelo. Vacia en
+        # corridas anteriores a que printer.py la exportara -> el plotter cae al
+        # calculo local por punto medio.
+        self.peak = _as_interval_list(data.get("time_intervals_peak_set", []))
 
 # -------------------- Plotter --------------------
 class JSONPlotter:
@@ -1048,13 +1053,29 @@ class JSONPlotter:
                     (road_clearing_intervals, *self.DET_SHADE_COLORS["road_clearing"]),
                     (maintenance_intervals_det, *self.DET_SHADE_COLORS["maintenance"]),
                 ]
-                # Construir intervalos peak: 18:00-22:00 con start_hour=self.start_hour
-                # Convertir horas a intervalos: intervalo = ceil((hora - start_hour) / dt)
-                peak_start_hour = 18.0
-                peak_end_hour = 22.0
-                peak_start_interval = int(np.ceil((peak_start_hour - start_hour) / dt))
-                peak_end_interval = int(np.ceil((peak_end_hour - start_hour) / dt))
-                peak_intervals = list(range(peak_start_interval, peak_end_interval + 1))
+                # Construir intervalos peak: 18:00-22:00 con start_hour=self.start_hour.
+                # Mismo criterio de PUNTO MEDIO que _build_intervals_from_clock_windows
+                # (functions.py) y _peak_clock_interval_set (consumer.py): un intervalo
+                # entra si su punto medio cae dentro de la ventana. Con el ceil en ambos
+                # bordes que habia antes, la banda sombreada incluia un intervalo mas por
+                # la derecha que time_intervals_peak_set del modelo.
+                _dt_min = int(round(dt * 60))
+                _base_min = int(round(start_hour * 60))
+                _a, _b = 18 * 60, 22 * 60
+                if _a < _base_min:
+                    _a += 24 * 60
+                if _b < _base_min:
+                    _b += 24 * 60
+                if _b <= _a:
+                    _b += 24 * 60
+                _a -= _base_min
+                _b -= _base_min
+                # El set exportado por el modelo manda; el calculo local (mismo
+                # criterio de punto medio) es el fallback para corridas viejas.
+                peak_intervals = list(getattr(self.params, "peak", []) or []) or [
+                    int(t) for t in self.intervals
+                    if _a <= (int(t) - 1) * _dt_min + _dt_min / 2 < _b
+                ]
             else:
                 between_shifts_intervals = (
                     self.params.between_shifts

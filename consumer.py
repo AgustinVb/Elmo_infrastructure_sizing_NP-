@@ -1008,12 +1008,51 @@ def find_macrobloque_subfolders(root: Path) -> List[Path]:
     return subfolders
 
 
+def _exported_peak_interval_set(params_data) -> set:
+    """Devuelve time_intervals_peak_set tal como lo exporto el modelo, o set()
+    si la corrida es anterior a que printer.py lo exportara.
+
+    Es la fuente de verdad: re-derivar la ventana en el lector es justo lo que
+    produjo la desalineacion con model.time_intervals_peak_set. Acepta las dos
+    formas de exportacion presentes en el repo: lista plana (_export_set_values)
+    y arbol anidado {"_1": {"68": true, ...}} (_set_payload).
+    """
+    raw = params_data.get("time_intervals_peak_set")
+    if not raw:
+        return set()
+    out = set()
+    if isinstance(raw, dict):
+        for path, _ in _iter_leaf_records(raw):
+            axis_map = _axis_map_from_path(path)
+            tok = axis_map.get("t") or axis_map.get("_1")
+            if tok is None:
+                continue
+            try:
+                out.add(int(float(tok)))
+            except Exception:
+                continue
+    else:
+        for v in raw:
+            try:
+                out.add(int(float(v)))
+            except Exception:
+                continue
+    return out
+
+
 def _peak_clock_interval_set(delta_t: float, max_t: int, start_hour: float = 8.5,
                               windows=(("18:00", "22:00"),)) -> set:
     """Replica _build_intervals_from_clock_windows de functions.py: convierte
     ventanas horarias (HH:MM) a indices de intervalo, dado que el horizonte
     operativo arranca en `start_hour` (8.5 = 08:30 por defecto, para runs
-    viejos sin `base_hour` en parameters.json)."""
+    viejos sin `base_hour` en parameters.json).
+
+    Usa el criterio de PUNTO MEDIO del intervalo, igual que functions.py desde
+    3494227cc. Con el criterio de traslape que habia antes aqui, un intervalo
+    que solo pisa el borde de la ventana (ej. 21:56-22:04 con delta_t=8min y
+    base_hour=9) entraba en la ventana de punta del reporte pero NO en
+    time_intervals_peak_set del modelo: el optimizador estacionaba ahi la
+    carga porque le salia gratis y el reporte se la cobraba ex post."""
     dt_minutes = int(round(delta_t * 60))
     if dt_minutes <= 0:
         return set()
@@ -1036,9 +1075,8 @@ def _peak_clock_interval_set(delta_t: float, max_t: int, start_hour: float = 8.5
         a_rel = a - base_minutes
         b_rel = b - base_minutes
         for t in range(1, max_t + 1):
-            s = (t - 1) * dt_minutes
-            e = t * dt_minutes
-            if max(s, a_rel) < min(e, b_rel):
+            mid = (t - 1) * dt_minutes + dt_minutes / 2
+            if a_rel <= mid < b_rel:
                 out.add(t)
     return out
 
@@ -1179,6 +1217,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
     delta_t = None
     base_hour = 8.5
     demand_charge_coef = 12 * 10
+    exported_peak_set: set = set()
 
     for sub in subfolders:
         pred_path = find_json_in_folder(sub, "P_red.json")
@@ -1192,6 +1231,7 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         if delta_t is None:
             delta_t = _as_float(params_data.get("delta_t", 0.0))
             base_hour = _as_float(params_data.get("base_hour", 8.5))
+            exported_peak_set = _exported_peak_interval_set(params_data)
             try:
                 demand_charge_coef = float(params_data.get("demand_charge_coef", 12 * 10))
             except Exception:
@@ -1216,7 +1256,11 @@ def calculate_combined_peak_power_cost(subfolders: List[Path]) -> Tuple[float, D
         return 0.0, {"note": "No se pudo calcular (faltan P_red.json/parameters.json)"}
 
     max_t = max(t for day_map in combined.values() for t in day_map)
-    peak_t_set = _peak_clock_interval_set(delta_t, max_t, start_hour=base_hour)
+    # El set exportado por el modelo manda; el re-calculo local (mismo criterio
+    # de punto medio) es solo el fallback para corridas viejas que no lo traen.
+    peak_t_set = exported_peak_set or _peak_clock_interval_set(
+        delta_t, max_t, start_hour=base_hour
+    )
 
     p_pot_ex_post: Dict[int, float] = {}
     for day, t_map in combined.items():

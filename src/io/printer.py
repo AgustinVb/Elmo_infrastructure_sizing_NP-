@@ -457,6 +457,14 @@ class Printer:
         payload["time_intervals_det_set"] = _export_set_values(
             "time_intervals_det_set",
         )
+        # Ventana tarifaria de punta (18:00-22:00). Se exporta para que los
+        # lectores de resultados (consumer.py, json_plotter.py) usen el set REAL
+        # del modelo en vez de re-derivarlo: al re-derivarlo con un criterio
+        # distinto al de _build_intervals_from_clock_windows (punto medio) se le
+        # cobraba al optimizador un intervalo que el modelo le dejaba libre.
+        payload["time_intervals_peak_set"] = _export_set_values(
+            "time_intervals_peak_set",
+        )
         payload["marginal_cost_alpha"] = float(getattr(self.time_series, "_mc_alpha", 1.0))
 
         out_path = os.path.join(self.path, filename)
