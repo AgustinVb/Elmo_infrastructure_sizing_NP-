@@ -104,6 +104,23 @@ def _unwrap_named_tree(node: Any) -> Any:
     return node
 
 
+def _norm_key(value: Any) -> str:
+    """Clave canonica para un indice numerico exportado como JSON.
+
+    El Printer escribe unos indices como entero ("2") y otros como float
+    ("2.0") segun el tipo del set de Pyomo del que vienen: Sv.json usa "2"
+    y costo_electricidad/P_red.json usan "2.0". Cruzar dos de esos archivos
+    con las claves crudas no calza y el lookup devuelve 0.0 en silencio.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        return str(value)
+    return str(int(round(number))) if abs(number - round(number)) < 1e-9 else repr(number)
+
+
 # -----------------------------
 # Tablas ASCII (sin dependencias)
 # -----------------------------
@@ -159,7 +176,17 @@ def iter_day_series_key(vehicle_node: Any, series_key: str) -> Iterator[Dict[str
     if not isinstance(vehicle_node, dict):
         return
 
-    # Formato nuevo (printer actual): d -> <day> -> t -> {time:value}
+    # Formato multiaño (printer actual): y -> <year> -> d -> <day> -> t -> ...
+    # Se abre el eje de año y se sigue con el mismo recorrido: cada (año, día)
+    # es una serie temporal independiente. Sin esto no se detecta ninguna serie
+    # y toda la sección B queda omitida.
+    ynode = vehicle_node.get("y")
+    if isinstance(ynode, dict):
+        for _, year_node in ynode.items():
+            yield from iter_day_series_key(year_node, series_key)
+        return
+
+    # Formato de un solo año: d -> <day> -> t -> {time:value}
     dnode = vehicle_node.get("d")
     if isinstance(dnode, dict):
         for _, day_node in dnode.items():
@@ -299,22 +326,27 @@ def consumed_energy_swap_travel(root: Path, eps: float = 1e-9) -> Tuple[float, D
     b_data = load_json(b_path)
     bs_data = load_json(bs_path)
 
-    def _extract_series_map(data: Any, lhd_axis: str) -> Dict[str, Dict[int, Dict[int, float]]]:
-        out: Dict[str, Dict[int, Dict[int, float]]] = {}
+    def _extract_series_map(data: Any, lhd_axis: str) -> Dict[str, Dict[Tuple[str, int], Dict[int, float]]]:
+        """{lhd: {(año, día): {t: valor}}}. El año es parte de la clave: si se
+        omite, las series de todos los años se pisan entre sí y el consumo del
+        horizonte queda reducido al de un año."""
+        out: Dict[str, Dict[Tuple[str, int], Dict[int, float]]] = {}
         if not isinstance(data, dict):
             return out
 
         for path, value in _iter_leaf_records(data):
             axis_map = _axis_map_from_path(path)
             lhd = axis_map.get(lhd_axis) or axis_map.get("i") or axis_map.get("b") or axis_map.get("_1")
+            year_key = axis_map.get("y") or axis_map.get("year")
             day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_2")
             time_key = axis_map.get("t") or axis_map.get("time") or axis_map.get("_3")
             if lhd is None or day_key is None or time_key is None:
                 continue
             try:
+                year = _norm_key(year_key) if year_key is not None else "1"
                 day = int(float(day_key))
                 t = int(float(time_key))
-                out.setdefault(str(lhd), {}).setdefault(day, {})[t] = float(value)
+                out.setdefault(str(lhd), {}).setdefault((year, day), {})[t] = float(value)
             except Exception:
                 continue
 
@@ -562,6 +594,40 @@ def calculate_charged_energy_from_sv(root: Path) -> Tuple[float, Dict[str, float
     return charged_energy_kwh, meta
 
 
+def calculate_charged_energy_from_sv_by_year(root: Path) -> Dict[str, float]:
+    """Energía cargada según la fórmula del modelo, desagregada por año:
+    {year: sum_{k,d,t,a} Sv[k,y,d,t,a] * p_charger * delta_t} [kWh].
+
+    Sin escalar por scaling_factor_op_cost ni descontar: es la energía física
+    de los días representativos de cada año.
+    """
+    sv_path = find_json_in_folder(root, "Sv.json")
+    params_path = find_json_in_folder(root, "parameters.json")
+
+    if not sv_path or not params_path:
+        raise ValueError("No se encontraron Sv.json o parameters.json")
+    if is_effectively_empty_json(sv_path) or is_effectively_empty_json(params_path):
+        raise ValueError("Sv.json o parameters.json están vacíos/no usables")
+
+    sv_data = load_json(sv_path)
+    params_data = load_json(params_path)
+
+    p_charger = float(params_data.get("p_charger", 0.0))
+    delta_t = float(params_data.get("delta_t", 0.0))
+    default_year = _norm_key(_get_years_sorted(params_data)[0])
+
+    by_year: Dict[str, float] = {}
+    for path, sv_val in _iter_leaf_records(sv_data):
+        axis_map = _axis_map_from_path(path)
+        y_key = axis_map.get("y")
+        year = _norm_key(y_key) if y_key is not None else default_year
+        try:
+            by_year[year] = by_year.get(year, 0.0) + float(sv_val) * p_charger * delta_t
+        except Exception:
+            continue
+    return by_year
+
+
 def calculate_real_charged_energy_from_swaps(
     root: Path,
     charge_intervals: Optional[int] = None,
@@ -648,11 +714,17 @@ def calculate_real_charged_energy_from_swaps(
     p_charger = float(params_data.get("p_charger", 0.0))
     bmax_raw = params_data.get("bmax_b", {})
 
-    # Mapa B[i][d][t] -> nivel de energía (kWh)
-    b_map: Dict[str, Dict[int, Dict[int, float]]] = {}
+    default_year = _norm_key(_get_years_sorted(params_data)[0])
+
+    # Mapa B[i][y][d][t] -> nivel de energía (kWh). El eje de año es parte de
+    # la clave: sin él los eventos de swap de TODOS los años leen el B del
+    # último año escrito en el JSON (los años se pisan entre sí) y el SOC de
+    # llegada queda mal atribuido.
+    b_map: Dict[str, Dict[str, Dict[int, Dict[int, float]]]] = {}
     for path, b_val in _iter_leaf_records(b_data):
         axis_map = _axis_map_from_path(path)
         lhd = axis_map.get("i") or axis_map.get("lhd") or axis_map.get("_1")
+        year_key = axis_map.get("y") or axis_map.get("year")
         day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_2")
         time_key = axis_map.get("t") or axis_map.get("time") or axis_map.get("_3")
         if lhd is None or day_key is None or time_key is None:
@@ -660,9 +732,25 @@ def calculate_real_charged_energy_from_swaps(
         try:
             day = int(float(day_key))
             t = int(float(time_key))
-            b_map.setdefault(str(lhd), {}).setdefault(day, {})[t] = float(b_val)
+            year = _norm_key(year_key) if year_key is not None else default_year
+            b_map.setdefault(str(lhd), {}).setdefault(year, {}).setdefault(day, {})[t] = float(b_val)
         except Exception:
             continue
+
+    # Capacidad a la que queda la batería después del swap, por año. Con
+    # degradación el modelo repone hasta b_bar[y] (capacidad del año), no
+    # hasta bmax nominal: battery_soc_swap_update_3/4 en functions.py fuerzan
+    # B_s = b_bar[y] cuando hay swap. Sin b_bar.json se cae a bmax_i.
+    cap_by_year: Dict[str, float] = {}
+    b_bar_path = find_json_in_folder(root, "b_bar.json")
+    if b_bar_path and not is_effectively_empty_json(b_bar_path):
+        for path, cap_val in _iter_leaf_records(load_json(b_bar_path)):
+            if not path:
+                continue
+            try:
+                cap_by_year[_norm_key(path[-1])] = float(cap_val)
+            except Exception:
+                continue
 
     total_real = 0.0
     total_real_grid = 0.0
@@ -703,11 +791,12 @@ def calculate_real_charged_energy_from_swaps(
         except Exception:
             continue
 
-    # Z_swap[k,i,d,t] = 0/1, soportando ambos formatos de exportación.
+    # Z_swap[k,i,y,d,t] = 0/1, soportando ambos formatos de exportación.
     for path, z_val in _iter_leaf_records(z_data):
         axis_map = _axis_map_from_path(path)
         station = axis_map.get("k") or axis_map.get("station") or axis_map.get("_1")
         lhd = axis_map.get("i") or axis_map.get("lhd") or axis_map.get("_2")
+        year_key = axis_map.get("y") or axis_map.get("year")
         day_key = axis_map.get("d") or axis_map.get("day") or axis_map.get("_3")
         time_key = axis_map.get("t") or axis_map.get("time") or axis_map.get("_4")
         if station is None or lhd is None or day_key is None or time_key is None:
@@ -730,10 +819,16 @@ def calculate_real_charged_energy_from_swaps(
         try:
             day = int(float(day_key))
             t = int(float(time_key))
+            year = _norm_key(year_key) if year_key is not None else default_year
         except Exception:
             continue
 
-        series = b_map.get(str(lhd), {}).get(day, {})
+        per_year = b_map.get(str(lhd), {})
+        series_year = per_year.get(year)
+        if series_year is None and len(per_year) == 1:
+            # B.json sin eje de año (salidas de un solo año)
+            series_year = next(iter(per_year.values()))
+        series = (series_year or {}).get(day, {})
         b_prev = series.get(t - 1)
         if b_prev is None:
             b_prev = series.get(t)
@@ -741,8 +836,9 @@ def calculate_real_charged_energy_from_swaps(
             n_events_missing_b += 1
             continue
 
-        soc_arrival = b_prev / bmax_i
-        event_real = max(0.0, bmax_i - b_prev)
+        cap_i = cap_by_year.get(year, bmax_i)
+        soc_arrival = (b_prev / cap_i) if cap_i > 0 else 0.0
+        event_real = max(0.0, cap_i - b_prev)
         eta_c = eta_charge_map.get(str(lhd), 1.0)
         event_real_grid = event_real / eta_c if eta_c > 0 else event_real
         if event_real > eps:
@@ -757,10 +853,12 @@ def calculate_real_charged_energy_from_swaps(
             {
                 "station": station,
                 "lhd": lhd,
+                "year": year,
                 "day": day,
                 "t": t,
                 "soc_arrival": soc_arrival,
                 "bmax_kwh": bmax_i,
+                "capacity_kwh": cap_i,
                 "b_arrival_kwh": b_prev,
                 "real_event_kwh": event_real,
                 "real_event_grid_kwh": event_real_grid,
@@ -768,7 +866,7 @@ def calculate_real_charged_energy_from_swaps(
             }
         )
 
-    event_details.sort(key=lambda r: (r["day"], r["t"], r["lhd"], r["station"]))
+    event_details.sort(key=lambda r: (_as_float(r["year"], 0.0), r["day"], r["t"], r["lhd"], r["station"]))
 
     meta = {
         "events": float(n_events),
@@ -1113,17 +1211,20 @@ def main() -> None:
             print()
 
             if real_swap_details:
-                det_headers = ["Estación", "LHD", "Día", "t", "SOC llegada (%)", "B llegada (kWh)", "Energía real (kWh)"]
+                det_headers = ["Estación", "LHD", "Año", "Día", "t", "SOC llegada (%)", "B llegada (kWh)",
+                               "Energía real (kWh)", "Energía real/eta (kWh)"]
                 det_rows: List[List[Any]] = []
                 for ev in real_swap_details:
                     det_rows.append([
                         ev["station"],
                         ev["lhd"],
+                        ev.get("year", ""),
                         int(ev["day"]),
                         int(ev["t"]),
                         f"{100.0 * float(ev['soc_arrival']):.2f}",
                         f"{float(ev['b_arrival_kwh']):.6f}",
                         f"{float(ev['real_event_kwh']):.6f}",
+                        f"{float(ev['real_event_grid_kwh']):.6f}",
                     ])
                 print(make_table("DETALLE SWAP: ENERGÍA REAL POR BATERÍA", det_headers, det_rows))
                 print()
@@ -1319,6 +1420,8 @@ def main() -> None:
                 ["Energía total red (horizonte) [kWh]", f"{costs.get('grid_energy_kwh', 0.0):.2f}"],
                 ["Energía total red (horizonte) [MWh]", f"{costs.get('grid_energy_kwh', 0.0) / 1000.0:.2f}"],
                 ["Costo energía carga real (USD)",   f"{costs.get('real_energy_cost', 0.0):.2f}"],
+                ["Costo energía carga real / eta_charge (USD)",
+                 f"{costs.get('real_grid_energy_cost', 0.0):.2f}"],
                 ["Costo potencia pico (USD)",        f"{costs.get('peak_power_cost', 0.0):.2f}"],
                 ["Costo inversión estaciones (USD)", f"{costs['investment_cost']:.2f}"],
                 ["Costo inversión subestación (USD)", f"{costs.get('substation_cost', 0.0):.2f}"],
@@ -1441,12 +1544,40 @@ def _scalar_var(path: Optional[Path]) -> float:
     return _as_float(load_json(path), 0.0)
 
 
-def calculate_lhd_charge_cost(root: Path) -> float:
+def _price_lookup(params_data: Dict) -> Dict[Tuple[str, str, str], float]:
+    """costo_electricidad[(y,d,t)] con las claves normalizadas (_norm_key).
+
+    Estructura esperada: _1=year -> _2=day -> _3=interval. Se toman los tres
+    ultimos valores del path para tolerar tambien las salidas antiguas de un
+    solo año (_1=day -> _2=interval), a las que se les asigna el primer año
+    del horizonte.
     """
-    Calcula el costo de carga de los LHD eléctricos con battery swap.
+    raw = params_data.get("costo_red", params_data.get("costo_electricidad", {}))
+    default_year = _norm_key(_get_years_sorted(params_data)[0])
+
+    lookup: Dict[Tuple[str, str, str], float] = {}
+    for path, cost_val in _iter_leaf_records(raw):
+        values = [str(token) for token in path[1::2]]
+        if len(values) >= 3:
+            y_key, day_key, time_key = values[-3], values[-2], values[-1]
+        elif len(values) == 2:
+            y_key, day_key, time_key = default_year, values[0], values[1]
+        else:
+            continue
+        try:
+            lookup[(_norm_key(y_key), _norm_key(day_key), _norm_key(time_key))] = float(cost_val)
+        except Exception:
+            continue
+    return lookup
+
+
+def calculate_lhd_charge_cost_by_year(root: Path) -> Dict[str, float]:
+    """Costo de carga de los LHD eléctricos con battery swap, por año.
+
     Usa Sv.json (baterías conectadas, ejes k,y,d,t,a) y parameters.json
     (costo_electricidad indexado por año/día/intervalo, p_charger, delta_t).
-    Fórmula: sum(Sv[k,y,d,t,a] * p_charger * costo_electricidad[y,d,t] * delta_t * discount_factor(y))
+    Fórmula por año: sum_{d,t} Sv[k,y,d,t,a] * p_charger * costo_electricidad[y,d,t]
+    * delta_t * discount_factor(y) * scaling_factor_op_cost.
     """
     sv_path = find_json_in_folder(root, "Sv.json")
     params_path = find_json_in_folder(root, "parameters.json")
@@ -1463,41 +1594,36 @@ def calculate_lhd_charge_cost(root: Path) -> float:
     delta_t = float(params_data.get("delta_t", 0.0))
     p_charger = float(params_data.get("p_charger", 0.0))
     scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
-    costo_electricidad = params_data.get("costo_electricidad", {})
 
     discount_r = _get_discount_rate(params_data) if _has_degradation_data(params_data) else 0.0
     years_sorted = _get_years_sorted(params_data)
+    default_year = _norm_key(years_sorted[0])
+    cost_lookup = _price_lookup(params_data)
 
-    def _cost_lookup(year_key, day_key, t_key) -> float:
-        """costo_electricidad: _1=year -> _2=day -> _3=interval."""
-        if "_1" not in costo_electricidad:
-            return 0.0
-        cm_year = costo_electricidad["_1"].get(str(year_key), {})
-        cm_2 = cm_year.get("_2", {}) if isinstance(cm_year, dict) else {}
-        cm_day = cm_2.get(str(day_key), {})
-        if isinstance(cm_day, dict) and "_3" in cm_day:
-            try:
-                return float(cm_day["_3"].get(str(t_key), 0.0))
-            except Exception:
-                return 0.0
-        return 0.0
-
-    total_cost = 0.0
+    cost_by_year: Dict[str, float] = {}
     for path, sv_val in _iter_leaf_records(sv_data):
         axis_map = _axis_map_from_path(path)
         y_key = axis_map.get("y")
         day_key = axis_map.get("d")
         time_key = axis_map.get("t")
-        if y_key is None or day_key is None or time_key is None:
+        if day_key is None or time_key is None:
             continue
+        year = _norm_key(y_key) if y_key is not None else default_year
         try:
-            cost_elec = _cost_lookup(y_key, day_key, time_key)
-            disc = _year_discount_factor(discount_r, y_key, years_sorted)
-            total_cost += cost_elec * float(sv_val) * p_charger * delta_t * disc
+            cost_elec = cost_lookup.get((year, _norm_key(day_key), _norm_key(time_key)), 0.0)
+            disc = _year_discount_factor(discount_r, year, years_sorted)
+            cost_by_year[year] = cost_by_year.get(year, 0.0) + (
+                cost_elec * float(sv_val) * p_charger * delta_t * disc * scaling_factor
+            )
         except Exception:
             continue
 
-    return total_cost * scaling_factor
+    return cost_by_year
+
+
+def calculate_lhd_charge_cost(root: Path) -> float:
+    """Costo de carga de los LHD (fórmula del modelo) agregado en el horizonte."""
+    return sum(calculate_lhd_charge_cost_by_year(root).values())
 
 
 def calculate_grid_energy_cost(root: Path) -> float:
@@ -1518,23 +1644,11 @@ def calculate_grid_energy_cost(root: Path) -> float:
 
     delta_t        = float(params_data.get("delta_t", 0.0))
     scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
-    costo_electricidad = params_data.get("costo_red", params_data.get("costo_electricidad", {}))
 
     discount_r = _get_discount_rate(params_data) if _has_degradation_data(params_data) else 0.0
     years_sorted = _get_years_sorted(params_data)
-
-    # Lookup costo_electricidad[(y,d,t)]: _1=year -> _2=day -> _3=interval.
-    cost_lookup: Dict[Tuple[str, str, str], float] = {}
-    if "_1" in costo_electricidad:
-        for y_key, y_val in costo_electricidad["_1"].items():
-            d_block = y_val.get("_2", {}) if isinstance(y_val, dict) else {}
-            for d_key, d_val in d_block.items():
-                t_block = d_val.get("_3", {}) if isinstance(d_val, dict) else {}
-                for t_key, cost_val in t_block.items():
-                    try:
-                        cost_lookup[(str(y_key), str(d_key), str(t_key))] = float(cost_val)
-                    except Exception:
-                        continue
+    default_year = _norm_key(years_sorted[0])
+    cost_lookup = _price_lookup(params_data)
 
     total_cost = 0.0
     for path, pred_val in _iter_leaf_records(pred_data):
@@ -1542,11 +1656,12 @@ def calculate_grid_energy_cost(root: Path) -> float:
         y_key    = axis_map.get("y")
         day_key  = axis_map.get("d")
         time_key = axis_map.get("t")
-        if y_key is None or day_key is None or time_key is None:
+        if day_key is None or time_key is None:
             continue
-        cost_elec = cost_lookup.get((str(y_key), str(day_key), str(time_key)), 0.0)
+        year = _norm_key(y_key) if y_key is not None else default_year
+        cost_elec = cost_lookup.get((year, _norm_key(day_key), _norm_key(time_key)), 0.0)
         try:
-            disc = _year_discount_factor(discount_r, y_key, years_sorted)
+            disc = _year_discount_factor(discount_r, year, years_sorted)
             total_cost += cost_elec * float(pred_val) * delta_t * disc
         except Exception:
             continue
@@ -2031,45 +2146,73 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         print(f"Advertencia al calcular costo de energía: {ex}")
         energy_cost = 0.0
 
-    # Costo de energía "real":
-    # - Si parameters.energy_cost == "Profile_fixed": E_real * costo_fijo * scaling_factor_op_cost
-    # - En otro caso (perfil variable):
-    #   energy_cost - (delta_E * costo_min * scaling_factor_op_cost),
-    #   asumiendo que el delta de energía se habría cargado al menor costo.
+    # Costo de carga "real". El modelo le cobra a cada swap el bloque completo
+    # de t_charge intervalos (bmin -> 100%), pero la batería que llega solo
+    # necesita reponer (capacidad_del_año - B_llegada). Se reportan dos
+    # versiones de esa energía valorizada:
+    #   - real_energy_cost:      la energía que entra A LA BATERÍA.
+    #   - real_grid_energy_cost: esa misma energía dividida por eta_charge_i,
+    #     o sea la que hay que comprarle A LA RED para reponerla. Es la
+    #     comparable con grid_energy_cost y con la contabilidad de OB, y es
+    #     la que se usa como "costo de carga real" (misma convención que la
+    #     rama battery_swapping).
+    # La valorización es año por año, con el precio y el factor de descuento
+    # del año del evento: con horizonte multiaño los swaps no se reparten
+    # parejo entre años (aquí van de 1 en el año 1 a 36 en el año 7) y los
+    # años lejanos pesan menos por el descuento.
     real_energy_cost = 0.0
+    real_grid_energy_cost = 0.0
     try:
-        real_swap_energy_kwh, real_swap_meta, _ = calculate_real_charged_energy_from_swaps(root)
-        sv_energy_total_kwh = float(real_swap_meta.get("sv_energy_total_kwh", 0.0))
+        _, _, real_swap_events = calculate_real_charged_energy_from_swaps(root)
 
         params_path = find_json_in_folder(root, "parameters.json")
         if not params_path or is_effectively_empty_json(params_path):
-            raise ValueError("No se encontró parameters.json para costo fijo")
+            raise ValueError("No se encontró parameters.json para costo de carga real")
 
         params_data = load_json(params_path)
         scaling_factor = float(params_data.get("scaling_factor_op_cost", 1.0))
+        discount_r = _get_discount_rate(params_data) if _has_degradation_data(params_data) else 0.0
+        years_sorted = _get_years_sorted(params_data)
+        default_year = _norm_key(years_sorted[0])
 
-        costo_electricidad = params_data.get("costo_electricidad", {})
-        fixed_candidates: List[float] = []
-        for _, v in _iter_leaf_records(costo_electricidad):
-            try:
-                fixed_candidates.append(float(v))
-            except Exception:
-                continue
+        # Energía real por año (a la batería y a la red).
+        real_by_year: Dict[str, float] = {}
+        real_grid_by_year: Dict[str, float] = {}
+        for ev in real_swap_events:
+            y = str(ev.get("year", default_year))
+            real_by_year[y] = real_by_year.get(y, 0.0) + _as_float(ev.get("real_event_kwh"), 0.0)
+            real_grid_by_year[y] = real_grid_by_year.get(y, 0.0) + _as_float(ev.get("real_event_grid_kwh"), 0.0)
 
-        if not fixed_candidates:
-            raise ValueError("No hay valores en costo_electricidad para costo fijo")
-
-        c_min = min(fixed_candidates)
+        prices = sorted({round(v, 12) for v in _price_lookup(params_data).values()})
+        if not prices:
+            raise ValueError("No hay valores en costo_electricidad")
         energy_cost_profile = str(params_data.get("energy_cost", "")).strip()
 
-        if energy_cost_profile == "Profile_fixed":
-            real_energy_cost = float(real_swap_energy_kwh) * c_min * scaling_factor
+        if len(prices) == 1 or energy_cost_profile == "Profile_fixed":
+            # Precio plano: la energía real se valoriza directo al precio del
+            # año, descontada y anualizada igual que en la función objetivo.
+            c_flat = prices[0]
+            for y in set(real_by_year) | set(real_grid_by_year):
+                disc = _year_discount_factor(discount_r, y, years_sorted)
+                real_energy_cost += real_by_year.get(y, 0.0) * c_flat * disc * scaling_factor
+                real_grid_energy_cost += real_grid_by_year.get(y, 0.0) * c_flat * disc * scaling_factor
         else:
-            delta_energy_kwh = sv_energy_total_kwh - float(real_swap_energy_kwh)
-            real_energy_cost = max(0.0, float(energy_cost) - delta_energy_kwh * c_min * scaling_factor)
+            # Perfil variable: se escala el costo del modelo de cada año por la
+            # razón energía_real/energía_Sv de ese año, para heredar el precio
+            # promedio ponderado de las horas que el modelo eligió cargar.
+            cost_by_year = calculate_lhd_charge_cost_by_year(root)
+            sv_by_year = calculate_charged_energy_from_sv_by_year(root)
+            for y, cost_y in cost_by_year.items():
+                sv_y = sv_by_year.get(y, 0.0)
+                if sv_y <= 0:
+                    continue
+                real_energy_cost += cost_y * (real_by_year.get(y, 0.0) / sv_y)
+                real_grid_energy_cost += cost_y * (real_grid_by_year.get(y, 0.0) / sv_y)
     except Exception as ex:
-        print(f"Advertencia al calcular costo de energía real: {ex}")
+        print(f"Advertencia al calcular costo de carga real: {ex}")
         real_energy_cost = 0.0
+        real_grid_energy_cost = 0.0
+
     
     try:
         investment_cost = calculate_investment_cost(root)
@@ -2145,6 +2288,7 @@ def calculate_total_costs(root: Path) -> Dict[str, float]:
         "grid_energy_cost":     grid_energy_cost,
         "grid_energy_kwh":      grid_energy_kwh,
         "real_energy_cost":     real_energy_cost,
+        "real_grid_energy_cost": real_grid_energy_cost,
         "investment_cost":      investment_cost,
         "substation_cost":      substation_cost,
         "penalty_cost":         penalty_cost,
