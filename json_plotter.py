@@ -4,8 +4,10 @@
 # Salida:   /ruta/a/carpeta_con_json/plots/*.png
 
 import os
+import re
 import json
 import argparse
+from collections import deque
 from typing import Dict, Any, List, Tuple, Optional
 
 import numpy as np
@@ -272,6 +274,99 @@ def load_Sv_df(path: str) -> Optional[pd.DataFrame]:
     return (pd.DataFrame(rows)
             .sort_values(["station", "day", "interval", "start_interval"])
             .reset_index(drop=True)) if rows else pd.DataFrame(columns=["station", "day", "interval", "start_interval", "value"])
+
+
+def load_station_time_df(path: str) -> Optional[pd.DataFrame]:
+    """
+    Carga variables indexadas por estacion y tiempo (S, X_dch, X_ini, W) con estructura:
+      k (station) -> d (day) -> t (time interval) -> valor
+    """
+    data = _load_json(path)
+    if not data:
+        return None
+
+    rows = []
+    cols = ["station", "day", "interval", "value"]
+
+    # Parche: estructura _1->station->_2->day->_3->interval
+    if "_1" in data:
+        for station, v2 in data["_1"].items():
+            for day, v3 in v2.get("_2", {}).items():
+                for interval, val in v3.get("_3", {}).items():
+                    try:
+                        rows.append({"station": str(station), "day": _numeric_or_str(day),
+                                     "interval": _numeric_or_str(interval), "value": float(val)})
+                    except Exception:
+                        continue
+        return (pd.DataFrame(rows).sort_values(["station", "day", "interval"])
+                .reset_index(drop=True)) if rows else pd.DataFrame(columns=cols)
+
+    k_dict = data.get("k", {})
+    if not isinstance(k_dict, dict):
+        return pd.DataFrame(columns=cols)
+
+    for station, d_block in k_dict.items():
+        d_inner = d_block.get("d", {}) if isinstance(d_block, dict) else {}
+        if not isinstance(d_inner, dict):
+            continue
+        for day, t_block in d_inner.items():
+            t_inner = t_block.get("t", {}) if isinstance(t_block, dict) else {}
+            if not isinstance(t_inner, dict):
+                continue
+            for interval, val in t_inner.items():
+                try:
+                    rows.append({"station": str(station), "day": _numeric_or_str(day),
+                                 "interval": _numeric_or_str(interval), "value": float(val)})
+                except Exception:
+                    continue
+
+    return (pd.DataFrame(rows).sort_values(["station", "day", "interval"])
+            .reset_index(drop=True)) if rows else pd.DataFrame(columns=cols)
+
+
+def load_station_scalar(path: str) -> Dict[str, int]:
+    """Carga variables dimensionadas solo por estacion (N_batteries, N_chargers, N_bays)."""
+    data = _load_json(path)
+    if not data:
+        return {}
+    block = data.get("k") or data.get("_1") or {}
+    if not isinstance(block, dict):
+        return {}
+    out: Dict[str, int] = {}
+    for station, val in block.items():
+        try:
+            out[str(station)] = int(round(float(val)))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _lhd_sort_key(name: str):
+    """Orden natural para nombres tipo LH518B_10 (que _2 vaya antes que _10)."""
+    m = re.search(r"(\d+)\s*$", str(name))
+    return (str(name)[:m.start()] if m else str(name), int(m.group(1)) if m else 0)
+
+
+def _short_lhd_label(lhd: str) -> str:
+    """Etiqueta corta para escribir dentro de una barra (el nombre largo va en la leyenda)."""
+    m = re.search(r"(\d+)\s*$", str(lhd))
+    return f"LHD {m.group(1)}" if m else str(lhd)
+
+
+def _readable_ink(bg_hex: str) -> str:
+    """Tinta con mas contraste sobre el color de fondo dado (WCAG)."""
+    def _rel_lum(h: str) -> float:
+        h = h.lstrip("#")
+        chans = []
+        for i in (0, 2, 4):
+            c = int(h[i:i + 2], 16) / 255.0
+            chans.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * chans[0] + 0.7152 * chans[1] + 0.0722 * chans[2]
+
+    lum = _rel_lum(bg_hex)
+    contrast_white = 1.05 / (lum + 0.05)
+    contrast_ink = (lum + 0.05) / (_rel_lum("#141414") + 0.05)
+    return "#ffffff" if contrast_white >= contrast_ink else "#141414"
 
 
 def load_generic_variable_df(path: str, varname: str) -> Optional[pd.DataFrame]:
@@ -553,6 +648,7 @@ class Parameters:
         self.delta_t = 1.0
         self.base_hour = 8.5
         self.energy_price_scale = float(energy_price_scale)
+        self.t_charge = 7
 
         self.m_j = None
         self.costo_electricidad = None
@@ -588,6 +684,7 @@ class Parameters:
         self.delta_t = float(data.get("delta_t", 1.0))
         self.base_hour = float(data.get("base_hour", 8.5))
         self.p_charger = float(data.get("p_charger", 150.0))
+        self.t_charge = int(float(data.get("t_charge", 7)))
 
         # -------- m_j (demanda por nodo y día) --------
         m_j = {}
@@ -722,6 +819,16 @@ class JSONPlotter:
             11: "November",
             12: "December",
         }
+    # Paleta del grafico de circulacion de baterias. Los 4 hues categoricos estan
+    # validados para todos los pares (peor dE simulado protan/deutan = 9.2, umbral 8)
+    # y los estados en estacion usan una rampa neutra vacia -> cargando -> lista:
+    # al ser acromatica no compite con los hues de los LHD (peor cruce dE = 11.3).
+    CIRCULATION_LHD_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#4a3aa7"]
+    CIRCULATION_STATE_COLORS = {
+        "dchg": "#cfcec5",
+        "charging": "#6b6a63",
+        "ready": "#26251f",
+    }
     # Paleta de sombreado para intervalos inactivos en modo DET: (color, alpha)
     DET_SHADE_COLORS = {
         "meal": ("red", 0.15),
@@ -743,6 +850,10 @@ class JSONPlotter:
         self.df_Y = load_binary_Y_df(os.path.join(json_dir, "Y.json"))
         self.df_Z_swap = load_Z_swap_df(os.path.join(json_dir, "Z_swap.json"))
         self.df_Sv = load_Sv_df(os.path.join(json_dir, "Sv.json"))
+        self.df_S = load_station_time_df(os.path.join(json_dir, "S.json"))
+        self.df_Xdch = load_station_time_df(os.path.join(json_dir, "X_dch.json"))
+        self.df_Xini = load_station_time_df(os.path.join(json_dir, "X_ini.json"))
+        self.n_batteries = load_station_scalar(os.path.join(json_dir, "N_batteries.json"))
         self.df_P = load_generic_variable_df(os.path.join(json_dir, "P.json"), "P")
         self.df_C = load_generic_variable_df(os.path.join(json_dir, "C.json"), "C")
         self.df_E = load_generic_variable_df(os.path.join(json_dir, "E.json"), "E")
@@ -1426,6 +1537,299 @@ class JSONPlotter:
             plt.close(fig)
 
     
+    def _station_series(self, df: Optional[pd.DataFrame], station: str, day: int) -> Dict[int, float]:
+        """Serie {intervalo: valor} de una variable de estacion para un dia."""
+        if df is None or df.empty:
+            return {}
+        sel = df.query("station == @station and day == @day")
+        if sel.empty:
+            return {}
+        return {int(r.interval): float(r.value) for r in sel.itertuples()}
+
+    def _reconstruct_battery_circulation(self, station: str, day: int) -> Optional[Dict[str, Any]]:
+        """Reconstruye la identidad de cada bateria del parque de una estacion.
+
+        El modelo trata las baterias como intercambiables: S, X_dch, X_ini y Sv son
+        conteos, no baterias con nombre. Para poder dibujar el recorrido de una
+        bateria se le asigna identidad con una regla FIFO -- se lleva el LHD la que
+        lleva mas rato lista, y entra al cargador la que lleva mas rato descargada --
+        y todo se contrasta contra S y X_dch intervalo a intervalo. Si la
+        reconstruccion no calza con los agregados del modelo se descarta, en vez de
+        dibujar algo inconsistente.
+        """
+        s_ser = self._station_series(self.df_S, station, day)
+        xd_ser = self._station_series(self.df_Xdch, station, day)
+        xi_ser = self._station_series(self.df_Xini, station, day)
+        if not s_ser or not xd_ser:
+            return None
+
+        intervals = sorted(set(s_ser) | set(xd_ser))
+        t0 = intervals[0]
+        t_charge = int(self.params.t_charge)
+
+        # Parque de LHD de la estacion. Si un LHD hace swap en mas de una estacion su
+        # bateria migra entre parques y la reconstruccion por estacion deja de valer.
+        day_swaps = self.df_Z_swap.query("day == @day and value >= 0.5")
+        multi = sorted({str(l) for l, g in day_swaps.groupby("lhd") if g["station"].nunique() > 1})
+        if multi:
+            print(f"AVISO {station} dia {day}: {multi[0]} hace swap en mas de una estacion. "
+                  "Omitiendo BatteryCirculation.")
+            return None
+
+        indexed = {str(x) for x in self.df_Z_swap.query("station == @station")["lhd"].unique()}
+        elsewhere = {str(x) for x in day_swaps.query("station != @station")["lhd"].unique()}
+        lhds = sorted(indexed - elsewhere, key=_lhd_sort_key)
+        if not lhds:
+            return None
+
+        swaps: Dict[int, List[str]] = {}
+        for row in day_swaps.query("station == @station").itertuples():
+            swaps.setdefault(int(row.interval), []).append(str(row.lhd))
+        for t in swaps:
+            swaps[t].sort(key=_lhd_sort_key)
+
+        n_ready0 = int(round(s_ser.get(t0, 0.0)))
+        n_dchg0 = int(round(xd_ser.get(t0, 0.0)))
+        n_spare = self.n_batteries.get(station, n_ready0 + n_dchg0)
+        if n_ready0 + n_dchg0 != n_spare:
+            print(f"AVISO {station} dia {day}: S+X_dch({t0}) = {n_ready0 + n_dchg0} != "
+                  f"N_batteries = {n_spare}. Omitiendo BatteryCirculation.")
+            return None
+
+        # Estado inicial: una bateria montada en cada LHD y las de repuesto en la estacion.
+        order = [f"B{n}" for n in range(1, len(lhds) + n_spare + 1)]
+        state: Dict[str, Tuple[str, Optional[str]]] = {}
+        in_lhd: Dict[str, str] = {}
+        for bid, lhd in zip(order, lhds):
+            state[bid] = ("lhd", lhd)
+            in_lhd[lhd] = bid
+        ready: deque = deque()
+        dchg: deque = deque()
+        charging: List[Tuple[str, int, int]] = []      # (bateria, t_inicio, t_lista)
+        for n, bid in enumerate(order[len(lhds):]):
+            if n < n_ready0:
+                state[bid] = ("ready", None)
+                ready.append(bid)
+            else:
+                state[bid] = ("dchg", None)
+                dchg.append(bid)
+
+        history: Dict[str, Dict[int, Tuple[str, Optional[str]]]] = {bid: {} for bid in order}
+        charge_spans: List[int] = []
+
+        for t in intervals:
+            # 1) baterias que terminan de cargar
+            for entry in [c for c in charging if c[2] == t]:
+                charging.remove(entry)
+                state[entry[0]] = ("ready", None)
+                ready.append(entry[0])
+                charge_spans.append(t - entry[1])
+            # 2) el LHD deja su bateria descargada en la estacion
+            for lhd in swaps.get(t, []):
+                bid = in_lhd[lhd]
+                state[bid] = ("dchg", None)
+                dchg.append(bid)
+            # 3) el LHD se lleva la bateria que lleva mas rato lista
+            for lhd in swaps.get(t, []):
+                if not ready:
+                    print(f"AVISO {station} dia {day} t={t}: {lhd} pide bateria y no hay "
+                          "ninguna cargada. Omitiendo BatteryCirculation.")
+                    return None
+                bid = ready.popleft()
+                state[bid] = ("lhd", lhd)
+                in_lhd[lhd] = bid
+            # 4) entran al cargador las que decidio X_ini en el borde anterior
+            for _ in range(int(round(xi_ser.get(t - 1, 0.0))) if t > t0 else 0):
+                if not dchg:
+                    print(f"AVISO {station} dia {day} t={t}: inicia una carga sin bateria "
+                          "descargada disponible. Omitiendo BatteryCirculation.")
+                    return None
+                bid = dchg.popleft()
+                state[bid] = ("charging", None)
+                charging.append((bid, t, (t - 1) + t_charge))
+            # 5) contraste contra los agregados del modelo
+            if int(round(s_ser.get(t, 0.0))) != len(ready) or int(round(xd_ser.get(t, 0.0))) != len(dchg):
+                print(f"AVISO {station} dia {day} t={t}: la reconstruccion no calza con S/X_dch. "
+                      "Omitiendo BatteryCirculation.")
+                return None
+            for bid in order:
+                history[bid][t] = state[bid]
+
+        # Comprimir cada fila en tramos contiguos del mismo estado
+        segments: Dict[str, List[Tuple[int, int, str, Optional[str]]]] = {}
+        for bid in order:
+            runs = []
+            t_start = intervals[0]
+            current = history[bid][intervals[0]]
+            for t in intervals[1:]:
+                if history[bid][t] != current:
+                    runs.append((t_start, t - 1, current[0], current[1]))
+                    t_start = t
+                    current = history[bid][t]
+            runs.append((t_start, intervals[-1], current[0], current[1]))
+            segments[bid] = runs
+
+        # El cuello de botella de una estacion con una sola bateria de repuesto es que
+        # dos swaps consecutivos no lleguen mas juntos de lo que demora una carga.
+        swap_times = sorted(swaps)
+        gaps = [b - a for a, b in zip(swap_times, swap_times[1:])]
+
+        return {
+            "batteries": order,
+            "lhds": lhds,
+            "segments": segments,
+            "swaps": swaps,
+            "intervals": intervals,
+            "n_spare": n_spare,
+            "charge_intervals": (max(set(charge_spans), key=charge_spans.count)
+                                 if charge_spans else t_charge - 1),
+            "min_gap": (min(gaps) if gaps else None),
+            "n_swaps": sum(len(v) for v in swaps.values()),
+        }
+
+    def plot_battery_circulation(self, stations: Optional[List[str]] = None,
+                                 days: Optional[List[int]] = None):
+        """Gantt de circulacion de baterias por estacion.
+
+        Cada fila es una bateria fisica del parque de la estacion (una montada en
+        cada LHD asignado, mas las de repuesto que dimensiona N_batteries) y el color
+        dice donde esta en cada momento: montada en un LHD, o en la estacion
+        descargada / cargando / lista. Deja a la vista que basta una bateria de
+        repuesto: en cada instante hay una sola bateria en la estacion y siempre
+        alcanza a quedar cargada antes del swap siguiente.
+
+        Una figura por estacion y dia, asi que conviene acotar: sin argumentos son
+        todas las estaciones por todos los dias. Por eso no entra en create_all_plots.
+        """
+        if self.df_Z_swap is None or self.df_Z_swap.empty:
+            print("AVISO No hay Z_swap.json. Omitiendo BatteryCirculation.")
+            return
+        if (self.df_S is None or self.df_S.empty) or (self.df_Xdch is None or self.df_Xdch.empty):
+            print("AVISO No hay S.json / X_dch.json. Omitiendo BatteryCirculation.")
+            return
+
+        dt = float(self.delta_t)
+        surface = "#ffffff"
+        grid_ink = "#a6a59c"
+        ink_secondary = "#52514e"
+
+        wanted_stations = (sorted(self.df_Z_swap["station"].unique().tolist())
+                           if stations is None else [str(s) for s in stations])
+        wanted_days = self.days if days is None else [int(d) for d in days]
+
+        for station in wanted_stations:
+            for day in wanted_days:
+                rec = self._reconstruct_battery_circulation(station, day)
+                if rec is None:
+                    continue
+
+                rows = rec["batteries"]
+                lhds = rec["lhds"]
+                # La identidad va por color solo mientras quepa en la paleta categorica
+                # validada; mas alla se usa un color unico y la identidad la lleva la etiqueta.
+                if len(lhds) <= len(self.CIRCULATION_LHD_COLORS):
+                    lhd_color = {l: self.CIRCULATION_LHD_COLORS[n] for n, l in enumerate(lhds)}
+                else:
+                    lhd_color = {l: self.CIRCULATION_LHD_COLORS[0] for l in lhds}
+
+                price_day = self._price_series(day=day)
+                # El panel de precio solo aporta si el precio se mueve (en costo fijo es plano)
+                price_vals = price_day.dropna().to_numpy(dtype=float)
+                has_price = price_vals.size > 0 and float(price_vals.max() - price_vals.min()) > 1e-9
+
+                fig_h = max(5.8, 3.3 + 0.62 * len(rows))
+                fig = plt.figure(figsize=(18, fig_h))
+                fig.subplots_adjust(left=0.06, right=0.98, top=0.93, bottom=0.10)
+                ratios = [0.62, 0.62 * len(rows)] + ([1.05] if has_price else [])
+                gs = gridspec.GridSpec(len(ratios), 1, height_ratios=ratios, hspace=0.12)
+                legend_ax = fig.add_subplot(gs[0])
+                legend_ax.axis("off")
+                ax = fig.add_subplot(gs[1])
+                ax_price = fig.add_subplot(gs[2], sharex=ax) if has_price else None
+
+                axes = [a for a in (ax, ax_price) if a is not None]
+
+                # Guias verticales en cada swap: amarran el Gantt con el precio
+                for t in sorted(rec["swaps"]):
+                    for axis in axes:
+                        axis.axvline((t - 1) * dt, color=grid_ink, lw=0.8, ls=":", alpha=0.75, zorder=1)
+
+                for row_idx, bid in enumerate(rows):
+                    for t_start, t_end, kind, lhd in rec["segments"][bid]:
+                        x0 = (t_start - 1) * dt
+                        width = (t_end - t_start + 1) * dt
+                        if kind == "lhd":
+                            face, hatch = lhd_color[lhd], None
+                        else:
+                            face = self.CIRCULATION_STATE_COLORS[kind]
+                            hatch = "///" if kind == "charging" else None
+                        ax.barh(row_idx, width=width, left=x0, height=0.62,
+                                color=face, edgecolor=surface, linewidth=1.4,
+                                hatch=hatch, zorder=3)
+                        if kind == "lhd" and width >= 1.1:
+                            ax.text(x0 + width / 2.0, row_idx, _short_lhd_label(lhd),
+                                    ha="center", va="center", fontsize=12.5, fontweight="bold",
+                                    color=_readable_ink(face), zorder=4)
+
+                ax.set_yticks(range(len(rows)))
+                ax.set_yticklabels([f"Battery {n}" for n in range(1, len(rows) + 1)], fontsize=14)
+                ax.set_ylim(len(rows) - 0.5, -0.5)
+                ax.set_ylabel("Battery fleet", fontsize=17)
+                ax.set_xlim(0, 24)
+                ax.grid(False)
+                ax.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
+                for side in ("top", "right", "left"):
+                    ax.spines[side].set_visible(False)
+
+                row1 = [plt.Line2D([0], [0], color=lhd_color[l], lw=9, label=f"In {l}") for l in lhds]
+                row2 = [
+                    mpatches.Patch(facecolor=self.CIRCULATION_STATE_COLORS["dchg"],
+                                   edgecolor=grid_ink, label="Discharged"),
+                    mpatches.Patch(facecolor=self.CIRCULATION_STATE_COLORS["charging"],
+                                   edgecolor=surface, hatch="///", label="Charging"),
+                    mpatches.Patch(facecolor=self.CIRCULATION_STATE_COLORS["ready"],
+                                   edgecolor=surface, label="Charged, ready"),
+                ]
+                legend1 = legend_ax.legend(handles=row1, loc="center left", bbox_to_anchor=(0.0, 0.5),
+                                           ncols=len(row1), frameon=True, fontsize=13.5,
+                                           title="Mounted on", title_fontsize=14, framealpha=0.6)
+                legend_ax.legend(handles=row2, loc="center right", bbox_to_anchor=(1.0, 0.5),
+                                 ncols=len(row2), frameon=True, fontsize=13.5,
+                                 title="At the swapping station", title_fontsize=14, framealpha=0.6)
+                legend_ax.add_artist(legend1)
+                legend_ax.set_xlim(0, 24)
+
+                ticks, labels = self._get_hourly_time_ticks(start_hour=self.start_hour)
+                bottom_ax = ax_price if has_price else ax
+                if has_price:
+                    y_price = price_day.to_numpy(dtype=float)
+                    x_steps = np.array([0.0] + [t * dt for t in self.intervals], dtype=float)
+                    y_steps = np.concatenate([[y_price[0] if len(y_price) else 0.0], y_price])
+                    ax_price.plot(x_steps, y_steps, color=ink_secondary, lw=2.0, alpha=0.95)
+                    ax_price.set_ylabel("Energy price\n[USD/kWh]", fontsize=14)
+                    ax_price.set_ylim(0.0, max(0.30, float(np.nanmax(y_steps)) * 1.15))
+                    ax_price.yaxis.set_major_locator(MultipleLocator(0.1))
+                    ax_price.set_xlim(0, 24)
+                    ax_price.grid(False)
+                    ax_price.tick_params(axis="y", labelsize=13)
+                    for side in ("top", "right"):
+                        ax_price.spines[side].set_visible(False)
+                bottom_ax.set_xticks(ticks)
+                bottom_ax.set_xticklabels(labels, fontsize=12.5, rotation=0, ha="center")
+                bottom_ax.tick_params(axis="x", which="both", bottom=True, labelbottom=True, labelsize=12.5)
+                bottom_ax.set_xlabel("Time", fontsize=17)
+
+                month = self._rep_day_label(day)
+                station_label = station.replace("_", " ").title()
+                fig.suptitle(
+                    f"Battery Circulation - {station_label} {self._mode_plot_title()} - {month}",
+                    y=0.99, fontsize=18,
+                )
+
+                fname = f"BatteryCirculation_{station}_{month.replace(' ', '-')}.png"
+                fig.savefig(os.path.join(self.plot_dir, fname), dpi=150, bbox_inches="tight")
+                plt.close(fig)
+
     def plot_node_extraction_vs_demand(self):
             # Dentro de plot_node_extraction_vs_demand, justo después de cargar el DataFrame M
             df = load_generic_variable_df(self.json_dir, "M")
@@ -2172,6 +2576,8 @@ class JSONPlotter:
         self.plot_swaps_vs_price()
         self.plot_battery_charging_power()
         self.plot_charging_batteries_vs_price()
+        # plot_battery_circulation() queda fuera del batch: es una figura por estacion
+        # y dia. Se pide a mano acotando estacion/dia.
         #self.plot_node_extraction_vs_demand()
         self.plot_lhd_costs_bars()
         self.plot_lhd_soc_vs_price_and_states()
