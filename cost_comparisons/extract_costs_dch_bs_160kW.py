@@ -157,6 +157,41 @@ def main():
         "total_cost": total_cost,
     }
 
+    # Costo de recarga con la energia REAL de los swaps (b_bar[y] - B_llegada)
+    # dividida por eta_charge, en vez de los bloques fijos que reserva Sv y
+    # que paga P_red. Es la medida comparable con on-board, donde P_red ya ES
+    # energia de red; sin esta correccion swap aparece consumiendo ~14% mas
+    # que on-board para el mismo trabajo minero.
+    #
+    # total_cost (arriba) sigue siendo el del objetivo y es el que reconcilia
+    # con el "Best objective" de Gurobi. total_cost_real_grid_energy NO
+    # reconcilia con Gurobi por construccion: corrige una sobre-estimacion de
+    # energia comprada que el modelo si pago.
+    real_grid_cost = totals.get("real_grid_energy_cost", 0.0)
+    result["real_grid_energy_cost"] = real_grid_cost
+    result["grid_energy_kwh"] = totals.get("grid_energy_kwh", 0.0)
+
+    # Los kWh reales no salen de calculate_total_costs; vienen del meta de
+    # calculate_real_charged_energy_from_swaps, en kWh de dias representativos
+    # -> se escalan a año completo para que sean comparables con
+    # grid_energy_kwh. De paso se guardan los chequeos que respaldan el
+    # numero: ambos contadores deben ser 0.
+    try:
+        _real, meta, _det = c.calculate_real_charged_energy_from_swaps(root)
+        params = c.load_json(c.find_json_in_folder(root, "parameters.json"))
+        op_scaling = float(params.get("scaling_factor_op_cost", 1.0))
+        result["real_grid_energy_kwh"] = float(meta.get("real_grid_energy_kwh", 0.0)) * op_scaling
+        result["real_energy_checks"] = {
+            "events": int(meta.get("events", 0)),
+            "events_missing_b": int(meta.get("events_missing_b", 0)),
+            "events_b_arrival_above_cap": int(meta.get("events_b_arrival_above_cap", 0)),
+        }
+    except Exception as ex:
+        print(f"Advertencia al recoger kWh reales: {ex}")
+    result["total_cost_real_grid_energy"] = (
+        total_cost - totals.get("grid_energy_cost", 0.0) + real_grid_cost
+    )
+
     out_path = HERE / OUT_NAME
     out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))

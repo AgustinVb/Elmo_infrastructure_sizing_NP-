@@ -15,6 +15,7 @@ import argparse
 import json
 from pathlib import Path
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -27,7 +28,7 @@ CASES = {
     "dch": {
         "files": ["dch_ob_640kW_costs.json", "dch_bs_160kW_costs.json"],
         "labels": ["Carga on-board\n640 kW", "Battery-swapping\n160 kW"],
-        "title": "Costo total por tecnología, horizonte completo DCH (11 años)",
+        "title": "Costo total por tecnología, horizonte completo MCHS (11 años)",
         "out_png": "costo_total_horizonte_dch_bs_vs_ob.png",
     },
     "det": {
@@ -67,14 +68,42 @@ def main():
     # anteriores a ese cambio y no la traen -> queda en 0 y no se dibuja.
     costo_subestacion_k = to_k("substation_cost")
     costo_potencia_k    = to_k("peak_power_cost")
-    costo_recarga_k     = to_k("grid_energy_cost")
     costo_reemplazo_k   = to_k("battery_replace_cost")
+
+    # Costo de recarga: si el escenario trae real_grid_energy_cost se usa ese
+    # -- energia REAL de los swaps (b_bar[y] - B_llegada) / eta_charge, en vez
+    # de los bloques fijos que reserva Sv y que paga P_red. On-board no lo
+    # trae ni lo necesita: ahi P_red ya ES energia comprada a la red. Sin esta
+    # correccion swap aparece consumiendo ~14% mas que on-board para el mismo
+    # trabajo minero; con ella los dos coinciden dentro de 0,5%.
+    costo_recarga_k = []
+    ref_total_key = []
+    for d in scenarios:
+        if "real_grid_energy_cost" in d:
+            costo_recarga_k.append(d["real_grid_energy_cost"] / 1000.0)
+            ref_total_key.append("total_cost_real_grid_energy")
+        else:
+            costo_recarga_k.append(d.get("grid_energy_cost", 0.0) / 1000.0)
+            ref_total_key.append("total_cost")
+    usa_energia_real = "total_cost_real_grid_energy" in ref_total_key
 
     costo_total_k = [
         costo_estaciones_k[i] + costo_cargadores_k[i] + costo_baterias_k[i] + costo_subestacion_k[i]
         + costo_potencia_k[i] + costo_recarga_k[i] + costo_reemplazo_k[i]
         for i in range(len(scenarios))
     ]
+
+    # El apilado tiene que reproducir el total del JSON. Para on-board ese
+    # total es el del objetivo (reconcilia con el "Best objective" de Gurobi);
+    # para swap con recarga real/eta es total_cost_real_grid_energy, que por
+    # construccion NO reconcilia con Gurobi.
+    for d, ref_key, tot_k in zip(scenarios, ref_total_key, costo_total_k):
+        ref = d.get(ref_key, 0.0) / 1000.0
+        if ref and abs(tot_k - ref) / ref > 1e-9:
+            raise SystemExit(
+                f"{d.get('scenario')}: el apilado ({tot_k:,.3f} kUSD) no cuadra con "
+                f"{ref_key} ({ref:,.3f} kUSD) -- falta alguna categoria."
+            )
 
     STACK_ORDER = [
         ("estaciones",  costo_estaciones_k,  "tab:blue",   "Costo estaciones"),
@@ -88,14 +117,16 @@ def main():
 
     plt.rcParams.update(
         {
-            "font.size": 12,
-            "axes.titlesize": 15,
-            "axes.labelsize": 13,
-            "legend.fontsize": 10,
+            "font.size": 14,
+            "axes.titlesize": 18,
+            "axes.labelsize": 16,
+            "xtick.labelsize": 15,
+            "ytick.labelsize": 13,
+            "legend.fontsize": 13,
         }
     )
 
-    fig, ax = plt.subplots(figsize=(13, 8))
+    fig, ax = plt.subplots(figsize=(13, 8.5))
     x = np.arange(len(group_labels))
 
     def format_thousands(value):
@@ -120,15 +151,19 @@ def main():
                     format_thousands(val),
                     ha="center",
                     va="center",
-                    fontsize=9,
-                    color="black",
+                    fontsize=14,
+                    color="#FFFFFF",
                     fontweight="bold",
+                    # Halo oscuro: sobre los fills claros (cian, rosado,
+                    # naranjo) el relleno blanco solo no da contraste; el
+                    # borde es el que sostiene la legibilidad.
+                    path_effects=[pe.withStroke(linewidth=2.0, foreground="#111111")],
                 )
 
     for xi, tot in zip(x, costo_total_k):
         ax.text(
             xi, tot + 60, format_thousands(tot),
-            ha="center", va="bottom", fontsize=12, fontweight="bold",
+            ha="center", va="bottom", fontsize=14, fontweight="bold",
         )
 
     def draw_bracket(ax, x_bar, half_width, y0, y1, label, gap=0.03, tick_len=0.06, color="black"):
@@ -138,7 +173,7 @@ def main():
                  color=color, linewidth=1.3, clip_on=False)
         ax.text(
             x_tick - 0.02, (y0 + y1) / 2, label,
-            ha="right", va="center", rotation=90, fontsize=10, color=color,
+            ha="right", va="center", rotation=90, fontsize=12, color=color,
         )
 
     inversion_top   = (np.array(costo_estaciones_k) + np.array(costo_cargadores_k)
@@ -175,11 +210,18 @@ def main():
     ax.set_xticks(x)
     ax.set_xticklabels(group_labels)
 
+    if usa_energia_real:
+        ax.set_xlabel(
+            "Recarga battery-swapping: energía real de swap (b_bar[y] − B llegada) / η_carga.\n"
+            "Carga on-board: P_red del modelo, que ya es energía de red.",
+            fontsize=11, labelpad=10,
+        )
+
     ax.grid(axis="y", alpha=0.3)
     ax.set_axisbelow(True)
 
     ax.legend(
-        loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=2,
+        loc="upper center", bbox_to_anchor=(0.5, -0.22 if usa_energia_real else -0.12), ncol=2,
         frameon=True, framealpha=0.95, fancybox=True, edgecolor="gray",
     )
 
