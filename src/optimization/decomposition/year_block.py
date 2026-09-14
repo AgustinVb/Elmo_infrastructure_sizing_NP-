@@ -60,7 +60,7 @@ class YearBlockBuilder(object):
     """
 
     def __init__(self, mine_system, time_series, year, is_last_year,
-                 exogenous_stations, autonomous_mode=False):
+                 exogenous_stations, autonomous_mode=False, macroblock=None):
         """
         :param year: año de este bloque (debe pertenecer a time_series.years).
         :param is_last_year: True si `year` es el ultimo año del horizonte
@@ -70,11 +70,20 @@ class YearBlockBuilder(object):
             este año (documento sec. 2.1: X queda fuera del estado en modo
             descompuesto). Requerido -- en modo descompuesto X siempre es
             exogeno.
+        :param macroblock: dict {station, lhds, nodes, share, daily_target,
+            b_bar, replace} que restringe este bloque a UNA nave de carga
+            (ver decomposition/macroblocks.py). Solo se usa en la fase
+            FORWARD: el reparto de los recursos compartidos restringe el
+            problema del año, asi que la solucion sigue siendo factible
+            (cota superior valida) pero su relajacion lineal sobreestima el
+            costo y NO sirve para generar cortes. None = bloque sobre la
+            mina completa, que es lo que usa siempre la fase backward.
         """
         self.mine_system = mine_system
         self.time_series = time_series
         self.year = year
         self.is_last_year = is_last_year
+        self.macroblock = macroblock
 
         if exogenous_stations is None:
             raise ValueError(
@@ -89,22 +98,26 @@ class YearBlockBuilder(object):
         }
 
         self.set_builder = OptSets(
-            mine_system, time_series, autonomous_mode=autonomous_mode, years_override=[year]
+            mine_system, time_series, autonomous_mode=autonomous_mode, years_override=[year],
+            macroblock=macroblock,
         )
         self.param_rules = OptParameters(
-            mine_system, time_series, years_override=[year]
+            mine_system, time_series, years_override=[year], macroblock=macroblock
         )
         self.bound_rules = BoundRules(
             mine_system, time_series, years_override=[year],
             exogenous_stations=self._exogenous_stations_for_rules,
+            macroblock=macroblock,
         )
         self.constraint_rules = ConstraintRules(
             mine_system, time_series, years_override=[year],
             exogenous_stations=self._exogenous_stations_for_rules,
+            macroblock=macroblock,
         )
         self.objective_rules = ObjectiveRules(
             mine_system, time_series, years_override=[year],
             exogenous_stations=self._exogenous_stations_for_rules,
+            macroblock=macroblock,
         )
 
         # Nombres de los parametros heredados que el driver forward/backward
@@ -295,6 +308,10 @@ class YearBlockBuilder(object):
             return
         y = self.year
 
+        if self.macroblock is not None:
+            self._fix_degradation_for_macroblock(model)
+            return
+
         N_L, N_U = self._compute_n_ciclos_bounds(model)
         model.N_ciclos[y].setlb(N_L)
         model.N_ciclos[y].setub(N_U)
@@ -348,6 +365,41 @@ class YearBlockBuilder(object):
             "kind": "simple",
         })
 
+    def _fix_degradation_for_macroblock(self, model):
+        """Degradacion dentro de un bloque de macrobloque.
+
+        Es un estado de FLOTA -- b_bar_y, N_ciclos_y, D_y y R_y son escalares
+        del año, no cantidades por nave -- asi que NO se reparte entre
+        macrobloques: la capacidad con la que opera la flota y la decision de
+        reemplazo se coordinan una sola vez para todo el año, fuera del
+        reparto (macroblocks.coordinate_b_bar), y llegan aca como datos.
+
+        Con b_bar fijo, las dos ecuaciones que ligan energia y ciclos dejan de
+        tener sentido dentro de un macrobloque: evaluadas sobre la energia de
+        UNA nave pero con el tamaño de flota completo (n_elhd_bd) darian un
+        numero de ciclos que no corresponde ni a la nave ni a la flota. Por
+        eso se desactivan, y el estado del año se recompone despues sumando la
+        energia S_y de todos los macrobloques
+        (macroblocks.aggregate_degradation), que con b_bar ya fijo es una
+        cuenta lineal y exacta, sin envolvente de McCormick.
+
+        `s_def` (S_y = energia cargada) se conserva intacta: es justamente lo
+        que se agrega despues. Tampoco se registra "D" en state_links, porque
+        este bloque no produce ese estado."""
+        y = self.year
+        model.b_bar[y].fix(float(self.macroblock["b_bar"]))
+        model.R[y].fix(1 if self.macroblock["replace"] else 0)
+
+        for name in ("d_y_fade", "n_ciclos_link", "b_y_link"):
+            comp = getattr(model, name, None)
+            if comp is None:
+                continue
+            if comp.is_indexed():
+                if y in comp:
+                    comp[y].deactivate()
+            else:
+                comp.deactivate()
+
     def mccormick_residual(self):
         """Validacion obligatoria (doc sec. 3.4): residuo del bilineal
         EXACTO evaluado en la solucion optima de la relajacion McCormick --
@@ -357,6 +409,11 @@ class YearBlockBuilder(object):
         (piecewise McCormick, doc sec. 3.5) o pasar al Camino B
         (Lagrangeano)."""
         if self.mine_system.battery_degradation is None:
+            return None
+        if self.macroblock is not None:
+            # Sin envolvente que validar: en un bloque de macrobloque b_bar
+            # esta fijo y N_ciclos no esta ligado a la energia (ver
+            # _fix_degradation_for_macroblock), el residuo no significa nada.
             return None
         y = self.year
         n_ciclos_val = value(self.model.N_ciclos[y], exception=False)
@@ -406,6 +463,33 @@ class YearBlockBuilder(object):
             # visible (documento sec. 10).
             model.alpha.fix(0.0)
 
+    def set_fleet_degradation(self, b_bar, replace):
+        """Re-fija la capacidad de bateria y el reemplazo de la FLOTA en un
+        bloque de macrobloque. El driver la llama en cada iteracion del
+        forward, porque ambos valores dependen del estado heredado D_hat de
+        esa iteracion (ver macroblocks.coordinate_b_bar) y el bloque Pyomo se
+        construye una sola vez."""
+        if self.macroblock is None:
+            raise ValueError(
+                "set_fleet_degradation es solo para bloques de macrobloque: "
+                "en un bloque del año completo b_bar y R son variables."
+            )
+        if self.mine_system.battery_degradation is None:
+            return
+        y = self.year
+        self.macroblock["b_bar"] = float(b_bar)
+        self.macroblock["replace"] = 1 if replace else 0
+        self.model.b_bar[y].fix(float(b_bar))
+        self.model.R[y].fix(1 if replace else 0)
+
+    def clear_cuts(self):
+        """Vacia la lista de cortes del bloque. Los bloques de macrobloque
+        reciben los cortes del año replicados en cada iteracion del forward
+        (ver BendersCutManager.add_year_cuts_to_macroblock), asi que hay que
+        limpiarlos antes de volver a agregarlos o se acumularian duplicados
+        --y con los estados ajenos congelados en valores ya viejos."""
+        self.model.cuts.clear()
+
     def set_heritage(self, values):
         """Actualiza los parametros heredados <estado>_hat con el estado
         optimo del año anterior (o los stocks iniciales si year==y1). El
@@ -419,13 +503,22 @@ class YearBlockBuilder(object):
             state_name = link["state"]
             if state_name not in values:
                 continue
+            if link["hat"] is None:
+                # Estado que este bloque decide (primer año del horizonte):
+                # no tiene parametro heredado que actualizar.
+                continue
             hat = getattr(self.model, link["hat"])
             new_value = values[state_name]
             if link["index_set"] is None:
                 hat.set_value(float(new_value))
             else:
                 for idx, v in new_value.items():
-                    hat[idx].set_value(float(v))
+                    # Un bloque de macrobloque solo tiene los indices de SU
+                    # nave: el estado recibido trae el de todas, y los ajenos
+                    # se ignoran (los decide el bloque del macrobloque que
+                    # corresponda).
+                    if idx in hat:
+                        hat[idx].set_value(float(v))
 
     def extract_state(self):
         """Extrae x̂_y: el estado optimo de ESTE bloque ya resuelto (para

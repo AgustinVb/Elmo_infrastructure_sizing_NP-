@@ -10,7 +10,7 @@ class OptRules(object):
 
     def __init__(self, mine_system, time_series, autonomous_mode=False,
                  years_override=None, exogenous_stations=None,
-                 mccormick_degradation=False):
+                 mccormick_degradation=False, macroblock=None):
         self.mine_system = mine_system
         self.time_series = time_series
         # Camino A (McCormick) aplicado al MONOLITICO completo (ver
@@ -39,12 +39,59 @@ class OptRules(object):
         # en modo descompuesto, donde X deja de ser estado — ver documento
         # sec. 2.1 "Fuera del estado"). None preserva X como Var libre.
         self.exogenous_stations = exogenous_stations
+        # Descomposicion por macrobloque DENTRO del año (ver
+        # decomposition/macroblocks.py): dict con station/lhds/nodes/share/
+        # daily_target que restringe este bloque a UNA nave de carga, sus
+        # equipos y sus puntos de extraccion, y le asigna una cuota de los
+        # recursos compartidos (potencia de red, aporte de generacion y de
+        # almacenamiento, meta de produccion). None = bloque sobre la mina
+        # completa, comportamiento identico al de siempre.
+        self.macroblock = macroblock
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_station(mine_system.get_system_stations())
 
 
+
+    def _macroblock_lhds(self):
+        """Equipos de este bloque: los de la mina completa, o solo los del
+        macrobloque cuando el bloque esta restringido."""
+        lhds = self.mine_system.get_system_lhds()
+        if self.macroblock is None:
+            return lhds
+        keep = set(self.macroblock["lhds"])
+        return [i for i in lhds if i in keep]
+
+    def _macroblock_elhds(self):
+        elhds = self.mine_system.get_electric_lhds()
+        if self.macroblock is None:
+            return elhds
+        keep = set(self.macroblock["lhds"])
+        return [i for i in elhds if i in keep]
+
+    def _macroblock_nodes(self):
+        nodes = self.mine_system.get_system_nodes()
+        if self.macroblock is None:
+            return nodes
+        keep = set(self.macroblock["nodes"])
+        return [j for j in nodes if j in keep]
+
+    def _macroblock_stations(self):
+        stations = self.mine_system.get_system_stations()
+        if self.macroblock is None:
+            return stations
+        return [k for k in stations if k == self.macroblock["station"]]
+
+    def _macroblock_share(self):
+        """Cuota de los recursos compartidos que recibe este macrobloque
+        (potencia de red p_peak/P_pot, aporte de G_g y de H, y los costos de
+        flota que no se separan por nave). 1.0 cuando el bloque cubre la mina
+        completa, de modo que todas las expresiones quedan identicas a las de
+        siempre si no hay descomposicion por macrobloque."""
+        if self.macroblock is None:
+            return 1.0
+        return float(self.macroblock["share"])
 
     def year_position(self, y: int) -> int:
         """Posicion 1-indexada de y dentro del horizonte modelado (1, 2, 3, ...),
@@ -215,9 +262,13 @@ class OptSets(OptRules):
         return sorted(indices)
 
     def build_sets(self, model):
-        model.lhd_set = pyo.Set(initialize=self.mine_system.get_system_lhds())
-        model.elhd_set = pyo.Set(initialize=self.mine_system.get_electric_lhds())
-        model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
+        # Con macroblock != None estos cuatro sets quedan restringidos a una
+        # sola nave y a los equipos/nodos que le corresponden -- todo lo demas
+        # del modelo (Y_INDEX, ZCHARGE_INDEX, m_j, restricciones) se construye
+        # a partir de ellos, asi que no hace falta filtrar nada mas.
+        model.lhd_set = pyo.Set(initialize=self._macroblock_lhds())
+        model.elhd_set = pyo.Set(initialize=self._macroblock_elhds())
+        model.nodes_set = pyo.Set(initialize=self._macroblock_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
         model.days = pyo.Set(initialize=self.time_series.days_within_year)
         model.years = pyo.Set(initialize=self.model_years)
@@ -234,7 +285,7 @@ class OptSets(OptRules):
                 if 18 * 60 <= ((base_minutes + (t - 1) * _peak_dt_minutes + _peak_dt_minutes / 2) % 1440) < 22 * 60
             ]
         )
-        model.stations_set = pyo.Set(initialize=self.mine_system.get_system_stations())
+        model.stations_set = pyo.Set(initialize=self._macroblock_stations())
         # Generadores renovables (vacio si no hay datos de generacion)
         model.gen_set = pyo.Set(initialize=self.mine_system.get_system_generators())
         # Almacenamiento estacionario BESS (vacio si no hay hoja Storage)
@@ -323,7 +374,7 @@ class OptSets(OptRules):
         # Si algÃºn nombre no trae sufijo numÃ©rico, se reparte en fallback para
         # no dejar equipos fuera de ambos grupos.
         # -----------------------------
-        all_lhds = sorted(set(self.mine_system.get_system_lhds()))
+        all_lhds = sorted(set(self._macroblock_lhds()))
 
         group1 = []
         group2 = []
@@ -350,7 +401,7 @@ class OptSets(OptRules):
         # El de menor índice debe iniciar con menor o igual SOC (carga primero).
         from collections import defaultdict
         elhds_per_station = defaultdict(list)
-        for elhd in self.mine_system.get_electric_lhds():
+        for elhd in self._macroblock_elhds():
             for station in self.time_series.mapper['Stations_per_elhd'].get(elhd, []):
                 elhds_per_station[station].append(elhd)
 
@@ -879,13 +930,30 @@ class ConstraintRules(OptRules):
         return model.B[i_high,y,d,0] <= model.B[i_low,y,d,0]
 
     def daily_production(self, model, y, d):
-        total_target = sum(model.m_j[j, y] for j in model.nodes_set)
+        # Con descomposicion por macrobloque, la meta del dia NO es la suma de
+        # los m_j de los nodos propios: eso obligaria a cada macrobloque a
+        # cubrir su parte por si solo y eliminaria la compensacion entre
+        # macrobloques que el modelo completo si permite. Se usa la meta
+        # repartida por macroblocks.split_daily_targets (water-filling sobre
+        # el rango alcanzable de cada macrobloque), cuya suma sobre
+        # macrobloques es la meta global del dia.
+        if self.macroblock is not None and "daily_target" in self.macroblock:
+            total_target = self.macroblock["daily_target"][y]
+        else:
+            total_target = sum(model.m_j[j, y] for j in model.nodes_set)
         term_de = sum(
             model.Y[i2,j2,y2,d2,t2] * model.g_i[i2] * self.time_series.get_n_trips(j2, i2) * model.filling_factor[i2]
             for (i2, j2, y2, d2, t2) in model.Y
             if y2 == y and d2 == d
         )
-        return term_de >= total_target
+        expr = term_de >= total_target
+        if expr is True or expr is False:
+            # Con la meta repartida (un numero, no una expresion de Params) la
+            # comparacion puede degenerar en un bool de Python cuando el
+            # macrobloque no tiene ninguna asignacion posible ese dia: Pyomo
+            # rechaza un bool como restriccion, hay que devolver el centinela.
+            return pyo.Constraint.Feasible if expr else pyo.Constraint.Infeasible
+        return expr
 
     def production(self, model, y, d, j):
         import math
@@ -1005,11 +1073,17 @@ class ConstraintRules(OptRules):
         return model.P_red[y,d,t] + gen + bess == demand
 
     def grid_limit(self, model, y, d, t):
-        return model.P_red[y,d,t] <= model.p_peak
+        # Cuota de la potencia de red: como las cuotas suman 1, la suma de los
+        # P_red de todos los macrobloques respeta el p_peak global original.
+        return model.P_red[y,d,t] <= self._macroblock_share() * model.p_peak
 
     def gen_limit(self, model, g, y, d, t):
+        # G_g es una decision unica de toda la mina: lo que se reparte entre
+        # macrobloques es su APORTE de potencia en cada intervalo, con la
+        # misma cuota (lo no usado por el macrobloque se curtailea aqui).
         return (model.P_gen[g,y,d,t] + model.Curt_g[g,y,d,t]
-                == model.G_g[g] * model.p_max_g[g] * model.alpha_g[g,y,d,t])
+                == self._macroblock_share() * model.G_g[g] * model.p_max_g[g]
+                * model.alpha_g[g,y,d,t])
 
     def gen_max_units(self, model, g):
         return model.G_g[g] <= model.g_max_g[g]
@@ -1041,10 +1115,14 @@ class ConstraintRules(OptRules):
         return sum(model.Y[i,j,y,d,t] for j in nodes) == 0
 
     def bess_power_upper(self, model, h, y, d, t):
-        return model.P_bat[h,y,d,t] <= model.p_max_h[h] * model.H
+        # Misma cuota que la generacion: el BESS es unico para la mina y cada
+        # macrobloque opera una fraccion de su potencia y de su energia. Como
+        # las restricciones son lineales y homogeneas en H, la suma de las
+        # trayectorias por macrobloque es factible para el BESS completo.
+        return model.P_bat[h,y,d,t] <= self._macroblock_share() * model.p_max_h[h] * model.H
 
     def bess_power_lower(self, model, h, y, d, t):
-        return model.P_bat[h,y,d,t] >= -model.p_max_h[h] * model.H
+        return model.P_bat[h,y,d,t] >= -self._macroblock_share() * model.p_max_h[h] * model.H
 
     def bess_soc_balance(self, model, h, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
@@ -1055,10 +1133,10 @@ class ConstraintRules(OptRules):
         return model.A_h[h,y,d,0] == 0
 
     def bess_soc_upper(self, model, h, y, d, t):
-        return model.A_h[h,y,d,t] <= model.a_max_h[h] * model.H
+        return model.A_h[h,y,d,t] <= self._macroblock_share() * model.a_max_h[h] * model.H
 
     def bess_soc_lower(self, model, h, y, d, t):
-        return model.A_h[h,y,d,t] >= model.a_min_h[h] * model.H
+        return model.A_h[h,y,d,t] >= self._macroblock_share() * model.a_min_h[h] * model.H
 
     def bess_soc_cyclic(self, model, h, y, d):
         t_ini = self.time_series.get_time_intervals()[0]
@@ -1398,7 +1476,10 @@ class ObjectiveRules(OptRules):
         sobre la capacidad fija G_g[g]."""
         if len(list(model.gen_set)) == 0:
             return 0
-        return sum(
+        # Costo de flota (no se separa por nave): se cobra en proporcion a la
+        # cuota, de modo que la suma sobre macrobloques reproduce exactamente
+        # el costo del año completo y no lo cuenta una vez por macrobloque.
+        return self._macroblock_share() * sum(
             model.G_g[g] * model.c_op_g[g] * model.p_max_g[g] * self._discount_factor(model, y)
             for g in model.gen_set for y in model.years
         )
@@ -1421,7 +1502,7 @@ class ObjectiveRules(OptRules):
         capacidad fija H."""
         if len(list(model.storage_set)) == 0:
             return 0
-        return sum(
+        return self._macroblock_share() * sum(
             model.H * model.c_op_h[h] * self._discount_factor(model, y)
             for h in model.storage_set for y in model.years
         )
@@ -1440,7 +1521,10 @@ class ObjectiveRules(OptRules):
         que ese año no están operando (ver FleetByYear)."""
         if self.mine_system.battery_degradation is None:
             return 0
-        return sum(
+        # Reemplazo de bateria: decision de FLOTA (un R_y para todos los
+        # macrobloques, coordinado fuera del reparto), asi que se prorratea
+        # con la cuota igual que los demas costos de flota.
+        return self._macroblock_share() * sum(
             model.n_elhd_bd[y] * model.R[y] * model.c_bat_replace * self._discount_factor(model, y)
             for y in model.years
         )

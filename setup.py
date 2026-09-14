@@ -177,6 +177,19 @@ def main():
              '(comportamiento anterior, util para debug).'
     )
     parser.add_argument(
+        '--macroblock_forward', action='store_true',
+        help='[decomposed] resuelve cada año POSTERIOR al primero como varios '
+             'MILP de macrobloque (una nave de carga con sus equipos y sus '
+             'puntos de extraccion cada uno) en vez de un solo MILP del año, '
+             'repartiendo entre macrobloques la meta de produccion diaria, la '
+             'potencia de red (p_peak/P_pot) y el aporte de generacion y '
+             'almacenamiento (ver src/optimization/decomposition/macroblocks.py). '
+             'Solo afecta la fase forward: el reparto restringe el problema, '
+             'asi que la cota superior sigue siendo valida pero los cortes y la '
+             'cota inferior se siguen generando sobre el año completo. Sin el '
+             'flag, comportamiento identico al de siempre.'
+    )
+    parser.add_argument(
         '--fixed_stations_json', default=None,
         help='[decomposed, opcional] ruta a JSON {"<year>": {"<station>": 0/1, ...}, ...} '
              'con las estaciones X fijas por año -- en modo descompuesto X es exogeno '
@@ -231,6 +244,7 @@ def main():
             solver_kwargs=solver_kwargs,
             degradation_cut_mode=args.degradation_cut_mode,
             block_build_jobs=args.block_build_jobs,
+            macroblock_forward=args.macroblock_forward,
         )
         result = solver.solve()
         interrupted_tag = " (interrumpido con Ctrl+C)" if result.get("interrupted") else ""

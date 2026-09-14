@@ -5,6 +5,10 @@ from pyomo.environ import value, SolverFactory, TransformationFactory
 from pyomo.opt import TerminationCondition, SolverStatus
 
 from src.optimization.decomposition.cuts import BendersCutManager
+from src.optimization.decomposition.macroblocks import (
+    aggregate_degradation,
+    coordinate_b_bar,
+)
 
 _ACCEPTABLE = (
     TerminationCondition.optimal,
@@ -122,9 +126,31 @@ class ForwardPass(object):
     del año siguiente. Produce una solucion factible completa (candidato a
     UB)."""
 
-    def __init__(self, blocks, solver_kwargs=None):
+    def __init__(self, blocks, solver_kwargs=None, macroblock_blocks=None,
+                 cut_manager=None, fleet_params=None):
+        """
+        :param macroblock_blocks: {year: {estacion: YearBlockBuilder}} para
+            resolver ese año por macrobloque en vez de como un solo MILP (ver
+            decomposition/macroblocks.py). Solo se usa aqui, en el forward:
+            el reparto de recursos restringe el problema, asi que la solucion
+            sigue siendo factible --la cota superior sigue siendo valida--
+            pero su relajacion no sirve para cortes. El primer año nunca se
+            reparte: es el que decide las inversiones comunes (P_max_k, G, H)
+            y esas no son separables por nave.
+        :param cut_manager: necesario en modo macrobloque para replicar los
+            cortes del año en cada bloque (add_year_cuts_to_macroblock).
+        :param fleet_params: dict con b_max/rho_rep/b_upper/n_elhd/gamma_coef
+            por año, para coordinar la degradacion de flota y recomponerla
+            despues (ver macroblocks.coordinate_b_bar/aggregate_degradation).
+        """
         self.blocks = blocks  # lista de YearBlockBuilder, ordenada y1..Y
         self.solver_kwargs = solver_kwargs or {}
+        self.macroblock_blocks = macroblock_blocks or {}
+        self.cut_manager = cut_manager
+        self.fleet_params = fleet_params or {}
+        # Estado de cada año en la ULTIMA iteracion, usado como valor de los
+        # estados ajenos al replicar los cortes en cada macrobloque.
+        self.last_state_by_year = {}
 
     def run(self, iteration=None, verbose=True, current_ub=None, current_lb=None):
         x_hat_by_year = {}
@@ -139,12 +165,31 @@ class ForwardPass(object):
                 k_tag = f"k={iteration} " if iteration is not None else ""
                 print(f"[NestedBenders] {k_tag}FORWARD  anio {block.year} ({i + 1}/{n})  "
                       f"{_bounds_tag(current_ub, current_lb)}  resolviendo MILP...")
-            if i > 0:
-                block.set_heritage(x_hat_by_year[self.blocks[i - 1].year])
+            heritage = x_hat_by_year[self.blocks[i - 1].year] if i > 0 else None
+            if heritage is not None:
+                block.set_heritage(heritage)
+
+            mbs = self.macroblock_blocks.get(block.year) if self.macroblock_blocks else None
+            if mbs and heritage is not None:
+                # Descomposicion por macrobloque DENTRO del año (solo forward,
+                # ver macroblocks.py): el año se resuelve como |K| MILP mas
+                # chicos con los recursos compartidos repartidos en cuotas.
+                phi, alpha, state, full = self._solve_year_by_macroblock(
+                    block, mbs, heritage, iteration=iteration, verbose=verbose,
+                    state_hint=self.last_state_by_year.get(block.year),
+                )
+                phi_by_year[block.year] = phi
+                alpha_by_year[block.year] = alpha
+                x_hat_by_year[block.year] = state
+                full_solution_by_year[block.year] = full
+                self.last_state_by_year[block.year] = state
+                continue
+
             _solve(block.model, label=f"forward y={block.year}", **self.solver_kwargs)
             phi_by_year[block.year] = value(block.model.obj)
             alpha_by_year[block.year] = value(block.model.alpha)
             x_hat_by_year[block.year] = block.extract_state()
+            self.last_state_by_year[block.year] = x_hat_by_year[block.year]
             # Solucion completa del bloque (no solo el estado): la necesita
             # el puente de reporte para reconstruir el modelo monolitico "de
             # solo lectura" que consume Printer sin tocarlo.
@@ -174,6 +219,131 @@ class ForwardPass(object):
             "full_solution": full_solution_by_year,
             "mccormick_residual": mccormick_residual_by_year,
         }
+
+
+    def _solve_year_by_macroblock(self, block, mbs, heritage, iteration,
+                                   verbose, state_hint):
+        """Resuelve un año como varios MILP de macrobloque y recompone el
+        resultado del año. Devuelve (phi, alpha, x_hat, full_solution).
+
+        La degradacion es lo unico que no se reparte: b_bar y R son de la
+        flota completa, se coordinan aqui una sola vez y se pasan como datos a
+        cada macrobloque (ver year_block._fix_degradation_for_macroblock). Se
+        prueba primero sin reemplazar --que es lo barato-- y solo si algun
+        macrobloque queda infactible con esa capacidad se reemplaza en TODOS,
+        que es lo que hace el modelo completo (R_y es una sola decision).
+        """
+        y = block.year
+        k_tag = f"k={iteration} " if iteration is not None else ""
+        params = self.fleet_params.get(y) or {}
+        has_degradation = bool(params)
+        b_bar = None
+
+        for replace in ((0, 1) if has_degradation else (None,)):
+            if has_degradation:
+                b_bar = coordinate_b_bar(params, float(heritage["D"]), replace)
+            if verbose:
+                extra = (f"  b_bar={b_bar:,.2f} R={replace}" if has_degradation else "")
+                print(f"[NestedBenders] {k_tag}FORWARD  anio {y}  "
+                      f"{len(mbs)} macrobloques{extra}")
+
+            failed = None
+            for station, mb in sorted(mbs.items()):
+                mb.set_heritage(heritage)
+                if has_degradation:
+                    mb.set_fleet_degradation(b_bar, replace)
+                mb.clear_cuts()
+                if self.cut_manager is not None:
+                    self.cut_manager.add_year_cuts_to_macroblock(mb, state_hint)
+                try:
+                    _solve(mb.model, label=f"forward y={y} macrobloque={station}",
+                           **self.solver_kwargs)
+                except RuntimeError as exc:
+                    failed = (station, exc)
+                    break
+
+            if failed is None:
+                break
+            if not has_degradation or replace == 1:
+                raise RuntimeError(
+                    f"El macrobloque '{failed[0]}' del año {y} no tiene solucion "
+                    f"ni reemplazando la bateria de la flota. Puede ser que su "
+                    f"cuota de potencia o su meta de produccion repartida sean "
+                    f"demasiado ajustadas (ver macroblocks.py): {failed[1]}"
+                )
+            if verbose:
+                print(f"[NestedBenders] {k_tag}FORWARD  anio {y}  el macrobloque "
+                      f"'{failed[0]}' no cierra sin reemplazar bateria -- se "
+                      f"reemplaza en toda la flota y se resuelve de nuevo.")
+
+        return self._aggregate_macroblocks(block, mbs, heritage, b_bar, params)
+
+    def _aggregate_macroblocks(self, block, mbs, heritage, b_bar, params):
+        """Recompone el año a partir de los macrobloques ya resueltos.
+
+        - Costos: se suman. Cada macrobloque cobra su parte de los costos de
+          flota via su cuota (ver functions.py), asi que la suma reproduce el
+          costo del año completo sin contarlo varias veces.
+        - alpha: se suma tambien, porque UB resta sum(alpha) y lo que debe
+          quedar es sum(f_k) -- ver ForwardPass.run.
+        - Estado: union de los estados por nave. La degradacion se recompone
+          con la energia total cargada, que con b_bar fijo es una cuenta
+          lineal exacta (macroblocks.aggregate_degradation).
+        """
+        y = block.year
+        phi = sum(value(mb.model.obj) for mb in mbs.values())
+        alpha = sum(value(mb.model.alpha) for mb in mbs.values())
+
+        state = {}
+        for mb in mbs.values():
+            for name, val in mb.extract_state().items():
+                if isinstance(val, dict):
+                    state.setdefault(name, {}).update(val)
+                else:
+                    # Estado compartido (H): todos los macrobloques lo tienen
+                    # fijado al mismo valor heredado.
+                    state[name] = val
+
+        if params:
+            s_total = sum(value(mb.model.S[y]) for mb in mbs.values())
+            d_y, n_ciclos = aggregate_degradation(
+                b_bar, s_total, params["n_elhd"], params["gamma_coef"]
+            )
+            state["D"] = d_y
+            state["_n_ciclos"] = n_ciclos
+            state["_b_bar"] = b_bar
+            state["_s_total"] = s_total
+
+        return phi, alpha, state, self._merge_full_solutions(mbs, state)
+
+    # Variables de potencia que son del sistema completo y no de una nave: al
+    # recomponer el año se SUMAN entre macrobloques (cada uno opero con su
+    # cuota). El resto de las variables esta indexado por nave, equipo o nodo,
+    # y la union de los macrobloques las cubre sin solaparse.
+    _ADDITIVE_VARS = ("P_red", "P_pot", "P_gen", "P_bat", "A_h", "Curt_g", "S")
+
+    def _merge_full_solutions(self, mbs, state):
+        merged = {}
+        for _station, mb in sorted(mbs.items()):
+            for name, values in mb.extract_full_solution().items():
+                if name in self._ADDITIVE_VARS and isinstance(values, dict):
+                    target = merged.setdefault(name, {})
+                    for idx, v in values.items():
+                        target[idx] = target.get(idx, 0.0) + v
+                elif isinstance(values, dict):
+                    merged.setdefault(name, {}).update(values)
+                else:
+                    merged[name] = values
+
+        # Degradacion: la solucion del año es la coordinada/agregada, no la de
+        # ningun macrobloque en particular.
+        y = next(iter(mbs.values())).year
+        if "_b_bar" in state:
+            for name, val in (("b_bar", state["_b_bar"]), ("D", state["D"]),
+                              ("N_ciclos", state["_n_ciclos"]), ("S", state["_s_total"])):
+                if name in merged and isinstance(merged[name], dict):
+                    merged[name][y] = val
+        return merged
 
 
 class BackwardPass(object):

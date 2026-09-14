@@ -3,9 +3,16 @@ import signal
 import sys
 import time
 
+from pyomo.environ import value
+
 from src.optimization.decomposition import passes as passes_module
 from src.optimization.decomposition.year_block import YearBlockBuilder
 from src.optimization.decomposition.cuts import BendersCutManager
+from src.optimization.decomposition.macroblocks import (
+    build_macroblocks,
+    compute_power_shares,
+    split_daily_targets,
+)
 from src.optimization.decomposition.passes import ForwardPass, BackwardPass
 
 # Los workers de construccion de bloques (ver _build_blocks) reciben
@@ -79,8 +86,24 @@ class NestedBendersSolver(object):
     def __init__(self, mine_system, time_series, exogenous_stations_by_year=None,
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
                  strengthen=False, degradation_cut_mode="mccormick", lagrangean_kwargs=None,
-                 block_build_jobs=None):
+                 block_build_jobs=None, macroblock_forward=False):
         """
+        :param macroblock_forward: default False (comportamiento de siempre).
+            Con True, cada año POSTERIOR al primero se resuelve en la fase
+            forward como varios MILP de macrobloque --una nave de carga con
+            sus equipos y sus puntos de extraccion cada uno-- en vez de un
+            solo MILP del año completo, repartiendo entre macrobloques los
+            recursos que comparten: la meta de produccion diaria, la potencia
+            de red (p_peak/P_pot) y el aporte de la generacion renovable y del
+            almacenamiento (ver decomposition/macroblocks.py).
+
+            Solo el forward: el reparto RESTRINGE el problema del año, de modo
+            que la trayectoria sigue siendo factible --la cota superior sigue
+            siendo valida-- pero su relajacion lineal sobreestima el costo y
+            daria cortes invalidos. La fase backward, que es la que produce
+            los cortes y la cota inferior, siempre resuelve el año completo.
+            El primer año tampoco se reparte: es el que decide las inversiones
+            comunes (P_max_k, G_g, H), que no son separables por nave.
         :param exogenous_stations_by_year: dict {year: {k: 0/1}} -- X fijo
             por año y estacion (documento sec. 2.1; ver decision de diseño
             confirmada en el plan de M0). Si se omite (None), se infiere
@@ -148,7 +171,15 @@ class NestedBendersSolver(object):
         self.blocks = self._build_blocks(block_build_jobs)
 
         self.cut_manager = BendersCutManager()
-        self.forward_pass = ForwardPass(self.blocks, solver_kwargs=self.solver_kwargs)
+        self.macroblock_forward = macroblock_forward
+        self.macroblock_blocks, self.fleet_params = (
+            self._build_macroblock_blocks() if macroblock_forward else ({}, {})
+        )
+        self.forward_pass = ForwardPass(
+            self.blocks, solver_kwargs=self.solver_kwargs,
+            macroblock_blocks=self.macroblock_blocks,
+            cut_manager=self.cut_manager, fleet_params=self.fleet_params,
+        )
         self.backward_pass = BackwardPass(
             self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs,
             degradation_cut_mode=degradation_cut_mode, lagrangean_kwargs=lagrangean_kwargs,
@@ -200,6 +231,72 @@ class NestedBendersSolver(object):
             initargs=(self.mine_system, self.time_series, self.autonomous_mode),
         ) as pool:
             return pool.map(_build_year_block_task, tasks)
+
+    def _build_macroblock_blocks(self):
+        """Construye {year: {estacion: YearBlockBuilder}} para los años
+        POSTERIORES al primero, y los parametros de flota que necesita la
+        coordinacion de la degradacion.
+
+        Se construyen secuencialmente: cada bloque de macrobloque es bastante
+        mas chico que el del año completo (una nave, sus equipos y sus nodos),
+        y son |K| * (|Y|-1) en total.
+        """
+        macroblocks = build_macroblocks(self.mine_system, self.time_series, self.years)
+        shares = compute_power_shares(
+            self.mine_system, self.time_series, macroblocks, self.years
+        )
+        targets = split_daily_targets(
+            self.mine_system, self.time_series, macroblocks, self.years
+        )
+
+        print(f"[NestedBenders] descomposicion por macrobloque activada: "
+              f"{len(macroblocks)} macrobloques "
+              f"({', '.join(f'{k} (cuota {v:.1%})' for k, v in sorted(shares.items()))})")
+
+        fleet_params = {}
+        b_max_placeholder = 0.0
+        if self.mine_system.battery_degradation is not None:
+            ref = self.blocks[0].model
+            b_max_placeholder = value(ref.b_max_fleet)
+            common = {
+                "b_max": value(ref.b_max_fleet),
+                "rho_rep": value(ref.replace_capacity_fraction),
+                "b_upper": value(ref.B_U),
+                "gamma_coef": value(ref.gamma_coef),
+            }
+            for blk in self.blocks[1:]:
+                fleet_params[blk.year] = dict(
+                    common, n_elhd=value(blk.model.n_elhd_bd[blk.year])
+                )
+
+        blocks_by_year = {}
+        for blk in self.blocks[1:]:
+            y = blk.year
+            per_station = {}
+            for station, mb in macroblocks.items():
+                per_station[station] = YearBlockBuilder(
+                    self.mine_system, self.time_series, year=y,
+                    is_last_year=(y == self.years[-1]),
+                    exogenous_stations=self.exogenous_stations_by_year[y],
+                    autonomous_mode=self.autonomous_mode,
+                    macroblock={
+                        "station": station,
+                        "lhds": mb["lhds"],
+                        "nodes": mb["nodes"],
+                        "share": shares[station],
+                        # daily_production compara contra la meta repartida de
+                        # este macrobloque, no contra la suma de sus nodos.
+                        "daily_target": {y: targets[(station, y)]},
+                        # b_bar/R los re-fija el forward en cada iteracion
+                        # (dependen del estado heredado): esto es solo el
+                        # valor con el que se construye el bloque.
+                        "b_bar": b_max_placeholder,
+                        "replace": 0,
+                    },
+                )
+            blocks_by_year[y] = per_station
+
+        return blocks_by_year, fleet_params
 
     def solve(self, verbose=True):
         """Documento sec. 7-8. Ctrl+C (SIGINT) en cualquier punto -- en

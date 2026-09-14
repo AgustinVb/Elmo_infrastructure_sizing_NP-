@@ -1,3 +1,17 @@
+def _hint_value(hint, state_name, idx, fallback):
+    """Valor conocido de un estado que este bloque no controla. Si no hay
+    ninguno, devuelve `fallback` (el propio punto ancla del corte), con lo que
+    ese termino del corte se anula en vez de introducir un valor inventado."""
+    fam = hint.get(state_name)
+    if fam is None:
+        return fallback
+    if idx is None:
+        return fam
+    if isinstance(fam, dict):
+        return fam.get(idx, fallback)
+    return fallback
+
+
 class BendersCutManager(object):
     """Arma y agrega cortes de Benders entre bloques anuales consecutivos
     (implementacion_descomposicion_carga_ob.md, sec. 6.2):
@@ -104,3 +118,61 @@ class BendersCutManager(object):
             "mu": mu,
             "x_hat_base": x_hat_base,
         })
+
+    def add_year_cuts_to_macroblock(self, mb_block, state_hint=None):
+        """Replica los cortes acumulados del año en el bloque de UN
+        macrobloque (fase forward con descomposicion por macrobloque).
+
+        El corte del año esta escrito sobre el estado COMPLETO del año
+        (N_chargers de todas las naves, P_max_k, G, H, D), pero un macrobloque
+        solo decide su propia parte. Los terminos de los estados que este
+        bloque no controla se evaluan como constantes: con el valor conocido
+        del año si `state_hint` lo trae (el estado de la iteracion anterior),
+        y si no con el propio punto ancla del corte, con lo que ese termino se
+        anula. Asi el corte conserva la pendiente respecto de lo que el
+        macrobloque SI decide, que es lo que necesita el forward para no ser
+        miope.
+
+        El resultado es una guia, no una cota valida: el reparto de recursos
+        ya hace del bloque un problema restringido. La validez de las cotas
+        del algoritmo no depende de esto -- UB resta alpha (ver ForwardPass) y
+        LB sale del backward, que siempre resuelve el año completo sin
+        repartir.
+        """
+        model = mb_block.model
+        y = mb_block.year
+        station = mb_block.macroblock["station"]
+        hint = state_hint or {}
+        n_added = 0
+
+        for cut in self.history:
+            if cut["parent_year"] != y:
+                continue
+            expr = cut["phi_lp"]
+            for state_name, mu_fam in cut["mu"].items():
+                x_hat = cut["x_hat_base"][state_name]
+                link = next(
+                    (l for l in mb_block.state_links if l["state"] == state_name), None
+                )
+                if isinstance(mu_fam, dict):
+                    for idx, mu_v in mu_fam.items():
+                        own = link is not None and (idx == station or link.get("kind") == "global_once")
+                        if own:
+                            state_var = getattr(model, link["state_var"])
+                            value_or_var = (state_var[idx] if link.get("kind") == "global_once"
+                                            else state_var[idx, y])
+                        else:
+                            value_or_var = _hint_value(hint, state_name, idx, x_hat[idx])
+                        expr += mu_v * (x_hat[idx] - value_or_var)
+                else:
+                    if link is not None:
+                        state_var = getattr(model, link["state_var"])
+                        value_or_var = (state_var if link.get("kind") == "global_once"
+                                        else state_var[y])
+                    else:
+                        value_or_var = _hint_value(hint, state_name, None, x_hat)
+                    expr += mu_fam * (x_hat - value_or_var)
+            model.cuts.add(model.alpha >= expr)
+            n_added += 1
+
+        return n_added
