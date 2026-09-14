@@ -23,16 +23,46 @@ class BendersCutManager(object):
         es una constante aditiva en <link_estado>, dual = sensibilidad
         directa de LP respecto del RHS) -- ya no requiere el teorema de la
         envolvente que necesitaba el esquema viejo AN_ciclos (heredado
-        como coeficiente)."""
+        como coeficiente).
+
+        SIGNO: se devuelve -pi, NO el dual crudo pi del solver. El corte de
+        add_cut (y la formula del documento) usa mu en la convencion del
+        lagrangiano L = f + mu^T (z - x_hat), con la que
+
+            Phi(x_hat) = g(mu*) - mu*^T x_hat,  g(mu) = min {f + mu^T z}
+
+        y, evaluando esa misma cota en cualquier otro x,
+
+            Phi(x) >= g(mu*) - mu*^T x = Phi(x_hat) + mu*^T (x_hat - x)
+
+        es decir mu = -dPhi/dx_hat. El dual que reporta el solver para una
+        igualdad escrita con el heredado en el lado derecho (<estado>_prev
+        == <estado>_hat, con _hat un Param) es la sensibilidad del optimo
+        respecto de ese lado derecho, pi = +dPhi/dx_hat, o sea mu = -pi.
+        Usar pi sin invertir el signo da un corte con la pendiente opuesta:
+        penaliza invertir en vez de premiarlo, sobreestima el costo futuro
+        fuera del punto ancla y produce cotas inferiores mayores que el
+        optimo real (sintoma: LB > UB).
+
+        Verificado numericamente sobre este mismo codigo con una instancia
+        de dos anios y una estacion (anio 1: N>=3 a costo 10; anio 2: N>=7 a
+        costo 25 sobre el incremento; optimo 70 con N1=7): con el dual crudo
+        el corte evaluado en N1=7 da 200 cuando el costo futuro real es 0, y
+        LB converge a 130 > 70; con -pi el corte es exacto y LB = 70.
+
+        La convencion aqui elegida es tambien la que ya esperan los caminos
+        Lagrangeanos de passes.py, que penalizan con +mu*prev en el objetivo
+        (ver _build_lagrangian_relaxation): reciben este mu como mu_init y
+        devuelven mu_best en la misma convencion."""
         mu = {}
         for link in state_links:
             state_name = link["state"]
             link_con = getattr(relaxed_model, f"link_{state_name}")
             if link["index_set"] is None:
-                mu[state_name] = relaxed_model.dual[link_con]
+                mu[state_name] = -relaxed_model.dual[link_con]
             else:
                 mu[state_name] = {
-                    idx: relaxed_model.dual[link_con[idx]] for idx in link["index_set"]
+                    idx: -relaxed_model.dual[link_con[idx]] for idx in link["index_set"]
                 }
         return mu
 

@@ -331,7 +331,12 @@ class BackwardPass(object):
         y buscamos el mu que de la cota mas ajustada) es mu += step*dL/dmu.
         El paso de Polyak usa Phi^OP (el MIQCP exacto con el estado
         heredado FIJO, sec. 4.3 paso 1) como cota superior conocida de
-        max_mu L(mu)."""
+        max_mu L(mu).
+
+        `mu_init` llega ya en esta misma convencion +mu*(z-x_hat):
+        read_duals devuelve -pi (ver su docstring), no el dual crudo del
+        solver, de modo que el ascenso parte del lado correcto y no tiene
+        que cruzar el cero para alcanzar el mu que maximiza L."""
         y = child.year
 
         exact_kwargs = self._exact_solve_kwargs()
