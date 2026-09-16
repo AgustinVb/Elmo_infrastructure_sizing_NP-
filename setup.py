@@ -36,9 +36,15 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
     #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
     #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
-    time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741], 8/60)  # 11 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    days = [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]  # 11 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    # --n_years recorta el horizonte a los primeros N años (2 días por año),
+    # para poder correr validaciones cortas sin editar esta lista a mano. Sin
+    # el flag, el horizonte es el de siempre.
+    n_years = getattr(args, 'n_years', None)
+    if n_years is not None:
+        days = days[:n_years * 2]
+    time_series = timeseries.Timeseries(series, days, 8/60)
     #time_series = timeseries.Timeseries(series, [1, 91], 8/60)
-    #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821], 8/60)  # PRUEBA: 3 años, 2 días representativos/año
     mine_system = mine.Mine(model)
     if args.consumption_model == 'wp2':
         wp2_json_path = resolve_wp2_json_path(args)
@@ -62,6 +68,11 @@ def main():
     parser.add_argument('--model', default='elmo_data.xlsx')
     parser.add_argument('--series', default='time_series.xlsx')
     parser.add_argument('--output_folder', default='output/')
+    parser.add_argument(
+        '--n_years', type=int, default=None,
+        help='Recorta el horizonte a los primeros N años (2 dias representativos '
+             'por año). Sin el flag se usa el horizonte completo de 11 años.'
+    )
     parser.add_argument('--solver', default='glpk')
     parser.add_argument('--y_init_path', default=None,
                         help='Ruta opcional a Y.json para usar warm start en variable Y')

@@ -9,7 +9,8 @@ from pyomo.environ import quicksum, value
 class OptRules(object):
 
     def __init__(self, mine_system,  time_series, autonomous_mode=False,
-                 mccormick_degradation=False):
+                 mccormick_degradation=False, years_override=None,
+                 exogenous_stations=None):
         self.mine_system = mine_system
         self.time_series = time_series
         # Escenario DET: False (default) = modo normal, la colacion solo
@@ -26,6 +27,26 @@ class OptRules(object):
         # restricciones cuadraticas no convexas (Gurobi NonConvex=2). Sin
         # efecto si el escenario no tiene hoja BatteryDegradation.
         self.mccormick_degradation = mccormick_degradation
+        # Descomposicion Nested Benders (mismo patron que la rama
+        # carga_ob_multiaño): years_override acota model.years a los años de un
+        # bloque -- tipicamente uno solo -- SIN tocar time_series.years, que
+        # sigue siendo el horizonte completo. Esa distincion importa:
+        # year_position() necesita el horizonte entero para que cada bloque
+        # descuente con el exponente correcto. None preserva el comportamiento
+        # monolitico (model.years = todo el horizonte).
+        self.model_years = (list(years_override) if years_override is not None
+                            else list(time_series.years))
+        # OJO: years_override esta pensado para bloques de UN año. Pasarlo --
+        # aunque sea con el horizonte completo -- marca is_decomposed_block y por
+        # lo tanto omite las cuatro link_*_stock, dejando el stock desacoplado de
+        # los Delta (el solver pondria N_bays alto con Delta=0, gratis). Para
+        # armar el modelo de siempre hay que NO pasar years_override.
+        self.is_decomposed_block = years_override is not None
+        # exogenous_stations: dict {(k, y): 0/1} con X fijo desde afuera. En
+        # modo descompuesto X deja de ser variable dentro del subproblema del
+        # año (la asignacion equipo-nave es estatica, asi que su trayectoria se
+        # fija por fuera). None preserva X como Var libre.
+        self.exogenous_stations = exogenous_stations
         self.time_series.get_node_assignment(mine_system.get_system_lhds())
         self.time_series.get_elhd_at_node(mine_system.get_system_nodes())
         self.time_series.get_station_assignment(mine_system.get_system_lhds())
@@ -326,7 +347,9 @@ class OptSets(OptRules):
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
         model.days = pyo.Set(initialize=self.time_series.days_within_year)
-        model.years = pyo.Set(initialize=self.time_series.years)
+        # self.model_years == time_series.years salvo en un bloque de la
+        # descomposicion, donde es un solo año (ver OptRules.__init__).
+        model.years = pyo.Set(initialize=self.model_years)
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))
         model.time_intervals_between_shifts_set = pyo.Set(initialize=self.time_series.get_intervals_between_shifts())
@@ -720,8 +743,19 @@ class BoundRules(OptRules):
         # un stock inicial cero (escenario greenfield). Sin cota manual
         # (1,12): la cota real viene de max_n_bays/max_chargers_per_bay_constr/
         # max_batteries_per_bay_constr (datos de la hoja stations).
-        model.X                = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
-        model.Delta_X          = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+        if self.exogenous_stations is None:
+            model.X                = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+            model.Delta_X          = pyo.Var(model.stations_set, model.years, domain=pyo.Binary)
+        else:
+            # Modo descompuesto: X es exogeno (parametro fijo), sin Delta_X ni
+            # link_station_stock asociado -- la apertura de naves se decide
+            # fuera del subproblema del año porque la asignacion equipo-nave es
+            # estatica. exogenous_stations: dict {(k, y): 0/1}.
+            model.X = pyo.Param(
+                model.stations_set, model.years,
+                initialize=lambda m, k, y: self.exogenous_stations[(k, y)],
+                within=pyo.Binary, mutable=False,
+            )
         model.N_bays           = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.Delta_N_bays     = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.N_chargers       = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
@@ -947,16 +981,16 @@ class BoundRules(OptRules):
             # B[y1] = b_max_pool fijo (ec. 5) y R[y1] = 0 fijo -- la batería
             # ya es nueva en el primer año, así que "reemplazarla" en y1 no
             # tiene efecto sobre la capacidad y solo agregaría costo evitable
-            # (mismo patrón que carga_ob_multiaño). No se usa self._first_year()
-            # acá (solo existe en ConstraintRules, no en BoundRules) -- pero
-            # como esta rama no tiene descomposición por bloques anuales,
-            # years_sorted[0] y el primer año GLOBAL del horizonte coinciden
-            # siempre.
-            first_year = years_sorted[0]
-            model.b_bar[first_year].fix(b_max_val)
-            model.R[first_year].fix(0)
+            # (mismo patrón que carga_ob_multiaño). Es el primer año GLOBAL del
+            # horizonte, self._first_year(), NO years_sorted[0]: en un bloque de
+            # la descomposición model.years tiene un solo año, y fijar ahi la
+            # condición de borde le daría batería nueva a todos los años.
+            first_year = self._first_year()
+            if first_year in model.years:
+                model.b_bar[first_year].fix(b_max_val)
+                model.R[first_year].fix(0)
 
-            later_years = years_sorted[1:]
+            later_years = [y for y in years_sorted if y != first_year]
             if later_years:
                 # b_y_link (ec. 2) aplica para todo año salvo el primero,
                 # usando D[y-1] -- ver ConstraintRules.b_y_link.
@@ -1859,10 +1893,16 @@ class ConstraintRules(OptRules):
         #model.fix_stations = pyo.Constraint(model.stations_set, rule=self.fix_stations)
         #model.fix_n_chargers = pyo.Constraint(model.stations_set, rule=self.fix_n_chargers)
         #model.fix_n_batteries = pyo.Constraint(model.stations_set, rule=self.fix_n_batteries)
-        model.link_station_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
-        model.link_bays_stock    = pyo.Constraint(model.stations_set, model.years, rule=self.link_bays_stock)
-        model.link_charger_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
-        model.link_battery_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_battery_stock)
+        # Las cuatro acumulaciones stock = stock[y-1] + Delta miran el año
+        # anterior, que no existe dentro de un bloque de un solo año: ahi las
+        # arma YearBlockBuilder con la copia local del estado heredado (ver
+        # decomposition/year_block.py). X ademas desaparece cuando es exogeno.
+        if not self.is_decomposed_block:
+            if self.exogenous_stations is None:
+                model.link_station_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
+            model.link_bays_stock    = pyo.Constraint(model.stations_set, model.years, rule=self.link_bays_stock)
+            model.link_charger_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_charger_stock)
+            model.link_battery_stock = pyo.Constraint(model.stations_set, model.years, rule=self.link_battery_stock)
         model.station_existence_constraint_swap = pyo.Constraint(
             model.ZSWAP_DAYS_TIME,
             rule=self.station_existence_constraint_swap,
@@ -2062,7 +2102,10 @@ class ConstraintRules(OptRules):
                 model.n_total_def   = pyo.Constraint(model.years, rule=self.n_total_def)
                 model.n_ciclos_link = pyo.Constraint(model.years, rule=self.n_ciclos_link)
             model.d_y_fade      = pyo.Constraint(model.years, rule=self.d_y_fade)
-            if hasattr(model, 'later_years_set'):
+            if hasattr(model, 'later_years_set') and not self.is_decomposed_block:
+                # b_y_link mira D[y-1], que no existe dentro de un bloque de un
+                # solo año: ahi la arma YearBlockBuilder como b_y_link_local,
+                # escrita sobre la copia local D_prev del estado heredado.
                 model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
 
             model.z_repl_upper1 = pyo.Constraint(model.years, rule=self.z_repl_upper1)
@@ -2114,10 +2157,18 @@ class ObjectiveRules(OptRules):
         return sum(yearly_cost_fn(y) * self._discount_factor(model, y) for y in model.years)
 
     def inversion_cost(self, model):
+        # Modo descompuesto: X es exogeno, no hay Delta_X y el costo de apertura
+        # de naves no entra en la optimizacion (es una constante). Hay que
+        # sumarlo aparte al comparar el costo total contra el monolitico.
+        station_cost_active = self.exogenous_stations is None
+
         def yearly(y):
-            return sum(
-                model.station_cost_k[k] * model.Delta_X[k, y]
-                + model.c_bays_k[k] * model.Delta_N_bays[k, y]
+            station_term = (
+                sum(model.station_cost_k[k] * model.Delta_X[k, y] for k in model.stations_set)
+                if station_cost_active else 0
+            )
+            return station_term + sum(
+                model.c_bays_k[k] * model.Delta_N_bays[k, y]
                 + model.c_crane_k[k] * model.Delta_N_bays[k, y]
                 + (model.charger_cost + model.c_charger_space_k[k]) * model.Delta_N_chargers[k, y]
                 + (model.battery_cost + model.c_battery_space_k[k]) * model.Delta_N_batteries[k, y]
@@ -2132,20 +2183,31 @@ class ObjectiveRules(OptRules):
         horizonte (mismo patron que G_g/H), asi que se paga una unica vez,
         descontado al primer año. Se multiplica por p_charger para expresar
         el costo en $/kW aunque la variable de decision sea un conteo
-        entero de baterias."""
+        entero de baterias.
+
+        Guard `first_year in model.years`: en modo descompuesto total_cost se
+        evalua una vez por bloque-año, y sin el chequeo este pago unico se
+        cobraria en todos los años del horizonte."""
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
         return sum(
             model.c_inv_ssee_k[k] * model.p_charger * model.N_max_k[k]
             for k in model.stations_set
-        ) * self._discount_factor(model, self._first_year())
+        ) * self._discount_factor(model, first_year)
 
     def gen_investment_cost(self, model):
         """Costo de inversión en generación: G_g[g] se decide una sola vez
         para todo el horizonte (ver BoundRules), asi que se paga una unica
-        vez, descontado al primer año."""
+        vez, descontado al primer año. Mismo guard `first_year in model.years`
+        que substation_investment_cost, y por la misma razon."""
         if len(list(model.gen_set)) == 0:
             return 0
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
         return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set) \
-            * self._discount_factor(model, self._first_year())
+            * self._discount_factor(model, first_year)
 
     def gen_op_cost(self, model):
         """Costo de O&M anual de generación: recurre cada año del horizonte
@@ -2159,11 +2221,15 @@ class ObjectiveRules(OptRules):
 
     def bess_investment_cost(self, model):
         """Costo de inversión BESS: H se decide una sola vez para todo el
-        horizonte, se paga una unica vez, descontado al primer año."""
+        horizonte, se paga una unica vez, descontado al primer año. Mismo guard
+        `first_year in model.years` que gen_investment_cost."""
         if len(list(model.storage_set)) == 0:
             return 0
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
         return sum(model.H * model.c_inv_h[h] for h in model.storage_set) \
-            * self._discount_factor(model, self._first_year())
+            * self._discount_factor(model, first_year)
 
     def bess_op_cost(self, model):
         """Costo de O&M anual BESS: recurre cada año del horizonte sobre la
