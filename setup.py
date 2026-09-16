@@ -70,7 +70,7 @@ def build_mine(args):
     return series, mine_system, time_series
 
 
-def run_decomposed(args, mine_system, time_series):
+def run_decomposed(args, mine_system, time_series, hybrid=False):
     """Resuelve con Nested Benders y genera la misma salida de siempre.
 
     Printer consume un OptModel monolitico, asi que despues de iterar se arma
@@ -78,6 +78,7 @@ def run_decomposed(args, mine_system, time_series):
     reporte no se entera de que el problema se resolvio por bloques.
     """
     import json
+    import time
 
     from src.io.printer import Printer
     from src.optimization.decomposition.driver import NestedBendersSolver
@@ -108,6 +109,20 @@ def run_decomposed(args, mine_system, time_series):
           + ("  [INTERRUMPIDO]" if resultado['interrupted'] else ""))
 
     report, _informe = solver.build_report_model(args.output_folder)
+
+    if hybrid:
+        # La solucion descompuesta entra como MIP start (build_report_model deja
+        # has_warm_start puesto). Gurobi arranca con un incumbente que le habria
+        # costado encontrar y se dedica a cerrar la cota, que es lo que hace bien.
+        t0 = time.time()
+        print("[Hibrido] resolviendo el monolitico con la solucion descompuesta "
+              "como MIP start...")
+        report.solve_model(args.gap_tol, args.solver, timelimit=args.solve_timelimit)
+        print(f"[Hibrido] monolitico resuelto en {time.time() - t0:.0f}s: "
+              f"costo = {report.opt_cost_result:,.2f} "
+              f"(la descomposicion habia llegado a {resultado['ub']:,.2f} "
+              f"mas la inversion en estaciones)")
+
     printer = Printer(report, args.output_folder, time_series, mine_system)
     printer.create_all_plots()
 
@@ -169,11 +184,17 @@ def main():
     )
 
     parser.add_argument(
-        '--mode', choices=['monolithic', 'decomposed'], default='monolithic',
+        '--mode', choices=['monolithic', 'decomposed', 'hybrid'], default='monolithic',
         help='monolithic (default): arma y resuelve el modelo completo de una vez, '
              'igual que siempre. decomposed: descomposicion temporal Nested Benders, '
-             'un subproblema por año acoplado por cortes de Benders. Requiere un '
-             'solver con duales (gurobi).'
+             'un subproblema por año acoplado por cortes de Benders. hybrid: corre la '
+             'descomposicion y le entrega su solucion al monolitico como MIP start. '
+             'Los dos metodos tienen perfiles opuestos -- la descomposicion consigue '
+             'un incumbente muy bueno enseguida pero su cota inferior se estanca, y el '
+             'branch and bound sube la cota rapido pero le cuesta el incumbente --, '
+             'asi que el hibrido le da a cada uno lo que al otro le falta. Renuncia a '
+             'la ventaja de memoria: construye el monolitico completo. decomposed e '
+             'hybrid requieren un solver con duales (gurobi).'
     )
     parser.add_argument(
         '--max_iter', type=int, default=20,
@@ -213,8 +234,8 @@ def main():
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
 
-    if args.mode == 'decomposed':
-        run_decomposed(args, mine_system, time_series)
+    if args.mode in ('decomposed', 'hybrid'):
+        run_decomposed(args, mine_system, time_series, hybrid=(args.mode == 'hybrid'))
         return
 
     gap= 1/100;

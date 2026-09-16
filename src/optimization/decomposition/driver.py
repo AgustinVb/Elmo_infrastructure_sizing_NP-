@@ -293,6 +293,16 @@ class NestedBendersSolver(object):
                 fh.write("Resuelto con Nested Benders (descomposicion por anio): "
                          "no hay un unico log de Gurobi para el horizonte completo.\n")
 
+        # Habilita que este modelo se use ademas como MIP start del monolitico
+        # (modo hibrido): solve_model solo pasa warmstart=True a Gurobi si esta
+        # bandera esta puesta, y como aca los valores se cargan directo sobre las
+        # variables -- no via _load_solution_warmstart_folder -- nadie la pondria.
+        # Verificado sobre data/DCH/160kW_2dias_1MB: la solucion descompuesta
+        # cargada asi no viola ninguna restriccion del monolitico ni deja ninguna
+        # entera con valor fraccionario, asi que Gurobi la acepta como start; las
+        # variables que quedan sin valor no aparecen en ninguna restriccion activa.
+        report.has_warm_start = aplicadas > 0
+
         costo_total = value(model.obj)
         inv_estaciones = sum(
             value(model.station_cost_k[k]) * value(model.Delta_X[k, y])
