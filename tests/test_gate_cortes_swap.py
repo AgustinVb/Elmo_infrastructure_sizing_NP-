@@ -66,10 +66,26 @@ def _cache_path(scenario, args):
     corridas mientras no se toque el modelo. Se cachea en el temp del sistema,
     con el hash de functions.py en la clave para que se invalide sola si el
     modelo cambia. GATE_NO_CACHE=1 la ignora."""
+    # El hash de functions.py invalida la cache si cambia el MODELO; el de
+    # setup.py, si cambia la lista de dias representativos (que define el
+    # horizonte y las series que se muestrean). Sin este segundo hash, cambiar
+    # los dias dejaba la referencia vieja en pie y el test comparaba contra un
+    # optimo de otro problema, sin avisar.
     model_src = io.open(os.path.join(REPO, "src", "optimization", "functions.py"),
                         "rb").read()
+    setup_src = io.open(os.path.join(REPO, "setup.py"), "rb").read()
+    # Y los datos de la instancia: editar costos o series en el Excel cambia el
+    # optimo sin tocar una sola linea de codigo, y sin esto la referencia vieja
+    # quedaria en pie sin avisar.
+    datos = hashlib.md5()
+    for nombre in (args.model, args.series):
+        ruta = os.path.join(REPO, scenario, nombre)
+        if os.path.exists(ruta):
+            datos.update(io.open(ruta, "rb").read())
     key = "|".join(["v2", scenario, str(args.n_years), args.consumption_model,
-                    hashlib.md5(model_src).hexdigest()])
+                    hashlib.md5(model_src).hexdigest(),
+                    hashlib.md5(setup_src).hexdigest(),
+                    datos.hexdigest()])
     return os.path.join(tempfile.gettempdir(),
                         "gate_swap_mono_" + hashlib.md5(key.encode()).hexdigest()[:12] + ".pkl")
 

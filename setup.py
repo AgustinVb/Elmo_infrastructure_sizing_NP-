@@ -36,7 +36,21 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
     #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
     #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
-    days = [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]  # 11 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    # 11 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
+    # potencia) y dia 196 (invierno, con cobro). Se eligen 15 y 196 -- y no
+    # cualquier par -- porque son los unicos dias del anio para los que la hoja
+    # GenProfiles trae perfiles de solar/eolica que cumplan ese criterio: alli
+    # solo existen los dias-del-anio {15, 105, 196, 288}.
+    #
+    # OJO: get_alpha_g devuelve 0.0 cuando no encuentra el dia, sin avisar. Con
+    # la lista anterior (dias-del-anio 1 y 91) NINGUNO tenia perfil, asi que la
+    # generacion y el almacenamiento quedaban silenciosamente desactivados: el
+    # modelo podia invertir en solar/eolica, pagaba inversion y operacion y
+    # recibia cero energia. Si se cambia esta lista hay que verificar que los
+    # dias nuevos existan en GenProfiles.
+    #   lista anterior (perfiles de generacion en cero):
+    #   days = [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]  # 11 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    days = [15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386, 2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846]
     # --n_years recorta el horizonte a los primeros N años (2 días por año),
     # para poder correr validaciones cortas sin editar esta lista a mano. Sin
     # el flag, el horizonte es el de siempre.

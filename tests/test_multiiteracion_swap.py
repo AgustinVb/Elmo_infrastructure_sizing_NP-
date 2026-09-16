@@ -12,7 +12,12 @@ Invariantes que se verifican:
   2. LB no decrece (la cota inferior solo puede mejorar al acumular cortes);
   3. el UB final no queda por debajo del optimo monolitico de referencia.
 
-Uso:  python tests/test_multiiteracion_swap.py [carpeta_del_escenario] [iteraciones]
+Con 3 anios o mas se ejercita ademas la propagacion ANIDADA: el bloque del
+medio recibe un corte del anio siguiente y emite otro al anterior dentro de la
+misma iteracion, que es lo que distingue este esquema de aplicar Benders anio
+por anio. Con 2 anios ese camino no se toca.
+
+Uso:  python tests/test_multiiteracion_swap.py [escenario] [iteraciones] [anios]
 """
 import os
 import pickle
@@ -42,10 +47,10 @@ def check(cond, label, detail=""):
         FAILS.append(label)
 
 
-def main(scenario, max_iter):
+def main(scenario, max_iter, n_years):
     args = Namespace(data_folder=scenario, model="elmo_data.xlsx",
                      series="time_series.xlsx", consumption_model="wp2",
-                     wp2_consumption_json=None, n_years=2)
+                     wp2_consumption_json=None, n_years=n_years)
     _s, mine_system, time_series = build_mine(args)
     exo = infer_exogenous_stations(mine_system, time_series)
 
@@ -68,6 +73,15 @@ def main(scenario, max_iter):
     for h in res["gap_history"]:
         print(f"{h['iteration']:>5} {h['ub']:>18,.2f} {h['lb']:>18,.2f} "
               f"{h['gap']:>9.2%} {h['iter_time_sec']:>8.0f}", flush=True)
+
+    print("", flush=True)
+    print("trayectoria de las decisiones de inversion del primer anio:", flush=True)
+    for h in res["gap_history"]:
+        x = h.get("x_hat_primer_anio", {})
+        g = {k2: round(v2, 4) for k2, v2 in x.get("G", {}).items()}
+        nmk = {k2: round(v2, 2) for k2, v2 in x.get("N_max_k", {}).items()}
+        print(f"  k={h['iteration']:<3} G={g}  H={round(x.get('H', 0.0), 4)}  "
+              f"N_max_k={nmk}", flush=True)
 
     print(f"\ncortes de factibilidad en total: "
           f"{solver.forward_pass.feasibility_cuts_added}", flush=True)
@@ -95,4 +109,5 @@ def main(scenario, max_iter):
 if __name__ == "__main__":
     escenario = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SCENARIO
     iteraciones = int(sys.argv[2]) if len(sys.argv) > 2 else 8
-    raise SystemExit(main(escenario, iteraciones))
+    anios = int(sys.argv[3]) if len(sys.argv) > 3 else 2
+    raise SystemExit(main(escenario, iteraciones, anios))
