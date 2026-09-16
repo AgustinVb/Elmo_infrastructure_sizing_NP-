@@ -217,6 +217,137 @@ class NestedBendersSolver(object):
         return value(model.obj)
 
 
+    def build_report_model(self, output_folder, verbose=True):
+        """Arma un OptModel monolitico de SOLO LECTURA con la mejor solucion
+        encontrada ya cargada sobre sus variables, para que Printer genere los
+        CSV y los graficos sin enterarse de que el problema se resolvio
+        descompuesto.
+
+        No se resuelve nada: se construye el modelo completo (que Printer
+        necesita para recorrer sets e indices) y se le asignan los valores que
+        el forward dejo en best_full_solution, anio por anio. Las variables
+        internas de los bloques (alpha, *_hat, *_prev, feas_slack_*) no tienen
+        equivalente en el monolitico y se descartan.
+
+        X y Delta_X se reconstruyen aparte: en modo descompuesto son exogenas y
+        no viven en la solucion de ningun bloque.
+
+        Devuelve (opt_model, informe) con un informe de la verificacion
+        numerica: el costo recomputado sobre este modelo, MENOS la inversion en
+        estaciones, tiene que coincidir con el UB que reporto el solver -- si no
+        coincide, la solucion se cargo mal o el objetivo descompuesto no es el
+        que creemos.
+        """
+        import pyomo.environ as pyo
+        from pyomo.environ import value
+
+        from src.optimization.opt_model import OptModel
+
+        if self.best_full_solution is None:
+            raise RuntimeError(
+                "No hay solucion que reportar: solve() no completo ninguna "
+                "iteracion (o fue interrumpido antes de la primera)."
+            )
+
+        report = OptModel(
+            self.mine_system, self.time_series, output_folder,
+            autonomous_mode=self.autonomous_mode, mccormick_degradation=True,
+        )
+        model = report.model
+
+        aplicadas = 0
+        sin_equivalente = set()
+        for year in self.years:
+            for nombre, valores in self.best_full_solution.get(year, {}).items():
+                comp = getattr(model, nombre, None)
+                if comp is None or not isinstance(comp, pyo.Var):
+                    sin_equivalente.add(nombre)
+                    continue
+                if isinstance(valores, dict):
+                    for idx, val in valores.items():
+                        if idx in comp:
+                            comp[idx].value = val
+                            aplicadas += 1
+                elif comp.is_indexed():
+                    sin_equivalente.add(nombre)
+                else:
+                    comp.value = valores
+                    aplicadas += 1
+
+        # X exogeno: Delta_X es lo que se abre en el anio, o sea la diferencia
+        # contra el anio anterior (en el primero, el propio X).
+        anterior = {k: 0 for k in model.stations_set}
+        for y in self.years:
+            for k in model.stations_set:
+                actual = self.exogenous_stations_by_year[y][k]
+                model.X[k, y].value = actual
+                model.Delta_X[k, y].value = max(actual - anterior[k], 0)
+            anterior = {k: self.exogenous_stations_by_year[y][k] for k in model.stations_set}
+
+        # Printer.save_gurobi_log cae en un print con emoji si no encuentra el
+        # log, y eso revienta la consola de Windows en cp1252. El modelo de
+        # reporte nunca resuelve, asi que el log no existe: se deja uno.
+        if not os.path.exists(report.gurobi_log_path):
+            os.makedirs(os.path.dirname(report.gurobi_log_path), exist_ok=True)
+            with open(report.gurobi_log_path, "w", encoding="utf-8") as fh:
+                fh.write("Resuelto con Nested Benders (descomposicion por anio): "
+                         "no hay un unico log de Gurobi para el horizonte completo.\n")
+
+        costo_total = value(model.obj)
+        inv_estaciones = sum(
+            value(model.station_cost_k[k]) * value(model.Delta_X[k, y])
+            * value(report.objective_rules._discount_factor(model, y))
+            for k in model.stations_set for y in self.years
+        )
+        comparable = costo_total - inv_estaciones
+        desvio = abs(comparable - self.best_ub)
+        report.opt_cost_result = costo_total
+
+        # El desvio tiene que ser cero: el modelo de reporte es el MISMO
+        # problema con los mismos valores. Si no lo es, o la solucion se cargo
+        # mal (alguna variable sin equivalente que si importaba) o el objetivo
+        # descompuesto no es el que creemos, y los archivos de salida estarian
+        # describiendo una solucion distinta de la que reporto el algoritmo.
+        # No se aborta -- descartar el reporte despues de horas de computo seria
+        # peor -- pero tiene que quedar imposible de pasar por alto.
+        tolerancia = max(1e-6 * abs(self.best_ub), 1e-4)
+        desvio_ok = desvio <= tolerancia
+
+        informe = {
+            "valores_cargados": aplicadas,
+            "variables_sin_equivalente": sorted(sin_equivalente),
+            "costo_total": costo_total,
+            "inversion_estaciones": inv_estaciones,
+            "costo_comparable": comparable,
+            "ub_del_solver": self.best_ub,
+            "desvio": desvio,
+            "desvio_ok": desvio_ok,
+        }
+
+        if verbose:
+            print(f"[NestedBenders] reporte: {aplicadas:,} valores cargados; "
+                  f"costo recomputado = {costo_total:,.2f} "
+                  f"(comparable {comparable:,.2f} contra UB {self.best_ub:,.2f}, "
+                  f"desvio {desvio:,.6f})")
+            if sin_equivalente:
+                print(f"[NestedBenders] variables de bloque sin equivalente en el "
+                      f"monolitico (descartadas): {sorted(sin_equivalente)}")
+
+        if not desvio_ok:
+            print("=" * 78)
+            print("[NestedBenders] ATENCION: el costo recomputado sobre el modelo de "
+                  "reporte NO coincide con el UB del solver.")
+            print(f"    comparable = {comparable:,.6f}")
+            print(f"    UB         = {self.best_ub:,.6f}")
+            print(f"    desvio     = {desvio:,.6f}  (tolerancia {tolerancia:,.6f})")
+            print("    Los archivos de salida describen una solucion distinta de la "
+                  "que reporto el algoritmo.")
+            print("=" * 78)
+
+
+        return report, informe
+
+
     def solve(self, verbose=True):
         """Ctrl+C en cualquier punto -- en medio de un solve de Gurobi o entre
         iteraciones -- corta el bucle limpio y devuelve la mejor solucion

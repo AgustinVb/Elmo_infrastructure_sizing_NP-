@@ -70,6 +70,48 @@ def build_mine(args):
     return series, mine_system, time_series
 
 
+def run_decomposed(args, mine_system, time_series):
+    """Resuelve con Nested Benders y genera la misma salida de siempre.
+
+    Printer consume un OptModel monolitico, asi que despues de iterar se arma
+    uno de solo lectura con la mejor solucion cargada (build_report_model): el
+    reporte no se entera de que el problema se resolvio por bloques.
+    """
+    import json
+
+    from src.io.printer import Printer
+    from src.optimization.decomposition.driver import NestedBendersSolver
+
+    exogenous = None
+    if args.fixed_stations_json:
+        with open(args.fixed_stations_json, encoding='utf-8') as fh:
+            crudo = json.load(fh)
+        exogenous = {int(y): {k: int(v) for k, v in por_nave.items()}
+                     for y, por_nave in crudo.items()}
+
+    solver = NestedBendersSolver(
+        mine_system, time_series,
+        exogenous_stations_by_year=exogenous,
+        gap_tol=args.gap_tol,
+        max_iter=args.max_iter,
+        autonomous_mode=args.autonomous_mode,
+        solver_kwargs={'solvername': args.solver, 'gap': args.gap_tol,
+                       'timelimit': args.solve_timelimit},
+        block_build_jobs=args.block_build_jobs,
+        monolithic_lp_bound=not args.no_monolithic_lp_bound,
+    )
+    resultado = solver.solve(verbose=True)
+
+    print(f"[NestedBenders] termino en {resultado['iterations']} iteraciones "
+          f"({resultado['total_time_sec']:.0f}s): UB={resultado['ub']:,.2f}  "
+          f"LB={resultado['lb']:,.2f}  gap={resultado['gap']:.4%}"
+          + ("  [INTERRUMPIDO]" if resultado['interrupted'] else ""))
+
+    report, _informe = solver.build_report_model(args.output_folder)
+    printer = Printer(report, args.output_folder, time_series, mine_system)
+    printer.create_all_plots()
+
+
 def main():
     """ Main function building argument collection from setting
     default values.
@@ -126,8 +168,55 @@ def main():
              'aproximacion.'
     )
 
+    parser.add_argument(
+        '--mode', choices=['monolithic', 'decomposed'], default='monolithic',
+        help='monolithic (default): arma y resuelve el modelo completo de una vez, '
+             'igual que siempre. decomposed: descomposicion temporal Nested Benders, '
+             'un subproblema por año acoplado por cortes de Benders. Requiere un '
+             'solver con duales (gurobi).'
+    )
+    parser.add_argument(
+        '--max_iter', type=int, default=20,
+        help='[--mode decomposed] tope de iteraciones forward/backward.'
+    )
+    parser.add_argument(
+        '--gap_tol', type=float, default=0.01,
+        help='[--mode decomposed] gap relativo (UB-LB)/|UB| con el que se corta.'
+    )
+    parser.add_argument(
+        '--solve_timelimit', type=int, default=900,
+        help='[--mode decomposed] limite de tiempo, en segundos, de CADA resolucion '
+             'de bloque anual (no del total).'
+    )
+    parser.add_argument(
+        '--block_build_jobs', type=int, default=None,
+        help='[--mode decomposed] procesos para construir los bloques anuales en '
+             'paralelo. Sin el flag, min(años, cpus); 1 fuerza secuencial (util para '
+             'depurar).'
+    )
+    parser.add_argument(
+        '--fixed_stations_json', default=None,
+        help='[--mode decomposed] JSON {"<año>": {"<nave>": 0/1}} con la apertura de '
+             'naves, que en modo descompuesto es exogena. Si se omite se infiere de '
+             'la hoja StationAssignment: se construye toda nave con al menos un equipo '
+             'asignado.'
+    )
+    parser.add_argument(
+        '--no_monolithic_lp_bound', action='store_true',
+        help='[--mode decomposed] no calcular la relajacion lineal del monolitico '
+             'como cota inferior inicial. Por defecto SI se calcula: suele ser una '
+             'cota mucho mejor que la del backward y cuesta un solo LP, pero obliga '
+             'a construir el monolitico completo, que es el gasto de memoria que la '
+             'descomposicion evita.'
+    )
+
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
+
+    if args.mode == 'decomposed':
+        run_decomposed(args, mine_system, time_series)
+        return
+
     gap= 1/100;
     solver_name=args.solver
     output_folder=args.output_folder
