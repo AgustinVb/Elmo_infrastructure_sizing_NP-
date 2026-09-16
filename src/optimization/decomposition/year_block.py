@@ -38,7 +38,7 @@ class YearBlockBuilder(object):
       miran model.X[k, y-1], un indice que no existe en un bloque de un solo
       año: por eso ConstraintRules las omite cuando is_decomposed_block).
 
-    - Decision unica para todo el horizonte (N_max_k, G_g, H), via
+    - Decision unica para todo el horizonte (n_ssee_k, G_g, H), via
       `_add_global_once_state`: el bloque del PRIMER año del horizonte global es
       el unico que la decide (variable libre, sin hat/prev); los bloques
       siguientes fijan la variable real al valor heredado, sin Delta ni
@@ -172,7 +172,7 @@ class YearBlockBuilder(object):
 
     def _add_global_once_state(self, model, state_name, state_var_name, index_set):
         """Acople para un estado que se decide UNA sola vez para todo el
-        horizonte (N_max_k, G_g, H): no hay Delta ni acumulacion.
+        horizonte (n_ssee_k, G_g, H): no hay Delta ni acumulacion.
 
         Bloque del PRIMER año global: no agrega nada -- la variable real, ya
         creada libre por BoundRules, es la unica decision. Solo se registra en
@@ -263,7 +263,11 @@ class YearBlockBuilder(object):
 
         # Potencia de subestacion: decidida una sola vez para todo el horizonte
         # (conteo entero de baterias en paralelo, sin indice de año).
-        self._add_global_once_state(model, "N_max_k", "N_max_k", model.stations_set)
+        # El estado es el conteo de MODULOS de subestacion (n_ssee_k, entera):
+        # la capacidad instalada es P_SSEE_STEP * n_ssee_k kW. Que sea entera es
+        # lo que habilita el redondeo de Chvatal-Gomory del corte de
+        # factibilidad (ver BendersCutManager._redondeo_entero).
+        self._add_global_once_state(model, "n_ssee_k", "n_ssee_k", model.stations_set)
 
         if len(list(model.gen_set)) > 0:
             self._add_global_once_state(model, "G", "G_g", model.gen_set)
@@ -421,7 +425,7 @@ class YearBlockBuilder(object):
         Las holguras de las familias con acumulacion (N_bays/N_chargers/
         N_batteries) nunca van a atar, porque el anio siempre puede comprar mas
         con su propio Delta; las que importan son las de las decisiones unicas
-        del horizonte (N_max_k, G, H), que el anio no puede ampliar, y la de la
+        del horizonte (n_ssee_k, G, H), que el anio no puede ampliar, y la de la
         degradacion.
         """
         self._ensure_elastic_components()

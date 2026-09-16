@@ -6,6 +6,24 @@ import time
 import re
 from pyomo.environ import quicksum, value
 
+# Tamanio del modulo de subestacion, en kW. La potencia instalada no es una
+# magnitud libre: se compra en modulos de este tamanio, asi que la capacidad de
+# la nave k es P_SSEE_STEP * n_ssee_k[k] con n_ssee_k entera.
+#
+# Es el MISMO paso que usa la rama carga_ob_multianio, y esa es la razon de
+# fondo: si cada modelo comprara subestacion con una granularidad distinta --
+# alla 500 kW, aca p_charger -- uno de los dos podria ajustar su capacidad mas
+# fino y desperdiciar menos, y esa ventaja vendria de como modelamos y no de la
+# tecnologia. Comparar swap contra carga on board exige la misma granularidad de
+# inversion en los dos.
+#
+# Reemplaza a N_max_k, que expresaba la capacidad como un conteo de baterias
+# cargando en paralelo (paso = p_charger). El corte de factibilidad de la
+# descomposicion sigue funcionando igual: n_ssee_k tambien es entera, asi que el
+# redondeo de Chvatal-Gomory se aplica sin cambios.
+P_SSEE_STEP = 500.0
+
+
 class OptRules(object):
 
     def __init__(self, mine_system,  time_series, autonomous_mode=False,
@@ -533,7 +551,7 @@ class OptParameters(OptRules):
         # sobre Sv (en vez de Sv*p_charger <= potencia) da una relajacion
         # lineal mas apretada cuando el cociente no es entero. p_max_k/
         # n_max_k (potencia/conteo maximo POR ESTACION) se eliminaron: esa
-        # capacidad ahora es una decision de inversion (N_max_k mas abajo,
+        # capacidad ahora es una decision de inversion (n_ssee_k mas abajo,
         # decidida UNA sola vez para todo el horizonte, sin cota fisica --
         # mismo patron que G_g/H).
         model.n_peak_max = pyo.Param(
@@ -765,7 +783,9 @@ class BoundRules(OptRules):
         # swap) en vez de kW -- decidida UNA sola vez para todo el horizonte
         # (sin indice de año, sin Delta), mismo patron que G_g/H, sin cota
         # fisica.
-        model.N_max_k = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
+        # Modulos de subestacion comprados en la nave k: la capacidad instalada
+        # es P_SSEE_STEP * n_ssee_k[k] kW (ver max_installed_capacity_swap).
+        model.n_ssee_k = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         #Inicio de una carga on-board
         #model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.days, model.time_intervals_set, domain=pyo.Binary)
         # Indica si termina una carga en t
@@ -1391,17 +1411,22 @@ class ConstraintRules(OptRules):
 
     #  Sistemas distribuci�n
     def max_installed_capacity_swap(self, model, k, y, d, t):
-        """Potencia maxima de la subestacion k, expresada como cota entera
-        sobre la cantidad de baterias cargando en paralelo -- N_max_k[k]
-        es una variable de decision (decidida UNA sola vez para todo el
-        horizonte, ver substation_investment_cost), no un parametro fijo:
-        misma restriccion en unidades de conteo de baterias que antes,
-        pero ahora la capacidad se construye (y se paga) en vez de venir
-        dada por p_max_ssee."""
+        """Potencia maxima de la subestacion k: la potencia que consumen las
+        baterias cargando en paralelo no puede exceder la potencia instalada,
+        que se compra en modulos de P_SSEE_STEP kW.
+
+        Antes esto era una cota en unidades de CONTEO (sum(Sv) <= N_max_k), con
+        lo que la capacidad crecia de a p_charger kW. Se paso a kW para que la
+        granularidad de inversion sea la misma que en carga on board y los dos
+        modelos sean comparables (ver P_SSEE_STEP). Consecuencia esperada y
+        correcta: con modulos de 500 kW y cargadores de p_charger kW, parte de
+        la potencia instalada queda sin usar -- exactamente el desperdicio que
+        impone comprar en modulos, y que el otro modelo tambien tiene."""
         a_window = self._sv_a_window(model, t)
         if not a_window:
             return pyo.Constraint.Skip
-        return sum(model.Sv[k, y, d, t, a] for a in a_window) <= model.N_max_k[k]
+        return (sum(model.Sv[k, y, d, t, a] for a in a_window) * model.p_charger
+                <= P_SSEE_STEP * model.n_ssee_k[k])
 
     def peak_power_swap(self, model, y, d, t):
         """Potencia peak de distribucion, expresada como cota entera sobre
@@ -2177,7 +2202,7 @@ class ObjectiveRules(OptRules):
         return self._one_time_discounted_yearly_sum(model, yearly)
 
     def substation_investment_cost(self, model):
-        """Costo de inversión en potencia de subestación: N_max_k[k]
+        """Costo de inversión en potencia de subestación: n_ssee_k[k]
         (conteo entero de baterías cargando en paralelo, ver
         max_installed_capacity_swap) se decide una sola vez para todo el
         horizonte (mismo patron que G_g/H), asi que se paga una unica vez,
@@ -2192,7 +2217,7 @@ class ObjectiveRules(OptRules):
         if first_year not in model.years:
             return 0
         return sum(
-            model.c_inv_ssee_k[k] * model.p_charger * model.N_max_k[k]
+            model.c_inv_ssee_k[k] * P_SSEE_STEP * model.n_ssee_k[k]
             for k in model.stations_set
         ) * self._discount_factor(model, first_year)
 

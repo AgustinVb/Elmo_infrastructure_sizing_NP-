@@ -1818,18 +1818,21 @@ def calculate_investment_cost(root: Path) -> float:
 
 def calculate_substation_cost(root: Path) -> float:
     """Costo de inversión en potencia de subestación (idéntico a
-    substation_investment_cost() de functions.py): N_max_k[k] (conteo
-    entero de baterías cargando en paralelo) ya no tiene índice de año ni
-    Delta_N_max_k asociado (eliminados) -- se decide UNA sola vez para todo
-    el horizonte, igual que G_g/H (ver BoundRules en functions.py), asi que
-    N_max_k.json es directamente {"k": {station: conteo}}, sin niveles "y".
-    Se multiplica por p_charger para expresar el costo en $/kW aunque la
-    variable de decision sea un conteo entero de baterias. Pagada una sola
+    substation_investment_cost() de functions.py): n_ssee_k[k] es el conteo
+    entero de MODULOS de subestación comprados en la nave k, cada uno de
+    P_SSEE_STEP kW. Se decide UNA sola vez para todo el horizonte, igual que
+    G_g/H (ver BoundRules en functions.py), asi que n_ssee_k.json es
+    directamente {"k": {station: conteo}}, sin niveles "y". Pagada una sola
     vez, descontada al primer año:
-      discount_factor(primer_año) * Σ_k c_inv_ssee_k[k] * p_charger * N_max_k[k]
+      discount_factor(primer_año) * Σ_k c_inv_ssee_k[k] * P_SSEE_STEP * n_ssee_k[k]
+
+    Antes la capacidad se expresaba como conteo de baterías cargando en
+    paralelo (N_max_k) y se multiplicaba por p_charger; se paso a modulos de
+    P_SSEE_STEP kW para que la granularidad de inversión sea la misma que en
+    la rama carga_ob_multianio y los dos modelos sean comparables.
     """
     params_path = find_json_in_folder(root, "parameters.json")
-    nmax_path = find_json_in_folder(root, "N_max_k.json")
+    nmax_path = find_json_in_folder(root, "n_ssee_k.json")
 
     if not params_path or is_effectively_empty_json(params_path):
         return 0.0
@@ -1839,7 +1842,9 @@ def calculate_substation_cost(root: Path) -> float:
     params_data = load_json(params_path)
 
     c_inv_ssee = _unwrap_named_tree(params_data.get("c_inv_ssee_k", {}))
-    p_charger  = _as_float(params_data.get("p_charger", 0.0))
+    # Mismo valor que functions.P_SSEE_STEP. Se repite aca porque consumer.py
+    # lee resultados ya escritos y no importa el modelo.
+    p_ssee_step = 500.0
     nmax_by_station = _indexed_vars_flat(nmax_path, outer_candidates=("k", "_1"))
 
     years_sorted = _get_years_sorted(params_data)
@@ -1854,7 +1859,7 @@ def calculate_substation_cost(root: Path) -> float:
     total = 0.0
     for k, val in nmax_by_station.items():
         c_k = _as_float(c_inv_ssee.get(k, 0.0)) if isinstance(c_inv_ssee, dict) else 0.0
-        total += c_k * p_charger * val * df
+        total += c_k * p_ssee_step * val * df
 
     return total
 

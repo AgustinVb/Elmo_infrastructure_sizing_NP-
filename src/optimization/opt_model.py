@@ -65,7 +65,7 @@ class OptModel(object):
             "Delta_N_batteries": ["k", "y"],
             "X":        ["k", "y"],
             "Delta_X":  ["k", "y"],
-            "N_max_k":  ["k"],
+            "n_ssee_k":  ["k"],
             "G_g":      ["g"],
             "P_gen":    ["g", "y", "d", "t"],
             "Curt_g":   ["g", "y", "d", "t"],

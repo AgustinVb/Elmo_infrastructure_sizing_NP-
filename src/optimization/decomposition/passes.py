@@ -132,7 +132,7 @@ class ForwardPass(object):
         recorrido. Sin ese mecanismo la trayectoria simplemente no se puede
         completar: el modelo no tiene holguras que garanticen recurso
         relativamente completo, y las inversiones que se deciden una sola vez
-        (N_max_k, G, H) no se pueden ampliar despues."""
+        (n_ssee_k, G, H) no se pueden ampliar despues."""
         recoveries = 0
         while True:
             try:
@@ -206,7 +206,7 @@ class ForwardPass(object):
         Hace falta porque el objetivo elastico l1 tiene duales +-1 por
         construccion y, en un optimo degenerado, reparte mu = 1 entre familias
         cuya holgura es CERO, que no tienen nada que ver con la infactibilidad.
-        Medido sobre este modelo: al anio 2 solo le faltaba N_max_k, pero el
+        Medido sobre este modelo: al anio 2 solo le faltaba n_ssee_k, pero el
         corte salia con mu = 1 tambien en bahias, cargadores, baterias,
         generacion y almacenamiento; el anio anterior lo satisfacia agregando
         0.03 de almacenamiento -- gratis y completamente inutil -- sin construir
@@ -216,7 +216,7 @@ class ForwardPass(object):
         factible en el problema mas restringido, asi que el optimo es el mismo
         (verificado, 0.028216 en los dos casos). Lo unico que cambia es el dual,
         que queda concentrado en las familias que realmente atan. De paso deja
-        el corte soportado solo en N_max_k, que es entera, y eso es lo que
+        el corte soportado solo en n_ssee_k, que es entera, y eso es lo que
         habilita el redondeo de add_feasibility_cut.
         """
         fijadas = 0

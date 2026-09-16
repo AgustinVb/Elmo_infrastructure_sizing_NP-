@@ -80,7 +80,7 @@ class BendersCutManager(object):
                 continue
             state_var = getattr(model, link["state_var"])
             mu_fam = mu[state_name]
-            # "global_once" (N_max_k, G, H): la variable real no tiene indice de
+            # "global_once" (n_ssee_k, G, H): la variable real no tiene indice de
             # año, se referencia directo sin agregar el año del bloque padre.
             is_global_once = link.get("kind") == "global_once"
             if link["index_set"] is None:
@@ -130,8 +130,8 @@ class BendersCutManager(object):
         FORTALECIMIENTO ENTERO. Tal cual, ese corte es valido pero puede quedar
         casi vacio, porque el objetivo elastico l1 mide el deficit en la
         RELAJACION del hijo. Medido sobre este modelo: al anio 2 le faltaba
-        N_max_k y el LP lo cubria con 0.028 unidades fraccionarias, cuando
-        N_max_k es entera y hace falta una unidad completa -- el corte pedia 35
+        n_ssee_k y el LP lo cubria con 0.028 unidades fraccionarias, cuando
+        n_ssee_k es entera y hace falta una unidad completa -- el corte pedia 35
         veces menos de lo necesario. Si todos los terminos con multiplicador no
         nulo son variables ENTERAS, con el mismo coeficiente y ancla entera,
         entonces el lado izquierdo es entero y el derecho se puede redondear
@@ -139,8 +139,8 @@ class BendersCutManager(object):
 
             sum_j (x_j - x_hat_j) >= ceil(v_hat / c)
 
-        En el caso medido eso convierte "N_max_k[2] + N_max_k[3] >= 0.028" en
-        "N_max_k[2] + N_max_k[3] >= 1", que es la condicion verdadera. El corte
+        En el caso medido eso convierte "n_ssee_k[2] + n_ssee_k[3] >= 0.028" en
+        "n_ssee_k[2] + n_ssee_k[3] >= 1", que es la condicion verdadera. El corte
         se agrega al bloque del padre, cuya relajacion lineal produce la cota
         inferior: sigue siendo valido alli porque no elimina ninguna solucion
         entera factible del problema original.
@@ -155,7 +155,7 @@ class BendersCutManager(object):
                 continue
             state_var = getattr(model, link["state_var"])
             mu_fam = mu[state_name]
-            # "global_once" (N_max_k, G, H): la variable real no tiene indice de
+            # "global_once" (n_ssee_k, G, H): la variable real no tiene indice de
             # anio, se referencia directo sin agregar el anio del bloque padre.
             is_global_once = link.get("kind") == "global_once"
             if link["index_set"] is None:
