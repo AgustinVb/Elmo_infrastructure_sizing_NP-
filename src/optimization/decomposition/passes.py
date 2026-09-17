@@ -288,9 +288,9 @@ class BackwardPass(object):
 
     def _relax_and_solve(self, block, label):
         """Devuelve (Phi^LP, mu) del bloque relajado. Se relaja EN SITU: ver
-        YearBlockBuilder.relaxed_mode -- clonar cuesta dos ordenes de magnitud
-        mas que construir el bloque entero, y aca se relaja una vez por anio y
-        por iteracion."""
+        YearBlockBuilder.relaxed_mode -- aca se relaja una vez por anio y por
+        iteracion, asi que el costo del clone se paga N_anios * N_iteraciones
+        veces (medido: 1.5x mas rapido en sitio, y mucho mas si falta memoria)."""
         with block.relaxed_mode() as model:
             _solve(model, label=label, require_optimal=True, **self.solver_kwargs)
             phi_lp = value(model.obj)

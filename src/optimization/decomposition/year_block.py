@@ -382,11 +382,22 @@ class YearBlockBuilder(object):
     def relaxed_mode(self):
         """Relaja la integralidad EN SITU y la restaura al salir.
 
-        No se clona. clone() de Pyomo es un deepcopy del grafo de objetos y en
-        un bloque de este tamanio (~160k variables) tarda dos ordenes de
-        magnitud MAS que construirlo entero desde cero: medido, mas de 13
-        minutos contra 8 segundos. Como el backward relaja una vez por anio y
-        por iteracion, clonar hacia inviable el esquema completo.
+        No se clona. clone() de Pyomo es un deepcopy del grafo de objetos, y el
+        backward relaja una vez por anio y por iteracion, asi que ese costo se
+        paga N_anios * N_iteraciones veces.
+
+        Medicion honesta del ahorro: en un A/B sobre el mismo bloque (65k
+        variables) el tramo relajado paso de 7.4 s clonando a 4.9 s en sitio --
+        1.5x, con el clone costando 2.6 s. Sobre 11 anios y 20 iteraciones eso
+        son ~10 minutos de puro clonado, mas la memoria que deja de duplicarse.
+
+        OJO con una medicion anterior que circulo como justificacion: se observo
+        un clone de MAS de 13 minutos sobre un bloque de 160k variables, y de ahi
+        salio un supuesto factor 100x. Esa medicion se tomo con el proceso en
+        2.8 GB y ~3 GB libres, o sea paginando: el numero era real pero no
+        representativo. El ahorro tipico es 1.5x; los 13 minutos son lo que pasa
+        cuando ademas falta memoria -- que es justamente el escenario que esto
+        evita.
 
         Ojo: al resolver se sobreescriben los valores de las variables del
         bloque con los del LP. Es seguro porque el forward ya extrajo su
