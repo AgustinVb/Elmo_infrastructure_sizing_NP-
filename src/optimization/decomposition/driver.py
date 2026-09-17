@@ -86,7 +86,8 @@ class NestedBendersSolver(object):
     def __init__(self, mine_system, time_series, exogenous_stations_by_year=None,
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
                  strengthen=False, degradation_cut_mode="mccormick", lagrangean_kwargs=None,
-                 block_build_jobs=None, macroblock_forward=False):
+                 block_build_jobs=None, macroblock_forward=False,
+                 monolithic_lp_bound=True):
         """
         :param macroblock_forward: default False (comportamiento de siempre).
             Con True, cada año POSTERIOR al primero se resuelve en la fase
@@ -184,6 +185,9 @@ class NestedBendersSolver(object):
             self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs,
             degradation_cut_mode=degradation_cut_mode, lagrangean_kwargs=lagrangean_kwargs,
         )
+
+        self.monolithic_lp_bound = monolithic_lp_bound
+        self.lb_monolithic_lp = None
 
         self.ub = float("inf")
         self.lb = float("-inf")
@@ -298,6 +302,82 @@ class NestedBendersSolver(object):
 
         return blocks_by_year, fleet_params
 
+    def _monolithic_lp_bound(self):
+        """Cota inferior adicional: el valor optimo de la relajacion lineal del
+        modelo monolitico COMPLETO, calculado una sola vez antes de iterar.
+
+        Es valida por construccion y es independiente de los cortes, asi que se
+        toma el maximo con la que produce el backward. Las dos no estan
+        ordenadas: al acumular cortes, alpha_1 converge por abajo a Phi^LP_2,
+        que contiene alpha_2 convergiendo a Phi^LP_3, etc., y como el estado
+        separa exactamente los anios esa recursion converge PRECISAMENTE a la
+        relajacion lineal del monolitico -- o sea que el backward aproxima desde
+        abajo, iteracion a iteracion, el numero que esta funcion da directo.
+        Cualquier corte valido solo para el casco entero puede superarla.
+
+        Medido en la rama battery_swapping_multianio (instancia de 1 nave, 2
+        anios): la cota sale en 9 s y deja el gap de la primera iteracion en
+        26.97%, contra 95.32% sin ella; en 10 iteraciones el backward no la
+        supero nunca.
+
+        Se construye con mccormick_degradation=True: con el bilineal exacto el
+        modelo no es un LP y su relajacion no seria resoluble como tal. La
+        envolvente de McCormick es una RELAJACION del bilineal, asi que su
+        optimo sigue siendo una cota inferior valida -- y ademas es la misma
+        formulacion que usan los bloques anuales, con lo que la cota queda en la
+        misma base que el UB del forward.
+
+        exogenous_stations puesto -- y SIN years_override -- deja fuera el costo
+        de apertura de naves (constante en modo descompuesto, ausente del
+        objetivo de los bloques) pero conserva las restricciones de acumulacion
+        del monolitico.
+
+        Construye el monolitico entero, que es el gasto de memoria que la
+        descomposicion evita: en horizontes largos puede no entrar. Cualquier
+        fallo se reporta y la corrida sigue sin esta cota.
+        """
+        import pyomo.environ as pyo
+        from pyomo.environ import SolverFactory, TransformationFactory
+        from pyomo.opt import TerminationCondition
+
+        from src.optimization.functions import (
+            BoundRules, ConstraintRules, ObjectiveRules, OptParameters, OptSets,
+        )
+
+        exo_flat = {
+            (k, y): v
+            for y, per_station in self.exogenous_stations_by_year.items()
+            for k, v in per_station.items()
+        }
+        common = dict(exogenous_stations=exo_flat)
+
+        model = pyo.ConcreteModel(name="MonoliticoLP")
+        OptSets(self.mine_system, self.time_series,
+                autonomous_mode=self.autonomous_mode, **common).build_sets(model)
+        OptParameters(self.mine_system, self.time_series, **common).build_parameters(model)
+        BoundRules(self.mine_system, self.time_series, **common).build_all_variables(model)
+        ConstraintRules(self.mine_system, self.time_series,
+                        mccormick_degradation=True, **common).build_all_constraints(model)
+        model.obj = pyo.Objective(
+            rule=ObjectiveRules(self.mine_system, self.time_series, **common).total_cost,
+            sense=pyo.minimize,
+        )
+        TransformationFactory("core.relax_integer_vars").apply_to(model)
+
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options["OutputFlag"] = 0
+        opt.options["TimeLimit"] = self.solver_kwargs.get("timelimit", 900)
+        result = opt.solve(model, load_solutions=True)
+        if result.solver.termination_condition != TerminationCondition.optimal:
+            # Sin optimo probado no hay cota confiable: para un LP cortado por
+            # tiempo la cota valida es la dual, que este backend no expone.
+            raise RuntimeError(
+                f"el LP del monolitico no llego al optimo "
+                f"({result.solver.termination_condition})"
+            )
+        return value(model.obj)
+
+
     def solve(self, verbose=True):
         """Documento sec. 7-8. Ctrl+C (SIGINT) en cualquier punto -- en
         medio de un solve de Gurobi de cualquier año/pase, o entre
@@ -344,6 +424,24 @@ class NestedBendersSolver(object):
         gap = float("inf")
         interrupted = False
         solve_start = time.time()
+
+        if self.monolithic_lp_bound:
+            if verbose:
+                print("[NestedBenders] cota inicial: relajacion lineal del monolitico "
+                      "completo...")
+                sys.stdout.flush()
+            t_lp = time.time()
+            try:
+                self.lb_monolithic_lp = self._monolithic_lp_bound()
+                self.lb = max(self.lb, self.lb_monolithic_lp)
+                if verbose:
+                    print(f"[NestedBenders] cota del LP monolitico = "
+                          f"{self.lb_monolithic_lp:,.2f}  ({time.time() - t_lp:.0f}s)")
+            except Exception as exc:
+                # No es fatal: es una cota extra. Si el monolitico no entra en
+                # memoria o el LP no cierra, se sigue con la del backward.
+                print(f"[NestedBenders] sin cota del LP monolitico "
+                      f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
 
         try:
             while gap > self.gap_tol and k < self.max_iter:
@@ -399,6 +497,7 @@ class NestedBendersSolver(object):
             print(f"[NestedBenders] tiempo total: {total_time:.1f}s "
                   f"({k} iteracion{'es' if k != 1 else ''})")
         return {
+            "lb_monolithic_lp": self.lb_monolithic_lp,
             "ub": self.ub,
             "lb": self.lb,
             "gap": gap,
@@ -427,7 +526,24 @@ class NestedBendersSolver(object):
 
         from src.optimization.opt_model import OptModel
 
-        om = OptModel(self.mine_system, self.time_series, output_folder, autonomous_mode=self.autonomous_mode)
+        # mccormick_degradation=True: los bloques anuales resuelven la
+        # degradacion con la envolvente de McCormick, y su solucion satisface
+        # ESA relajacion, no el bilineal exacto. Si el modelo de reporte se
+        # armara con el bilineal (el default), la solucion cargada lo violaria
+        # -- medido: n_ciclos_link[2] violada en 3,317.6, exactamente el
+        # "residuo McCormick" que el forward ya reporta como aviso -- y en modo
+        # hibrido Gurobi descartaria el MIP start en silencio ("User MIP start
+        # did not produce a new incumbent solution"), dejando al hibrido sin su
+        # unica razon de ser.
+        #
+        # OJO con lo que esto implica: la solucion descompuesta NO es factible
+        # para el modelo exacto. El reporte es consistente con la formulacion
+        # que se uso para obtenerla, que es lo correcto, pero el residuo de
+        # McCormick sigue siendo un error de aproximacion real (ver
+        # YearBlockBuilder.mccormick_residual y sec. 3.4/3.5 del documento).
+        om = OptModel(self.mine_system, self.time_series, output_folder,
+                      autonomous_mode=self.autonomous_mode,
+                      mccormick_degradation=True)
         model = om.model
         om.opt_cost_result = self.best_ub
 
@@ -444,15 +560,21 @@ class NestedBendersSolver(object):
                 "detalle de UB/LB/gap por iteracion.\n"
             )
 
+        internas = set()      # sin equivalente en el monolitico: esperado
+        sin_cargar = set()    # forma incompatible: NO esperado, hay que mirarlo
+        cargadas = 0
+
         for y, var_values in self.best_full_solution.items():
             for var_name, values in var_values.items():
                 if not hasattr(model, var_name):
                     # Variable interna del bloque sin equivalente monolitico
                     # (alpha, *_hat, *_prev, W_s, ...).
+                    internas.add(var_name)
                     continue
                 var_comp = getattr(model, var_name)
                 if isinstance(values, dict):
                     if not var_comp.is_indexed():
+                        sin_cargar.add(var_name)
                         continue
                     for idx, v in values.items():
                         if idx not in var_comp:
@@ -461,10 +583,34 @@ class NestedBendersSolver(object):
                         if vardata.is_binary() or vardata.is_integer():
                             v = int(round(v))
                         vardata.set_value(v, skip_validation=True)
+                        cargadas += 1
+                elif var_comp.is_indexed():
+                    # El bloque declara como ESCALAR lo que el monolitico indexa
+                    # por anio: teniendo un solo anio, el indice sobra alli. Es
+                    # el caso de w_deg (la auxiliar de la envolvente de
+                    # McCormick). Se mapea al anio de este bloque.
+                    #
+                    # Antes esto caia en un `continue` mudo y w_deg nunca
+                    # llegaba al modelo de reporte: el MIP start quedaba
+                    # incompleto y 10 restricciones no se podian ni evaluar.
+                    if y in var_comp:
+                        vardata = var_comp[y]
+                        if vardata.is_binary() or vardata.is_integer():
+                            values = int(round(values))
+                        vardata.set_value(values, skip_validation=True)
+                        cargadas += 1
+                    else:
+                        sin_cargar.add(var_name)
                 else:
-                    if var_comp.is_indexed():
-                        continue
                     var_comp.set_value(values, skip_validation=True)
+                    cargadas += 1
+
+        if sin_cargar:
+            # No es un caso esperado: el nombre existe en el monolitico pero la
+            # forma del indice no calza, asi que el valor se perdio.
+            print(f"[NestedBenders] AVISO: variables del bloque que NO se pudieron "
+                  f"cargar en el modelo de reporte por forma de indice "
+                  f"incompatible: {sorted(sin_cargar)}")
 
         # X/Delta_X: exogenos en modo descompuesto (no forman parte de
         # best_full_solution -- ver documento sec. 2.1). Se reconstruyen
@@ -477,5 +623,54 @@ class NestedBendersSolver(object):
                 model.X[k, y].set_value(int(x_y), skip_validation=True)
                 model.Delta_X[k, y].set_value(int(x_y - prev_x[k]), skip_validation=True)
                 prev_x[k] = x_y
+
+        # Habilita que este modelo sirva ademas de MIP start del monolitico
+        # (--mode hybrid): solve_model solo pasa warmstart=True a Gurobi si esta
+        # bandera esta puesta, y como aca los valores se cargan directo sobre las
+        # variables -- no via _load_solution_warmstart_folder -- nadie la pondria
+        # y el arranque se ignoraria en silencio.
+        om.has_warm_start = True
+
+        # Verificacion numerica, no opcional: el costo recomputado sobre este
+        # modelo MENOS la inversion en estaciones (que en modo descompuesto es
+        # constante y queda fuera del objetivo de los bloques) tiene que
+        # coincidir con el UB del solver. Si no coincide, los archivos de salida
+        # describirian una solucion distinta de la que reporto el algoritmo.
+        #
+        # No es teorico: esta comprobacion es la que habria cantado, la primera
+        # vez que se corrio, que el modelo de reporte se armaba con el bilineal
+        # exacto de la degradacion mientras los bloques resolvian la envolvente
+        # de McCormick. Sin ella el problema recien aparecio mucho despues, como
+        # un MIP start que Gurobi descartaba sin explicar por que.
+        #
+        # No se aborta -- descartar el reporte despues de horas de computo seria
+        # peor -- pero tiene que quedar imposible de pasar por alto.
+        try:
+            costo_total = value(model.obj)
+            inv_estaciones = sum(
+                value(model.station_cost_k[k]) * value(model.Delta_X[k, y])
+                * value(om.objective_rules._discount_factor(model, y))
+                for k in model.stations_set for y in self.years
+            )
+            comparable = costo_total - inv_estaciones
+            desvio = abs(comparable - self.best_ub)
+            tolerancia = max(1e-6 * abs(self.best_ub), 1e-4)
+            print(f"[NestedBenders] reporte: costo recomputado = {costo_total:,.2f} "
+                  f"(comparable {comparable:,.2f} contra UB {self.best_ub:,.2f}, "
+                  f"desvio {desvio:,.6f})")
+            if desvio > tolerancia:
+                print("=" * 78)
+                print("[NestedBenders] ATENCION: el costo recomputado sobre el modelo "
+                      "de reporte NO coincide con el UB del solver.")
+                print(f"    comparable = {comparable:,.6f}")
+                print(f"    UB         = {self.best_ub:,.6f}")
+                print(f"    desvio     = {desvio:,.6f}  (tolerancia {tolerancia:,.6f})")
+                print("    Los archivos de salida describen una solucion distinta de "
+                      "la que reporto el algoritmo.")
+                print("=" * 78)
+        except Exception as exc:
+            print(f"[NestedBenders] no se pudo verificar el costo del modelo de "
+                  f"reporte ({type(exc).__name__}: {exc}).")
+
 
         return om

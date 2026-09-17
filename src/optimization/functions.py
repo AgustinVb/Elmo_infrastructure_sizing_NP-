@@ -6,6 +6,20 @@ import time
 import re
 from pyomo.environ import quicksum, value
 
+# Tamanio del modulo de subestacion, en kW. La potencia instalada P_max_k[k]
+# no es una magnitud libre: se compra en modulos de este tamanio, asi que se
+# modela como P_max_k = P_SSEE_STEP * n_ssee_k con n_ssee_k entera (ver
+# BoundRules y ConstraintRules.ssee_discreta).
+#
+# Ademas de ser mas realista, esto le da fuerza al corte de factibilidad de la
+# descomposicion: con P_max_k continua el corte solo puede pedir el umbral
+# exacto del LP y hace falta iterar muchas veces (medido: 10+ cortes sin
+# converger); con la capacidad en multiplos enteros el corte se redondea hacia
+# arriba (Chvatal-Gomory, ver BendersCutManager._redondeo_entero) y exige el
+# modulo completo de una vez.
+P_SSEE_STEP = 500.0
+
+
 class OptRules(object):
 
     def __init__(self, mine_system, time_series, autonomous_mode=False,
@@ -741,6 +755,11 @@ class BoundRules(OptRules):
         # Sin cota fisica (igual que antes): el costo es lo unico que limita
         # cuanto se construye.
         model.P_max_k        = pyo.Var(model.stations_set, domain=pyo.NonNegativeReals)
+        # Conteo de modulos de subestacion: P_max_k = P_SSEE_STEP * n_ssee_k
+        # (ver ssee_discreta). P_max_k queda como variable DERIVADA, asi que la
+        # restriccion de capacidad y el costo de inversion la siguen usando sin
+        # cambios.
+        model.n_ssee_k       = pyo.Var(model.stations_set, domain=pyo.NonNegativeIntegers)
         model.StartCharge = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
         model.EndCharge   = pyo.Var(model.stations_set, model.elhd_set, model.years, model.days, model.time_intervals_set, domain=pyo.Binary)
 
@@ -1053,6 +1072,10 @@ class ConstraintRules(OptRules):
     def max_power(self, model, k, i, y, d, t):
         return model.P[k,i,y,d,t] <= model.Z_charge[k,i,y,d,t] * model.p_charger
 
+    def ssee_discreta(self, model, k):
+        """La potencia de subestacion se compra en modulos de P_SSEE_STEP kW."""
+        return model.P_max_k[k] == P_SSEE_STEP * model.n_ssee_k[k]
+
     def max_installed_capacity(self, model, k, y, d, t):
         station_elhds = [i for (k2, i) in model.ZCHARGE_INDEX if k2 == k]
         if not station_elhds:
@@ -1329,6 +1352,7 @@ class ConstraintRules(OptRules):
         #model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
         #model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                 = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
+        model.ssee_discreta             = pyo.Constraint(model.stations_set, rule=self.ssee_discreta)
         model.max_installed_capacity    = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance             = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
         model.grid_limit                = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.grid_limit)

@@ -8,6 +8,7 @@ import argparse, pprint
 import json
 import os
 import sys
+import time
 import pandas as pd
 from os.path import join
 import xlrd
@@ -31,22 +32,26 @@ def resolve_wp2_json_path(args):
     return json_path
 
 
-# 14 años, 2 días representativos/año (verano sin cobro potencia + invierno
-# con cobro potencia). Cada año aporta un par consecutivo de dias en esta
-# lista (dia_verano, dia_invierno); --n_years trunca tomando los primeros
-# N pares, o sea los primeros N años del horizonte.
+# 11 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
+# potencia) y dia 196 (invierno, con cobro). Cada anio aporta un par
+# consecutivo (dia_verano, dia_invierno); --n_years trunca tomando los
+# primeros N pares, o sea los primeros N anios del horizonte.
+#
+# Se eligen 15 y 196 -- y no cualquier par -- porque son los unicos dias del
+# anio para los que la hoja GenProfiles trae perfiles de solar/eolica que
+# cumplan ese criterio: alli solo existen los dias-del-anio {15, 105, 196,
+# 288}. OJO: Timeseries.get_alpha_g devuelve 0.0 cuando no encuentra el dia,
+# sin avisar. Con la lista anterior (dias-del-anio 1 y 91) NINGUNO tenia
+# perfil, asi que la generacion y el almacenamiento quedaban silenciosamente
+# desactivados: el modelo podia invertir en solar/eolica, pagaba inversion y
+# operacion, y recibia cero energia. Si se cambia esta lista hay que
+# verificar que los dias nuevos existan en GenProfiles.
+#   lista anterior (perfiles de generacion en cero):
+#   [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191,
+#    2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]
 FULL_HORIZON_DAYS = [
-    1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281,
-    2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836,
-]
-
-# 11 años, 2 días representativos/año (verano sin cobro potencia + invierno
-# con cobro potencia). Cada año aporta un par consecutivo de dias en esta
-# lista (dia_verano, dia_invierno); --n_years trunca tomando los primeros
-# N pares, o sea los primeros N años del horizonte.
-FULL_HORIZON_DAYS = [
-    1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281,
-    2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741,
+    15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386,
+    2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846,
 ]
 
 def build_mine(args):
@@ -133,10 +138,25 @@ def main():
              'esquema DET esta activo en build_all_constraints (ver functions.py).'
     )
     parser.add_argument(
-        '--mode', choices=['monolithic', 'decomposed'], default='monolithic',
+        '--mode', choices=['monolithic', 'decomposed', 'hybrid'], default='monolithic',
         help='monolithic (default): resuelve el modelo completo de una vez. '
              'decomposed: descomposicion Nested Benders por año (ver '
-             'implementacion_descomposicion_carga_ob.md).'
+             'implementacion_descomposicion_carga_ob.md). hybrid: corre la '
+             'descomposicion y le entrega su solucion al monolitico como MIP '
+             'start. Los dos metodos tienen perfiles opuestos -- la '
+             'descomposicion consigue un incumbente enseguida pero su cota '
+             'inferior se estanca, y el branch and bound sube la cota rapido '
+             'pero le cuesta el incumbente --, asi que el hibrido le da a cada '
+             'uno lo que al otro le falta. Renuncia a la ventaja de memoria: '
+             'construye el monolitico completo.'
+    )
+    parser.add_argument(
+        '--no_monolithic_lp_bound', action='store_true',
+        help='[--mode decomposed|hybrid] no calcular la relajacion lineal del '
+             'monolitico como cota inferior inicial. Por defecto SI se calcula: '
+             'suele ser una cota mucho mejor que la del backward y cuesta un solo '
+             'LP, pero obliga a construir el monolitico completo, que es el gasto '
+             'de memoria que la descomposicion evita.'
     )
     parser.add_argument(
         '--max_iter', type=int, default=20,
@@ -245,6 +265,7 @@ def main():
             degradation_cut_mode=args.degradation_cut_mode,
             block_build_jobs=args.block_build_jobs,
             macroblock_forward=args.macroblock_forward,
+            monolithic_lp_bound=not args.no_monolithic_lp_bound,
         )
         result = solver.solve()
         interrupted_tag = " (interrumpido con Ctrl+C)" if result.get("interrupted") else ""
@@ -262,6 +283,23 @@ def main():
             )
         else:
             om_report = solver.build_report_model(output_folder)
+
+            if args.mode == 'hybrid':
+                # La solucion descompuesta entra como MIP start
+                # (build_report_model deja has_warm_start puesto). Gurobi
+                # arranca con un incumbente que le habria costado encontrar
+                # -- medido en battery_swapping_multianio a 6 anios, el
+                # monolitico solo no encontro NINGUNO en 600 s -- y se dedica
+                # a cerrar la cota, que es lo que hace bien.
+                t_hib = time.time()
+                print("[Hibrido] resolviendo el monolitico con la solucion "
+                      "descompuesta como MIP start...")
+                om_report.solve_model(gap, solver_name,
+                                      timelimit=args.solve_timelimit)
+                print(f"[Hibrido] monolitico resuelto en "
+                      f"{time.time() - t_hib:.0f}s: "
+                      f"costo = {om_report.opt_cost_result:,.2f}")
+
             printer = Printer(om_report, output_folder, time_series, mine_system)
             printer.create_all_plots()
 

@@ -51,6 +51,23 @@ def clear_interrupt():
 logging.getLogger("pyomo.solvers").setLevel(logging.ERROR)
 
 
+class SubproblemInfeasible(RuntimeError):
+    """El subproblema no tiene solucion. Se distingue de cualquier otro fallo
+    del solver porque es el unico caso que el forward puede recuperar con un
+    corte de factibilidad."""
+
+
+class _YearInfeasible(Exception):
+    """Interna: un anio del forward no tiene solucion con el estado que
+    recibio. Lleva el indice del bloque y los estados ya calculados, para que
+    run() arme el corte de factibilidad sin volver a resolver nada."""
+
+    def __init__(self, index, x_hat_by_year):
+        super().__init__(f"bloque {index} infactible")
+        self.index = index
+        self.x_hat_by_year = x_hat_by_year
+
+
 def _fmt_bound(v):
     if v is None or v in (float("inf"), float("-inf")):
         return "(sin cota aun)"
@@ -62,7 +79,7 @@ def _bounds_tag(current_ub, current_lb):
 
 
 def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, label="",
-           extra_options=None):
+           extra_options=None, require_optimal=False):
     if solvername == "gurobi":
         opt = SolverFactory("gurobi", solver_io="python")
         opt.options["MIPGap"] = gap
@@ -112,10 +129,27 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
             gap_rel = abs(ub - lb) / abs(ub)
             print(f"[NestedBenders] {label}  TimeLimit alcanzado sin cerrar MIPGap: "
                   f"UB={ub:,.2f}  LB={lb:,.2f}  gap={gap_rel:.4%}")
+    if result.solver.termination_condition in (TerminationCondition.infeasible,
+                                               TerminationCondition.infeasibleOrUnbounded):
+        raise SubproblemInfeasible(
+            f"Subproblema infactible ({label}): {result.solver.termination_condition}"
+        )
     if result.solver.termination_condition not in _ACCEPTABLE:
         raise RuntimeError(
             f"Solve no llego a una solucion aceptable ({label}): "
             f"{result.solver.termination_condition}"
+        )
+    if require_optimal and result.solver.termination_condition != TerminationCondition.optimal:
+        # Los cortes se arman con la constante del LP (phi_lp) emparejada con los
+        # duales. La constante VALIDA es el valor objetivo DUAL, que coincide con
+        # el primal solo en el optimo: si el LP se corta por tiempo queda un
+        # primal por ENCIMA del optimo junto a un mu dual-factible, y el corte
+        # resultante es demasiado fuerte -- puede cortar estados factibles. Se
+        # manifiesta despues como LB > UB, lejos de su causa.
+        raise RuntimeError(
+            f"El LP de {label} no llego al optimo ({result.solver.termination_condition}): "
+            f"un corte armado con su valor primal podria ser invalido. Subir "
+            f"timelimit para los solves de LP."
         )
     return result
 
@@ -148,11 +182,112 @@ class ForwardPass(object):
         self.macroblock_blocks = macroblock_blocks or {}
         self.cut_manager = cut_manager
         self.fleet_params = fleet_params or {}
+        self.feasibility_cuts_added = 0
         # Estado de cada año en la ULTIMA iteracion, usado como valor de los
         # estados ajenos al replicar los cortes en cada macrobloque.
         self.last_state_by_year = {}
 
-    def run(self, iteration=None, verbose=True, current_ub=None, current_lb=None):
+    def run(self, iteration=None, verbose=True, current_ub=None, current_lb=None,
+            max_recoveries=25):
+        """Recorre los anios y, si alguno queda infactible con el estado que
+        recibio, agrega un corte de factibilidad al anio anterior y REEMPIEZA el
+        recorrido. Sin ese mecanismo la trayectoria simplemente no se puede
+        completar: el modelo no tiene holguras que garanticen recurso
+        relativamente completo, y las inversiones que se deciden una sola vez
+        (P_max_k, G, H) no se pueden ampliar despues."""
+        recoveries = 0
+        while True:
+            try:
+                return self._sweep(iteration, verbose, current_ub, current_lb)
+            except _YearInfeasible as exc:
+                if exc.index == 0:
+                    raise RuntimeError(
+                        f"El primer anio ({self.blocks[0].year}) es infactible por si "
+                        f"solo: no hay anio anterior al que agregarle un corte, asi que "
+                        f"el problema es del escenario, no de la descomposicion."
+                    )
+                recoveries += 1
+                if recoveries > max_recoveries:
+                    raise RuntimeError(
+                        f"Se agregaron {max_recoveries} cortes de factibilidad en una "
+                        f"misma fase forward sin lograr completar el horizonte."
+                    )
+                self._add_feasibility_cut(exc, iteration, verbose)
+
+    def _add_feasibility_cut(self, exc, iteration, verbose):
+        child = self.blocks[exc.index]
+        parent = self.blocks[exc.index - 1]
+        if self.cut_manager is None:
+            raise RuntimeError(
+                f"El anio {child.year} es infactible y ForwardPass no tiene "
+                f"cut_manager con el que generar el corte de factibilidad."
+            )
+        if verbose:
+            print(f"[NestedBenders] FORWARD  anio {child.year} infactible con el estado "
+                  f"recibido -- generando corte de factibilidad para el anio {parent.year}...")
+
+        with child.elastic_mode() as feas:
+            _solve(feas, label=f"factibilidad y={child.year}", require_optimal=True,
+                   **self.solver_kwargs)
+            v_hat = value(feas.feas_obj)
+            if v_hat > 1e-7 and self._restringir_al_soporte(feas, child):
+                _solve(feas, label=f"factibilidad y={child.year} (soporte)",
+                       require_optimal=True, **self.solver_kwargs)
+                v_hat = value(feas.feas_obj)
+            mu = self.cut_manager.read_duals(feas, child.year, child.state_links,
+                                             prefix="feas_link_")
+
+        if v_hat <= 1e-7:
+            raise RuntimeError(
+                f"El anio {child.year} es infactible como MILP pero su relajacion "
+                f"elastica da violacion nula: la infactibilidad no viene de que le "
+                f"falte estado heredado sino de la integralidad, y un corte de "
+                f"factibilidad no la puede corregir."
+            )
+
+        if verbose:
+            atan = {k: v for k, v in mu.items()
+                    if (max(v.values()) if isinstance(v, dict) else v) > 1e-7}
+            print(f"[NestedBenders] FORWARD  falta de estado v={v_hat:,.4f}; "
+                  f"familias que atan: {sorted(atan)}")
+        self.cut_manager.add_feasibility_cut(
+            parent, v_hat, mu, exc.x_hat_by_year[parent.year], iteration=iteration
+        )
+        self.feasibility_cuts_added += 1
+        registro = self.cut_manager.history[-1]
+        if verbose and registro["kind"] == "feasibility-entero":
+            print(f"[NestedBenders] FORWARD  corte entero: la suma de "
+                  f"{registro['n_terminos']} estados tiene que subir al menos "
+                  f"{registro['rhs_redondeado']} (el LP pedia {v_hat:,.4f})")
+
+    @staticmethod
+    def _restringir_al_soporte(feas, child, tol=1e-7):
+        """Fija en 0 las holguras que ya salieron nulas, dejando libres solo las
+        del SOPORTE. Devuelve cuantas fijo.
+
+        El objetivo elastico l1 tiene duales +-1 por construccion y, en un
+        optimo degenerado, reparte mu = 1 entre familias cuya holgura es CERO,
+        que no tienen nada que ver con la infactibilidad. Fijar las holguras
+        nulas NO cambia v -- la solucion anterior sigue siendo factible en el
+        problema mas restringido -- pero concentra los multiplicadores en las
+        familias que realmente atan, y suele dejar el corte soportado solo en
+        variables enteras, que es lo que habilita el redondeo."""
+        fijadas = 0
+        for link in child.state_links:
+            if link["hat"] is None:
+                continue
+            s = getattr(feas, "feas_slack_" + link["state"], None)
+            if s is None:
+                continue
+            componentes = ([s] if link["index_set"] is None
+                           else [s[idx] for idx in link["index_set"]])
+            for comp in componentes:
+                if not comp.fixed and value(comp) <= tol:
+                    comp.fix(0.0)
+                    fijadas += 1
+        return fijadas
+
+    def _sweep(self, iteration=None, verbose=True, current_ub=None, current_lb=None):
         x_hat_by_year = {}
         phi_by_year = {}
         alpha_by_year = {}
@@ -185,7 +320,10 @@ class ForwardPass(object):
                 self.last_state_by_year[block.year] = state
                 continue
 
-            _solve(block.model, label=f"forward y={block.year}", **self.solver_kwargs)
+            try:
+                _solve(block.model, label=f"forward y={block.year}", **self.solver_kwargs)
+            except SubproblemInfeasible:
+                raise _YearInfeasible(i, x_hat_by_year)
             phi_by_year[block.year] = value(block.model.obj)
             alpha_by_year[block.year] = value(block.model.alpha)
             x_hat_by_year[block.year] = block.extract_state()
@@ -407,11 +545,24 @@ class BackwardPass(object):
         kwargs["extra_options"] = extra
         return kwargs
 
-    def _relax_and_solve(self, block, label):
-        clone = block.model.clone()
-        TransformationFactory("core.relax_integer_vars").apply_to(clone)
-        _solve(clone, label=label, **self.solver_kwargs)
-        return clone
+    def _relax_and_solve(self, block, label, read_mu=True):
+        """Devuelve (Phi^LP, mu) del bloque relajado. Se relaja EN SITU: ver
+        YearBlockBuilder.relaxed_mode -- aqui se relaja una vez por anio y por
+        iteracion, asi que el costo del clone se paga N_anios * N_iteraciones
+        veces (medido: 1.5x mas rapido en sitio, y mucho mas si falta memoria).
+
+        read_mu=False para el bloque del PRIMER anio, que se relaja solo para
+        obtener la cota inferior: alli no hay duales que leer porque ese anio
+        DECIDE los estados "global_once" (P_max_k, G, H) en vez de heredarlos,
+        de modo que no existen las link_* correspondientes y read_duals
+        levantaria AttributeError.
+        """
+        with block.relaxed_mode() as model:
+            _solve(model, label=label, require_optimal=True, **self.solver_kwargs)
+            phi_lp = value(model.obj)
+            mu = (self.cut_manager.read_duals(model, block.year, block.state_links)
+                  if read_mu else None)
+        return phi_lp, mu
 
     def _make_exact_clone(self, block):
         """Clona el bloque y restaura la fisica EXACTA (bilineal, no
@@ -948,9 +1099,7 @@ class BackwardPass(object):
             if verbose:
                 print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
                       f"relajando LP y leyendo duales (corte -> anio {parent.year})...")
-            clone = self._relax_and_solve(child, label=f"backward y={child.year}")
-            phi_lp = value(clone.obj)
-            mu = self.cut_manager.read_duals(clone, child.year, child.state_links)
+            phi_lp, mu = self._relax_and_solve(child, label=f"backward y={child.year}")
 
             use_lagrangean = (
                 self.degradation_cut_mode == "lagrangean"
@@ -1008,5 +1157,6 @@ class BackwardPass(object):
         if verbose:
             print(f"[NestedBenders] {k_tag}BACKWARD anio {self.blocks[0].year}  {bounds_tag}  "
                   f"relajando LP (cota inferior LB)...")
-        first_clone = self._relax_and_solve(self.blocks[0], label=f"backward LB y={self.blocks[0].year}")
-        return value(first_clone.obj)
+        phi_lp, _mu = self._relax_and_solve(
+            self.blocks[0], label=f"backward LB y={self.blocks[0].year}", read_mu=False)
+        return phi_lp

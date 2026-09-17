@@ -1,6 +1,8 @@
+import contextlib
+
 import pyomo.environ as pyo
 from pyomo.core.base import Suffix
-from pyomo.environ import value
+from pyomo.environ import TransformationFactory, value
 
 from src.optimization.functions import (
     OptSets,
@@ -124,6 +126,8 @@ class YearBlockBuilder(object):
         # actualiza entre iteraciones -- (nombre_hat, nombre_prev, index_set)
         # con index_set=None para estados escalares (H, CumS).
         self.state_links = []
+        # Las holguras del modo elastico se crean una sola vez, a pedido.
+        self._elastic_ready = False
 
         self.model = self._build()
 
@@ -148,6 +152,140 @@ class YearBlockBuilder(object):
         model.dual = Suffix(direction=Suffix.IMPORT)
 
         return model
+
+    def _elastic_links(self):
+        return [link for link in self.state_links if link["hat"] is not None]
+
+    def _ensure_elastic_components(self):
+        """Crea UNA sola vez las holguras y las igualdades elasticas del corte
+        de factibilidad. Nacen inertes -- holguras fijadas en 0 y restricciones
+        desactivadas --, asi que mientras no se entre en modo elastico el bloque
+        resuelve exactamente el mismo MILP de siempre."""
+        if self._elastic_ready:
+            return
+        model = self.model
+        slack_terms = []
+        for link in self._elastic_links():
+            name = link["state"]
+            hat = getattr(model, link["hat"])
+            # Para "simple" el lado izquierdo es la copia local; para
+            # "global_once" es la variable real, que alli se fija directo.
+            lhs = getattr(model, link["prev"] if link["prev"] else link["state_var"])
+
+            slack_name = "feas_slack_" + name
+            if link["index_set"] is None:
+                setattr(model, slack_name,
+                        pyo.Var(domain=pyo.NonNegativeReals, initialize=0.0))
+                s = getattr(model, slack_name)
+                setattr(model, "feas_link_" + name,
+                        pyo.Constraint(expr=lhs - s == hat))
+                slack_terms.append(s)
+            else:
+                index_set = link["index_set"]
+                setattr(model, slack_name,
+                        pyo.Var(index_set, domain=pyo.NonNegativeReals, initialize=0.0))
+                s = getattr(model, slack_name)
+                setattr(model, "feas_link_" + name,
+                        pyo.Constraint(index_set,
+                                       rule=lambda m, *idx: lhs[idx] - s[idx] == hat[idx]))
+                slack_terms.extend(s[idx] for idx in index_set)
+            s.fix(0.0)
+            getattr(model, "feas_link_" + name).deactivate()
+
+        if slack_terms:
+            model.feas_obj = pyo.Objective(expr=sum(slack_terms), sense=pyo.minimize)
+            model.feas_obj.deactivate()
+        self._elastic_ready = True
+
+    @contextlib.contextmanager
+    def elastic_mode(self):
+        """Pone el bloque en modo elastico EN SITU, para generar un corte de
+        FACTIBILIDAD cuando el anio resulta infactible con el estado recibido.
+
+        Mide cuanto estado le habria faltado: cada igualdad de fijacion
+        z = x_hat se reemplaza por z - s = x_hat con s >= 0, y el objetivo pasa
+        a ser sum(s). El resto del modelo queda intacto.
+
+            v(x_hat) = min { sum(s) : z - s = x_hat, (x,u,z) en F }
+
+        v = 0 significa que el anio si es factible con lo que recibio; v > 0 es
+        exactamente la cantidad de estado que le falto, y su dual dice en que
+        familias. La holgura va SOLO en las igualdades de fijacion: el resto de
+        las restricciones son del propio anio y relajarlas no diria nada sobre
+        el estado heredado.
+
+        Se relaja la integralidad porque el corte necesita duales. Ojo con la
+        consecuencia: si el anio es infactible por integralidad y no por falta
+        de estado, este LP da v = 0 y el corte queda vacio -- el llamador tiene
+        que detectarlo (ver ForwardPass) en vez de girar en falso.
+        """
+        self._ensure_elastic_components()
+        model = self.model
+        if not self._elastic_links():
+            raise RuntimeError(
+                "El bloque del anio " + str(self.year) + " no hereda ningun "
+                "estado, asi que no hay corte de factibilidad que generar."
+            )
+
+        relax = TransformationFactory("core.relax_integer_vars")
+        relax.apply_to(model)
+        conmutados = []
+        try:
+            for link in self._elastic_links():
+                name = link["state"]
+                getattr(model, "link_" + name).deactivate()
+                getattr(model, "feas_link_" + name).activate()
+                getattr(model, "feas_slack_" + name).unfix()
+                conmutados.append(name)
+            model.obj.deactivate()
+            model.feas_obj.activate()
+            yield model
+        finally:
+            # Restaurar SIEMPRE: si el bloque quedara en modo elastico, los
+            # forwards siguientes resolverian un problema distinto sin avisar.
+            model.feas_obj.deactivate()
+            model.obj.activate()
+            for name in conmutados:
+                getattr(model, "feas_link_" + name).deactivate()
+                getattr(model, "link_" + name).activate()
+                getattr(model, "feas_slack_" + name).fix(0.0)
+            relax.apply_to(model, undo=True)
+
+
+    @contextlib.contextmanager
+    def relaxed_mode(self):
+        """Relaja la integralidad de este bloque EN SITU y la restaura al salir.
+
+        No se clona. clone() de Pyomo es un deepcopy del grafo de objetos, y el
+        backward relaja una vez por ANIO y por ITERACION, asi que ese costo se
+        paga N_anios * N_iteraciones veces.
+
+        Medicion honesta del ahorro: en un A/B sobre el mismo bloque (65k
+        variables, instancia 640kW_2dias_1MB) el tramo relajado paso de 7.4 s
+        clonando a 4.9 s en sitio -- 1.5x, con el clone costando 2.6 s. Sobre 11
+        anios y 20 iteraciones eso son ~10 minutos de puro clonado, mas la
+        memoria que deja de duplicarse.
+
+        OJO con una medicion anterior que circulo como justificacion: se observo
+        un clone de MAS de 13 minutos sobre un bloque de 160k variables, y de ahi
+        salio un supuesto factor 100x. Esa medicion se tomo con el proceso en
+        2.8 GB y ~3 GB libres, o sea paginando: el numero era real pero no
+        representativo. El ahorro tipico es 1.5x; el 13 minutos es lo que pasa
+        cuando ademas falta memoria, que es precisamente el escenario que esto
+        evita.
+
+        Ojo: al resolver se sobreescriben los valores de las variables del
+        bloque con los del LP. Es seguro porque el forward ya extrajo su
+        solucion a diccionarios antes de que corra el backward, y el forward de
+        la iteracion siguiente vuelve a resolver el MILP.
+        """
+        relax = TransformationFactory("core.relax_integer_vars")
+        relax.apply_to(self.model)
+        try:
+            yield self.model
+        finally:
+            relax.apply_to(self.model, undo=True)
+
 
     def _add_linear_state(self, model, state_name, state_var_name, delta_name, accum_var, index_set,
                            prev_bound=None):
@@ -436,7 +574,12 @@ class YearBlockBuilder(object):
         # Potencia de subestacion: decidida UNA sola vez para todo el
         # horizonte (ya no Delta/stock año a año, ver BoundRules en
         # functions.py) -- usa el acople "global_once", igual que G_g/H.
-        self._add_global_once_state(model, "P_max_k", "P_max_k", model.stations_set)
+        # El estado que cruza los anios es el CONTEO de modulos, no la potencia:
+        # n_ssee_k es entera (P_max_k = P_SSEE_STEP * n_ssee_k, ver
+        # ConstraintRules.ssee_discreta) y eso habilita el redondeo entero del
+        # corte de factibilidad. Fijar el conteo fija la potencia, asi que es
+        # equivalente como estado.
+        self._add_global_once_state(model, "n_ssee_k", "n_ssee_k", model.stations_set)
 
         if len(list(model.gen_set)) > 0:
             # G_g ya no tiene Delta/indice de año (decidida una sola vez
