@@ -79,9 +79,9 @@ def main(scenario, max_iter, n_years):
     for h in res["gap_history"]:
         x = h.get("x_hat_primer_anio", {})
         g = {k2: round(v2, 4) for k2, v2 in x.get("G", {}).items()}
-        nmk = {k2: round(v2, 2) for k2, v2 in x.get("N_max_k", {}).items()}
+        nmk = {k2: round(v2, 2) for k2, v2 in x.get("n_ssee_k", {}).items()}
         print(f"  k={h['iteration']:<3} G={g}  H={round(x.get('H', 0.0), 4)}  "
-              f"N_max_k={nmk}", flush=True)
+              f"n_ssee_k={nmk}", flush=True)
 
     print(f"\ncortes de factibilidad en total: "
           f"{solver.forward_pass.feasibility_cuts_added}", flush=True)

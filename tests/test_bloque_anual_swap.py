@@ -93,7 +93,7 @@ def main(scenario):
                              exogenous_stations=exo)
     names = sorted(l["state"] for l in block.state_links)
     print(f"       {names}")
-    esperados = sorted(["N_bays", "N_chargers", "N_batteries", "N_max_k", "G", "H", "D"])
+    esperados = sorted(["N_bays", "N_chargers", "N_batteries", "n_ssee_k", "G", "H", "D"])
     esperados = [n for n in esperados
                  if not (n == "G" and len(list(block.model.gen_set)) == 0)
                  and not (n == "H" and len(list(block.model.storage_set)) == 0)
@@ -106,7 +106,7 @@ def main(scenario):
     # Las familias stock SI declaran heredado en y1, con valor 0: es como se
     # codifica el arranque greenfield (stock = 0 + Delta), equivalente a la rama
     # y == first_year de link_*_stock en el monolitico. Los estados que se
-    # deciden una sola vez (N_max_k/G/H) y la degradacion no deben tenerlo: en
+    # deciden una sola vez (n_ssee_k/G/H) y la degradacion no deben tenerlo: en
     # y1 son decision libre, no algo recibido.
     for link in block.state_links:
         if link["kind"] == "global_once" or link["state"] == "D":

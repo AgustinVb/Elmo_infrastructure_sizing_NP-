@@ -128,7 +128,7 @@ def main(scenario):
             "N_bays": {k: value(mono.N_bays[k, y1]) for k in stations},
             "N_chargers": {k: value(mono.N_chargers[k, y1]) for k in stations},
             "N_batteries": {k: value(mono.N_batteries[k, y1]) for k in stations},
-            "N_max_k": {k: value(mono.N_max_k[k]) for k in stations},
+            "n_ssee_k": {k: value(mono.n_ssee_k[k]) for k in stations},
             "D": value(mono.D[y1]) if mine_system.battery_degradation else None,
         }
         if len(list(mono.gen_set)) > 0:
@@ -144,7 +144,7 @@ def main(scenario):
           f"bays={list(x_star['N_bays'].values())} "
           f"chg={list(x_star['N_chargers'].values())} "
           f"bat={list(x_star['N_batteries'].values())} "
-          f"N_max_k={list(x_star['N_max_k'].values())} D={x_star['D']}")
+          f"n_ssee_k={list(x_star['n_ssee_k'].values())} D={x_star['D']}")
 
     print("\n[2] una iteracion de Nested Benders")
     solver = NestedBendersSolver(

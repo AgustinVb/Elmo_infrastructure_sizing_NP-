@@ -90,7 +90,7 @@ def main(scenario):
     cut = [c for c in cm.history if not str(c.get("kind", "")).startswith("feasibility")][-1]
     ancla = cut["x_hat_base"]
     print(f"\n    ancla del corte: N_bays={ancla['N_bays']}", flush=True)
-    print(f"                     N_max_k={ancla['N_max_k']}  D={ancla['D']:.2f}", flush=True)
+    print(f"                     n_ssee_k={ancla['n_ssee_k']}  D={ancla['D']:.2f}", flush=True)
 
     # Perturbaciones. Las que AUMENTAN el estado son las discriminantes: con
     # mu >= 0 el corte baja, y un signo invertido lo haria subir por encima del
@@ -105,7 +105,7 @@ def main(scenario):
     agregar("N_bays[s2] +1",      lambda x: x["N_bays"].__setitem__(s2, x["N_bays"][s2] + 1))
     agregar("N_chargers[s2] +1",  lambda x: x["N_chargers"].__setitem__(s2, x["N_chargers"][s2] + 1))
     agregar("N_batteries[s1] +1", lambda x: x["N_batteries"].__setitem__(s1, x["N_batteries"][s1] + 1))
-    agregar("N_max_k[s3] +1",     lambda x: x["N_max_k"].__setitem__(s3, x["N_max_k"][s3] + 1))
+    agregar("n_ssee_k[s3] +1",     lambda x: x["n_ssee_k"].__setitem__(s3, x["n_ssee_k"][s3] + 1))
     agregar("D -10%",             lambda x: x.__setitem__("D", x["D"] * 0.9))
     agregar("todo +1 en las 3 naves", lambda x: [
         x[f].__setitem__(k, x[f][k] + 1)
