@@ -491,7 +491,10 @@ class OptModel(object):
 
         if self.solution_status in condiciones_aceptables:
             
-            if hasattr(self.model, 'obj') and value(self.model.obj) is not None:
+            # exception=False: si Gurobi llego al TimeLimit sin incumbente las
+            # variables no tienen valor y value() lanzaria ValueError en vez de
+            # devolver None (paso en el monolitico a 6 anios con 2260 s).
+            if hasattr(self.model, 'obj') and value(self.model.obj, exception=False) is not None:
                 self.opt_cost_result = value(self.model.obj)
                 print(f"✅ Solution time [sec]: {self.time_total:.2f}")
                 print(f"📊 Status: {self.solution_status}") 
