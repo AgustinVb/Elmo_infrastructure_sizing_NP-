@@ -159,6 +159,20 @@ def main():
              'de memoria que la descomposicion evita.'
     )
     parser.add_argument(
+        '--mono_timelimit', type=int, default=None,
+        help='Timelimit en segundos del solve monolitico: en --mode monolithic '
+             '(por defecto 172800 s, 48 h) y en la fase monolitica de --mode hybrid '
+             '(por defecto el valor de --solve_timelimit). Sirve para el benchmark '
+             'a presupuesto igual entre monolitico solo e hibrido.'
+    )
+    parser.add_argument(
+        '--mip_focus', type=int, choices=[0, 1, 2, 3], default=3,
+        help='Gurobi MIPFocus del solve monolitico (monolithic e hybrid). 3 (default, '
+             'el historico) prioriza la cota; 1 prioriza encontrar incumbentes, que '
+             'es lo que le falta al hibrido cuando llega con un MIP start bueno y no '
+             'lo mejora.'
+    )
+    parser.add_argument(
         '--capacity_presolve', choices=['peak', 'all', 'off'], default='peak',
         help='[decomposed|hybrid] presolve de capacidad de subestacion (ver '
              'NestedBendersSolver._capacity_presolve): antes de iterar resuelve, '
@@ -248,6 +262,8 @@ def main():
             relax_integrality=args.relax_integrality,
             autonomous_mode=args.autonomous_mode,
             mccormick_degradation=args.mccormick_degradation,
+            mip_focus=args.mip_focus,
+            **({'timelimit': args.mono_timelimit} if args.mono_timelimit else {}),
         )
     else:
         if args.fixed_stations_json:
@@ -307,8 +323,9 @@ def main():
                 t_hib = time.time()
                 print("[Hibrido] resolviendo el monolitico con la solucion "
                       "descompuesta como MIP start...")
+                om_report.mip_focus = args.mip_focus
                 om_report.solve_model(gap, solver_name,
-                                      timelimit=args.solve_timelimit)
+                                      timelimit=args.mono_timelimit or args.solve_timelimit)
                 print(f"[Hibrido] monolitico resuelto en "
                       f"{time.time() - t_hib:.0f}s: "
                       f"costo = {om_report.opt_cost_result:,.2f}")

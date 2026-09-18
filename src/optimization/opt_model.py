@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -47,6 +47,10 @@ class OptModel(object):
         # convexa n_ciclos_link -- ver _configure_solver mas abajo, que
         # entonces NO activa Gurobi NonConvex=2.
         self.mccormick_degradation = mccormick_degradation
+        # Gurobi MIPFocus del solve monolitico: 3 (cota) es el historico. En
+        # --mode hybrid el modelo llega con un incumbente bueno y lo que se
+        # quiere es mejorarlo, para lo que 1 (incumbentes) puede convenir.
+        self.mip_focus = mip_focus
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
@@ -331,7 +335,7 @@ class OptModel(object):
             opt.options['LogFile'] = log_file
             opt.options['Threads'] = 32
             opt.options['Heuristics'] = 0.5
-            opt.options['MIPFocus'] = 3
+            opt.options['MIPFocus'] = self.mip_focus
             opt.options['Presolve'] = 2
             opt.options['FlowCoverCuts'] = 2
             opt.options['TimeLimit'] = timelimit
