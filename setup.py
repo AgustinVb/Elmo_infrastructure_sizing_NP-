@@ -6,7 +6,18 @@ import argparse, pprint
 import pandas as pd
 from os.path import join
 import os
+import sys
 import xlrd
+
+# En Windows la consola suele quedar en cp1252, que no puede codificar los
+# emojis usados en los prints de progreso (✅/⚠️/etc.) a lo largo del
+# pipeline (opt_model.py, printer.py, ...) -- eso lanzaba UnicodeEncodeError
+# DESPUES de que Gurobi ya hubiera resuelto el modelo (visto en
+# limited_infeasible_log tras un monolitico sin incumbente). Mismo arreglo
+# que carga_ob_multiaño.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 xlrd.xlsx.ensure_elementtree_imported(False, None)
 xlrd.xlsx.Element_has_iter = True
 
