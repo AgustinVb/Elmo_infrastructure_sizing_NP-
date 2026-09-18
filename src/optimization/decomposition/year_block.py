@@ -412,6 +412,72 @@ class YearBlockBuilder(object):
             relax.apply_to(self.model, undo=True)
 
     @contextlib.contextmanager
+    def capacity_presolve_mode(self, station=None):
+        """Convierte el bloque EN SITU en el problema auxiliar del presolve de
+        capacidad (ver NestedBendersSolver._capacity_presolve) y lo restaura
+        al salir:
+
+            n*_y(k) = min { n_ssee_k[k] : (x, u) factible para el anio y,
+                            con TODO el estado heredado libre }
+
+        Se desacoplan las igualdades de fijacion link_<estado> (N_bays,
+        N_chargers, N_batteries, n_ssee_k, G, H, D): el anio elige libremente
+        con que llega, dentro de las cotas fisicas que ya tienen las copias.
+        Eso hace del auxiliar una RELAJACION del anio en contexto -- en el
+        horizonte completo su heredado esta ademas restringido por los anios
+        previos --, asi que su minimo es cota inferior valida de la capacidad
+        que el anio necesita de verdad, y como n_ssee_k se decide una sola vez
+        para todo el horizonte, tambien de la que el anio 1 tiene que comprar.
+
+        La minimizacion es POR NAVE: la potencia de cada nave acota solo a sus
+        propios cargadores, y un minimo de la suma no diria cuanto necesita
+        cada una (el anio 1 pondria los modulos en la nave mas barata y el
+        corte de factibilidad volveria a saltar). Ojo que las naves SI se
+        acoplan por la meta diaria total de produccion: al minimizar una con
+        las otras libres, la nave produce su piso y las otras absorben el
+        resto, asi que la cota es valida pero puede quedar floja (medido en
+        carga on board: (1,1,1) contra (2,1,1) que termina comprando el
+        forward).
+
+        Los cortes de model.cuts se dejan activos: son desigualdades validas
+        del problema completo (alpha queda libre, asi que los de optimalidad
+        no atan), y al momento del presolve la lista esta vacia de todos modos.
+        No se relaja la integralidad -- el auxiliar es un MILP y lo que se usa
+        es su cota dual, valida aunque se corte por tiempo.
+
+        station=None minimiza la SUMA sum_k n_ssee_k[k]: es el complemento de
+        los minimos por nave, porque capta lo que ellos no pueden ver por el
+        acople de la meta diaria -- "una u otra nave necesita un modulo mas"
+        da minimo 0 en cada una por separado y +1 en la suma (medido en swap,
+        160kW_2dias: el unico corte de factibilidad era exactamente
+        n_2 + n_3 >= 1).
+        """
+        model = self.model
+        if station is not None and station not in model.stations_set:
+            raise ValueError(f"nave {station!r} no pertenece al bloque del anio {self.year}")
+        desacoplados = []
+        for link in self.state_links:
+            if link["hat"] is None:
+                continue
+            con = getattr(model, "link_" + link["state"])
+            if con.active:
+                con.deactivate()
+                desacoplados.append(con)
+        model.obj.deactivate()
+        objetivo = (model.n_ssee_k[station] if station is not None
+                    else sum(model.n_ssee_k[k] for k in model.stations_set))
+        model.presolve_obj = pyo.Objective(expr=objetivo, sense=pyo.minimize)
+        try:
+            yield model
+        finally:
+            # Restaurar SIEMPRE, o el forward resolveria el anio con el estado
+            # desacoplado y sin su objetivo.
+            model.del_component("presolve_obj")
+            model.obj.activate()
+            for con in desacoplados:
+                con.activate()
+
+    @contextlib.contextmanager
     def elastic_mode(self):
         """Pone el bloque en modo elastico EN SITU, para generar un corte de
         FACTIBILIDAD cuando el anio resulta infactible con el estado recibido.

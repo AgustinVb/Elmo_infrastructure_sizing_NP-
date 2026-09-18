@@ -100,6 +100,7 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
                        'timelimit': args.solve_timelimit},
         block_build_jobs=args.block_build_jobs,
         monolithic_lp_bound=not args.no_monolithic_lp_bound,
+        capacity_presolve=args.capacity_presolve,
     )
     resultado = solver.solve(verbose=True)
 
@@ -221,6 +222,18 @@ def main():
              'naves, que en modo descompuesto es exogena. Si se omite se infiere de '
              'la hoja StationAssignment: se construye toda nave con al menos un equipo '
              'asignado.'
+    )
+    parser.add_argument(
+        '--capacity_presolve', choices=['peak', 'all', 'off'], default='peak',
+        help='[--mode decomposed] presolve de capacidad de subestacion (ver '
+             'NestedBendersSolver._capacity_presolve): antes de iterar resuelve, '
+             'por nave, el minimo n_ssee_k que hace factible a un anio con todo el '
+             'estado heredado libre, y lo impone como cota inferior en el anio 1 y '
+             'en el LP monolitico. Es una desigualdad valida (no invalida UB ni LB) '
+             'y evita que la capacidad del pico de produccion llegue al anio 1 via '
+             'cortes de factibilidad, cada uno de los cuales reinicia el forward. '
+             'peak (default): solo el anio de mayor meta de produccion. all: todos '
+             'los anios, cota mas fuerte pero |naves|*|anios| MILP. off: sin presolve.'
     )
     parser.add_argument(
         '--no_monolithic_lp_bound', action='store_true',
