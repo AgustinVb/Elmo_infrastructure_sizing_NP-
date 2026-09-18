@@ -724,7 +724,7 @@ class NestedBendersSolver(object):
             "total_time_sec": total_time,
         }
 
-    def build_report_model(self, output_folder):
+    def build_report_model(self, output_folder, scan_residuals=True):
         """Puente de reporte (plan de M5): construye -- sin resolver -- un
         OptModel monolitico sobre el MISMO mine_system/time_series, y le
         carga encima la MEJOR solucion factible encontrada (best_full_
@@ -888,5 +888,68 @@ class NestedBendersSolver(object):
             print(f"[NestedBenders] no se pudo verificar el costo del modelo de "
                   f"reporte ({type(exc).__name__}: {exc}).")
 
+        # Residuo del MIP start por familia de restricciones. Gurobi evalua el
+        # arranque contra FeasibilityTol (1e-6) y lo descarta en silencio si
+        # alguna fila lo supera -- paso en el hibrido a 6 anios ("violates
+        # constraint x1661848 by 0.000057418") sin decir de que familia era.
+        # Cada bloque se resuelve por separado con sus propias tolerancias
+        # relativas y al ensamblar los anios el residuo se mide contra un
+        # umbral absoluto; esto muestra donde se acumula, que es lo que hace
+        # falta para sanear el punto antes de entregarlo en vez de aflojar
+        # FeasibilityTol para todo el modelo.
+        if scan_residuals:
+            t_res = time.time()
+            om.mip_start_residuals, saltadas, sin_valor = self._mip_start_residuals(model)
+            print(f"[NestedBenders] residuo del MIP start por familia "
+                  f"(max |violacion|, {time.time() - t_res:.0f}s):")
+            for name, (viol, idx, n_over) in om.mip_start_residuals:
+                marca = "  <-- supera FeasibilityTol 1e-6" if viol > 1e-6 else ""
+                print(f"    {name:<32} {viol:.3e}  en {idx}  "
+                      f"({n_over} filas > 1e-6){marca}")
+            if saltadas or sin_valor:
+                # Una fila sin evaluar es una fila que Gurobi SI evalua: las
+                # variables sin valor entran al MIP start como libres y Gurobi
+                # las completa, pero si la parte fija ya es incompatible el
+                # arranque se descarta igual.
+                print(f"[NestedBenders] AVISO: {saltadas} filas no evaluadas por "
+                      f"variables sin valor; variables sin valor por familia: "
+                      f"{sin_valor}")
 
         return om
+
+    @staticmethod
+    def _mip_start_residuals(model, top=10):
+        """([(familia, (max violacion, indice, filas que superan 1e-6))],
+        filas no evaluadas, {familia: variables sin valor}): las `top`
+        familias con mayor violacion de los valores cargados en `model`.
+        Recorre todas las restricciones activas evaluando el cuerpo con los
+        valores actuales; en un monolitico de 6 anios son ~2 M filas, del
+        orden de un minuto."""
+        worst = {}
+        saltadas = 0
+        sin_valor = {}
+        for var in model.component_objects(pyo.Var, active=True):
+            n = sum(1 for idx in var if var[idx].value is None) if var.is_indexed() \
+                else (1 if var.value is None else 0)
+            if n:
+                sin_valor[var.name] = n
+        for con in model.component_objects(pyo.Constraint, active=True):
+            name = con.name
+            for idx in con:
+                c = con[idx]
+                body = value(c.body, exception=False)
+                if body is None:
+                    saltadas += 1
+                    continue
+                viol = 0.0
+                if c.has_lb():
+                    viol = max(viol, value(c.lower) - body)
+                if c.has_ub():
+                    viol = max(viol, body - value(c.upper))
+                if viol <= 0.0:
+                    continue
+                prev = worst.get(name, (0.0, None, 0))
+                worst[name] = (max(prev[0], viol),
+                               idx if viol > prev[0] else prev[1],
+                               prev[2] + (1 if viol > 1e-6 else 0))
+        return sorted(worst.items(), key=lambda kv: -kv[1][0])[:top], saltadas, sin_valor
