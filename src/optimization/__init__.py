@@ -9,7 +9,8 @@ class OptimizationModel(object):
                  init_solution_folder=None,
                  relax_integrality=False,
                  autonomous_mode=False,
-                 mccormick_degradation=False):
+                 mccormick_degradation=False,
+                 mip_focus=3):
 
         t0 = time.time()
 
@@ -22,6 +23,7 @@ class OptimizationModel(object):
             init_solution_folder=init_solution_folder,
             autonomous_mode=autonomous_mode,
             mccormick_degradation=mccormick_degradation,
+            mip_focus=mip_focus,
         )
         print('formulation time:', time.time() - t0)
         self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
