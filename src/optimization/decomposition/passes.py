@@ -79,7 +79,14 @@ def _bounds_tag(current_ub, current_lb):
 
 
 def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, label="",
-           extra_options=None, require_optimal=False):
+           extra_options=None, require_optimal=False, load_solutions=True):
+    """load_solutions=False deja las variables del modelo como estaban y solo
+    devuelve el resultado (cotas primal/dual, condicion de termino). Lo usa el
+    presolve de capacidad (driver._capacity_presolve), al que le alcanza con
+    la cota dual de Gurobi (result.problem.lower_bound) y que no quiere pisar
+    el punto de arranque del bloque -- y ademas asi un MILP que llega al
+    TimeLimit sin incumbente sigue devolviendo su cota en vez de fallar al
+    cargar una solucion que no existe."""
     if solvername == "gurobi":
         opt = SolverFactory("gurobi", solver_io="python")
         opt.options["MIPGap"] = gap
@@ -94,7 +101,7 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
     else:
         opt = SolverFactory(solvername)
 
-    result = opt.solve(model, tee=tee, load_solutions=True)
+    result = opt.solve(model, tee=tee, load_solutions=load_solutions)
     # Ver comentario junto a _interrupt_requested. Dos señales, no una sola
     # -- confirmado con una corrida real que la primera no alcanza: cuando
     # el SIGINT llega en medio de un solve activo, Gurobi lo atrapa el
@@ -245,11 +252,38 @@ class ForwardPass(object):
                 f"factibilidad no la puede corregir."
             )
 
+        atan = {k: v for k, v in mu.items()
+                if (max(v.values()) if isinstance(v, dict) else v) > 1e-7}
         if verbose:
-            atan = {k: v for k, v in mu.items()
-                    if (max(v.values()) if isinstance(v, dict) else v) > 1e-7}
+            detalle = {f: ({i: round(m, 4) for i, m in v.items() if m > 1e-7}
+                           if isinstance(v, dict) else round(v, 4))
+                       for f, v in atan.items()}
             print(f"[NestedBenders] FORWARD  falta de estado v={v_hat:,.4f}; "
-                  f"familias que atan: {sorted(atan)}")
+                  f"familias que atan (mu): {detalle}")
+
+        # PROPAGACION DIRECTA. Si todas las familias que atan son "global_once"
+        # (n_ssee_k, G, H: las decide solo el primer anio y todos los demas las
+        # reciben identicas), el corte va derecho al bloque del anio 1. El
+        # padre inmediato no puede cambiarlas -- en su bloque estan fijadas al
+        # heredado --, asi que dejarle el corte solo lo vuelve infactible y la
+        # misma informacion baja un anio por vez, con un barrido completo
+        # desde el anio 1 por cada escalon. Medido en carga on board a 6 anios:
+        # un unico deficit de n_ssee_k en el anio 5 costo CUATRO reinicios
+        # (5->4, 4->3, 3->2, 2->1) en vez de uno.
+        #
+        # Es riguroso: el corte v_hat + mu^T (x_hat - x) <= 0 vale para el
+        # estado x que recibe el hijo, y si mu solo tiene componentes
+        # global_once la desigualdad restringe unicamente ese vector, que es
+        # literalmente la variable del anio 1 (y su ancla x_hat es la misma en
+        # todos los anios del barrido). Nada se pierde respecto de la cascada,
+        # que en cada escalon rehace el LP elastico y puede solo aflojar.
+        kinds = {link["state"]: link.get("kind") for link in child.state_links}
+        if exc.index > 1 and atan and all(kinds.get(f) == "global_once" for f in atan):
+            parent = self.blocks[0]
+            if verbose:
+                print(f"[NestedBenders] FORWARD  todas las familias que atan son "
+                      f"globales ({sorted(atan)}): el corte va directo al anio "
+                      f"{parent.year}")
         self.cut_manager.add_feasibility_cut(
             parent, v_hat, mu, exc.x_hat_by_year[parent.year], iteration=iteration
         )

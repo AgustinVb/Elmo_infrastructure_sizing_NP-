@@ -286,6 +286,58 @@ class YearBlockBuilder(object):
         finally:
             relax.apply_to(self.model, undo=True)
 
+    @contextlib.contextmanager
+    def capacity_presolve_mode(self, station):
+        """Convierte el bloque EN SITU en el problema auxiliar del presolve de
+        capacidad (ver NestedBendersSolver._capacity_presolve) y lo restaura
+        al salir:
+
+            n*_y(k) = min { n_ssee_k[k] : (x, u) factible para el anio y,
+                            con TODO el estado heredado libre }
+
+        Se desacoplan las igualdades de fijacion link_<estado> (N_chargers,
+        n_ssee_k, G, H, D): el anio elige libremente con que llega, dentro de
+        las cotas fisicas que ya tienen las copias (max_bays_k, B_U, ...). Eso
+        hace del auxiliar una RELAJACION del anio en contexto -- en el
+        horizonte completo su heredado esta ademas restringido por los anios
+        previos --, asi que su minimo es cota inferior valida de la capacidad
+        que el anio necesita de verdad, y como n_ssee_k se decide una sola vez
+        para todo el horizonte, tambien de la que el anio 1 tiene que comprar.
+
+        La minimizacion es POR NAVE: sum(P[k,i,...]) <= P_max_k[k] separa las
+        naves, con los equipos asignados estaticamente, y un minimo de la suma
+        no diria cuanto necesita cada una (el anio 1 pondria los modulos en la
+        nave mas barata y el corte de factibilidad volveria a saltar).
+
+        Los cortes de model.cuts se dejan activos: son desigualdades validas
+        del problema completo (alpha queda libre, asi que los de optimalidad
+        no atan), y al momento del presolve la lista esta vacia de todos modos.
+        No se relaja la integralidad -- el auxiliar es un MILP y lo que se usa
+        es su cota dual, valida aunque se corte por tiempo.
+        """
+        model = self.model
+        if station not in model.stations_set:
+            raise ValueError(f"nave {station!r} no pertenece al bloque del anio {self.year}")
+        desacoplados = []
+        for link in self.state_links:
+            if link["hat"] is None:
+                continue
+            con = getattr(model, "link_" + link["state"])
+            if con.active:
+                con.deactivate()
+                desacoplados.append(con)
+        model.obj.deactivate()
+        model.presolve_obj = pyo.Objective(expr=model.n_ssee_k[station], sense=pyo.minimize)
+        try:
+            yield model
+        finally:
+            # Restaurar SIEMPRE, o el forward resolveria el anio con el estado
+            # desacoplado y sin su objetivo.
+            model.del_component("presolve_obj")
+            model.obj.activate()
+            for con in desacoplados:
+                con.activate()
+
 
     def _add_linear_state(self, model, state_name, state_var_name, delta_name, accum_var, index_set,
                            prev_bound=None):

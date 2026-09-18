@@ -159,6 +159,18 @@ def main():
              'de memoria que la descomposicion evita.'
     )
     parser.add_argument(
+        '--capacity_presolve', choices=['peak', 'all', 'off'], default='peak',
+        help='[decomposed|hybrid] presolve de capacidad de subestacion (ver '
+             'NestedBendersSolver._capacity_presolve): antes de iterar resuelve, '
+             'por nave, el minimo n_ssee_k que hace factible a un anio con todo el '
+             'estado heredado libre, y lo impone como cota inferior en el anio 1 y '
+             'en el LP monolitico. Es una desigualdad valida (no invalida UB ni LB) '
+             'y evita que la capacidad del pico de produccion llegue al anio 1 via '
+             'cortes de factibilidad, cada uno de los cuales reinicia el forward. '
+             'peak (default): solo el anio de mayor meta de produccion. all: todos '
+             'los anios, cota mas fuerte pero |naves|*|anios| MILP. off: sin presolve.'
+    )
+    parser.add_argument(
         '--max_iter', type=int, default=20,
         help='[decomposed] maximo de iteraciones forward/backward.'
     )
@@ -266,6 +278,7 @@ def main():
             block_build_jobs=args.block_build_jobs,
             macroblock_forward=args.macroblock_forward,
             monolithic_lp_bound=not args.no_monolithic_lp_bound,
+            capacity_presolve=args.capacity_presolve,
         )
         result = solver.solve()
         interrupted_tag = " (interrumpido con Ctrl+C)" if result.get("interrupted") else ""

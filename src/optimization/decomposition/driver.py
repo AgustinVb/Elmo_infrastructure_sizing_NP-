@@ -1,3 +1,4 @@
+import math
 import os
 import signal
 import sys
@@ -13,7 +14,7 @@ from src.optimization.decomposition.macroblocks import (
     compute_power_shares,
     split_daily_targets,
 )
-from src.optimization.decomposition.passes import ForwardPass, BackwardPass
+from src.optimization.decomposition.passes import ForwardPass, BackwardPass, _solve
 
 # Los workers de construccion de bloques (ver _build_blocks) reciben
 # mine_system/time_series/autonomous_mode via Pool(initializer=...): en
@@ -87,8 +88,18 @@ class NestedBendersSolver(object):
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
                  strengthen=False, degradation_cut_mode="mccormick", lagrangean_kwargs=None,
                  block_build_jobs=None, macroblock_forward=False,
-                 monolithic_lp_bound=True):
+                 monolithic_lp_bound=True, capacity_presolve="peak"):
         """
+        :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
+            capacidad de subestacion (ver _capacity_presolve): antes de
+            iterar, calcula por nave la cota inferior n_ssee_k[k] >= max_y
+            n*_y(k) resolviendo el problema auxiliar de cada anio elegido con
+            todo el estado heredado libre, y la impone en el bloque del anio
+            1 y en el LP monolitico. "peak" resuelve solo el anio de mayor
+            meta de produccion (el que gobierna la capacidad); "all" resuelve
+            todos los anios y toma el maximo (cota mas fuerte, |K|*|Y| MILP en
+            vez de |K|). Es una desigualdad valida, no una heuristica: no
+            invalida ni el UB ni el LB.
         :param macroblock_forward: default False (comportamiento de siempre).
             Con True, cada año POSTERIOR al primero se resuelve en la fase
             forward como varios MILP de macrobloque --una nave de carga con
@@ -188,6 +199,13 @@ class NestedBendersSolver(object):
 
         self.monolithic_lp_bound = monolithic_lp_bound
         self.lb_monolithic_lp = None
+        if capacity_presolve not in ("peak", "all", "off", None):
+            raise ValueError(f"capacity_presolve debe ser 'peak', 'all' u 'off' "
+                             f"(recibido {capacity_presolve!r})")
+        self.capacity_presolve = capacity_presolve if capacity_presolve != "off" else None
+        # {k: cota entera} que dejo el presolve; None si no corrio.
+        self.capacity_bounds = None
+        self.capacity_presolve_time = 0.0
 
         self.ub = float("inf")
         self.lb = float("-inf")
@@ -302,6 +320,131 @@ class NestedBendersSolver(object):
 
         return blocks_by_year, fleet_params
 
+    def _production_target_by_year(self):
+        """Meta anual de produccion, sum_j m_j[j, y], leida del bloque de cada
+        anio (mismo parametro que usa ConstraintRules.daily_production)."""
+        return {
+            blk.year: sum(value(blk.model.m_j[j, blk.year]) for j in blk.model.nodes_set)
+            for blk in self.blocks
+        }
+
+    def _capacity_presolve(self, verbose=True):
+        """Presolve de capacidad de subestacion. Devuelve {k: cota entera} y la
+        deja impuesta como cota inferior de n_ssee_k[k] en el bloque del anio 1.
+
+        EL PROBLEMA. n_ssee_k se decide una sola vez para todo el horizonte,
+        pero el anio 1 la dimensiona mirando solo su propia demanda, que es la
+        mas chica del perfil (2% del pico en la instancia de 3 naves). El
+        requerimiento de los anios de mayor produccion viaja hacia atras un
+        anio por vez -- el anio 3 corta al 2, el 2 queda infactible y corta al
+        1 -- y cada corte de factibilidad reinicia el barrido completo desde el
+        anio 1. Medido en carga on board a 6 anios: 9 cortes, 2.060 s.
+
+        LA COTA. Cualquier solucion factible del horizonte tiene que servirle a
+        todos los anios, asi que
+
+            n_ssee_k[k]  >=  max_y  n*_y(k),
+            n*_y(k) = min { n_ssee_k[k] : anio y factible, estado heredado libre }
+
+        El auxiliar es una relajacion del anio en contexto (ver
+        YearBlockBuilder.capacity_presolve_mode), asi que n*_y(k) es cota
+        inferior de lo que el anio necesita de verdad y la desigualdad es
+        valida para el problema completo con X exogena: se puede imponer en el
+        anio 1 sin invalidar el UB ni el LB, y sirve tambien para apretar el LP
+        monolitico (la inversion en subestacion sube en la relajacion).
+
+        Se usa la cota dual del MILP, ceil(ObjBound): valida aunque el solve se
+        corte por tiempo, y como el objetivo es una entera sin coeficientes
+        Gurobi termina apenas ObjBound > incumbente - 1.
+
+        FUERZA. Con el heredado libre el anio elige la combinacion que minimiza
+        n_ssee_k (mas cargadores, bateria nueva...), asi que la cota puede
+        quedar por debajo de lo que el forward termina comprando. Se mide al
+        final de solve() comparandola contra el n_ssee_k elegido.
+
+        QUE ANIOS. "peak": solo el de mayor meta de produccion, que es el que
+        gobierna la capacidad; cuesta |K| MILP de un anio. "all": todos, |K|*|Y|
+        MILP, cota mas fuerte.
+        """
+        targets = self._production_target_by_year()
+        if self.capacity_presolve == "peak":
+            peak = max(targets, key=targets.get)
+            selected = [blk for blk in self.blocks if blk.year == peak]
+        else:
+            selected = list(self.blocks)
+
+        if verbose:
+            perfil = "  ".join(f"{y}:{t:,.0f}" for y, t in sorted(targets.items()))
+            print(f"[NestedBenders] presolve de capacidad ({self.capacity_presolve}): "
+                  f"meta por anio {perfil}")
+            print(f"[NestedBenders] presolve de capacidad: anios "
+                  f"{[blk.year for blk in selected]}, modulos de {self._ssee_step():,.0f} kW")
+            sys.stdout.flush()
+
+        stations = list(self.blocks[0].model.stations_set)
+        bounds = {k: 0 for k in stations}
+        argmax_year = {k: None for k in stations}
+        for blk in selected:
+            for k in stations:
+                if not self.exogenous_stations_by_year[blk.year].get(k, 0):
+                    continue  # nave cerrada ese anio: n*_y(k) = 0, trivial
+                t0 = time.time()
+                with blk.capacity_presolve_mode(k) as aux:
+                    result = _solve(aux, label=f"presolve capacidad y={blk.year} {k}",
+                                    load_solutions=False, **self.solver_kwargs)
+                dual = result.problem.lower_bound
+                primal = result.problem.upper_bound
+                if dual is None:
+                    raise RuntimeError(
+                        f"el presolve de capacidad del anio {blk.year}, nave {k}, "
+                        f"no devolvio cota dual ({result.solver.termination_condition})"
+                    )
+                n_min = max(0, int(math.ceil(dual - 1e-6)))
+                if verbose:
+                    primal_tag = f"{primal:.3f}" if primal is not None else "sin incumbente"
+                    print(f"[NestedBenders] presolve capacidad  anio {blk.year}  {k}: "
+                          f"n_ssee_k >= {n_min}  (dual {dual:.4f}, primal {primal_tag}, "
+                          f"{time.time() - t0:.0f}s)")
+                    sys.stdout.flush()
+                if n_min > bounds[k]:
+                    bounds[k] = n_min
+                    argmax_year[k] = blk.year
+
+        first = self.blocks[0].model
+        for k, n_min in bounds.items():
+            var = first.n_ssee_k[k]
+            if var.lb is None or n_min > var.lb:
+                var.setlb(n_min)
+        if verbose:
+            resumen = "  ".join(
+                f"{k}: >= {n} ({n * self._ssee_step():,.0f} kW, anio {argmax_year[k]})"
+                for k, n in sorted(bounds.items())
+            )
+            print(f"[NestedBenders] presolve de capacidad: cotas impuestas al anio "
+                  f"{self.blocks[0].year}: {resumen}")
+        return bounds
+
+    @staticmethod
+    def _ssee_step():
+        from src.optimization.functions import P_SSEE_STEP
+        return P_SSEE_STEP
+
+    def _report_capacity_bound_strength(self):
+        """Fuerza del presolve: la cota contra lo que el forward compro."""
+        if self.capacity_bounds is None or self.best_solution is None:
+            return
+        chosen = self.best_solution[self.blocks[0].year].get("n_ssee_k", {})
+        partes = []
+        for k, n_min in sorted(self.capacity_bounds.items()):
+            n_sol = chosen.get(k)
+            if n_sol is None:
+                continue
+            n_sol = int(round(n_sol))
+            tag = "ajustada" if n_sol == n_min else f"floja por {n_sol - n_min}"
+            partes.append(f"{k}: cota {n_min}, elegido {n_sol} ({tag})")
+        print(f"[NestedBenders] presolve de capacidad, fuerza de la cota: "
+              f"{'; '.join(partes)}")
+
     def _monolithic_lp_bound(self):
         """Cota inferior adicional: el valor optimo de la relajacion lineal del
         modelo monolitico COMPLETO, calculado una sola vez antes de iterar.
@@ -362,6 +505,13 @@ class NestedBendersSolver(object):
             rule=ObjectiveRules(self.mine_system, self.time_series, **common).total_cost,
             sense=pyo.minimize,
         )
+        if self.capacity_bounds:
+            # Desigualdad valida del problema completo (ver _capacity_presolve):
+            # aprieta la relajacion sin cambiar de problema. Es la unica cota
+            # del backward que no se estanca en el LP puro (sec. 5.1 del
+            # contexto): la inversion en subestacion sube directo en el LB.
+            for k, n_min in self.capacity_bounds.items():
+                model.n_ssee_k[k].setlb(n_min)
         TransformationFactory("core.relax_integer_vars").apply_to(model)
 
         opt = SolverFactory("gurobi", solver_io="python")
@@ -424,6 +574,14 @@ class NestedBendersSolver(object):
         gap = float("inf")
         interrupted = False
         solve_start = time.time()
+
+        if self.capacity_presolve:
+            t_pre = time.time()
+            self.capacity_bounds = self._capacity_presolve(verbose=verbose)
+            self.capacity_presolve_time = time.time() - t_pre
+            if verbose:
+                print(f"[NestedBenders] presolve de capacidad: "
+                      f"{self.capacity_presolve_time:.0f}s")
 
         if self.monolithic_lp_bound:
             if verbose:
@@ -494,10 +652,15 @@ class NestedBendersSolver(object):
         total_time = time.time() - solve_start
         self.iterations_run = k
         if verbose:
+            self._report_capacity_bound_strength()
             print(f"[NestedBenders] tiempo total: {total_time:.1f}s "
-                  f"({k} iteracion{'es' if k != 1 else ''})")
+                  f"({k} iteracion{'es' if k != 1 else ''}, "
+                  f"{self.forward_pass.feasibility_cuts_added} cortes de factibilidad)")
         return {
             "lb_monolithic_lp": self.lb_monolithic_lp,
+            "capacity_bounds": self.capacity_bounds,
+            "capacity_presolve_time_sec": self.capacity_presolve_time,
+            "feasibility_cuts": self.forward_pass.feasibility_cuts_added,
             "ub": self.ub,
             "lb": self.lb,
             "gap": gap,
