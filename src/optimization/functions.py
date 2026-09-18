@@ -1018,6 +1018,37 @@ class ConstraintRules(OptRules):
             return model.X[k,y] == model.Delta_X[k,y]
         return model.X[k,y] == model.X[k, self._prev_year(y)] + model.Delta_X[k,y]
 
+    def apertura_solo_primer_anio(self, model, k, y):
+        """Las naves se abren TODAS al inicio del horizonte, o no se abren: no
+        se permite diferir la apertura a un anio posterior.
+
+        Es una decision de modelado, no una simplificacion tecnica, y existe
+        para que el monolitico y la descomposicion resuelvan EL MISMO problema.
+        En modo descompuesto X es exogena (ver documento sec. 2.1) y el
+        calendario por defecto --infer_exogenous_stations-- abre toda nave con
+        equipo asignado desde el anio 1. Si el monolitico pudiera diferir una
+        apertura, estaria resolviendo una version menos restringida y cualquier
+        comparacion entre ambos mediria en parte esa diferencia de problema en
+        vez de la calidad del algoritmo.
+
+        Deja intacto el QUE naves abrir (eso lo sigue decidiendo el modelo);
+        elimina solo el CUANDO. OJO: una nave con equipo asignado NO esta
+        obligada a abrir -- sus equipos simplemente no cargan y la meta la
+        cubren los demas. Medido en 640kW_2dias a 2 anios
+        (tests/test_apertura_primer_anio_ob.py): con X libre el monolitico deja
+        station_2 cerrada los dos anios (2.393.464) contra 2.597.067 con las
+        tres abiertas desde el anio 1, que es el calendario que infiere la
+        descomposicion. Es decir, en horizontes cortos el monolitico y la
+        descomposicion siguen resolviendo problemas distintos en el QUE; a 6
+        anios coinciden porque desde el anio 3 las tres naves necesitan
+        capacidad (presolve de capacidad). Sin esta restriccion, ademas, el
+        monolitico abre station_2 recien en el anio 2 (2.390.855; diferencia
+        dentro del MIPGap del 1%).
+        """
+        if y == self._first_year():
+            return pyo.Constraint.Skip
+        return model.Delta_X[k, y] == 0
+
     def link_charger_stock(self, model, k, y):
         if y == self._first_year():
             return model.N_chargers[k,y] == model.Delta_N_chargers[k,y]
@@ -1333,6 +1364,10 @@ class ConstraintRules(OptRules):
         model.charger_limit             = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.charger_limit)
         if self.exogenous_stations is None:
             model.link_station_stock     = pyo.Constraint(model.stations_set, model.years, rule=self.link_station_stock)
+            # Sin esto el monolitico puede diferir aperturas y la descomposicion
+            # no (X exogena), y los dos dejan de resolver el mismo problema.
+            model.apertura_solo_primer_anio = pyo.Constraint(
+                model.stations_set, model.years, rule=self.apertura_solo_primer_anio)
         if not self.is_decomposed_block:
             # Descomposicion: la acumulacion entre años del stock de
             # cargadores la arma YearBlockBuilder via el parametro heredado
