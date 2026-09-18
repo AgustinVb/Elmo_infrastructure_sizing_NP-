@@ -287,7 +287,7 @@ class YearBlockBuilder(object):
             relax.apply_to(self.model, undo=True)
 
     @contextlib.contextmanager
-    def capacity_presolve_mode(self, station):
+    def capacity_presolve_mode(self, station=None):
         """Convierte el bloque EN SITU en el problema auxiliar del presolve de
         capacidad (ver NestedBendersSolver._capacity_presolve) y lo restaura
         al salir:
@@ -314,9 +314,16 @@ class YearBlockBuilder(object):
         no atan), y al momento del presolve la lista esta vacia de todos modos.
         No se relaja la integralidad -- el auxiliar es un MILP y lo que se usa
         es su cota dual, valida aunque se corte por tiempo.
+
+        station=None minimiza la SUMA sum_k n_ssee_k[k]: es el complemento de
+        los minimos por nave, porque capta lo que ellos no pueden ver por el
+        acople de la meta diaria -- "una u otra nave necesita un modulo mas"
+        da minimo 0 en cada una por separado y +1 en la suma (medido en swap,
+        160kW_2dias: el unico corte de factibilidad era exactamente
+        n_2 + n_3 >= 1).
         """
         model = self.model
-        if station not in model.stations_set:
+        if station is not None and station not in model.stations_set:
             raise ValueError(f"nave {station!r} no pertenece al bloque del anio {self.year}")
         desacoplados = []
         for link in self.state_links:
@@ -327,7 +334,9 @@ class YearBlockBuilder(object):
                 con.deactivate()
                 desacoplados.append(con)
         model.obj.deactivate()
-        model.presolve_obj = pyo.Objective(expr=model.n_ssee_k[station], sense=pyo.minimize)
+        objetivo = (model.n_ssee_k[station] if station is not None
+                    else sum(model.n_ssee_k[k] for k in model.stations_set))
+        model.presolve_obj = pyo.Objective(expr=objetivo, sense=pyo.minimize)
         try:
             yield model
         finally:

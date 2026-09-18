@@ -4,6 +4,7 @@ import signal
 import sys
 import time
 
+import pyomo.environ as pyo
 from pyomo.environ import value
 
 from src.optimization.decomposition import passes as passes_module
@@ -205,6 +206,9 @@ class NestedBendersSolver(object):
         self.capacity_presolve = capacity_presolve if capacity_presolve != "off" else None
         # {k: cota entera} que dejo el presolve; None si no corrio.
         self.capacity_bounds = None
+        # Cota agregada sum_k n_ssee_k >= v, solo si supera la suma de las
+        # cotas por nave; None si no corrio o es redundante.
+        self.capacity_sum_bound = None
         self.capacity_presolve_time = 0.0
 
         self.ub = float("inf")
@@ -362,9 +366,18 @@ class NestedBendersSolver(object):
         quedar por debajo de lo que el forward termina comprando. Se mide al
         final de solve() comparandola contra el n_ssee_k elegido.
 
+        COTA AGREGADA. Ademas de los minimos por nave se resuelve, por anio,
+        min sum_k n_ssee_k[k] con el mismo auxiliar, y se impone
+        sum_k n_ssee_k[k] >= max_y de ese minimo. Es el complemento de los
+        minimos por nave: las naves se acoplan por la meta diaria total, asi
+        que "una u otra nave necesita un modulo mas" da minimo 0 en cada una
+        por separado y si aparece en la suma. Medido en swap (160kW_2dias, 2
+        anios): el unico corte de factibilidad del forward era exactamente
+        n_2 + n_3 >= 1, invisible para las cotas por nave (1,0,0).
+
         QUE ANIOS. "peak": solo el de mayor meta de produccion, que es el que
-        gobierna la capacidad; cuesta |K| MILP de un anio. "all": todos, |K|*|Y|
-        MILP, cota mas fuerte.
+        gobierna la capacidad; cuesta |K|+1 MILP de un anio. "all": todos,
+        (|K|+1)*|Y| MILP, cota mas fuerte.
         """
         targets = self._production_target_by_year()
         if self.capacity_presolve == "peak":
@@ -384,7 +397,28 @@ class NestedBendersSolver(object):
         stations = list(self.blocks[0].model.stations_set)
         bounds = {k: 0 for k in stations}
         argmax_year = {k: None for k in stations}
+        sum_bound, sum_year = 0, None
         for blk in selected:
+            t0 = time.time()
+            with blk.capacity_presolve_mode(None) as aux:
+                result = _solve(aux, label=f"presolve capacidad y={blk.year} suma",
+                                load_solutions=False, **self.solver_kwargs)
+            dual = result.problem.lower_bound
+            if dual is None:
+                raise RuntimeError(
+                    f"el presolve de capacidad del anio {blk.year} (suma) no devolvio "
+                    f"cota dual ({result.solver.termination_condition})"
+                )
+            v_min = max(0, int(math.ceil(dual - 1e-6)))
+            if verbose:
+                primal = result.problem.upper_bound
+                primal_tag = f"{primal:.3f}" if primal is not None else "sin incumbente"
+                print(f"[NestedBenders] presolve capacidad  anio {blk.year}  suma: "
+                      f"sum n_ssee_k >= {v_min}  (dual {dual:.4f}, primal {primal_tag}, "
+                      f"{time.time() - t0:.0f}s)")
+                sys.stdout.flush()
+            if v_min > sum_bound:
+                sum_bound, sum_year = v_min, blk.year
             for k in stations:
                 if not self.exogenous_stations_by_year[blk.year].get(k, 0):
                     continue  # nave cerrada ese anio: n*_y(k) = 0, trivial
@@ -415,6 +449,12 @@ class NestedBendersSolver(object):
             var = first.n_ssee_k[k]
             if var.lb is None or n_min > var.lb:
                 var.setlb(n_min)
+        # La agregada solo si dice algo mas que la suma de las cotas por nave.
+        self.capacity_sum_bound = sum_bound if sum_bound > sum(bounds.values()) else None
+        if self.capacity_sum_bound is not None:
+            first.presolve_capacity_sum = pyo.Constraint(
+                expr=sum(first.n_ssee_k[k] for k in stations) >= self.capacity_sum_bound
+            )
         if verbose:
             resumen = "  ".join(
                 f"{k}: >= {n} ({n * self._ssee_step():,.0f} kW, anio {argmax_year[k]})"
@@ -422,6 +462,13 @@ class NestedBendersSolver(object):
             )
             print(f"[NestedBenders] presolve de capacidad: cotas impuestas al anio "
                   f"{self.blocks[0].year}: {resumen}")
+            if self.capacity_sum_bound is not None:
+                print(f"[NestedBenders] presolve de capacidad: cota agregada "
+                      f"sum n_ssee_k >= {self.capacity_sum_bound} (anio {sum_year}; "
+                      f"las cotas por nave suman {sum(bounds.values())})")
+            else:
+                print(f"[NestedBenders] presolve de capacidad: la cota agregada "
+                      f"({sum_bound}) no agrega nada sobre las cotas por nave")
         return bounds
 
     @staticmethod
@@ -512,6 +559,11 @@ class NestedBendersSolver(object):
             # contexto): la inversion en subestacion sube directo en el LB.
             for k, n_min in self.capacity_bounds.items():
                 model.n_ssee_k[k].setlb(n_min)
+            if self.capacity_sum_bound is not None:
+                model.presolve_capacity_sum = pyo.Constraint(
+                    expr=sum(model.n_ssee_k[k] for k in model.stations_set)
+                    >= self.capacity_sum_bound
+                )
         TransformationFactory("core.relax_integer_vars").apply_to(model)
 
         opt = SolverFactory("gurobi", solver_io="python")
@@ -659,6 +711,7 @@ class NestedBendersSolver(object):
         return {
             "lb_monolithic_lp": self.lb_monolithic_lp,
             "capacity_bounds": self.capacity_bounds,
+            "capacity_sum_bound": self.capacity_sum_bound,
             "capacity_presolve_time_sec": self.capacity_presolve_time,
             "feasibility_cuts": self.forward_pass.feasibility_cuts_added,
             "ub": self.ub,

@@ -153,6 +153,12 @@ def main(scenario, n_years, comparar, modo, con_referencia):
           str({k: first.n_ssee_k[k].lb for k in stations}))
     check(any(bounds[k] > 0 for k in stations),
           "al menos una nave recibio una cota no trivial", str(bounds))
+    if solver.capacity_sum_bound is not None:
+        print(f"       cota agregada: sum n_ssee_k >= {solver.capacity_sum_bound}", flush=True)
+        check(hasattr(first, "presolve_capacity_sum"),
+              "la cota agregada quedo impuesta como restriccion en el anio 1")
+    else:
+        print("       cota agregada: redundante con las cotas por nave", flush=True)
 
     if con_referencia:
         print("\n[3] validez: cota <= n_ssee_k de una solucion factible del monolitico",
@@ -181,6 +187,9 @@ def main(scenario, n_years, comparar, modo, con_referencia):
           f"cortes de factibilidad={res['feasibility_cuts']}  n_ssee_k={n_fwd}", flush=True)
     check(all(int(round(n_fwd[k])) >= bounds[k] for k in stations),
           "el forward respeta la cota", str(n_fwd))
+    if solver.capacity_sum_bound is not None:
+        check(sum(int(round(v)) for v in n_fwd.values()) >= solver.capacity_sum_bound,
+              "el forward respeta la cota agregada")
     print(f"       cortes de factibilidad con el presolve: {res['feasibility_cuts']} "
           f"(informativo; la cota es valida, no completa)", flush=True)
     check(res["lb"] <= res["ub"] * (1 + 2 * GAP) + 1e-6, "LB <= UB",
