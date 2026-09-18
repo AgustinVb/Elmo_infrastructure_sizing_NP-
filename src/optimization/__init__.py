@@ -28,6 +28,12 @@ class OptimizationModel(object):
         print('formulation time:', time.time() - t0)
         self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
 
+        if getattr(self.opt_model, 'opt_cost_result', None) is None:
+            # Sin incumbente no hay nada que exportar: Printer evaluaria
+            # variables sin valor y reventaria despues de horas de solve.
+            print('WARN Sin solucion factible: se omite la exportacion de CSV y graficos.')
+            return
+
         # 2) Exporta CSV y genera gráficos
         printer = Printer(self.opt_model,      
                           output_folder,
