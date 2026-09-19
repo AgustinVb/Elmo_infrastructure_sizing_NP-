@@ -421,7 +421,8 @@ class NestedBendersSolver(object):
         return value(model.obj)
 
 
-    def build_report_model(self, output_folder, verbose=True):
+    def build_report_model(self, output_folder, verbose=True, scan_residuals=True,
+                           polish_mip_start=True):
         """Arma un OptModel monolitico de SOLO LECTURA con la mejor solucion
         encontrada ya cargada sobre sus variables, para que Printer genere los
         CSV y los graficos sin enterarse de que el problema se resolvio
@@ -470,12 +471,20 @@ class NestedBendersSolver(object):
                 if isinstance(valores, dict):
                     for idx, val in valores.items():
                         if idx in comp:
-                            comp[idx].value = val
+                            vardata = comp[idx]
+                            # Los bloques devuelven enteras con ruido de
+                            # IntFeasTol (Z = 7e-7, Z_swap = 0.9999993): se
+                            # redondean, como en carga_ob_multiaño. La
+                            # consistencia de las continuas con ese redondeo
+                            # la restablece el pulido de mas abajo.
+                            if vardata.is_binary() or vardata.is_integer():
+                                val = int(round(val))
+                            vardata.set_value(val, skip_validation=True)
                             aplicadas += 1
                 elif comp.is_indexed():
                     sin_equivalente.add(nombre)
                 else:
-                    comp.value = valores
+                    comp.set_value(valores, skip_validation=True)
                     aplicadas += 1
 
         # X exogeno: Delta_X es lo que se abre en el anio, o sea la diferencia
@@ -558,8 +567,130 @@ class NestedBendersSolver(object):
                   "que reporto el algoritmo.")
             print("=" * 78)
 
+        # PULIDO DEL MIP START. Cada bloque anual se resolvio por separado con
+        # MIPGap 1% e IntFeasTol 1e-5, asi que sus enteras traen ruido (Z =
+        # 7e-7, Z_swap = 0.9999993) y sus continuas fueron calculadas con esos
+        # valores sin redondear. Al fijar el arranque Gurobi redondea las
+        # enteras, y en las filas con big-M una diferencia de 7e-7 por un
+        # coeficiente de ~100 supera FeasibilityTol (1e-6): asi se descarto el
+        # arranque del hibrido de swap a 6 anios ("violates constraint x937763
+        # by 0.000048569") y el monolitico termino sin solucion. Aca se fijan
+        # las enteras en sus valores redondeados y se resuelve el LP que queda,
+        # de modo que las continuas sean consistentes a tolerancia de LP
+        # (1e-9) sin depender de como se resolvio cada bloque. Cuesta un LP del
+        # monolitico (~3 min a 6 anios) y el costo solo puede bajar o quedar
+        # igual; opt_cost_result pasa a ser el costo pulido.
+        if polish_mip_start:
+            self._polish_mip_start(report, verbose=verbose)
+            informe["costo_pulido"] = report.opt_cost_result
+
+        # Residuo del MIP start por familia de restricciones. Gurobi evalua el
+        # arranque contra FeasibilityTol (1e-6) y lo descarta en silencio si
+        # alguna fila lo supera, sin decir de que familia es -- paso en el
+        # hibrido de swap a 6 anios: "violates constraint x937763 by
+        # 0.000048569". Cada bloque se resuelve por separado con sus propias
+        # tolerancias relativas y al ensamblar los anios el residuo se mide
+        # contra un umbral absoluto; esto muestra donde se acumula, que es lo
+        # que hace falta para sanear el punto antes de entregarlo en vez de
+        # aflojar FeasibilityTol para todo el modelo. Portado de
+        # carga_ob_multiaño (8bb9bda5a).
+        if scan_residuals:
+            t_res = time.time()
+            report.mip_start_residuals, saltadas, sin_valor = self._mip_start_residuals(model)
+            informe["mip_start_residuals"] = report.mip_start_residuals
+            if verbose:
+                print(f"[NestedBenders] residuo del MIP start por familia "
+                      f"(max |violacion|, {time.time() - t_res:.0f}s):")
+                for name, (viol, idx, n_over) in report.mip_start_residuals:
+                    marca = "  <-- supera FeasibilityTol 1e-6" if viol > 1e-6 else ""
+                    print(f"    {name:<32} {viol:.3e}  en {idx}  "
+                          f"({n_over} filas > 1e-6){marca}")
+                if saltadas or sin_valor:
+                    print(f"[NestedBenders] AVISO: {saltadas} filas no evaluadas por "
+                          f"variables sin valor; variables sin valor por familia: "
+                          f"{sin_valor}")
 
         return report, informe
+
+    def _polish_mip_start(self, report, verbose=True):
+        """Fija las variables enteras/binarias del modelo de reporte en sus
+        valores (ya redondeados) y resuelve el LP resultante con Gurobi, dejando
+        las continuas consistentes con ellas. Si el LP resulta infactible --el
+        redondeo rompio algo-- se avisa y se conservan los valores originales.
+        Ver build_report_model."""
+        from pyomo.environ import SolverFactory
+        from pyomo.opt import TerminationCondition
+
+        model = report.model
+        t0 = time.time()
+        fijadas = []
+        for var in model.component_objects(pyo.Var, active=True):
+            for idx in (var if var.is_indexed() else [None]):
+                v = var[idx] if idx is not None else var
+                if v.fixed or v.value is None:
+                    continue
+                if v.is_binary() or v.is_integer():
+                    v.fix(int(round(v.value)))
+                    fijadas.append(v)
+        antes = value(model.obj, exception=False)
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options["OutputFlag"] = 0
+        opt.options["TimeLimit"] = self.solver_kwargs.get("timelimit", 900)
+        try:
+            result = opt.solve(model, load_solutions=False)
+            cond = result.solver.termination_condition
+            if cond == TerminationCondition.optimal:
+                model.solutions.load_from(result)
+                despues = value(model.obj)
+                report.opt_cost_result = despues
+                if verbose:
+                    print(f"[NestedBenders] MIP start pulido (LP con enteras fijas, "
+                          f"{len(fijadas):,} fijadas, {time.time() - t0:.0f}s): costo "
+                          f"{antes:,.2f} -> {despues:,.2f}")
+            else:
+                print(f"[NestedBenders] AVISO: el pulido del MIP start no llego al "
+                      f"optimo ({cond}); se conservan los valores sin pulir. Si es "
+                      f"infactible, el redondeo de las enteras rompio la solucion.")
+        finally:
+            for v in fijadas:
+                v.unfix()
+
+    @staticmethod
+    def _mip_start_residuals(model, top=10):
+        """([(familia, (max violacion, indice, filas que superan 1e-6))],
+        filas no evaluadas, {familia: variables sin valor}): las `top`
+        familias con mayor violacion de los valores cargados en `model`.
+        Recorre todas las restricciones activas evaluando el cuerpo con los
+        valores actuales; en un monolitico de 6 anios son ~1-2 M filas, del
+        orden de un minuto."""
+        worst = {}
+        saltadas = 0
+        sin_valor = {}
+        for var in model.component_objects(pyo.Var, active=True):
+            n = sum(1 for idx in var if var[idx].value is None) if var.is_indexed() \
+                else (1 if var.value is None else 0)
+            if n:
+                sin_valor[var.name] = n
+        for con in model.component_objects(pyo.Constraint, active=True):
+            name = con.name
+            for idx in con:
+                c = con[idx]
+                body = value(c.body, exception=False)
+                if body is None:
+                    saltadas += 1
+                    continue
+                viol = 0.0
+                if c.has_lb():
+                    viol = max(viol, value(c.lower) - body)
+                if c.has_ub():
+                    viol = max(viol, body - value(c.upper))
+                if viol <= 0.0:
+                    continue
+                prev = worst.get(name, (0.0, None, 0))
+                worst[name] = (max(prev[0], viol),
+                               idx if viol > prev[0] else prev[1],
+                               prev[2] + (1 if viol > 1e-6 else 0))
+        return sorted(worst.items(), key=lambda kv: -kv[1][0])[:top], saltadas, sin_valor
 
 
     def solve(self, verbose=True):
