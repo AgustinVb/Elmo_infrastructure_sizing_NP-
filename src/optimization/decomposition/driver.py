@@ -724,7 +724,8 @@ class NestedBendersSolver(object):
             "total_time_sec": total_time,
         }
 
-    def build_report_model(self, output_folder, scan_residuals=True):
+    def build_report_model(self, output_folder, scan_residuals=True,
+                           polish_mip_start=True):
         """Puente de reporte (plan de M5): construye -- sin resolver -- un
         OptModel monolitico sobre el MISMO mine_system/time_series, y le
         carga encima la MEJOR solucion factible encontrada (best_full_
@@ -888,6 +889,23 @@ class NestedBendersSolver(object):
             print(f"[NestedBenders] no se pudo verificar el costo del modelo de "
                   f"reporte ({type(exc).__name__}: {exc}).")
 
+        # PULIDO DEL MIP START. Cada bloque anual se resolvio por separado con
+        # MIPGap 1% e IntFeasTol 1e-5: sus enteras traen ruido y sus continuas
+        # fueron calculadas con esos valores sin redondear. Al fijar el
+        # arranque Gurobi redondea las enteras, y en filas con big-M una
+        # diferencia de 7e-7 por un coeficiente de ~100 supera FeasibilityTol
+        # (1e-6): asi se descarto el arranque en swap a 6 anios ("violates
+        # constraint x937763 by 0.000048569"). Aca se fijan las enteras en sus
+        # valores redondeados y se resuelve el LP que queda, dejando las
+        # continuas consistentes a tolerancia de LP sin depender de como se
+        # resolvio cada bloque. Cuesta un LP del monolitico (~6 min a 6 anios
+        # en carga on board) y el costo solo puede bajar o quedar igual;
+        # opt_cost_result pasa a ser el costo pulido. En esta rama el arranque
+        # ya entraba sin pulir (residuo 1.2e-8), pero a 11 anios un arranque
+        # rechazado tira horas de computo, y el LP es barato frente a eso.
+        if polish_mip_start:
+            self._polish_mip_start(om, verbose=True)
+
         # Residuo del MIP start por familia de restricciones. Gurobi evalua el
         # arranque contra FeasibilityTol (1e-6) y lo descarta en silencio si
         # alguna fila lo supera -- paso en el hibrido a 6 anios ("violates
@@ -916,6 +934,49 @@ class NestedBendersSolver(object):
                       f"{sin_valor}")
 
         return om
+
+    def _polish_mip_start(self, report, verbose=True):
+        """Fija las variables enteras/binarias del modelo de reporte en sus
+        valores (ya redondeados) y resuelve el LP resultante con Gurobi, dejando
+        las continuas consistentes con ellas. Si el LP resulta infactible --el
+        redondeo rompio algo-- se avisa y se conservan los valores originales.
+        Ver build_report_model."""
+        from pyomo.environ import SolverFactory
+        from pyomo.opt import TerminationCondition
+
+        model = report.model
+        t0 = time.time()
+        fijadas = []
+        for var in model.component_objects(pyo.Var, active=True):
+            for idx in (var if var.is_indexed() else [None]):
+                v = var[idx] if idx is not None else var
+                if v.fixed or v.value is None:
+                    continue
+                if v.is_binary() or v.is_integer():
+                    v.fix(int(round(v.value)))
+                    fijadas.append(v)
+        antes = value(model.obj, exception=False)
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options["OutputFlag"] = 0
+        opt.options["TimeLimit"] = self.solver_kwargs.get("timelimit", 900)
+        try:
+            result = opt.solve(model, load_solutions=False)
+            cond = result.solver.termination_condition
+            if cond == TerminationCondition.optimal:
+                model.solutions.load_from(result)
+                despues = value(model.obj)
+                report.opt_cost_result = despues
+                if verbose:
+                    print(f"[NestedBenders] MIP start pulido (LP con enteras fijas, "
+                          f"{len(fijadas):,} fijadas, {time.time() - t0:.0f}s): costo "
+                          f"{antes:,.2f} -> {despues:,.2f}")
+            else:
+                print(f"[NestedBenders] AVISO: el pulido del MIP start no llego al "
+                      f"optimo ({cond}); se conservan los valores sin pulir. Si es "
+                      f"infactible, el redondeo de las enteras rompio la solucion.")
+        finally:
+            for v in fijadas:
+                v.unfix()
 
     @staticmethod
     def _mip_start_residuals(model, top=10):
