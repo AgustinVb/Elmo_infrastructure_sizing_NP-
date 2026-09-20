@@ -1,0 +1,31 @@
+escenario: data/Data antigua/Escenarios_DCH_costos_nuevos/Costo_fijo/Carga_on_board_fixed_3estaciones_P640kW/
+           2 años [1, 2], 3 naves, 12 equipos electricos
+
+[1] particion en 3 macrobloques
+  OK     ningun equipo en dos macrobloques
+  OK     ningun nodo en dos macrobloques
+  OK     los macrobloques cubren todos los equipos electricos
+       station_1: 4 equipos, 0 nodos
+       station_2: 4 equipos, 0 nodos
+       station_3: 4 equipos, 0 nodos
+
+[2] cuotas de potencia: station_1=0.3333, station_2=0.3333, station_3=0.3333
+  OK     las cuotas suman exactamente 1 (sin esto la solucion recombinada dejaria capacidad sin usar o violaria el limite global)  -- suma=1.000000000000000
+  OK     ninguna cuota es cero o negativa
+
+[3] meta de produccion repartida
+  OK     año 1: la suma de las metas repartidas es la meta global  -- 0.00 vs 0.00
+  OK     año 2: la suma de las metas repartidas es la meta global  -- 0.00 vs 0.00
+
+[4] bloque restringido vs bloque del año completo
+       año completo: 52,241 variables / 39,881 restricciones
+       macrobloque : 11,895 variables / 13,793 restricciones (23% / 35%)
+  OK     el bloque de macrobloque es mas chico
+  OK     el bloque del año completo conserva TODAS las naves (flag apagado intacto)
+  OK     el bloque de macrobloque tiene solo su nave
+  OK     el bloque de macrobloque tiene solo sus equipos
+
+[5] degradacion: estado de flota, no repartido
+       (escenario sin hoja BatteryDegradation: nada que coordinar)
+
+TODO OK

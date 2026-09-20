@@ -1,0 +1,43 @@
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:1,074  2:14,728  3:33,712  4:44,805  5:48,543  6:50,583
+[NestedBenders] presolve de capacidad: anios [6], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 6  suma: sum n_ssee_k >= 4  (dual 4.0000, primal 4.000, 33s)
+[NestedBenders] presolve capacidad  anio 6  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 20s)
+[NestedBenders] presolve capacidad  anio 6  station_2: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 19s)
+[NestedBenders] presolve capacidad  anio 6  station_3: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 20s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 6)  station_2: >= 1 (500 kW, anio 6)  station_3: >= 1 (500 kW, anio 6)
+[NestedBenders] presolve de capacidad: cota agregada sum n_ssee_k >= 4 (anio 6; las cotas por nave suman 3)
+[NestedBenders] presolve de capacidad: 93s
+[NestedBenders] k=1 FORWARD  anio 1 (1/6)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/6)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -801.075008 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/6)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -2026.477754 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 4 (4/6)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 4  AVISO: residuo McCormick = -4384.976808 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 5 (5/6)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 6 (6/6)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=1,466,669.14  LB=317,431.14  gap=78.3570%
+[NestedBenders] k=1 FORWARD  anio 6  AVISO: residuo McCormick = -1229.381122 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 BACKWARD anio 6  [UB=7,682,499.34  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=1 BACKWARD anio 5  [UB=7,682,499.34  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=1 BACKWARD anio 4  [UB=7,682,499.34  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=1 BACKWARD anio 3  [UB=7,682,499.34  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=7,682,499.34  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=7,682,499.34  LB=(sin cota aun)]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1  UB=7682499.3377  LB=1066995.0227  gap=86.1114%  tiempo_iteracion=969.3s
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 2 (floja por 1); station_2: cota 1, elegido 1 (ajustada); station_3: cota 1, elegido 1 (ajustada)
+[NestedBenders] tiempo total: 1061.8s (1 iteracion, 0 cortes de factibilidad)
+UB=7,682,499.34  cortes de factibilidad=0
+[NestedBenders] reporte: costo recomputado = 8,292,207.67 (comparable 7,682,499.34 contra UB 7,682,499.34, desvio 0.000000)
+[NestedBenders] residuo del MIP start por familia (max |violacion|, 20s):
+    s_def                            1.164e-08  en 3  (0 filas > 1e-6)
+    battery_soc                      2.817e-10  en ('LH518B_7', 5, 196, 87.0)  (0 filas > 1e-6)
+    mccormick_ub2                    2.910e-11  en 2  (0 filas > 1e-6)
+    power_balance                    2.683e-11  en (6, 196, 81.0)  (0 filas > 1e-6)
+    power_cost_peak_limit            7.503e-12  en (6, 196, 80.0)  (0 filas > 1e-6)
+    battery_soc_break_symmetry       5.798e-12  en ('LH518B_7', 'LH518B_8', 5, 196)  (0 filas > 1e-6)
+    max_installed_capacity           1.364e-12  en ('station_3', 4, 15, 132.0)  (0 filas > 1e-6)
+    battery_lower                    5.826e-13  en ('LH518B_2', 6, 196, 75.0)  (0 filas > 1e-6)
+    battery_upper                    1.705e-13  en ('LH518B_11', 6, 196, 86.0)  (0 filas > 1e-6)

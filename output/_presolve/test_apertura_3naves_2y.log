@@ -1,0 +1,25 @@
+escenario: data/DCH/640kW_2dias/  (2 anios [1, 2], 3 naves)
+
+[1] la restriccion existe solo donde X es variable
+  OK     el monolitico (X libre) tiene apertura_solo_primer_anio
+  OK     una fila por nave y anio posterior al primero (el primero se salta)  -- 3 filas, esperadas 3
+  OK     ninguna fila en el primer anio
+  OK     un bloque de la descomposicion (X exogena) NO la tiene
+  OK     en el bloque X no es variable
+
+[2] monolitico con la restriccion: aperturas solo en el primer anio
+       monolitico con apertura_solo_primer_anio: optimal, obj = 2,393,464.12
+  OK     Delta_X[k, y > 1] = 0 en la solucion  -- {}
+  OK     X[k, y] constante en y  -- {'station_1': [1, 1], 'station_2': [0, 0], 'station_3': [1, 1]}
+       X del monolitico: {'station_1': [1, 1], 'station_2': [0, 0], 'station_3': [1, 1]}
+       X que infiere la descomposicion: {'station_1': [1, 1], 'station_2': [1, 1], 'station_3': [1, 1]}
+       NO coinciden: el monolitico elige otro layout (que naves abrir sigue siendo suyo)
+
+[3] orden de los optimos: X fija >= X libre con restriccion >= X libre sin ella
+       monolitico con X fija al calendario inferido: optimal, obj = 2,597,066.67
+       monolitico SIN la restriccion: optimal, obj = 2,390,855.20
+  OK     X fija >= X libre con restriccion  -- 2,597,066.67 >= 2,393,464.12
+  OK     X libre con restriccion >= X libre sin ella  -- 2,393,464.12 >= 2,390,855.20
+       la restriccion ATA: sin ella el monolitico difiere aperturas {('station_2', 2): 1} y ahorra 2,608.92
+
+TODO OK

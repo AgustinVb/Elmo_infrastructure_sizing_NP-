@@ -1,0 +1,253 @@
+formulation time: 282.09917545318604
+Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)
+Set parameter MIPGap to value 0.01
+Set parameter LogFile to value "output/_bench_ob/A2_monolithic_2260s/gurobi.log"
+Set parameter Threads to value 32
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 2260
+Set parameter NonConvex to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 32 threads
+
+Warning: Thread count (32) is larger than processor count (8)
+         Reduce the value of the Threads parameter to improve performance
+
+
+Optimize a model with 829405 rows, 1433981 columns and 4040190 nonzeros
+Model fingerprint: 0xefbb04f9
+Model has 5 quadratic constraints
+Variable types: 622460 continuous, 811521 integer (811482 binary)
+Coefficient statistics:
+  Matrix range     [4e-02, 1e+03]
+  QMatrix range    [1e+00, 1e+00]
+  QLMatrix range   [8e-02, 2e-01]
+  Objective range  [2e+00, 3e+06]
+  Bounds range     [1e+00, 2e+05]
+  RHS range        [1e+00, 5e+04]
+Presolve removed 754850 rows and 1138834 columns (presolve time = 5s) ...
+Presolve removed 754850 rows and 1138834 columns
+Presolve time: 6.79s
+Presolved: 74575 rows, 295147 columns, 1023837 nonzeros
+Presolved model has 5 bilinear constraint(s)
+Variable types: 16734 continuous, 278413 integer (276096 binary)
+Root relaxation presolve removed 5865 rows and 1091 columns
+Root relaxation presolved: 68710 rows, 294056 columns, 1006853 nonzeros
+
+Deterministic concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Root barrier log...
+
+Ordering time: 0.06s
+
+Barrier statistics:
+ Dense cols : 11
+ AA' NZ     : 8.518e+05
+ Factor NZ  : 1.890e+06 (roughly 160 MB of memory)
+ Factor Ops : 9.615e+07 (less than 1 second per iteration)
+ Threads    : 30
+
+                  Objective                Residual
+Iter       Primal          Dual         Primal    Dual     Compl     Time
+   0   4.74503043e+09 -1.74811676e+12  1.52e+06 3.08e+03  1.44e+08    10s
+   1   4.36001554e+09 -1.10535692e+12  8.66e+05 2.07e+04  8.12e+07    10s
+   2   8.31641953e+08 -6.23136048e+11  2.86e+05 4.16e-05  2.78e+07    10s
+   3   6.06582349e+07 -2.91470345e+11  1.49e+04 4.52e-03  1.80e+06    10s
+   4   2.58273008e+07 -9.90655470e+10  2.87e+03 7.16e-04  3.90e+05    10s
+   5   1.88138562e+07 -5.78485947e+10  9.13e+02 3.98e-04  1.62e+05    10s
+   6   1.76217604e+07 -2.01215732e+10  5.52e+02 1.15e-04  7.09e+04    11s
+   7   1.57434097e+07 -6.92828475e+09  2.58e+02 2.84e-05  2.71e+04    11s
+   8   1.44182734e+07 -4.15441529e+09  1.32e+02 1.32e-05  1.41e+04    11s
+   9   1.35700618e+07 -2.59144852e+09  6.89e+01 6.17e-06  7.47e+03    11s
+  10   1.29647783e+07 -1.24289429e+09  3.10e+01 2.13e-06  2.92e+03    11s
+  11   1.26359565e+07 -7.34313867e+08  1.78e+01 1.13e-06  1.52e+03    11s
+  12   1.18191456e+07 -6.89354899e+08  1.41e+01 1.05e-06  1.36e+03    11s
+  13   1.14775437e+07 -4.58727010e+08  1.15e+01 6.44e-07  8.85e+02    11s
+  14   1.08472550e+07 -4.51285015e+08  5.27e+00 6.32e-07  7.91e+02    12s
+  15   1.00067383e+07 -2.21525712e+08  3.29e+00 2.91e-07  3.85e+02    12s
+  16   9.51448159e+06 -1.95452312e+08  8.52e-01 2.56e-07  3.26e+02    12s
+  17   8.88874405e+06 -1.55421243e+08  6.78e-01 2.04e-07  2.60e+02    12s
+  18   9.08376430e+06 -3.12298813e+07  3.81e-01 4.48e-08  6.36e+01    12s
+  19   7.82442676e+06 -1.89011086e+07  2.55e-01 2.89e-08  4.21e+01    12s
+  20   7.23842916e+06 -1.58724672e+07  2.03e-01 2.51e-08  3.64e+01    12s
+  21   6.78694053e+06 -1.15026501e+07  1.65e-01 1.93e-08  2.88e+01    13s
+  22   6.41410767e+06 -1.09613088e+07  1.37e-01 1.86e-08  2.73e+01    13s
+  23   6.18082805e+06 -1.06264988e+07  1.21e-01 1.82e-08  2.64e+01    13s
+  24   5.94901057e+06 -6.70011491e+06  1.03e-01 1.29e-08  1.99e+01    13s
+  25   5.43017441e+06 -4.42355662e+06  6.79e-02 1.03e-08  1.55e+01    13s
+  26   5.32391768e+06 -3.79563084e+06  6.26e-02 1.04e-08  1.43e+01    13s
+  27   5.18744803e+06 -1.83533151e+06  5.59e-02 9.84e-09  1.10e+01    13s
+  28   4.79729781e+06  3.67897597e+05  3.86e-02 7.06e-09  6.95e+00    13s
+  29   4.49861834e+06  1.10328793e+06  2.63e-02 7.16e-09  5.33e+00    14s
+  30   4.42027635e+06  2.00549075e+06  2.28e-02 6.00e-09  3.79e+00    14s
+  31   4.30477821e+06  3.02816884e+06  1.74e-02 6.08e-09  2.01e+00    14s
+  32   4.24330892e+06  3.49680225e+06  1.41e-02 5.39e-09  1.17e+00    14s
+  33   4.22181094e+06  3.57438908e+06  1.29e-02 6.74e-09  1.02e+00    14s
+  34   4.19338644e+06  3.65474714e+06  1.14e-02 6.42e-09  8.47e-01    14s
+  35   4.16659944e+06  3.74844321e+06  9.99e-03 6.47e-09  6.58e-01    15s
+  36   4.15105812e+06  3.80297746e+06  9.26e-03 6.61e-09  5.48e-01    15s
+  37   4.13868320e+06  3.84536643e+06  8.62e-03 5.61e-09  4.62e-01    15s
+  38   4.12492040e+06  3.87346821e+06  7.93e-03 7.22e-09  3.96e-01    15s
+  39   4.10943665e+06  3.88085589e+06  7.20e-03 7.55e-09  3.60e-01    15s
+  40   4.10194090e+06  3.89198462e+06  6.82e-03 9.92e-09  3.31e-01    15s
+  41   4.09517773e+06  3.89853894e+06  6.49e-03 8.22e-09  3.10e-01    16s
+  42   4.07982873e+06  3.91105911e+06  5.73e-03 1.01e-08  2.66e-01    16s
+  43   4.07286217e+06  3.93521526e+06  5.38e-03 5.73e-09  2.17e-01    16s
+  44   4.06283965e+06  3.94028201e+06  4.91e-03 6.35e-09  1.94e-01    16s
+  45   4.06114048e+06  3.94185236e+06  4.83e-03 8.39e-09  1.88e-01    16s
+  46   4.05655838e+06  3.94789977e+06  4.59e-03 7.83e-09  1.72e-01    16s
+  47   4.04961600e+06  3.95176286e+06  4.23e-03 7.32e-09  1.55e-01    17s
+  48   4.04382754e+06  3.95897368e+06  3.93e-03 5.66e-09  1.34e-01    17s
+  49   4.03695211e+06  3.96120576e+06  3.58e-03 6.07e-09  1.20e-01    17s
+  50   4.03380093e+06  3.96248938e+06  3.43e-03 6.44e-09  1.13e-01    17s
+  51   4.02488168e+06  3.96559477e+06  3.00e-03 6.25e-09  9.38e-02    17s
+  52   4.02357563e+06  3.96693867e+06  2.93e-03 6.12e-09  8.96e-02    17s
+  53   4.01843714e+06  3.96768928e+06  2.66e-03 6.40e-09  8.03e-02    18s
+  54   4.01282334e+06  3.96852658e+06  2.35e-03 6.24e-09  7.01e-02    18s
+  55   4.00898261e+06  3.96896533e+06  2.14e-03 6.64e-09  6.34e-02    18s
+  56   4.00725144e+06  3.96928309e+06  2.05e-03 6.07e-09  6.01e-02    18s
+  57   4.00117648e+06  3.96898085e+06  1.72e-03 4.65e-09  5.10e-02    18s
+  58   3.99988009e+06  3.96930768e+06  1.65e-03 6.35e-09  4.84e-02    18s
+  59   3.99855360e+06  3.96951314e+06  1.58e-03 7.30e-09  4.60e-02    19s
+  60   3.99475544e+06  3.96964502e+06  1.37e-03 5.87e-09  3.98e-02    19s
+  61   3.99274700e+06  3.96973265e+06  1.27e-03 7.03e-09  3.64e-02    19s
+  62   3.98352952e+06  3.96954409e+06  7.62e-04 6.77e-09  2.21e-02    19s
+  63   3.98115777e+06  3.96941523e+06  6.29e-04 5.76e-09  1.86e-02    19s
+  64   3.97973198e+06  3.96956318e+06  5.51e-04 4.56e-09  1.61e-02    19s
+  65   3.97320252e+06  3.96971332e+06  1.84e-04 4.04e-09  5.52e-03    19s
+  66   3.97299451e+06  3.96982091e+06  1.72e-04 6.53e-09  5.02e-03    20s
+  67   3.97209891e+06  3.96983224e+06  1.22e-04 4.52e-09  3.59e-03    20s
+  68   3.97171266e+06  3.96987193e+06  1.00e-04 5.46e-09  2.91e-03    20s
+  69   3.97046406e+06  3.96990507e+06  3.03e-05 4.46e-09  8.85e-04    20s
+  70   3.96994053e+06  3.96991624e+06  1.20e-06 5.20e-09  3.84e-05    20s
+  71   3.96991859e+06  3.96991846e+06  1.14e-08 5.51e-09  1.80e-07    20s
+  72   3.96991854e+06  3.96991853e+06  4.18e-10 4.71e-09  1.45e-08    20s
+  73   3.96991854e+06  3.96991854e+06  4.70e-09 4.13e-09  4.45e-09    20s
+
+Barrier solved model in 73 iterations and 20.29 seconds (19.73 work units)
+Optimal objective 3.96991854e+06
+
+  Building initial crossover basis                                25s
+
+Root crossover log...
+
+    8187 DPushes remaining with DInf 0.0000000e+00                25s
+       0 DPushes remaining with DInf 0.0000000e+00                26s
+
+  221703 PPushes remaining with PInf 0.0000000e+00                26s
+   16356 PPushes remaining with PInf 0.0000000e+00                30s
+       0 PPushes remaining with PInf 0.0000000e+00                31s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 1.3052537e-09     31s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+  229151    3.9699185e+06   0.000000e+00   0.000000e+00     31s
+Concurrent spin time: 0.01s
+
+Solved with barrier
+  229151    3.9699185e+06   0.000000e+00   0.000000e+00     31s
+
+Root relaxation: objective 3.969919e+06, 229151 iterations, 22.97 seconds (15.94 work units)
+Total elapsed time = 43.19s
+Total elapsed time = 51.93s
+Total elapsed time = 55.81s
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 3969918.54    0 3739          - 3969918.54      -     -   57s
+     0     0 4067003.05    0 3528          - 4067003.05      -     -  119s
+     0     0 4068033.14    0 3519          - 4068033.14      -     -  121s
+     0     0 4085135.58    0 3400          - 4085135.58      -     -  213s
+     0     0 4089203.86    0 3966          - 4089203.86      -     -  221s
+     0     0 4143267.80    0 3602          - 4143267.80      -     -  324s
+     0     0 4144860.03    0 3931          - 4144860.03      -     -  331s
+     0     0 4200314.62    0 3561          - 4200314.62      -     -  470s
+     0     0 4207406.21    0 3992          - 4207406.21      -     -  483s
+     0     0 4212642.29    0 4042          - 4212642.29      -     -  593s
+     0     0 4387162.65    0 2652          - 4387162.65      -     -  659s
+     0     0 4389119.68    0 3523          - 4389119.68      -     -  664s
+     0     0 4398604.41    0 3034          - 4398604.41      -     -  761s
+     0     0 4399500.96    0 3861          - 4399500.96      -     -  767s
+     0     0 4406066.16    0 3179          - 4406066.16      -     -  903s
+     0     0 4407632.99    0 3763          - 4407632.99      -     -  908s
+     0     0 4410901.84    0 3357          - 4410901.84      -     - 1003s
+     0     0 4411486.62    0 3887          - 4411486.62      -     - 1011s
+     0     0 4413572.69    0 3096          - 4413572.69      -     - 1140s
+     0     0 4414203.63    0 3708          - 4414203.63      -     - 1146s
+     0     0 4415206.23    0 4147          - 4415206.23      -     - 1249s
+     0     0 4415811.15    0 4544          - 4415811.15      -     - 1255s
+     0     0 4416403.88    0 3333          - 4416403.88      -     - 1409s
+     0     0 4417320.68    0 4126          - 4417320.68      -     - 1421s
+     0     0 4418807.12    0 4442          - 4418807.12      -     - 1549s
+     0     0 4419306.96    0 4724          - 4419306.96      -     - 1559s
+     0     0 4421310.55    0 3340          - 4421310.55      -     - 1810s
+     0     0 4421813.03    0 4193          - 4421813.03      -     - 1822s
+     0     0 4424842.66    0 3289          - 4424842.66      -     - 2019s
+     0     0 4425614.63    0 4092          - 4425614.63      -     - 2030s
+     0     0 4426325.97    0 3270          - 4426325.97      -     - 2156s
+     0     0 4427227.65    0 3980          - 4427227.65      -     - 2163s
+     0     0 4427924.93    0 4515          - 4427924.93      -     - 2260s
+
+Cutting planes:
+  Gomory: 81
+  Lift-and-project: 13
+  Cover: 566
+  Implied bound: 3
+  Clique: 9
+  MIR: 2188
+  StrongCG: 15
+  Flow cover: 454
+  Zero half: 374
+  RLT: 26
+  Relax-and-lift: 31
+
+Explored 1 nodes (1547765 simplex iterations) in 2260.17 seconds (3939.45 work units)
+Thread count was 32 (of 8 available processors)
+
+Solution count 0
+
+Time limit reached
+Best objective -, best bound 4.427924932303e+06, gap -
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+ERROR: evaluating object as numeric value: Delta_X[station_1,1]
+        (object: <class 'pyomo.core.base.var.VarData'>)
+    No value for uninitialized NumericValue object Delta_X[station_1,1]
+ERROR: evaluating object as numeric value: obj
+        (object: <class 'pyomo.core.base.objective.ScalarObjective'>)
+    No value for uninitialized NumericValue object Delta_X[station_1,1]
+Traceback (most recent call last):
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\setup.py", line 338, in <module>
+    main()
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\setup.py", line 254, in main
+    opt = OptimizationModel(
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\__init__.py", line 32, in __init__
+    self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\opt_model.py", line 494, in solve_model
+    if hasattr(self.model, 'obj') and value(self.model.obj) is not None:
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\common\numeric_types.py", line 382, in value
+    tmp = obj(exception=True)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\core\base\objective.py", line 430, in __call__
+    return super().__call__(exception)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\core\base\expression.py", line 59, in __call__
+    return arg(exception=exception)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\core\expr\base.py", line 118, in __call__
+    return visitor.evaluate_expression(self, exception)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\core\expr\visitor.py", line 1301, in evaluate_expression
+    ans = visitor.dfs_postorder_stack(exp)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\core\expr\visitor.py", line 919, in dfs_postorder_stack
+    flag, value = self.visiting_potential_leaf(_sub)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\core\expr\visitor.py", line 1202, in visiting_potential_leaf
+    return True, value(node, exception=self.exception)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\.venv_elmo\lib\site-packages\pyomo\common\numeric_types.py", line 384, in value
+    raise ValueError(
+ValueError: No value for uninitialized NumericValue object Delta_X[station_1,1]

@@ -1,0 +1,42 @@
+escenario sin degradacion: C:\Users\Agustin\AppData\Local\Temp\sin_degradacion_i74f1ymf\  (copia de data/DCH/640kW_2dias_1MB/)
+
+[1] el estado colapsa a infraestructura pura
+  OK     mine_system.battery_degradation es None
+  OK     familias de estado = infraestructura  -- ['G', 'H', 'N_chargers', 'n_ssee_k'] vs ['G', 'H', 'N_chargers', 'n_ssee_k']
+  OK     sin estado D
+  OK     el bloque no tiene w_deg
+  OK     el bloque no tiene mccormick_lb1
+  OK     el bloque no tiene mccormick_energy
+  OK     el bloque no tiene D_hat
+  OK     el bloque no tiene D_prev
+  OK     el bloque no tiene b_y_link_local
+  OK     mccormick_residual() devuelve None
+
+[2] una iteracion completa
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:263  2:10,246
+[NestedBenders] presolve de capacidad: anios [2], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 2  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 1.000, 4s)
+[NestedBenders] presolve capacidad  anio 2  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 4s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 2)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 8s
+[NestedBenders] cota inicial: relajacion lineal del monolitico completo...
+[NestedBenders] cota del LP monolitico = 701,820.27  (19s)
+[NestedBenders] k=1 FORWARD  anio 1 (1/2)  [UB=(sin cota aun)  LB=701,820.27]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/2)  [UB=(sin cota aun)  LB=701,820.27]  resolviendo MILP...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=1,128,059.11  LB=701,820.27]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=1,128,059.11  LB=701,820.27]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1  UB=1128059.1120  LB=701820.2746  gap=37.7852%  tiempo_iteracion=12.6s
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 1 (ajustada)
+[NestedBenders] tiempo total: 39.6s (1 iteracion, 0 cortes de factibilidad)
+  OK     LB <= UB  -- 701,820.27 <= 1,128,059.11
+  OK     hay solucion factible
+       cortes de factibilidad: 0  cotas del presolve: {'station_1': 1}
+
+[3] el optimo del monolitico (X fija) queda entre LB y UB
+  OK     el monolitico tampoco tiene degradacion
+       monolitico: optimal, comparable = 1,127,981.20
+  OK     UB >= optimo monolitico  -- 1,128,059.11 >= 1,127,981.20
+  OK     LB <= optimo monolitico  -- 701,820.27 <= 1,127,981.20
+
+TODO OK

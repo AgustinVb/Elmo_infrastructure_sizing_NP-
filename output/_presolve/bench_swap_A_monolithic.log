@@ -1,0 +1,248 @@
+formulation time: 112.53114056587219
+Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)
+Set parameter MIPGap to value 0.01
+Set parameter LogFile to value "C:/Users/Agustin/Desktop/Elmo_infrastructure_NP/output/_bench_swap/A_monolithic_600s/gurobi.log"
+Set parameter Threads to value 32
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 600
+Set parameter NonConvex to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 4 physical cores, 8 logical processors, using up to 32 threads
+
+Warning: Thread count (32) is larger than processor count (8)
+         Reduce the value of the Threads parameter to improve performance
+
+
+Optimize a model with 556432 rows, 888782 columns and 4390630 nonzeros
+Model fingerprint: 0x89378016
+Model has 11 quadratic constraints
+Variable types: 96293 continuous, 792489 integer (655962 binary)
+Coefficient statistics:
+  Matrix range     [2e-02, 1e+03]
+  QMatrix range    [1e+00, 1e+00]
+  QLMatrix range   [1e+00, 2e+02]
+  Objective range  [2e+00, 6e+05]
+  Bounds range     [1e+00, 3e+06]
+  RHS range        [1e+00, 5e+04]
+Presolve removed 447552 rows and 586726 columns (presolve time = 5s) ...
+Presolve removed 447562 rows and 586727 columns (presolve time = 10s) ...
+Presolve removed 450766 rows and 587947 columns
+Presolve time: 12.52s
+Presolved: 105710 rows, 300835 columns, 1478855 nonzeros
+Presolved model has 11 bilinear constraint(s)
+Variable types: 19193 continuous, 281642 integer (266160 binary)
+Root relaxation presolve removed 17 rows and 13 columns
+Root relaxation presolved: 105693 rows, 300822 columns, 1478717 nonzeros
+
+Deterministic concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Root barrier log...
+
+Ordering time: 0.16s
+
+Barrier statistics:
+ Dense cols : 29
+ AA' NZ     : 2.082e+06
+ Factor NZ  : 5.970e+06 (roughly 200 MB of memory)
+ Factor Ops : 8.093e+08 (less than 1 second per iteration)
+ Threads    : 30
+
+                  Objective                Residual
+Iter       Primal          Dual         Primal    Dual     Compl     Time
+   0   1.62008584e+11 -3.45902060e+12  7.63e+07 3.17e+03  6.23e+09    15s
+   1   9.92803522e+10 -3.82400260e+12  4.02e+07 1.16e+05  3.17e+09    15s
+   2   8.49089248e+10 -3.70834089e+12  3.48e+07 1.04e-05  2.70e+09    15s
+   3   7.75021012e+09 -3.59999346e+12  3.14e+06 1.66e-06  2.48e+08    16s
+   4   8.59186475e+08 -3.24709261e+12  3.17e+05 2.43e-06  2.89e+07    16s
+   5   2.41697651e+08 -1.71082095e+12  6.94e+04 7.75e-06  7.22e+06    16s
+   6   1.45251706e+08 -1.03242385e+12  3.11e+04 4.71e-06  3.46e+06    16s
+   7   1.14773089e+08 -7.47391867e+11  1.96e+04 3.58e-06  2.27e+06    16s
+   8   1.00330267e+08 -6.83102145e+11  1.43e+04 2.68e-06  1.84e+06    16s
+   9   8.79398032e+07 -2.26842363e+11  1.03e+04 3.64e-06  8.86e+05    16s
+  10   6.26883047e+07 -1.56887298e+11  4.24e+03 2.03e-06  4.48e+05    17s
+  11   5.53379495e+07 -1.29638390e+11  2.60e+03 1.58e-06  3.19e+05    17s
+  12   5.29380058e+07 -1.02095462e+11  2.10e+03 1.26e-06  2.49e+05    17s
+  13   5.26326838e+07 -9.41143325e+10  2.03e+03 9.24e-07  2.32e+05    17s
+  14   5.00570044e+07 -4.03713396e+10  1.51e+03 7.53e-07  1.20e+05    17s
+  15   4.58009721e+07 -2.62092108e+10  5.27e+02 7.26e-07  5.70e+04    18s
+  16   4.50184485e+07 -1.28922171e+10  3.78e+02 3.54e-07  2.85e+04    18s
+  17   4.22544580e+07 -7.30569060e+09  8.04e+01 1.66e-07  1.21e+04    18s
+  18   4.10309828e+07 -5.05937581e+09  4.08e+01 1.16e-07  7.92e+03    18s
+  19   3.75845155e+07 -2.85441127e+09  3.18e+01 7.92e-08  4.43e+03    18s
+  20   3.68405139e+07 -1.65551867e+09  2.15e+01 3.98e-08  2.55e+03    19s
+  21   3.49818037e+07 -1.28051201e+09  5.91e+00 3.20e-08  1.93e+03    19s
+  22   3.25865891e+07 -5.36892923e+08  2.28e+00 2.12e-08  8.30e+02    19s
+  23   2.72543063e+07 -4.16644699e+08  1.19e+00 2.55e-08  6.45e+02    19s
+  24   2.31365601e+07 -2.18970683e+08  5.99e-01 4.78e-08  3.52e+02    19s
+  25   2.09902215e+07 -1.66191930e+08  4.38e-01 6.11e-08  2.72e+02    19s
+  26   1.88483868e+07 -1.39027505e+08  3.31e-01 8.09e-08  2.29e+02    20s
+  27   1.50988900e+07 -1.14942546e+08  2.39e-01 6.52e-08  1.89e+02    20s
+  28   9.32098602e+06 -6.96301091e+07  1.19e-01 1.47e-07  1.15e+02    20s
+  29   6.74948049e+06 -4.68809170e+07  5.60e-02 2.05e-07  7.78e+01    20s
+  30   5.25056862e+06 -3.01852652e+07  1.98e-02 2.25e-07  5.14e+01    20s
+  31   4.87140855e+06 -2.88097039e+07  1.33e-02 2.13e-07  4.88e+01    21s
+  32   4.53756608e+06 -1.63891855e+07  8.27e-03 1.43e-07  3.03e+01    21s
+  33   4.37685391e+06 -1.50265578e+07  6.38e-03 1.39e-07  2.81e+01    21s
+  34   4.22186658e+06 -1.19466864e+07  4.67e-03 1.14e-07  2.34e+01    21s
+  35   4.10398419e+06 -5.97828990e+06  3.54e-03 1.22e-07  1.46e+01    21s
+  36   3.99016748e+06 -2.83477428e+06  2.54e-03 9.07e-08  9.90e+00    21s
+  37   3.84054468e+06 -1.41526043e+06  1.21e-03 6.37e-08  7.62e+00    22s
+  38   3.84392566e+06 -9.16695665e+05  1.19e-03 6.14e-08  6.90e+00    22s
+  39   3.79015582e+06  3.01413183e+05  8.40e-04 6.23e-08  5.06e+00    22s
+  40   3.76412245e+06  1.39015716e+06  6.89e-04 5.60e-08  3.44e+00    22s
+  41   3.73865915e+06  2.05499558e+06  5.66e-04 5.62e-08  2.44e+00    23s
+  42   3.70251563e+06  2.49188300e+06  4.33e-04 5.67e-08  1.76e+00    23s
+  43   3.67955186e+06  2.72566302e+06  3.62e-04 5.25e-08  1.38e+00    23s
+  44   3.68384118e+06  2.75618598e+06  3.56e-04 6.32e-08  1.35e+00    23s
+  45   3.66604128e+06  2.79946197e+06  3.02e-04 7.34e-08  1.26e+00    24s
+  46   3.63759911e+06  3.00660253e+06  2.19e-04 6.38e-08  9.15e-01    24s
+  47   3.62507908e+06  3.26360263e+06  1.86e-04 4.94e-08  5.24e-01    24s
+  48   3.61969992e+06  3.31116465e+06  1.73e-04 5.80e-08  4.48e-01    24s
+  49   3.60993416e+06  3.39873545e+06  1.46e-04 5.30e-08  3.06e-01    25s
+  50   3.60767462e+06  3.41587542e+06  1.40e-04 6.20e-08  2.78e-01    25s
+  51   3.59802574e+06  3.46655158e+06  1.16e-04 4.87e-08  1.91e-01    25s
+  52   3.59285706e+06  3.49041779e+06  9.91e-05 5.02e-08  1.49e-01    25s
+  53   3.59126767e+06  3.50858632e+06  9.35e-05 5.17e-08  1.20e-01    26s
+  54   3.58729233e+06  3.52383476e+06  8.07e-05 5.51e-08  9.21e-02    26s
+  55   3.58485392e+06  3.53045171e+06  7.32e-05 6.12e-08  7.90e-02    26s
+  56   3.58315684e+06  3.53973248e+06  6.59e-05 5.77e-08  6.31e-02    26s
+  57   3.58215767e+06  3.54355125e+06  6.24e-05 5.85e-08  5.61e-02    26s
+  58   3.58066531e+06  3.54697071e+06  5.74e-05 5.88e-08  4.89e-02    27s
+  59   3.57979603e+06  3.54911434e+06  5.47e-05 7.79e-08  4.46e-02    27s
+  60   3.57781035e+06  3.55095234e+06  4.80e-05 8.50e-08  3.90e-02    27s
+  61   3.57688698e+06  3.55244240e+06  4.48e-05 7.19e-08  3.55e-02    27s
+  62   3.57569119e+06  3.55591136e+06  4.09e-05 7.30e-08  2.87e-02    28s
+  63   3.57369549e+06  3.55909050e+06  3.44e-05 5.44e-08  2.12e-02    28s
+  64   3.57281453e+06  3.55971340e+06  3.12e-05 6.20e-08  1.90e-02    28s
+  65   3.57201619e+06  3.56062679e+06  2.83e-05 6.63e-08  1.66e-02    28s
+  66   3.57109605e+06  3.56126860e+06  2.49e-05 6.71e-08  1.43e-02    29s
+  67   3.56942881e+06  3.56236149e+06  1.84e-05 5.85e-08  1.03e-02    29s
+  68   3.56891061e+06  3.56274284e+06  1.64e-05 5.67e-08  8.97e-03    29s
+  69   3.56812375e+06  3.56336347e+06  1.36e-05 5.89e-08  6.92e-03    29s
+  70   3.56765202e+06  3.56377692e+06  1.17e-05 4.87e-08  5.64e-03    30s
+  71   3.56735885e+06  3.56410808e+06  1.06e-05 4.76e-08  4.73e-03    30s
+  72   3.56671920e+06  3.56444539e+06  8.39e-06 3.46e-08  3.31e-03    31s
+  73   3.56551556e+06  3.56451403e+06  3.51e-06 4.25e-08  1.46e-03    31s
+  74   3.56518646e+06  3.56459573e+06  2.22e-06 3.09e-08  8.60e-04    32s
+  75   3.56507359e+06  3.56459979e+06  1.77e-06 2.96e-08  6.90e-04    32s
+  76   3.56495647e+06  3.56461528e+06  1.30e-06 3.41e-08  4.97e-04    32s
+  77   3.56462890e+06  3.56462047e+06  1.92e-08 3.69e-08  1.23e-05    33s
+  78   3.56462460e+06  3.56462459e+06  5.61e-11 2.88e-08  1.85e-08    33s
+  79   3.56462460e+06  3.56462460e+06  2.19e-10 2.92e-08  4.81e-10    33s
+
+Barrier solved model in 79 iterations and 32.89 seconds (40.23 work units)
+Optimal objective 3.56462460e+06
+
+
+Root crossover log...
+
+   10950 DPushes remaining with DInf 0.0000000e+00                33s
+       0 DPushes remaining with DInf 0.0000000e+00                33s
+
+  219672 PPushes remaining with PInf 0.0000000e+00                34s
+  178394 PPushes remaining with PInf 0.0000000e+00                35s
+   78880 PPushes remaining with PInf 0.0000000e+00                40s
+       0 PPushes remaining with PInf 0.0000000e+00                44s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 2.0236932e-09     44s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+  229599    3.5646246e+06   0.000000e+00   0.000000e+00     44s
+Concurrent spin time: 0.02s
+
+Solved with barrier
+  229599    3.5646246e+06   0.000000e+00   0.000000e+00     45s
+
+Root relaxation: objective 3.564625e+06, 229599 iterations, 31.80 seconds (24.43 work units)
+Total elapsed time = 49.77s
+Total elapsed time = 54.78s
+Total elapsed time = 56.15s
+Total elapsed time = 60.38s
+Total elapsed time = 75.71s
+Total elapsed time = 80.77s
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 3878922.48    0 3469          - 3878922.48      -     -   84s
+     0     0 4118461.08    0 4159          - 4118461.08      -     -  141s
+     0     0 4194823.14    0 3521          - 4194823.14      -     -  174s
+     0     0 4194938.05    0 3676          - 4194938.05      -     -  175s
+     0     0 4250439.84    0 3849          - 4250439.84      -     -  231s
+     0     0 4250482.05    0 4201          - 4250482.05      -     -  234s
+     0     0 4268698.85    0 4128          - 4268698.85      -     -  286s
+     0     0 4269614.57    0 4359          - 4269614.57      -     -  290s
+     0     0 4270827.99    0 3972          - 4270827.99      -     -  350s
+     0     0 4270829.69    0 4262          - 4270829.69      -     -  353s
+     0     0 4281022.99    0 3658          - 4281022.99      -     -  423s
+     0     0 4281111.27    0 4150          - 4281111.27      -     -  426s
+     0     0 4294369.82    0 3452          - 4294369.82      -     -  487s
+     0     0 4294369.82    0 3849          - 4294369.82      -     -  490s
+     0     0 4294372.90    0 3447          - 4294372.90      -     -  540s
+     0     0 4294372.90    0 3878          - 4294372.90      -     -  543s
+     0     0 4294372.90    0 3459          - 4294372.90      -     -  594s
+     0     0 4294643.13    0 3769          - 4294643.13      -     -  596s
+
+Cutting planes:
+  Gomory: 34
+  Lift-and-project: 6
+  Cover: 3
+  Implied bound: 67
+  MIR: 113
+  StrongCG: 3
+  Flow cover: 950
+  Zero half: 7
+  RLT: 10
+  Relax-and-lift: 7
+
+Explored 1 nodes (785250 simplex iterations) in 600.14 seconds (914.81 work units)
+Thread count was 32 (of 8 available processors)
+
+Solution count 0
+
+Time limit reached
+Best objective -, best bound 4.294643132978e+06, gap -
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+ERROR: evaluating object as numeric value: Delta_X[station_1,1]
+        (object: <class 'pyomo.core.base.var.VarData'>)
+    No value for uninitialized NumericValue object Delta_X[station_1,1]
+ERROR: evaluating object as numeric value: obj
+        (object: <class 'pyomo.core.base.objective.ScalarObjective'>)
+    No value for uninitialized NumericValue object Delta_X[station_1,1]
+WARN Termination condition: maxTimeLimit
+WARN No se encontró ninguna solución factible cargada en el modelo.
+Exception in thread Thread-5 (target):
+Traceback (most recent call last):
+  File "C:\Users\Agustin\anaconda3\envs\py310\lib\threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "C:\Users\Agustin\anaconda3\envs\py310\lib\threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\Agustin\Desktop\Elmo_swap_wt\src\optimization\opt_model.py", line 373, in target
+    print(f"\U0001f50d Checking for infeasible constraints (max {timeout}s)...")
+  File "C:\Users\Agustin\anaconda3\envs\py310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f50d' in position 0: character maps to <undefined>
+Traceback (most recent call last):
+  File "C:\Users\Agustin\Desktop\Elmo_swap_wt\setup.py", line 292, in <module>
+    main()
+  File "C:\Users\Agustin\Desktop\Elmo_swap_wt\setup.py", line 275, in main
+    opt = OptimizationModel(
+  File "C:\Users\Agustin\Desktop\Elmo_swap_wt\src\optimization\__init__.py", line 29, in __init__
+    self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
+  File "C:\Users\Agustin\Desktop\Elmo_swap_wt\src\optimization\opt_model.py", line 539, in solve_model
+    self.limited_infeasible_log(self.model, timeout=60, log_file=self.infeasible_log_path)
+  File "C:\Users\Agustin\Desktop\Elmo_swap_wt\src\optimization\opt_model.py", line 395, in limited_infeasible_log
+    print(f"\u2705 Infeasible log finished. Full results written to {log_file}")
+  File "C:\Users\Agustin\anaconda3\envs\py310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>

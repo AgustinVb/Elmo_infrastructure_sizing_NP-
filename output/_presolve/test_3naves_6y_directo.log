@@ -1,0 +1,68 @@
+escenario: data/DCH/640kW_2dias/  (6 anios [1, 2, 3, 4, 5, 6], 3 naves)
+
+[1] el modo presolve restaura el bloque
+  OK     en modo presolve el unico objetivo activo es presolve_obj  -- ['presolve_obj']
+  OK     en modo presolve todas las igualdades de fijacion estan desactivadas  -- ['link_N_chargers', 'link_n_ssee_k', 'link_G', 'link_H', 'link_D']
+  OK     las igualdades elasticas siguen desactivadas
+  OK     al salir, el bloque queda identico (activas/objetivo/componentes)
+  OK     objetivo original activo y sin presolve_obj residual
+
+[2] presolve de capacidad (peak)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:1,074  2:14,728  3:33,712  4:44,805  5:48,543  6:50,583
+[NestedBenders] presolve de capacidad: anios [6], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 6  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 58s)
+[NestedBenders] presolve capacidad  anio 6  station_2: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 59s)
+[NestedBenders] presolve capacidad  anio 6  station_3: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 59s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 6)  station_2: >= 1 (500 kW, anio 6)  station_3: >= 1 (500 kW, anio 6)
+       cotas = {'station_1': 1, 'station_2': 1, 'station_3': 1}   (176s)
+  OK     la cota quedo impuesta como lb de n_ssee_k en el anio 1  -- {'station_1': 1, 'station_2': 1, 'station_3': 1}
+  OK     al menos una nave recibio una cota no trivial  -- {'station_1': 1, 'station_2': 1, 'station_3': 1}
+
+[3] (salteado: --sin_referencia)
+
+[4] una iteracion con el presolve ya aplicado
+[NestedBenders] cota inicial: relajacion lineal del monolitico completo...
+[NestedBenders] cota del LP monolitico = 3,736,166.29  (734s)
+[NestedBenders] k=1 FORWARD  anio 1 (1/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -527.655314 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -1572.258064 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 4 (4/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 4  AVISO: residuo McCormick = -3746.413795 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 5 (5/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+WARNING: Loading a SolverResults object with a warning status into
+model.name="YearBlock_5";
+    - termination condition: infeasible
+    - message from solver: <undefined>
+[NestedBenders] FORWARD  anio 5 infactible con el estado recibido -- generando corte de factibilidad para el anio 4...
+[NestedBenders] FORWARD  falta de estado v=0.0095; familias que atan (mu): {'n_ssee_k': {'station_1': 0.9492, 'station_2': 1.0, 'station_3': 0.925}}
+[NestedBenders] FORWARD  todas las familias que atan son globales (['n_ssee_k']): el corte va directo al anio 1
+[NestedBenders] k=1 FORWARD  anio 1 (1/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -801.075008 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -2026.477754 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 4 (4/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 4  AVISO: residuo McCormick = -4384.976808 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 5 (5/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 6 (6/6)  [UB=(sin cota aun)  LB=3,736,166.29]  resolviendo MILP...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=1,466,669.14  LB=317,431.14  gap=78.3570%
+[NestedBenders] k=1 FORWARD  anio 6  AVISO: residuo McCormick = -1229.381122 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 BACKWARD anio 6  [UB=7,682,499.34  LB=3,736,166.29]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=1 BACKWARD anio 5  [UB=7,682,499.34  LB=3,736,166.29]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=1 BACKWARD anio 4  [UB=7,682,499.34  LB=3,736,166.29]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=1 BACKWARD anio 3  [UB=7,682,499.34  LB=3,736,166.29]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=7,682,499.34  LB=3,736,166.29]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=7,682,499.34  LB=3,736,166.29]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1  UB=7682499.3377  LB=3736166.2933  gap=51.3678%  tiempo_iteracion=1402.4s
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 2 (floja por 1); station_2: cota 1, elegido 1 (ajustada); station_3: cota 1, elegido 1 (ajustada)
+[NestedBenders] tiempo total: 2136.6s (1 iteracion, 1 cortes de factibilidad)
+       UB=7,682,499.34  LB=3,736,166.29  gap=51.3678%  cortes de factibilidad=1  n_ssee_k={'station_1': 2.0, 'station_2': 1.0, 'station_3': 1.0}
+  OK     el forward respeta la cota  -- {'station_1': 2.0, 'station_2': 1.0, 'station_3': 1.0}
+       cortes de factibilidad con el presolve: 1 (informativo; la cota es valida, no completa)
+  OK     LB <= UB  -- 3,736,166.29 <= 7,682,499.34
+
+TODO OK

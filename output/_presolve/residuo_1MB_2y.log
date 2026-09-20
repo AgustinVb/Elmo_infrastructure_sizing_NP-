@@ -1,0 +1,24 @@
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:263  2:10,246
+[NestedBenders] presolve de capacidad: anios [2], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 2  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 1.000, 6s)
+[NestedBenders] presolve capacidad  anio 2  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 6s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 2)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 13s
+[NestedBenders] k=1 FORWARD  anio 1 (1/2)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/2)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -29.407571 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 BACKWARD anio 2  [UB=1,039,913.37  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=1,039,913.37  LB=(sin cota aun)]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1  UB=1039913.3659  LB=177900.3044  gap=82.8928%  tiempo_iteracion=20.4s
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 1 (ajustada)
+[NestedBenders] tiempo total: 33.0s (1 iteracion, 0 cortes de factibilidad)
+UB=1,039,913.37  cortes de factibilidad=0
+[NestedBenders] reporte: costo recomputado = 1,243,149.48 (comparable 1,039,913.37 contra UB 1,039,913.37, desvio 0.000000)
+[NestedBenders] residuo del MIP start por familia (max |violacion|, 3s):
+    s_def                            4.657e-10  en 2  (0 filas > 1e-6)
+    interval_extraction_M            1.136e-11  en ('LH518B_3', 'C0502', 2, 196, 72.0)  (0 filas > 1e-6)
+    battery_soc                      1.990e-12  en ('LH518B_3', 2, 196, 72.0)  (0 filas > 1e-6)
+    mccormick_lb2                    1.819e-12  en 1  (0 filas > 1e-6)
+    battery_upper                    1.137e-13  en ('LH518B_2', 2, 196, 170.0)  (0 filas > 1e-6)
+    battery_soc_break_symmetry       1.137e-13  en ('LH518B_1', 'LH518B_2', 2, 196)  (0 filas > 1e-6)

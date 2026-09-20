@@ -1,0 +1,31 @@
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:1,074  2:14,728
+[NestedBenders] presolve de capacidad: anios [2], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 2  suma: sum n_ssee_k >= 2  (dual 2.0000, primal 2.000, 18s)
+[NestedBenders] presolve capacidad  anio 2  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 13s)
+[NestedBenders] presolve capacidad  anio 2  station_2: n_ssee_k >= 0  (dual 0.0000, primal 0.000, 13s)
+[NestedBenders] presolve capacidad  anio 2  station_3: n_ssee_k >= 0  (dual 0.0000, primal 0.000, 14s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 2)  station_2: >= 0 (0 kW, anio None)  station_3: >= 0 (0 kW, anio None)
+[NestedBenders] presolve de capacidad: cota agregada sum n_ssee_k >= 2 (anio 2; las cotas por nave suman 1)
+[NestedBenders] presolve de capacidad: 58s
+[NestedBenders] k=1 FORWARD  anio 1 (1/2)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/2)  [UB=(sin cota aun)  LB=(sin cota aun)]  resolviendo MILP...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=2,004,192.35  LB=(sin cota aun)]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=2,004,192.35  LB=(sin cota aun)]  relajando LP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=1  UB=2004192.3482  LB=317980.3366  gap=84.1342%  tiempo_iteracion=382.8s
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 1 (ajustada); station_2: cota 0, elegido 1 (floja por 1); station_3: cota 0, elegido 0 (ajustada)
+[NestedBenders] tiempo total: 441.0s (1 iteracion, 0 cortes de factibilidad)
+UB=2,004,192.35  cortes de factibilidad=0
+[NestedBenders] reporte: 228,026 valores cargados; costo recomputado = 2,613,900.68 (comparable 2,004,192.35 contra UB 2,004,192.35, desvio 0.000000)
+[NestedBenders] variables de bloque sin equivalente en el monolitico (descartadas): ['D_prev', 'N_batteries_prev', 'N_bays_prev', 'N_chargers_prev', 'alpha']
+[NestedBenders] MIP start pulido (LP con enteras fijas, 197,000 fijadas, 13s): costo 2,613,900.68 -> 2,613,900.69
+[NestedBenders] residuo del MIP start por familia (max |violacion|, 4s):
+    mc_w_deg_lb2                     1.610e-08  en 1  (0 filas > 1e-6)
+    mc_n_total_ub2                   8.879e-11  en 1  (0 filas > 1e-6)
+    battery_soc_swap_update_3        4.150e-12  en ('LH518B_1', 1, 15, 139.0)  (0 filas > 1e-6)
+    battery_upper                    4.150e-12  en ('LH518B_1', 1, 15, 139.0)  (0 filas > 1e-6)
+    battery_soc_swap_update_1        4.036e-12  en ('LH518B_1', 1, 15, 139.0)  (0 filas > 1e-6)
+    battery_soc_swap                 5.684e-14  en ('LH518B_1', 2, 15, 68.0)  (0 filas > 1e-6)
+    battery_soc_swap_update_2        5.684e-14  en ('LH518B_1', 1, 15, 74.0)  (0 filas > 1e-6)
+    battery_soc_swap_update_4        5.684e-14  en ('LH518B_1', 2, 15, 40.0)  (0 filas > 1e-6)
+    battery_lower                    2.842e-14  en ('LH518B_2', 2, 196, 44.0)  (0 filas > 1e-6)
+[NestedBenders] AVISO: 0 filas no evaluadas por variables sin valor; variables sin valor por familia: {'Z': 3312, 'StartAssign': 8640, 'EndAssign': 8640, 'B_s': 48, 'X_ini': 12}
