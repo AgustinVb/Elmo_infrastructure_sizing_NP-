@@ -32,7 +32,7 @@ def resolve_wp2_json_path(args):
     return json_path
 
 
-# 11 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
+# 14 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
 # potencia) y dia 196 (invierno, con cobro). Cada anio aporta un par
 # consecutivo (dia_verano, dia_invierno); --n_years trunca tomando los
 # primeros N pares, o sea los primeros N anios del horizonte.
@@ -51,7 +51,8 @@ def resolve_wp2_json_path(args):
 #    2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]
 FULL_HORIZON_DAYS = [
     15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386,
-    2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846,
+    2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846, 4030, 4211, 4395, 4576, 4760,
+    4941,
 ]
 
 def build_mine(args):

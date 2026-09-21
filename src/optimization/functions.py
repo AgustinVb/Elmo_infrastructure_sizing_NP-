@@ -1347,11 +1347,10 @@ class ConstraintRules(OptRules):
 
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        # Esquema DCH activo: usa el set de entre-turnos legacy
-        # (time_intervals_between_shifts_set), no el especifico DET (ver
-        # carga_on_board commit 9943fdc7a / build_all_constraints con
-        # pause_scheme='dch').
-        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_set, rule=self.between_shifts_elhd)
+        # Esquema DET activo: usa el set de entre-turnos especifico DET
+        # (time_intervals_between_shifts_det_set), alineado con
+        # det_stop_all / charge_only_meal_or_between_shifts_det.
+        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_det_set, rule=self.between_shifts_elhd)
 
         model.battery_soc               = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower             = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -1437,18 +1436,19 @@ class ConstraintRules(OptRules):
 
         # Esquema DCH (legacy), activo para el caso data/Escenarios_Gx (ver
         # meal_g1_no_travel_group1/meal_g2_no_travel_group2/maint_stop_all/
-        # maint_no_charge/charge_only_meal_or_shift_change).
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
-        model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
+        # maint_no_charge/charge_only_meal_or_shift_change). Reemplazado por
+        # el esquema DET de abajo para el caso carga_ob_multiaño.
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        #model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+        #model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
 
-        # Esquema DET (redefinido, con base_hour y modo autonomo): reemplazado
-        # por el esquema DCH de arriba para el caso data/Escenarios_Gx (ver
-        # det_stop_all / charge_only_meal_or_between_shifts_det).
-        #model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        #model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
+        # Esquema DET (redefinido, con base_hour y modo autonomo): activo
+        # para carga_ob_multiaño (ver det_stop_all /
+        # charge_only_meal_or_between_shifts_det).
+        model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
       
 class ObjectiveRules(OptRules):
