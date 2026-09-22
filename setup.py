@@ -32,28 +32,30 @@ def resolve_wp2_json_path(args):
     return json_path
 
 
-# 14 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
-# potencia) y dia 196 (invierno, con cobro). Cada anio aporta un par
-# consecutivo (dia_verano, dia_invierno); --n_years trunca tomando los
-# primeros N pares, o sea los primeros N anios del horizonte.
+# --- Dias representativos -------------------------------------------------
+# La eleccion NO es libre: get_alpha_g busca el perfil renovable con la clave
+# ((day - 1) % 365) + 1 contra la columna 'day' de GenProfiles, asi que solo
+# son utilizables los dias-del-anio que esa hoja trae con day <= 365. Hoy son
+# exactamente {15, 105, 196, 288} (las filas con day > 365 existen pero son
+# inalcanzables para el lookup, y ademas son copias exactas de las del anio 1:
+# el perfil es ciclico).
 #
-# Se eligen 15 y 196 -- y no cualquier par -- porque son los unicos dias del
-# anio para los que la hoja GenProfiles trae perfiles de solar/eolica que
-# cumplan ese criterio: alli solo existen los dias-del-anio {15, 105, 196,
-# 288}. OJO: Timeseries.get_alpha_g devuelve 0.0 cuando no encuentra el dia,
-# sin avisar. Con la lista anterior (dias-del-anio 1 y 91) NINGUNO tenia
-# perfil, asi que la generacion y el almacenamiento quedaban silenciosamente
-# desactivados: el modelo podia invertir en solar/eolica, pagaba inversion y
-# operacion, y recibia cero energia. Si se cambia esta lista hay que
-# verificar que los dias nuevos existan en GenProfiles.
-#   lista anterior (perfiles de generacion en cero):
-#   [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191,
-#    2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]
-FULL_HORIZON_DAYS = [
-    15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386,
-    2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846, 4030, 4211, 4395, 4576, 4760,
-    4941,
-]
+# OJO: get_alpha_g devuelve 0.0 cuando no encuentra el dia, SIN AVISAR. Una
+# lista anterior usaba los dias-del-anio 1 y 91, que no tienen perfil: la
+# generacion y el almacenamiento quedaban desactivados en silencio -- el modelo
+# invertia en solar/eolica, pagaba inversion y operacion, y recibia cero
+# energia. Si se agrega un dia hay que poblarlo antes en GenProfiles.
+#
+# Cobro de potencia: power_cost_peak_limit solo ata P_pot entre los dias 91 y
+# 244 (abril-septiembre, meses de punta) sobre el dia-del-anio, que es lo que
+# guarda model.days. Con 2 dias cae 1 de 2 (el 196); con 4 caen 2 de 4 (105 y
+# 196). La proporcion se mantiene, asi que las dos configuraciones siguen
+# siendo comparables en ese termino.
+DIAS_POR_ANIO = {
+    2: [15, 196],            # verano sin cobro + invierno con cobro
+    4: [15, 105, 196, 288],  # los cuatro que GenProfiles tiene poblados
+}
+ANIOS_HORIZONTE = 14  # plan minero completo (ExtractionGoal/FleetByYear traen 14)
 
 def build_mine(args):
     """ building power system base function
@@ -70,10 +72,13 @@ def build_mine(args):
     # battery swapping.
     model = Reader(os.path.join(args.data_folder, args.model), start_in=1)
     series = Series(os.path.join(args.data_folder, args.series))
-    days = FULL_HORIZON_DAYS
+    doys = DIAS_POR_ANIO[getattr(args, 'days_per_year', 4)]
+    days = [(y - 1) * 365 + doy
+            for y in range(1, ANIOS_HORIZONTE + 1)
+            for doy in doys]
     n_years = getattr(args, 'n_years', None)
     if n_years is not None:
-        days = days[:n_years * 2]
+        days = days[:n_years * len(doys)]
     time_series = timeseries.Timeseries(series, days, 8/60)
     mine_system = mine.Mine(model)
     if getattr(args, 'consumption_model', 'wp1') == 'wp2':
@@ -103,10 +108,18 @@ def main():
     parser.add_argument(
         '--n_years', type=int, default=None,
         help='Trunca el horizonte a los primeros N años (tomando los primeros '
-             'N pares de dias representativos de FULL_HORIZON_DAYS en setup.py) '
+             'N grupos de dias representativos, ver DIAS_POR_ANIO en setup.py) '
              'en vez de los 14 años completos. Util para reproducir/depurar un '
              'problema con una corrida chica antes de escalar al horizonte '
              'completo.'
+    )
+    parser.add_argument(
+        '--days_per_year', type=int, choices=[2, 4], default=4,
+        help='Dias representativos por anio. 4 (default): dias-del-anio 15, 105, '
+             '196 y 288. 2: solo 15 y 196 (config historica). Solo esos cuatro '
+             'tienen perfil renovable cargado en GenProfiles; cualquier otro deja '
+             'alpha_g = 0 en silencio. Pasar a 4 duplica el tamanio del modelo y '
+             'baja el factor de escalado operacional de 182,5 a 91,25.'
     )
     parser.add_argument(
         '--init_solution_folder', '--warm_start_folder',
