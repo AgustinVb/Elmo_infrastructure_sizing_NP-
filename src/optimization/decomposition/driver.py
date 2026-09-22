@@ -869,12 +869,17 @@ class NestedBendersSolver(object):
                 * value(om.objective_rules._discount_factor(model, y))
                 for k in model.stations_set for y in self.years
             )
-            comparable = costo_total - inv_estaciones
+            # Desde que ObjectiveRules.station_constant_cost suma la apertura
+            # de estaciones tambien en modo descompuesto, el UB ya esta en la
+            # MISMA base que costo_total: la comparacion es directa, sin restar
+            # nada. inv_estaciones se sigue calculando solo para reportarla
+            # desglosada (el costo hundido de la estacion preasignada).
+            comparable = costo_total
             desvio = abs(comparable - self.best_ub)
             tolerancia = max(1e-6 * abs(self.best_ub), 1e-4)
             print(f"[NestedBenders] reporte: costo recomputado = {costo_total:,.2f} "
-                  f"(comparable {comparable:,.2f} contra UB {self.best_ub:,.2f}, "
-                  f"desvio {desvio:,.6f})")
+                  f"contra UB {self.best_ub:,.2f} (desvio {desvio:,.6f}); "
+                  f"incluye {inv_estaciones:,.2f} de apertura de estaciones")
             if desvio > tolerancia:
                 print("=" * 78)
                 print("[NestedBenders] ATENCION: el costo recomputado sobre el modelo "

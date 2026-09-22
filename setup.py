@@ -64,8 +64,12 @@ def build_mine(args):
     :return:
     """
 
-    model = Reader(args.data_folder+args.model, start_in=1)
-    series = Series(args.data_folder+args.series)
+    # os.path.join y no `+`: concatenando a mano, un --data_folder sin barra
+    # final daba "…/960kW_2diaselmo_data.xlsx" y fallaba con un Not Found que
+    # no apunta a la causa. Asi acepta las dos formas, igual que la rama de
+    # battery swapping.
+    model = Reader(os.path.join(args.data_folder, args.model), start_in=1)
+    series = Series(os.path.join(args.data_folder, args.series))
     days = FULL_HORIZON_DAYS
     n_years = getattr(args, 'n_years', None)
     if n_years is not None:
@@ -327,9 +331,12 @@ def main():
                 om_report.mip_focus = args.mip_focus
                 om_report.solve_model(gap, solver_name,
                                       timelimit=args.mono_timelimit or args.solve_timelimit)
+                mejora = result['ub'] - om_report.opt_cost_result
                 print(f"[Hibrido] monolitico resuelto en "
                       f"{time.time() - t_hib:.0f}s: "
-                      f"costo = {om_report.opt_cost_result:,.2f}")
+                      f"costo = {om_report.opt_cost_result:,.2f} "
+                      f"(la descomposicion habia llegado a {result['ub']:,.2f}; "
+                      f"mejora de {mejora:,.2f} = {mejora / result['ub']:.2%})")
 
             printer = Printer(om_report, output_folder, time_series, mine_system)
             printer.create_all_plots()

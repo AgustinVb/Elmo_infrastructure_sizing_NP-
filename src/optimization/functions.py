@@ -1479,9 +1479,10 @@ class ObjectiveRules(OptRules):
         return sum(yearly_cost_fn(y) * self._discount_factor(model, y) for y in model.years)
 
     def inversion_cost(self, model):
-        # Modo descompuesto: X es exogeno y no acarrea costo de inversion
-        # propio (ΔX = 0, documento sec. 5 "Costo del año f_y") — el costo de
-        # las estaciones ya fue asumido/consignado fuera de este bloque.
+        # Modo descompuesto: X es exogeno y no hay Delta_X, asi que el costo de
+        # apertura no puede entrar por aca (no hay variable que multiplicar).
+        # Entra como constante por station_constant_cost, para que el objetivo
+        # de los bloques quede en la MISMA base que el del monolitico.
         station_cost_active = self.exogenous_stations is None
 
         def yearly(y):
@@ -1494,6 +1495,39 @@ class ObjectiveRules(OptRules):
                 for k in model.stations_set
             )
         return self._one_time_discounted_yearly_sum(model, yearly)
+
+    def station_constant_cost(self, model):
+        """Costo de apertura de estaciones cuando X es EXOGENO (descompuesto).
+
+        Con X fijo, station_cost_k * Delta_X es una CONSTANTE: no cambia el
+        argmin, asi que la solucion optima es identica se incluya o no. Pero si
+        cambia las COTAS: dejandola afuera, el UB y el LB de la descomposicion
+        quedan en una base distinta de la del monolitico y sus gaps dejan de
+        ser comparables -- parte de la diferencia seria puro denominador, no
+        calidad del algoritmo.
+
+        La estacion esta preasignada (infer_exogenous_stations la abre si tiene
+        equipo asignado en StationAssignment), asi que es un costo hundido que
+        paga cualquier solucion factible; omitirlo hacia parecer mas barata a
+        la descomposicion de lo que es.
+
+        Mismo guard `first_year in model.years` que substation_investment_cost,
+        y por la misma razon: total_cost se evalua una vez por bloque-anio y
+        este pago es unico.
+
+        Portado de battery_swapping_multiaño, para que las dos ramas midan el
+        gap sobre la misma base -- que es justo el punto de compararlas.
+        """
+        if self.exogenous_stations is None:
+            # Monolitico: X es variable y su costo ya entra por inversion_cost.
+            return 0
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
+        return sum(
+            model.station_cost_k[k] * model.X[k, first_year]
+            for k in model.stations_set
+        ) * self._discount_factor(model, first_year)
 
     def substation_investment_cost(self, model):
         """Costo de inversión en potencia de subestación: P_max_k[k] se
@@ -1591,6 +1625,7 @@ class ObjectiveRules(OptRules):
     def total_cost(self, model):
         return (self.lhd_charge_cost(model)
                 + self.inversion_cost(model)
+                + self.station_constant_cost(model)
                 + self.substation_investment_cost(model)
                 + self.gen_investment_cost(model)
                 + self.gen_op_cost(model)
