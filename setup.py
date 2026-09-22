@@ -47,7 +47,7 @@ def build_mine(args):
     #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
     #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
     #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
-    # 11 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
+    # 14 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
     # potencia) y dia 196 (invierno, con cobro). Se eligen 15 y 196 -- y no
     # cualquier par -- porque son los unicos dias del anio para los que la hoja
     # GenProfiles trae perfiles de solar/eolica que cumplan ese criterio: alli
@@ -61,7 +61,19 @@ def build_mine(args):
     # dias nuevos existan en GenProfiles.
     #   lista anterior (perfiles de generacion en cero):
     #   days = [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]  # 11 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
-    days = [15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386, 2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846]
+    #
+    # 14 anios: el horizonte completo del plan minero. ExtractionGoal,
+    # NodeAssignment y FleetByYear traen las 14 columnas, incluida la rampa de
+    # cierre (14.836 / 9.863 / 4.932 t-dia en los anios 12-14) que la lista
+    # anterior, cortada en el anio 11, dejaba fuera. El patron es
+    # (y-1)*365 + 15 y (y-1)*365 + 196, asi que los dias agregados son
+    # 4030/4211 (anio 12), 4395/4576 (anio 13) y 4760/4941 (anio 14); todos
+    # caen en los mismos dos dias-del-anio, que es lo que GenProfiles cubre.
+    #   lista anterior (11 anios, se quedaba corta contra la data):
+    #   days = [15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386, 2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846]
+    days = [15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021,
+            2205, 2386, 2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846,
+            4030, 4211, 4395, 4576, 4760, 4941]
     # --n_years recorta el horizonte a los primeros N años (2 días por año),
     # para poder correr validaciones cortas sin editar esta lista a mano. Sin
     # el flag, el horizonte es el de siempre.
@@ -92,7 +104,22 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
     import time
 
     from src.io.printer import Printer
+    from src.optimization.decomposition import passes as passes_module
     from src.optimization.decomposition.driver import NestedBendersSolver
+    from src.optimization.opt_model import stop_file_path
+
+    # La carpeta de salida se creaba recien en build_report_model, o sea al
+    # terminar TODA la descomposicion. Crearla aca sirve para dos cosas: el
+    # archivo STOP tiene donde vivir desde el minuto cero, y un
+    # `| Tee-Object -FilePath <carpeta>/run.log` deja de fallar con
+    # DirectoryNotFoundException al arrancar.
+    os.makedirs(args.output_folder, exist_ok=True)
+    stop_path = stop_file_path(args.output_folder)
+    if os.path.exists(stop_path):
+        os.remove(stop_path)
+        print(f"[STOP] habia un archivo de parada de una corrida anterior: se borro.")
+    passes_module.set_stop_file(stop_path)
+    print(f"[STOP] para cortar a mano conservando la solucion, cree: {stop_path}")
 
     exogenous = None
     if args.fixed_stations_json:
@@ -120,6 +147,15 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
           f"LB={resultado['lb']:,.2f}  gap={resultado['gap']:.4%}"
           + ("  [INTERRUMPIDO]" if resultado['interrupted'] else ""))
 
+    if resultado['best_full_solution'] is None:
+        # Parada (STOP o Ctrl+C) antes de completar la primera pasada forward:
+        # no existe ninguna trayectoria factible del horizonte, asi que no hay
+        # nada que reportar. Se avisa y se sale en vez de reventar en
+        # build_report_model.
+        print("[STOP] Se corto antes de completar la primera iteracion: no hay "
+              "solucion factible del horizonte que guardar. No se escribe salida.")
+        return
+
     report, _informe = solver.build_report_model(args.output_folder)
 
     if hybrid:
@@ -132,10 +168,11 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         report.mip_focus = args.mip_focus
         report.solve_model(args.gap_tol, args.solver,
                            timelimit=args.mono_timelimit or args.solve_timelimit)
+        mejora = resultado['ub'] - report.opt_cost_result
         print(f"[Hibrido] monolitico resuelto en {time.time() - t0:.0f}s: "
               f"costo = {report.opt_cost_result:,.2f} "
-              f"(la descomposicion habia llegado a {resultado['ub']:,.2f} "
-              f"mas la inversion en estaciones)")
+              f"(la descomposicion habia llegado a {resultado['ub']:,.2f}; "
+              f"mejora de {mejora:,.2f} = {mejora / resultado['ub']:.2%})")
 
     printer = Printer(report, args.output_folder, time_series, mine_system)
     printer.create_all_plots()

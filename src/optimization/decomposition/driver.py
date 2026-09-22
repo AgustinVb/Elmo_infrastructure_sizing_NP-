@@ -517,12 +517,17 @@ class NestedBendersSolver(object):
         report.has_warm_start = aplicadas > 0
 
         costo_total = value(model.obj)
+        # Desde que ObjectiveRules.station_constant_cost suma la apertura de
+        # naves tambien en modo descompuesto, el UB ya esta en la MISMA base que
+        # este costo_total: la comparacion es directa, sin restar nada. Se sigue
+        # calculando inv_estaciones solo para reportarla desglosada en el
+        # informe (es el costo hundido de la nave preasignada).
         inv_estaciones = sum(
             value(model.station_cost_k[k]) * value(model.Delta_X[k, y])
             * value(report.objective_rules._discount_factor(model, y))
             for k in model.stations_set for y in self.years
         )
-        comparable = costo_total - inv_estaciones
+        comparable = costo_total
         desvio = abs(comparable - self.best_ub)
         report.opt_cost_result = costo_total
 
@@ -550,8 +555,8 @@ class NestedBendersSolver(object):
         if verbose:
             print(f"[NestedBenders] reporte: {aplicadas:,} valores cargados; "
                   f"costo recomputado = {costo_total:,.2f} "
-                  f"(comparable {comparable:,.2f} contra UB {self.best_ub:,.2f}, "
-                  f"desvio {desvio:,.6f})")
+                  f"contra UB {self.best_ub:,.2f} (desvio {desvio:,.6f}); "
+                  f"incluye {inv_estaciones:,.2f} de apertura de naves")
             if sin_equivalente:
                 print(f"[NestedBenders] variables de bloque sin equivalente en el "
                       f"monolitico (descartadas): {sorted(sin_equivalente)}")

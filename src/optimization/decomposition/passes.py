@@ -1,4 +1,5 @@
 import logging
+import os
 
 from pyomo.environ import value, SolverFactory
 from pyomo.opt import TerminationCondition, SolverStatus
@@ -28,6 +29,25 @@ def request_interrupt():
 def clear_interrupt():
     global _interrupt_requested
     _interrupt_requested = False
+
+
+# Archivo centinela de parada manual (ver opt_model.make_gurobi_stop_callback).
+# Hace falta ADEMAS del Ctrl+C porque en PowerShell un Ctrl+C sobre un pipeline
+# con Tee-Object mata el proceso sin que Python vea nada. Aca se chequea DESPUES
+# de cada bloque anual -- no durante --, asi que la parada tarda a lo sumo un
+# solve de bloque (--solve_timelimit) en hacerse efectiva; a cambio, el bloque
+# en curso termina limpio y el driver conserva la ultima pasada forward
+# COMPLETA, que es la unica que deja un UB valido.
+_stop_file = None
+
+
+def set_stop_file(path):
+    global _stop_file
+    _stop_file = path
+
+
+def stop_file_requested():
+    return _stop_file is not None and os.path.exists(_stop_file)
 
 
 # El backend directo de Gurobi avisa "Cannot get duals for MIP." cada vez que
@@ -85,6 +105,10 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
     )
     if _interrupt_requested or aborted_by_interrupt:
         raise KeyboardInterrupt(f"Interrumpido por el usuario durante el solve ({label}).")
+    if stop_file_requested():
+        print(f"[NestedBenders] parada manual pedida ({_stop_file}): se corta despues "
+              f"de {label} y se conserva la mejor solucion completa.", flush=True)
+        raise KeyboardInterrupt(f"Parada manual por archivo STOP (despues de {label}).")
     if result.solver.termination_condition == TerminationCondition.maxTimeLimit:
         ub = result.problem.upper_bound
         lb = result.problem.lower_bound

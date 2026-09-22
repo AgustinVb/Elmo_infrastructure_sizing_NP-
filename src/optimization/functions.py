@@ -1992,23 +1992,29 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.state_unique_elhd_swap,
         )
-        # Esquema DCH activo: la ventana entre turnos se toma de la hoja
-        # Shifts (time_intervals_between_shifts_set), no de la lista de
-        # pausas DET.
+        # Esquema DET activo: la ventana entre turnos sale de la lista de
+        # pausas DET (time_intervals_between_shifts_det_set), no de la hoja
+        # Shifts -- con los tres turnos contiguos (0-8/8-16/16-24) de los
+        # escenarios DET la hoja no deja ningun hueco y
+        # time_intervals_between_shifts_set queda VACIO, asi que esta
+        # restriccion no generaba ni una sola fila.
         model.between_shifts_elhd_swap = pyo.Constraint(
             model.slhd_set,
             model.years,
             model.days,
-            model.time_intervals_between_shifts_set,
+            model.time_intervals_between_shifts_det_set,
             rule=self.between_shifts_elhd_swap,
         )
-        # Swap restringido (DCH): solo se permite Z_swap durante la colacion
-        # DCH (time_intervals_meal_set) o entre turnos.
-        model.swap_only_meal_or_between_shifts = pyo.Constraint(
-            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+        # Swap restringido (DET): Z_swap solo durante colacion DET,
+        # road_clearing DET o entre turnos DET. Durante maintenance DET el
+        # equipo queda detenido sin swap (esta regla lo prohibe y det_stop_all
+        # lo fuerza a Z = 1).
+        model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
+            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
         )
-        #model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
-        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
+        # Version DCH (inactiva con el esquema DET)
+        #model.swap_only_meal_or_between_shifts = pyo.Constraint(
+        #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
         #)
         #model.assign_state = pyo.Constraint(
         #    model.slhd_set,
@@ -2098,20 +2104,28 @@ class ConstraintRules(OptRules):
         )
         model.production = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
 
-        # 6) Pausas operacionales DCH (esquema activo). DET queda comentado
+        # 6) Pausas operacionales DET (esquema activo). DCH queda comentado
         # mas abajo, sin registrar.
-        model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #
+        # det_stop_all cubre de una sola vez lo que en DCH repartian tres
+        # restricciones: sobre time_intervals_det_set (maintenance DET +
+        # road_clearing DET, mas la colacion DET si NO se corre en modo
+        # autonomo) obliga a Z = 1 o Z_swap = 1, o sea detenido o haciendo
+        # swap. Que durante maintenance el equipo quede ademas SIN swap lo
+        # impone swap_only_meal_or_between_shifts_det, que deja Z_swap = 0
+        # fuera de colacion/road_clearing/entre-turnos.
+        model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
-        model.maintenance_stop_all = pyo.Constraint(
-            model.slhd_set,
-            model.years,
-            model.days,
-            model.time_intervals_set,
-            rule=self.maint_stop_all,
-        )
-        # Pausas DET (inactivas con el esquema DCH)
-        #model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        # Pausas DCH (inactivas con el esquema DET)
+        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+        #model.maintenance_stop_all = pyo.Constraint(
+        #    model.slhd_set,
+        #    model.years,
+        #    model.days,
+        #    model.time_intervals_set,
+        #    rule=self.maint_stop_all,
+        #)
 
         # 7) Balance de potencia y generación / BESS
         model.power_balance = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
@@ -2217,9 +2231,10 @@ class ObjectiveRules(OptRules):
         return sum(yearly_cost_fn(y) * self._discount_factor(model, y) for y in model.years)
 
     def inversion_cost(self, model):
-        # Modo descompuesto: X es exogeno, no hay Delta_X y el costo de apertura
-        # de naves no entra en la optimizacion (es una constante). Hay que
-        # sumarlo aparte al comparar el costo total contra el monolitico.
+        # Modo descompuesto: X es exogeno y no hay Delta_X, asi que el costo de
+        # apertura no puede entrar por aca (no hay variable que multiplicar).
+        # Entra como constante por station_constant_cost, para que el objetivo
+        # de los bloques quede en la MISMA base que el del monolitico.
         station_cost_active = self.exogenous_stations is None
 
         def yearly(y):
@@ -2235,6 +2250,40 @@ class ObjectiveRules(OptRules):
                 for k in model.stations_set
             )
         return self._one_time_discounted_yearly_sum(model, yearly)
+
+    def station_constant_cost(self, model):
+        """Costo de apertura de naves cuando X es EXOGENO (modo descompuesto).
+
+        Con X fijo, station_cost_k * Delta_X es una CONSTANTE: no cambia el
+        argmin, asi que la solucion optima es identica se incluya o no. Pero si
+        cambia las COTAS, y eso es lo que importa: dejandola afuera, el UB y el
+        LB de la descomposicion quedaban en una base distinta de la del
+        monolitico y sus gaps no eran comparables. Medido en DET 241kW a 14
+        anios: 27,57% descompuesto contra 25,66% sobre el objetivo completo,
+        con exactamente la misma solucion -- la diferencia era puro
+        denominador.
+
+        La nave esta preasignada (infer_exogenous_stations la abre si tiene
+        equipo asignado en StationAssignment), asi que es un costo hundido que
+        paga cualquier solucion factible; no reportarlo hacia parecer mas
+        barata a la descomposicion de lo que es.
+
+        Mismo guard `first_year in model.years` que substation_investment_cost,
+        y por la misma razon: total_cost se evalua una vez por bloque-anio y
+        este pago es unico. Que lo que se abre sea X[k, y1] lo garantiza
+        apertura_solo_primer_anio en el monolitico y el calendario de
+        infer_exogenous_stations en la descomposicion.
+        """
+        if self.exogenous_stations is None:
+            # Monolitico: X es variable y su costo ya entra por inversion_cost.
+            return 0
+        first_year = self._first_year()
+        if first_year not in model.years:
+            return 0
+        return sum(
+            model.station_cost_k[k] * model.X[k, first_year]
+            for k in model.stations_set
+        ) * self._discount_factor(model, first_year)
 
     def substation_investment_cost(self, model):
         """Costo de inversión en potencia de subestación: n_ssee_k[k]
@@ -2324,6 +2373,7 @@ class ObjectiveRules(OptRules):
     def total_cost(self, model):
         return (self.lhd_charge_cost_bs(model)
                 + self.inversion_cost(model)
+                + self.station_constant_cost(model)
                 + self.substation_investment_cost(model)
                 + self.gen_investment_cost(model)
                 + self.gen_op_cost(model)

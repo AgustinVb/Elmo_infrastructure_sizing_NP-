@@ -25,6 +25,83 @@ from src.optimization.functions import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Parada manual conservando la solucion
+# ---------------------------------------------------------------------------
+# EL PROBLEMA. Un Ctrl+C sobre el solve monolitico no llegaba nunca al handler
+# de Python, y la corrida moria sin escribir nada: 12,5 h perdidas con el
+# incumbente en memoria. Dos causas que se suman:
+#
+#   1. En PowerShell, Ctrl+C sobre un pipeline con un ejecutable nativo
+#      (`python ... | Tee-Object`) termina el pipeline entero: mata el proceso
+#      de frente, sin entregarle una senial que Python pueda convertir en
+#      KeyboardInterrupt.
+#   2. Gurobi instala su propio handler nativo mientras optimiza, asi que
+#      incluso sin pipe el SIGINT puede quedarse ahi (mismo fenomeno que
+#      documenta decomposition/passes.py para los bloques anuales).
+#
+# LA SOLUCION. Un callback de Gurobi que llama a Model.terminate(). A
+# diferencia de matar el proceso, terminate() hace que optimize() RETORNE
+# normalmente con status INTERRUPTED; Pyomo carga igual el incumbente (lo hace
+# siempre que SolCount > 0) y el flujo sigue hasta el Printer. El resto de
+# solve_model ya estaba preparado para esto: no confia en
+# termination_condition, evalua si el objetivo tiene valor.
+#
+# Dos gatillos, porque el archivo funciona donde el Ctrl+C no:
+#   - crear el archivo STOP en la carpeta de salida (SIEMPRE funciona, incluso
+#     con la salida piped, y desde otra terminal);
+#   - Ctrl+C, via la bandera que deja el handler de SIGINT.
+
+STOP_FILENAME = "STOP"
+
+_stop_requested = False
+
+
+def request_stop():
+    """Pide cortar el solve en curso conservando la mejor solucion."""
+    global _stop_requested
+    _stop_requested = True
+
+
+def clear_stop():
+    global _stop_requested
+    _stop_requested = False
+
+
+def stop_file_path(output_folder):
+    return os.path.join(output_folder, STOP_FILENAME)
+
+
+def make_gurobi_stop_callback(stop_path, poll_seconds=5.0):
+    """Callback (model, where) que corta el solve cuando se pide la parada.
+
+    Gurobi llama al callback miles de veces por segundo, asi que el chequeo
+    del archivo va throttleado: un os.path.exists cada `poll_seconds` es
+    despreciable frente al costo de un nodo.
+    """
+    estado = {"proximo_chequeo": 0.0, "terminado": False}
+
+    def _callback(model, where):
+        if estado["terminado"]:
+            return
+        ahora = time.time()
+        if ahora < estado["proximo_chequeo"]:
+            return
+        estado["proximo_chequeo"] = ahora + poll_seconds
+        if _stop_requested:
+            motivo = "Ctrl+C"
+        elif os.path.exists(stop_path):
+            motivo = f"archivo {stop_path}"
+        else:
+            return
+        estado["terminado"] = True
+        print(f"\n[STOP] Parada manual solicitada ({motivo}). Cortando el solve "
+              f"y conservando la mejor solucion encontrada...", flush=True)
+        model.terminate()
+
+    return _callback
+
+
 class OptModel(object):
 
     def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3):
@@ -422,21 +499,41 @@ class OptModel(object):
 
         opt = self._configure_solver(solvername, gap, timelimit, log_file)
 
-        print("Solving opt model... (Puedes presionar Ctrl+C para detener y guardar la mejor solución actual)")
+        # Parada manual (ver make_gurobi_stop_callback). Se borra un STOP que
+        # haya quedado de una corrida anterior: si no, la nueva se cortaria a
+        # los pocos segundos de arrancar.
+        stop_path = stop_file_path(self.output_folder)
+        if os.path.exists(stop_path):
+            os.remove(stop_path)
+            print(f"WARN habia un {STOP_FILENAME} de una corrida anterior: se borro.")
+        clear_stop()
+        if solvername == 'gurobi':
+            # gurobi_direct pasa este atributo tal cual a Model.optimize().
+            opt._callback = make_gurobi_stop_callback(stop_path)
+
+        print("Solving opt model...")
+        print("   Para cortar a mano CONSERVANDO la solucion, cree este archivo:")
+        print(f"     {stop_path}")
+        print("   Ctrl+C tambien sirve, pero NO cuando la salida esta piped a Tee-Object.")
         start_time = time.time()
-        
-        # --- Manejador para forzar escritura de log al interrumpir ---
-        def flush_and_exit(signum, frame):
-            print("\n🛑 ¡Interrupción manual detectada! Forzando escritura de log...")
-            # Forzar flush de archivos abiertos
+
+        # --- Manejador de Ctrl+C ---
+        # El primero pide parada ORDENADA: deja la bandera que lee el callback,
+        # Gurobi corta solo y el flujo sigue hasta el Printer. El segundo fuerza
+        # la salida por excepcion, por si el callback no llega a correr (fuera
+        # de un solve, durante la construccion del modelo, etc.).
+        def pedir_parada(signum, frame):
+            if _stop_requested:
+                print("\nSegundo Ctrl+C: saliendo por excepcion (puede perderse la solucion).")
+                sys.stdout.flush()
+                raise KeyboardInterrupt()
+            print("\nCtrl+C: parada ordenada pedida, se conserva la mejor solucion. "
+                  "(otro Ctrl+C fuerza la salida)")
             sys.stdout.flush()
-            sys.stderr.flush()
-            # Dar tiempo a Gurobi para escribir el log
-            time.sleep(0.5)
-            raise KeyboardInterrupt()
-        
+            request_stop()
+
         # Registrar el manejador
-        old_sigint_handler = signal.signal(signal.SIGINT, flush_and_exit)
+        old_sigint_handler = signal.signal(signal.SIGINT, pedir_parada)
         
         # --- Bloque de seguridad para interrupción manual ---
         try:
