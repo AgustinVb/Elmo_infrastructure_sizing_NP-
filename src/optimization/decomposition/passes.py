@@ -547,15 +547,20 @@ class BackwardPass(object):
     Un tercer camino, "disjunctive" (corte big-M sobre la disyuncion
     R_y=0/R_y=1 del reemplazo de bateria, ver _disjunctive_replace_cut),
     quedo implementado en este archivo pero PAUSADO/no seleccionable
-    (merge 2026-08 con origin/carga_ob_multiaño): origin reestructuro G/H
-    a estado "global_once" en year_block.py/cuts.py, cambiando el terreno
-    sobre el que se diagnostico el problema original (mu=0 para
-    N_chargers/G/H). Antes de reactivarlo (ver comentarios "PAUSADO" en
-    BackwardPass.run) hay que re-evaluar si el diagnostico sigue
-    aplicando con el modelo nuevo."""
+    (merge 2026-08 con origin/carga_ob_multiaño): depende de como
+    year_block.py modela los estados, y origin los reestructuro a
+    "global_once" sin que se revisara despues si el corte disyuntivo
+    sigue bien planteado sobre ese modelo.
+
+    OJO: el Strengthened Benders estuvo pausado junto con este y por un
+    motivo relacionado, pero se REACTIVO en 2026-09 (ver el docstring de
+    _strengthened_subgradient_cut). El disyuntivo NO -- su bloqueo es la
+    revision pendiente de la disyuncion R_y=0/R_y=1 contra el modelo de
+    estados nuevo, no el diagnostico de mu=0."""
 
     def __init__(self, blocks, cut_manager=None, solver_kwargs=None,
-                 degradation_cut_mode="mccormick", lagrangean_kwargs=None):
+                 degradation_cut_mode="mccormick", lagrangean_kwargs=None,
+                 strengthen_max_iter=1):
         self.blocks = blocks
         self.cut_manager = cut_manager or BendersCutManager()
         self.solver_kwargs = solver_kwargs or {}
@@ -566,6 +571,22 @@ class BackwardPass(object):
             )
         self.degradation_cut_mode = degradation_cut_mode
         self.lagrangean_kwargs = lagrangean_kwargs or {}
+        # Iteraciones del subgradiente de _strengthened_subgradient_cut. Define
+        # CUAL de los cortes de Lara et al. (2018) sec. 5.2.2 se genera:
+        #   1  -> Strengthened Benders cut, ec. (63): UNA relajacion Lagrangeana
+        #         resuelta en los duales del LP, sin mejorar los multiplicadores.
+        #         "at least as tight as the Benders cut" (Proposicion 3).
+        #   >1 -> Lagrangean cut, ec. (62): ascenso de subgradiente para
+        #         aproximar el dual Lagrangeano optimo. Mas ajustado y mas caro.
+        # Default 1: el compromiso que propone el paper entre Benders (barato,
+        # flojo si la relajacion lineal no es apretada) y Lagrangeano (ajustado,
+        # caro). Con 1 el costo es UNA resolucion extra del MILP del bloque por
+        # año y por iteracion del backward, no max_iter.
+        if strengthen_max_iter < 1:
+            raise ValueError(
+                f"strengthen_max_iter debe ser >= 1, recibido: {strengthen_max_iter!r}"
+            )
+        self.strengthen_max_iter = strengthen_max_iter
 
     def _exact_solve_kwargs(self):
         """solver_kwargs para los MIQCP no convexos del Camino B: mezcla
@@ -843,15 +864,22 @@ class BackwardPass(object):
 
         Reusa `mu_init` (los duales de la relajacion LP, ver read_duals)
         solo como PUNTO DE PARTIDA del ascenso de subgradiente -- no como
-        el mu final: en este modelo el "recurso completo garantizado"
-        (documento sec. 1) hace que la relajacion LP quede degenerada y
-        mu salga sistematicamente ~0 para N_chargers/G/H (confirmado en
-        una corrida real: mu=0 en las 3 primeras iteraciones del
-        escenario 960kW_2dias), lo cual no aporta ninguna guia al forward
-        pass. Un MILP con integralidad completa SI puede tener
+        el mu final: un MILP con integralidad completa puede tener
         sensibilidad Lagrangeana no nula donde el LP relajado es
-        degenerado -- de ahi la busqueda, no solo reusar mu_init tal
-        cual (que es lo que hacia la version anterior, ya removida).
+        degenerado, de ahi la busqueda y no solo reusar mu_init tal cual
+        (que es lo que hacia la version anterior, ya removida).
+
+        CORRECCION 2026-09: este docstring afirmaba que el "recurso
+        completo garantizado" (documento sec. 1) hace que mu salga
+        "sistematicamente ~0" para N_chargers/G/H, citando mu=0 en las 3
+        primeras iteraciones de 960kW_2dias. Eso generalizaba desde una
+        sola instancia. Pruebas posteriores mostraron que la degeneracion
+        era propia de ESE escenario, no del modelo: en general mu no es
+        cero y el corte LP estandar si transmite informacion al año padre.
+        El fortalecimiento sigue siendo valido --por dualidad debil nunca
+        debilita el corte-- pero su ganancia esperada es menor que la que
+        motivaba el diseño original, lo que concuerda con el impacto
+        marginal medido cuando estuvo activo.
 
         target: si se omite, Phi(x_hat_base) = value(child.model.obj), ya
         conocido porque `child` fue resuelto con heritage=x_hat_base en el
@@ -910,6 +938,13 @@ class BackwardPass(object):
             if L_mu > best_L:
                 best_L = L_mu
                 best_mu = {k: (dict(v) if isinstance(v, dict) else v) for k, v in mu.items()}
+
+            if it == max_iter:
+                # Ultima pasada: el gradiente y el paso de abajo actualizarian
+                # `mu`, pero se devuelve `best_mu`, asi que serian trabajo
+                # tirado. Importa con max_iter=1 (Strengthened Benders), donde
+                # es la UNICA pasada: queda exactamente una resolucion y nada mas.
+                break
 
             if target - L_mu <= eps_gap * gap_scale:
                 break
@@ -1151,23 +1186,28 @@ class BackwardPass(object):
                 )
             else:
                 phi_cut, mu_cut = phi_lp, mu
-                # PAUSADO (merge 2026-08 con origin/carga_ob_multiaño): origin
-                # reestructuro G/H a estado "global_once" (decision unica al
-                # inicio del horizonte, ver year_block.py/cuts.py), lo que
-                # cambia el terreno sobre el que se diagnostico el problema
-                # original (mu=0 para N_chargers/G/H bajo "recurso completo
-                # garantizado"). Antes de reactivar esto hay que re-evaluar si
-                # el diagnostico y el fix siguen aplicando con el modelo
-                # nuevo. La implementacion (_strengthened_subgradient_cut,
-                # _build_strengthened_relaxation) sigue intacta mas abajo.
-                # if strengthen:
-                #     if verbose:
-                #         print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
-                #               f"fortaleciendo corte (Lagrangeano con subgradiente sobre MILP completo)...")
-                #     phi_cut, mu_cut = self._strengthened_subgradient_cut(
-                #         child, x_hat_by_year[parent.year], mu_init=mu,
-                #         verbose=verbose, label_prefix=f"{k_tag}",
-                #     )
+                # REACTIVADO 2026-09 (estuvo pausado desde el merge 2026-08).
+                # Se habia pausado para re-evaluar si el diagnostico original
+                # --mu=0 por degeneracion del LP bajo "recurso completo
+                # garantizado"-- seguia aplicando tras reestructurar G/H a
+                # estado "global_once". La re-evaluacion mostro que aquel mu=0
+                # era propio de la instancia 960kW_2dias y no del modelo, asi
+                # que el bloqueo ya no aplica (ver CORRECCION en el docstring
+                # de _strengthened_subgradient_cut). Queda tras el flag
+                # `strengthen`, apagado por defecto, porque encarece el
+                # backward: hasta max_iter MILP extra por año y por iteracion.
+                if strengthen:
+                    if verbose:
+                        tipo = ("Strengthened Benders, Lara ec. (63)"
+                                if self.strengthen_max_iter == 1
+                                else f"Lagrangeano, Lara ec. (62), <={self.strengthen_max_iter} it")
+                        print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
+                              f"fortaleciendo corte ({tipo})...")
+                    phi_cut, mu_cut = self._strengthened_subgradient_cut(
+                        child, x_hat_by_year[parent.year], mu_init=mu,
+                        max_iter=self.strengthen_max_iter,
+                        verbose=verbose, label_prefix=f"{k_tag}",
+                    )
 
             self.cut_manager.add_cut(
                 parent, phi_cut, mu_cut, x_hat_by_year[parent.year], iteration=iteration

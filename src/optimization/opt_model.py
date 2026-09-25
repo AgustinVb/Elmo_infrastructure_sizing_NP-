@@ -27,11 +27,14 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False, relax_operational=False):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
         self.infeasible_log_path = os.path.join(self.output_folder, "infeasible_log.txt")
+        # IIS (subsistema infactible minimo) de Gurobi: ver compute_iis_report.
+        self.iis_path = os.path.join(self.output_folder, "model.ilp")
+        self.iis_summary_path = os.path.join(self.output_folder, "iis_resumen.txt")
         self.warm_start_folder = warm_start_folder
         self.y_init_path = y_init_path
         self.init_solution_folder = init_solution_folder if init_solution_folder is not None else warm_start_folder
@@ -51,13 +54,36 @@ class OptModel(object):
         # --mode hybrid el modelo llega con un incumbente bueno y lo que se
         # quiere es mejorarlo, para lo que 1 (incumbentes) puede convenir.
         self.mip_focus = mip_focus
-        self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
+        # Carga liberada: ver OptRules.__init__ / build_all_constraints.
+        self.free_charging = free_charging
+        # Mantenimiento liberado: ver OptRules.__init__ / OptSets.build_sets.
+        self.free_maintenance = free_maintenance
+        # Relajacion PARCIAL: solo las binarias operacionales (ver
+        # OPERATIONAL_BINARY_VARS en functions.py). Deja enteras las de
+        # inversion, asi que el modelo sigue siendo un MILP -- con decenas de
+        # enteras en vez de ~460k -- y su optimo es una COTA INFERIOR valida
+        # del monolitico original, porque relajar integralidad solo agranda el
+        # factible. A diferencia de relax_integrality (que relaja TODO y da un
+        # LP), esta conserva la combinatoria de la inversion: la diferencia
+        # entre las dos cotas es exactamente lo que aporta la integralidad de
+        # las inversiones al gap.
+        self.relax_operational = relax_operational
+        # Gurobi BestObjStop: corta en cuanto el incumbente baja de este valor.
+        # Lo usa el modo hibrido para no seguir buscando despues de alcanzar el
+        # gap objetivo contra una cota EXTERNA (la de relajacion operacional),
+        # que Gurobi no conoce y no puede deducir. Sin esto, el monolitico mide
+        # el gap contra su propia cota --mucho peor-- y sigue trabajando horas
+        # sobre un problema que ya esta cerrado.
+        self.best_obj_stop = None
+        self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode, free_maintenance=free_maintenance)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
-        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation, free_charging=free_charging, free_maintenance=free_maintenance)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
+        if relax_operational:
+            self._relax_operational_vars()
         self.var_index_order: Dict[str, List[str]] = {
             "Z": ["i", "y", "d", "t"],
             "Z_charge": ["k", "i", "y", "d", "t"],
@@ -339,6 +365,8 @@ class OptModel(object):
             opt.options['Presolve'] = 2
             opt.options['FlowCoverCuts'] = 2
             opt.options['TimeLimit'] = timelimit
+            if self.best_obj_stop is not None:
+                opt.options['BestObjStop'] = self.best_obj_stop
             if self.constraint_rules.mine_system.battery_degradation is not None and not self.mccormick_degradation:
                 # n_ciclos_link (ver functions.py) es una igualdad bilineal
                 # (N_ciclos[y] * b_bar[y]): restricción cuadrática no convexa,
@@ -359,6 +387,117 @@ class OptModel(object):
             except Exception:
                 continue
         return None
+
+    def compute_iis_report(self, opt, max_examples=8):
+        """Subsistema infactible minimo (IIS) del modelo, via Gurobi.
+
+        Sustituye a limited_infeasible_log cuando el modelo resulta INFACTIBLE.
+        Aquel usa log_infeasible_constraints de Pyomo, que evalua cada
+        restriccion contra los valores actuales de las variables; tras un solve
+        infactible esos valores no existen, asi que falla al evaluar TODAS y
+        escribe cientos de MB de "evaluation error" -- ruido, no diagnostico.
+
+        El IIS es un subconjunto de restricciones y cotas que ya es infactible
+        por si solo y que deja de serlo si se quita cualquiera de sus miembros:
+        es exactamente el conjunto culpable, y suele tener unas pocas decenas
+        de filas aunque el modelo tenga cientos de miles.
+
+        Requiere solver_io='python' (gurobi_direct, ver _configure_solver), que
+        conserva el modelo de Gurobi en memoria y el mapa a los componentes de
+        Pyomo, sin el cual los nombres saldrian como C1234 en vez de
+        state_unique_elhd[LH518B_7,4,196,...].
+
+        Devuelve True si logro escribir el reporte.
+        """
+        gmodel = getattr(opt, "_solver_model", None)
+        if gmodel is None:
+            print("WARN Sin modelo Gurobi en memoria (solver_io != 'python'): no se puede calcular el IIS.")
+            return False
+
+        print("🔍 Calculando IIS (subsistema infactible minimo). Puede tardar varios minutos...")
+        t0 = time.time()
+        try:
+            gmodel.computeIIS()
+        except Exception as e:
+            print(f"WARN computeIIS fallo: {e}")
+            return False
+
+        try:
+            gmodel.write(self.iis_path)
+        except Exception as e:
+            print(f"WARN No se pudo escribir {self.iis_path}: {e}")
+
+        smap = getattr(opt, "_solver_con_to_pyomo_con_map", None)
+
+        def _familia(gcon, nombre_crudo):
+            pc = smap.get(gcon) if smap else None
+            if pc is None:
+                return nombre_crudo.split("[")[0], nombre_crudo
+            try:
+                return pc.parent_component().name, pc.name
+            except Exception:
+                return nombre_crudo.split("[")[0], nombre_crudo
+
+        familias, ejemplos = {}, {}
+        def _registrar(fam, nom):
+            familias[fam] = familias.get(fam, 0) + 1
+            if len(ejemplos.setdefault(fam, [])) < max_examples:
+                ejemplos[fam].append(nom)
+
+        for c in gmodel.getConstrs():
+            if c.IISConstr:
+                _registrar(*_familia(c, c.ConstrName))
+        for getter in ("getQConstrs", "getGenConstrs"):
+            try:
+                for c in getattr(gmodel, getter)():
+                    attr = "IISQConstr" if getter == "getQConstrs" else "IISGenConstr"
+                    if getattr(c, attr, 0):
+                        nombre = getattr(c, "QCName", None) or getattr(c, "GenConstrName", "?")
+                        _registrar(*_familia(c, nombre))
+            except Exception:
+                pass
+
+        cotas = []
+        for v in gmodel.getVars():
+            if getattr(v, "IISLB", 0) or getattr(v, "IISUB", 0):
+                cual = "LB" if v.IISLB else ""
+                cual += "/UB" if v.IISUB and cual else ("UB" if v.IISUB else "")
+                cotas.append((v.VarName, cual))
+
+        lineas = []
+        lineas.append(f"IIS calculado en {time.time() - t0:.1f}s")
+        lineas.append(f"Modelo completo: {gmodel.NumConstrs} restricciones, {gmodel.NumVars} variables")
+        lineas.append(f"IIS: {sum(familias.values())} restricciones, {len(cotas)} cotas de variable")
+        lineas.append("")
+        lineas.append("Restricciones del IIS por familia (todas deben coexistir para que sea infactible;")
+        lineas.append("quitando CUALQUIERA de ellas el subsistema pasa a ser factible):")
+        for fam, n in sorted(familias.items(), key=lambda kv: -kv[1]):
+            lineas.append(f"  {n:6d}  {fam}")
+            for nom in ejemplos[fam]:
+                lineas.append(f"            {nom}")
+            if n > len(ejemplos[fam]):
+                lineas.append(f"            ... y {n - len(ejemplos[fam])} mas")
+        if cotas:
+            lineas.append("")
+            lineas.append("Cotas de variable en el IIS:")
+            for nom, cual in cotas[:40]:
+                lineas.append(f"  {cual:6s}  {nom}")
+            if len(cotas) > 40:
+                lineas.append(f"  ... y {len(cotas) - 40} mas")
+        texto = "\n".join(lineas)
+
+        try:
+            with open(self.iis_summary_path, "w", encoding="utf-8") as f:
+                f.write(texto + "\n")
+        except Exception as e:
+            print(f"WARN No se pudo escribir {self.iis_summary_path}: {e}")
+
+        print()
+        print(texto)
+        print()
+        print(f"📄 IIS completo en {self.iis_path} (formato .ilp, se abre con Gurobi)")
+        print(f"📄 Resumen por familia en {self.iis_summary_path}")
+        return True
 
     def limited_infeasible_log(self, model, timeout=60, log_file="infeasible_log.txt"):
         def target():
@@ -397,6 +536,24 @@ class OptModel(object):
                         print("... (see full log in infeasible_log.txt)")
             except Exception as e:
                 print("WARN Could not read log file for summary:", e)
+
+    def _relax_operational_vars(self):
+        """Pasa a continuas las binarias operacionales, en sitio. Ver
+        OPERATIONAL_BINARY_VARS y el comentario de self.relax_operational."""
+        from src.optimization.functions import OPERATIONAL_BINARY_VARS
+        n = 0
+        for var_name in OPERATIONAL_BINARY_VARS:
+            comp = getattr(self.model, var_name, None)
+            if comp is None:
+                continue
+            for vd in comp.values():
+                if vd.is_integer() or vd.is_binary():
+                    vd.domain = pyo.UnitInterval
+                    n += 1
+        print(f"Relajacion operacional: {n:,} binarias pasadas a continuas "
+              f"(las de inversion siguen enteras). El optimo resultante es una "
+              f"cota inferior valida del monolitico completo.")
+        return n
 
     def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
         log_file = self.gurobi_log_path
@@ -515,7 +672,12 @@ class OptModel(object):
 
         else:
             print(f"WARN Termination condition: {self.solution_status}")
-            self.limited_infeasible_log(self.model, timeout=60, log_file=self.infeasible_log_path)
+            # El IIS nombra las restricciones culpables; el volcado de Pyomo
+            # solo escribe "evaluation error" por cada fila del modelo (ver
+            # compute_iis_report). Se cae al volcado unicamente si el IIS no
+            # esta disponible.
+            if not self.compute_iis_report(opt):
+                self.limited_infeasible_log(self.model, timeout=60, log_file=self.infeasible_log_path)
 
         try:
             if 'result' in locals() and hasattr(result.solver, 'relative_gap'):

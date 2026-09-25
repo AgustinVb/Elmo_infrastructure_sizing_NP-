@@ -10,6 +10,7 @@ from pyomo.environ import value
 from src.optimization.decomposition import passes as passes_module
 from src.optimization.decomposition.year_block import YearBlockBuilder
 from src.optimization.decomposition.cuts import BendersCutManager
+from src.optimization.functions import OPERATIONAL_BINARY_VARS
 from src.optimization.decomposition.macroblocks import (
     build_macroblocks,
     compute_power_shares,
@@ -42,14 +43,22 @@ from src.optimization.decomposition.passes import ForwardPass, BackwardPass, _so
 # el worker serializa (dill.dumps) el resultado antes de devolverlo, y el
 # proceso principal lo deserializa (dill.loads) al recibirlo.
 _RECURSION_LIMIT_FOR_DILL = 10000
+
+# Presupuesto por defecto del solve de la cota por relajacion operacional (s).
+# Deliberadamente NO se hereda de --solve_timelimit: ver _operational_bound.
+OP_BOUND_TIMELIMIT_DEFAULT = 3600
+
 _worker_state = {}
 
 
-def _init_year_block_worker(mine_system, time_series, autonomous_mode):
+def _init_year_block_worker(mine_system, time_series, autonomous_mode,
+                            free_charging=False, free_maintenance=False):
     sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
     _worker_state["mine_system"] = mine_system
     _worker_state["time_series"] = time_series
     _worker_state["autonomous_mode"] = autonomous_mode
+    _worker_state["free_charging"] = free_charging
+    _worker_state["free_maintenance"] = free_maintenance
 
 
 def _build_year_block_task(payload):
@@ -58,6 +67,8 @@ def _build_year_block_task(payload):
         _worker_state["mine_system"], _worker_state["time_series"], year=year,
         is_last_year=is_last_year, exogenous_stations=exogenous_stations,
         autonomous_mode=_worker_state["autonomous_mode"],
+        free_charging=_worker_state["free_charging"],
+        free_maintenance=_worker_state["free_maintenance"],
     )
 
 
@@ -89,7 +100,11 @@ class NestedBendersSolver(object):
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
                  strengthen=False, degradation_cut_mode="mccormick", lagrangean_kwargs=None,
                  block_build_jobs=None, macroblock_forward=False,
-                 monolithic_lp_bound=True, capacity_presolve="peak"):
+                 monolithic_lp_bound=True, capacity_presolve="peak",
+                 free_charging=False, free_maintenance=False,
+                 strengthen_max_iter=1, accelerate=False, accel_pool_size=5,
+                 accel_timelimit=None, history_path=None,
+                 operational_bound=False, op_bound_timelimit=None):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -123,21 +138,44 @@ class NestedBendersSolver(object):
             automaticamente de la asignacion LHD-estacion de los datos de
             entrada (infer_exogenous_stations): se construye toda estacion
             con al menos un LHD asignado.
-        :param strengthen: default False. PAUSADO (merge 2026-08 con
-            origin/carga_ob_multiaño): el mecanismo (documento sec. 6.2,
-            "Strengthened Benders", implementado en
-            BackwardPass._strengthened_subgradient_cut) sigue en el codigo
-            pero su invocacion esta comentada en BackwardPass.run -- este
-            parametro ya no tiene efecto. Se diagnostico originalmente
-            porque el corte LP estandar queda degenerado (mu=0) cuando el
-            modelo garantiza "recurso completo" (confirmado en una corrida
-            real del escenario 960kW_2dias, N_chargers/G/H con mu=0 en
-            TODAS las iteraciones), pero origin reestructuro G/H a estado
-            "global_once" (decision unica al inicio del horizonte, ver
-            year_block.py/cuts.py) en esos mismos 8 commits, cambiando el
-            terreno sobre el que se hizo ese diagnostico. Antes de
-            reactivarlo hay que re-evaluar si el problema persiste con el
-            modelo nuevo -- ver comentarios "PAUSADO" en BackwardPass.run.
+        :param strengthen: default False. Genera el corte desde la relajacion
+            LAGRANGEANA del MILP del bloque (con integralidad) en vez de los
+            duales del LP relajado, via
+            BackwardPass._strengthened_subgradient_cut. Aplica a todas las
+            familias de estado "simple" con prev (N_chargers/G/H/D).
+
+            Cual de los cortes de Lara et al. (2018) sec. 5.2.2 se obtiene lo
+            decide strengthen_max_iter (ver abajo). Con strengthen=False se usa
+            el corte de Benders estandar, ec. (59).
+
+            Sirve cuando la relajacion lineal NO es apretada, que es cuando el
+            corte de Benders queda flojo. Si el LP ya es apretado, Lara mide
+            que Benders solo es el mas rapido (Fig. 8): el fortalecimiento
+            cuesta y aporta poco.
+
+            Es ORTOGONAL a degradation_cut_mode: aquel decide como se trata
+            la fisica bilineal de la degradacion, este cuanto se aprieta el
+            corte sobre el resto del estado. Se pueden usar juntos.
+
+        :param strengthen_max_iter: default 1. Iteraciones del subgradiente en
+            _strengthened_subgradient_cut, y por lo tanto QUE corte se genera
+            (Lara et al. 2018, sec. 5.2.2):
+              1  -> Strengthened Benders cut, ec. (63): UNA relajacion
+                    Lagrangeana resuelta en los duales del LP, sin mejorar los
+                    multiplicadores. Cuesta una resolucion extra del MILP del
+                    bloque por año y por iteracion del backward.
+              >1 -> Lagrangean cut, ec. (62), aproximado por subgradiente
+                    truncado: mas ajustado y proporcionalmente mas caro.
+            Sin efecto si strengthen=False.
+
+            Estuvo PAUSADO entre el merge 2026-08 y 2026-09, mientras se
+            re-evaluaba si el diagnostico original (mu=0 por degeneracion
+            del LP bajo "recurso completo garantizado") seguia aplicando
+            con G/H en estado "global_once". Se reactivo al confirmarse que
+            aquel mu=0 era propio de la instancia 960kW_2dias y no del
+            modelo -- ver la CORRECCION en el docstring de
+            _strengthened_subgradient_cut. El corte disyuntivo R=0/R=1
+            sigue pausado, eso no cambio.
         :param degradation_cut_mode: "mccormick" (default) o "lagrangean" --
             camino usado para el corte del año con datos de
             BatteryDegradation (degradacion_descomposicion_mccormick.md):
@@ -151,8 +189,11 @@ class NestedBendersSolver(object):
             Un tercer camino, "disjunctive" (corte big-M sobre la
             disyuncion R_y=0/R_y=1 del reemplazo de bateria, ver
             BackwardPass._disjunctive_replace_cut), quedo implementado
-            pero PAUSADO/no seleccionable por el mismo motivo que
-            `strengthen` arriba -- ver ese parametro.
+            pero PAUSADO/no seleccionable: depende de como year_block.py
+            modela los estados, y falta revisar si la disyuncion sigue
+            bien planteada tras la reestructuracion a "global_once".
+            Sigue pausado aunque `strengthen` se haya reactivado -- los
+            bloqueos eran distintos.
         :param lagrangean_kwargs: dict opcional con max_iter/eps_gap/
             eps_stall para el subgradiente del Camino B (ver
             BackwardPass._lagrangean_subgradient_cut).
@@ -180,6 +221,13 @@ class NestedBendersSolver(object):
             else infer_exogenous_stations(mine_system, time_series)
         )
         self.autonomous_mode = autonomous_mode
+        # Regimen de carga/mantenimiento: mismo recorrido que autonomous_mode,
+        # hasta YearBlockBuilder (bloques anuales), el LP monolitico de cota y
+        # el modelo de reporte. Sin esto los bloques usarian el regimen
+        # restringido con mantenimiento muerto aunque el usuario pida otro, y
+        # la descomposicion resolveria un problema distinto al monolitico.
+        self.free_charging = free_charging
+        self.free_maintenance = free_maintenance
 
         self.blocks = self._build_blocks(block_build_jobs)
 
@@ -196,10 +244,31 @@ class NestedBendersSolver(object):
         self.backward_pass = BackwardPass(
             self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs,
             degradation_cut_mode=degradation_cut_mode, lagrangean_kwargs=lagrangean_kwargs,
+            strengthen_max_iter=strengthen_max_iter,
         )
 
         self.monolithic_lp_bound = monolithic_lp_bound
         self.lb_monolithic_lp = None
+        # Tecnica de aceleracion (Lara et al. 2018, sec. 5.3) -- ver
+        # _accelerate_cuts.
+        self.accelerate = accelerate
+        if accel_pool_size < 1:
+            raise ValueError(
+                f"accel_pool_size debe ser >= 1, recibido: {accel_pool_size!r}"
+            )
+        self.accel_pool_size = accel_pool_size
+        self.accel_timelimit = accel_timelimit
+        self.accel_time = None
+        # Ruta donde volcar gap_history despues de CADA iteracion. Sin esto la
+        # trayectoria de UB/LB solo existe en stdout y se pierde al cerrar la
+        # consola -- justo lo que hace falta para comparar dos corridas
+        # iteracion a iteracion, y para mirar el avance de una corrida larga
+        # sin tener la consola a mano.
+        self.history_path = history_path
+        # Cota por relajacion operacional -- ver _operational_bound.
+        self.operational_bound = operational_bound
+        self.op_bound_timelimit = op_bound_timelimit
+        self.lb_operational = None
         if capacity_presolve not in ("peak", "all", "off", None):
             raise ValueError(f"capacity_presolve debe ser 'peak', 'all' u 'off' "
                              f"(recibido {capacity_presolve!r})")
@@ -241,6 +310,8 @@ class NestedBendersSolver(object):
                     self.mine_system, self.time_series, year=year,
                     is_last_year=is_last_year, exogenous_stations=exogenous_stations,
                     autonomous_mode=self.autonomous_mode,
+                    free_charging=self.free_charging,
+                    free_maintenance=self.free_maintenance,
                 )
                 for year, is_last_year, exogenous_stations in tasks
             ]
@@ -254,7 +325,8 @@ class NestedBendersSolver(object):
 
         with multiprocess.Pool(
             processes=n_jobs, initializer=_init_year_block_worker,
-            initargs=(self.mine_system, self.time_series, self.autonomous_mode),
+            initargs=(self.mine_system, self.time_series, self.autonomous_mode,
+                      self.free_charging, self.free_maintenance),
         ) as pool:
             return pool.map(_build_year_block_task, tasks)
 
@@ -305,6 +377,8 @@ class NestedBendersSolver(object):
                     is_last_year=(y == self.years[-1]),
                     exogenous_stations=self.exogenous_stations_by_year[y],
                     autonomous_mode=self.autonomous_mode,
+                    free_charging=self.free_charging,
+                    free_maintenance=self.free_maintenance,
                     macroblock={
                         "station": station,
                         "lhds": mb["lhds"],
@@ -517,10 +591,22 @@ class NestedBendersSolver(object):
         formulacion que usan los bloques anuales, con lo que la cota queda en la
         misma base que el UB del forward.
 
-        exogenous_stations puesto -- y SIN years_override -- deja fuera el costo
-        de apertura de naves (constante en modo descompuesto, ausente del
-        objetivo de los bloques) pero conserva las restricciones de acumulacion
-        del monolitico.
+        exogenous_stations puesto -- y SIN years_override -- conserva las
+        restricciones de acumulacion del monolitico.
+
+        CORRECCION 2026-09-24: una version anterior de este docstring decia que
+        con exogenous_stations la cota "deja fuera el costo de apertura de
+        naves". Es FALSO y llevaba a creer que esta cota y la del monolitico
+        estaban en bases distintas. ObjectiveRules.total_cost suma
+        station_constant_cost, que con X exogeno aporta
+        station_cost_k * X[k, primer_anio] descontado; y en ese caso
+        inversion_cost apaga su propio termino de estacion. Con X endogeno es al
+        reves. Las dos bases incluyen el costo de apertura, exactamente una vez.
+
+        Lo que SI difiere respecto del monolitico resuelto con `--mode
+        monolithic`: aca la degradacion va con McCormick (necesario para que sea
+        un LP) y X es exogeno. Al comparar cotas entre los dos, el residuo de
+        McCormick es el confundidor que queda.
 
         Construye el monolitico entero, que es el gasto de memoria que la
         descomposicion evita: en horizontes largos puede no entrar. Cualquier
@@ -530,9 +616,35 @@ class NestedBendersSolver(object):
         from pyomo.environ import SolverFactory, TransformationFactory
         from pyomo.opt import TerminationCondition
 
+        model = self._build_monolithic_model()
+        TransformationFactory("core.relax_integer_vars").apply_to(model)
+
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options["OutputFlag"] = 0
+        opt.options["TimeLimit"] = self.solver_kwargs.get("timelimit", 900)
+        result = opt.solve(model, load_solutions=True)
+        if result.solver.termination_condition != TerminationCondition.optimal:
+            # Sin optimo probado no hay cota confiable: para un LP cortado por
+            # tiempo la cota valida es la dual, que este backend no expone.
+            raise RuntimeError(
+                f"LP monolitico sin optimo probado "
+                f"({result.solver.termination_condition})"
+            )
+        return pyo.value(model.obj)
+
+    def _build_monolithic_model(self):
+        """Monolitico COMPLETO como ConcreteModel, sin resolver y sin relajar.
+
+        Compartido por _monolithic_lp_bound (que le aplica relax_integer_vars y
+        lo resuelve como LP para la cota inferior) y por _accelerate_cuts (que
+        relaja solo las binarias operacionales y lo resuelve como MILP chico
+        para obtener los x_hat de la tecnica de aceleracion). Ver los docstrings
+        de ambos para por que mccormick_degradation=True y exogenous_stations."""
+        import pyomo.environ as pyo
+
         from src.optimization.functions import (
             BoundRules, ConstraintRules, ObjectiveRules, OptParameters, OptSets,
-        )
+        )  # noqa: F401  (OPERATIONAL_BINARY_VARS se importa arriba del modulo)
 
         exo_flat = {
             (k, y): v
@@ -543,11 +655,15 @@ class NestedBendersSolver(object):
 
         model = pyo.ConcreteModel(name="MonoliticoLP")
         OptSets(self.mine_system, self.time_series,
-                autonomous_mode=self.autonomous_mode, **common).build_sets(model)
+                autonomous_mode=self.autonomous_mode,
+                free_maintenance=self.free_maintenance, **common).build_sets(model)
         OptParameters(self.mine_system, self.time_series, **common).build_parameters(model)
         BoundRules(self.mine_system, self.time_series, **common).build_all_variables(model)
         ConstraintRules(self.mine_system, self.time_series,
-                        mccormick_degradation=True, **common).build_all_constraints(model)
+                        mccormick_degradation=True,
+                        free_charging=self.free_charging,
+                        free_maintenance=self.free_maintenance,
+                        **common).build_all_constraints(model)
         model.obj = pyo.Objective(
             rule=ObjectiveRules(self.mine_system, self.time_series, **common).total_cost,
             sense=pyo.minimize,
@@ -564,21 +680,285 @@ class NestedBendersSolver(object):
                     expr=sum(model.n_ssee_k[k] for k in model.stations_set)
                     >= self.capacity_sum_bound
                 )
-        TransformationFactory("core.relax_integer_vars").apply_to(model)
+        return model
+
+    def _dump_history(self):
+        """Vuelca la trayectoria a self.history_path. Se llama despues de cada
+        iteracion, asi que el archivo sirve para seguir una corrida en curso.
+
+        Escribe a un temporal y renombra: si alguien lee el archivo justo
+        mientras se escribe, ve la version anterior completa y no un JSON
+        truncado.
+
+        Nunca levanta: perder el historial no puede tumbar la resolucion."""
+        if not self.history_path:
+            return
+        import json
+        import os
+        try:
+            os.makedirs(os.path.dirname(self.history_path) or ".", exist_ok=True)
+            payload = {
+                "lb_monolithic_lp": self.lb_monolithic_lp,
+                "lb_operational": self.lb_operational,
+                "capacity_bounds": self.capacity_bounds,
+                "capacity_presolve_time_sec": self.capacity_presolve_time,
+                "accel_time_sec": self.accel_time,
+                "strengthen": self.strengthen,
+                "strengthen_max_iter": getattr(
+                    self.backward_pass, "strengthen_max_iter", None),
+                "accelerate": self.accelerate,
+                "accel_pool_size": self.accel_pool_size,
+                "degradation_cut_mode": self.backward_pass.degradation_cut_mode,
+                "max_iter": self.max_iter,
+                "gap_tol": self.gap_tol,
+                "best_ub": None if self.best_ub == float("inf") else self.best_ub,
+                "lb": None if self.lb == float("-inf") else self.lb,
+                "feasibility_cuts": self.forward_pass.feasibility_cuts_added,
+                "gap_history": self.gap_history,
+            }
+            tmp = self.history_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, default=str)
+            os.replace(tmp, self.history_path)
+        except Exception as exc:
+            print(f"[NestedBenders] no se pudo escribir el historial "
+                  f"({type(exc).__name__}: {exc}) -- se sigue.")
+
+    def _operational_bound(self):
+        """Cota inferior por RELAJACION OPERACIONAL: optimo del monolitico con
+        las binarias operacionales relajadas a continuas (ver
+        OPERATIONAL_BINARY_VARS) y las de INVERSION enteras.
+
+        Relajar integralidad solo agranda el factible, asi que el optimo del
+        relajado acota por abajo al original. A diferencia de la relajacion
+        lineal completa, esta conserva la combinatoria de la inversion -- que
+        es donde vive casi toda la cota.
+
+        Medido en P_red_gen_bat, 10 anios, McCormick (2026-09-24):
+
+            cota LP completa   1.593.858,58   gap del incumbente 26,64%
+            cota operacional   2.146.169,22   gap del incumbente  1,22%
+
+        o sea +34,65% de cota, en 34,5 minutos, sobre un modelo que como MILP
+        completo estuvo 9h20m sin encontrar un solo incumbente. El salto es
+        posible porque quedan ~51 enteras (X, Delta_X, N_chargers,
+        Delta_N_chargers, n_ssee_k, R) en vez de ~460.851.
+
+        Devuelve la COTA DUAL, no el valor objetivo: el incumbente del modelo
+        relajado tiene variables operacionales fraccionarias, no es factible
+        para el original y no acota nada. Confundirlos daria una "cota" por
+        encima del optimo verdadero.
+        """
+        import pyomo.environ as pyo
+        from pyomo.environ import SolverFactory
+        from pyomo.opt import TerminationCondition
+
+        model = self._build_monolithic_model()
+        relajadas = 0
+        for var_name in OPERATIONAL_BINARY_VARS:
+            comp = getattr(model, var_name, None)
+            if comp is None:
+                continue
+            for vd in comp.values():
+                if vd.is_integer() or vd.is_binary():
+                    vd.domain = pyo.UnitInterval
+                    relajadas += 1
 
         opt = SolverFactory("gurobi", solver_io="python")
         opt.options["OutputFlag"] = 0
-        opt.options["TimeLimit"] = self.solver_kwargs.get("timelimit", 900)
-        result = opt.solve(model, load_solutions=True)
-        if result.solver.termination_condition != TerminationCondition.optimal:
-            # Sin optimo probado no hay cota confiable: para un LP cortado por
-            # tiempo la cota valida es la dual, que este backend no expone.
-            raise RuntimeError(
-                f"el LP del monolitico no llego al optimo "
-                f"({result.solver.termination_condition})"
-            )
-        return value(model.obj)
+        # Timelimit PROPIO, no heredado de solver_kwargs["timelimit"]: aquel es
+        # el tope por resolucion de UN bloque anual (default 600 s) y no tiene
+        # relacion con un solve de escala monolitica. Con 600 s, la medicion de
+        # P_red_gen_bat (que tardo 2.068 s) se habria cortado a mitad de camino.
+        #
+        # Como dimensionarlo en general: cada nodo cuesta un LP del modelo
+        # COMPLETO -- el modelo no se achica, solo su integralidad -- y el
+        # numero de nodos crece con las enteras de INVERSION, que son pocas
+        # (|naves| x |anios| x unas pocas familias). En la unica instancia
+        # medida el solve entero tardo ~40x el LP de raiz (2.068 s contra
+        # 52 s). Un presupuesto de 40-60x el LP de raiz es un punto de partida
+        # razonable; OP_BOUND_TIMELIMIT_DEFAULT cubre ese rango para modelos
+        # cuyo LP de raiz este por debajo del minuto y medio.
+        #
+        # No es critico acertarle: la cota DEGRADA CON GRACIA. Si corta por
+        # tiempo, el dual bound de ese momento sigue siendo una cota inferior
+        # valida, solo que mas floja. A diferencia de buscar un incumbente,
+        # cortar temprano nunca deja las manos vacias.
+        opt.options["TimeLimit"] = (
+            self.op_bound_timelimit if self.op_bound_timelimit is not None
+            else OP_BOUND_TIMELIMIT_DEFAULT
+        )
+        # El gap es el knob que de verdad controla la CALIDAD de la cota: con
+        # MIPGap=g el dual bound queda dentro de g del optimo del relajado. El
+        # timelimit es solo la red de seguridad.
+        opt.options["MIPGap"] = self.solver_kwargs.get("gap", 0.01)
+        result = opt.solve(model, load_solutions=False)
+        cond = result.solver.termination_condition
+        if cond not in (TerminationCondition.optimal, TerminationCondition.maxTimeLimit,
+                        TerminationCondition.feasible):
+            raise RuntimeError(f"relajacion operacional sin cota utilizable ({cond})")
 
+        # La cota dual: ObjBound de Gurobi. Vale tanto si cerro como si corto
+        # por tiempo -- en los dos casos es una cota inferior valida.
+        gmodel = getattr(opt, "_solver_model", None)
+        cota = getattr(gmodel, "ObjBound", None) if gmodel is not None else None
+        if cota is None:
+            cota = getattr(result.problem, "lower_bound", None)
+        if cota is None:
+            raise RuntimeError("no se pudo leer la cota dual de la relajacion operacional")
+        return float(cota), relajadas
+
+    def _accelerate_cuts(self, verbose=True):
+        """Tecnica de aceleracion de Lara et al. (2018), sec. 5.3.
+
+        En la iteracion 1 el bloque del año 1 no tiene ningun corte: su alpha
+        esta en la cota trivial, o sea que el año 1 cree que el futuro es
+        gratis y elige la inversion mas barata. Esa decision se arrastra por
+        todo el forward y recien la iteracion 2 empieza a corregirla -- "Benders
+        decomposition and its variants can oscillate wildly during initial
+        iterations when the cost-to-go approximation of future stages is poor"
+        (sec. 5.3).
+
+        El arreglo es pre-generar cortes ANTES del primer forward, en puntos de
+        estado plausibles. Los cortes los produce el backward REAL sobre los
+        bloques reales, asi que son validos por construccion: esto no puede
+        invalidar ni el UB ni el LB, solo puebla la lista de cortes.
+
+        Los puntos salen de un modelo AGREGADO: el monolitico con las binarias
+        operacionales relajadas (ver _ACCEL_OPERATIONAL_VARS) y las de inversion
+        enteras. Queda con decenas de enteras en vez de ~460k, asi que se
+        resuelve en minutos, y como ve el horizonte completo de una vez sabe el
+        compromiso entre invertir temprano y pagar despues -- que es
+        exactamente lo que al año 1 le falta. Su error de aproximacion no cuesta
+        nada mas que cortes iniciales algo mas flojos.
+
+        Con accel_pool_size > 1 se usa el solution pool de Gurobi para sacar
+        varias soluciones distintas del agregado y pre-generar cortes en cada
+        una (sec. 5.3: "the larger the number of solutions used, the better the
+        representation of the original model, but the longer it takes").
+
+        Devuelve cuantos puntos se usaron. Cualquier fallo se reporta y la
+        corrida sigue sin aceleracion.
+        """
+        import pyomo.environ as pyo
+        from pyomo.environ import SolverFactory
+        from pyomo.opt import TerminationCondition
+
+        model = self._build_monolithic_model()
+
+        relajadas = 0
+        for var_name in OPERATIONAL_BINARY_VARS:
+            comp = getattr(model, var_name, None)
+            if comp is None:
+                continue
+            for vd in comp.values():
+                if vd.is_integer() or vd.is_binary():
+                    vd.domain = pyo.UnitInterval
+                    relajadas += 1
+        if verbose:
+            print(f"[NestedBenders] aceleracion: modelo agregado con "
+                  f"{relajadas:,} binarias operacionales relajadas")
+            sys.stdout.flush()
+
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options["OutputFlag"] = 0
+        opt.options["TimeLimit"] = (
+            self.accel_timelimit
+            if self.accel_timelimit is not None
+            else self.solver_kwargs.get("timelimit", 900)
+        )
+        opt.options["MIPGap"] = self.solver_kwargs.get("gap", 0.01)
+        if self.accel_pool_size > 1:
+            # PoolSearchMode=2: busca las n MEJORES soluciones, no soluciones
+            # cualesquiera que aparezcan por el camino.
+            opt.options["PoolSearchMode"] = 2
+            opt.options["PoolSolutions"] = self.accel_pool_size
+
+        result = opt.solve(model, load_solutions=True)
+        cond = result.solver.termination_condition
+        if cond not in (TerminationCondition.optimal, TerminationCondition.maxTimeLimit,
+                        TerminationCondition.feasible):
+            raise RuntimeError(f"modelo agregado sin solucion utilizable ({cond})")
+
+        gmodel = getattr(opt, "_solver_model", None)
+        var_map = getattr(opt, "_pyomo_var_to_solver_var_map", None)
+        n_pool = 1
+        if gmodel is not None and self.accel_pool_size > 1:
+            n_pool = max(1, min(int(getattr(gmodel, "SolCount", 1)), self.accel_pool_size))
+
+        puntos = []
+        for n in range(n_pool):
+            if n == 0:
+                # load_solutions=True ya dejo la mejor cargada en Pyomo.
+                puntos.append(self._state_from_model(model, getter=pyo.value))
+            else:
+                gmodel.Params.SolutionNumber = n
+                puntos.append(self._state_from_model(
+                    model, getter=lambda vd: var_map[vd].Xn))
+
+        for n, x_hat in enumerate(puntos, start=1):
+            if verbose:
+                print(f"[NestedBenders] aceleracion: pre-Backward en el punto "
+                      f"{n}/{len(puntos)} del modelo agregado...")
+                sys.stdout.flush()
+
+            # BackwardPass.run NO fija el heritage: en el loop normal se apoya
+            # en que el forward de esa iteracion ya lo dejo puesto en cada
+            # bloque. Aca no hubo forward, asi que hay que fijarlo a mano, y es
+            # obligatorio: el corte de Benders es
+            # Phi(x) >= Phi^LP(x_hat) + mu*(x_hat - x), con Phi^LP y mu leidos
+            # del bloque relajado EN x_hat. Si el bloque se relajara en otro
+            # punto, el corte quedaria anclado en x_hat con coeficientes de un
+            # punto distinto -- invalido.
+            for i in range(1, len(self.blocks)):
+                self.blocks[i].set_heritage(x_hat[self.blocks[i - 1].year])
+
+            # strengthen=False a proposito, aunque el loop principal use
+            # --strengthen: el fortalecido toma su target de
+            # value(child.model.obj), el MILP del bloque resuelto por el forward
+            # de la iteracion, que aca no existe. Con cortes de Benders el
+            # pre-Backward solo resuelve LPs (|años| por punto) en vez de MILPs.
+            # Es tambien lo que uso el paper en su version acelerada: las dos
+            # curvas ganadoras de las Fig. 8 y 9 son "Accelerated Nested
+            # Decomposition with Benders cuts".
+            lb_pre = self.backward_pass.run(
+                x_hat, iteration=0, verbose=verbose,
+                current_ub=None, current_lb=None, strengthen=False,
+            )
+            # LB_k es la relajacion del año 1 con los cortes acumulados. El año
+            # 1 no hereda estado, asi que esa cota es valida venga de donde
+            # venga el x_hat: se aprovecha.
+            if lb_pre is not None:
+                self.lb = max(self.lb, lb_pre)
+
+        return len(puntos)
+
+    def _state_from_model(self, model, getter):
+        """x_hat_by_year = {año: {estado: valor o {idx: valor}}} leido de un
+        modelo MONOLITICO ya resuelto, en el mismo formato que produce
+        YearBlockBuilder.extract_state para un bloque.
+
+        `getter` recibe el VarData y devuelve su valor: pyo.value para la
+        solucion cargada en Pyomo, o una lectura de .Xn del pool de Gurobi.
+
+        Los estados "global_once" (G, H) no llevan indice de año en el modelo,
+        igual que en extract_state."""
+        x_hat_by_year = {}
+        for blk in self.blocks:
+            y = blk.year
+            estado = {}
+            for link in blk.state_links:
+                var = getattr(model, link["state_var"])
+                go = link.get("kind") == "global_once"
+                if link["index_set"] is None:
+                    estado[link["state"]] = getter(var if go else var[y])
+                else:
+                    estado[link["state"]] = {
+                        idx: getter(var[idx] if go else var[idx, y])
+                        for idx in link["index_set"]
+                    }
+            x_hat_by_year[y] = estado
+        return x_hat_by_year
 
     def solve(self, verbose=True):
         """Documento sec. 7-8. Ctrl+C (SIGINT) en cualquier punto -- en
@@ -653,6 +1033,39 @@ class NestedBendersSolver(object):
                 print(f"[NestedBenders] sin cota del LP monolitico "
                       f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
 
+        if self.operational_bound:
+            if verbose:
+                print("[NestedBenders] cota por relajacion operacional "
+                      "(inversion entera)...")
+                sys.stdout.flush()
+            t_ob = time.time()
+            try:
+                self.lb_operational, relajadas = self._operational_bound()
+                self.lb = max(self.lb, self.lb_operational)
+                if verbose:
+                    print(f"[NestedBenders] cota operacional = "
+                          f"{self.lb_operational:,.2f}  ({relajadas:,} binarias "
+                          f"relajadas, {time.time() - t_ob:.0f}s)")
+            except Exception as exc:
+                print(f"[NestedBenders] sin cota por relajacion operacional "
+                      f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
+
+        if self.accelerate:
+            t_acc = time.time()
+            try:
+                n_puntos = self._accelerate_cuts(verbose=verbose)
+                self.accel_time = time.time() - t_acc
+                if verbose:
+                    print(f"[NestedBenders] aceleracion: cortes pre-generados en "
+                          f"{n_puntos} punto(s)  ({self.accel_time:.0f}s)")
+            except Exception as exc:
+                # No es fatal: los cortes pre-generados son un acelerador, no
+                # una condicion de correctitud. Sin ellos la corrida es la de
+                # siempre, solo que arranca con alpha en su cota trivial.
+                self.accel_time = time.time() - t_acc
+                print(f"[NestedBenders] sin cortes de aceleracion "
+                      f"({type(exc).__name__}: {exc}) -- se sigue sin ellos.")
+
         try:
             while gap > self.gap_tol and k < self.max_iter:
                 k += 1
@@ -682,8 +1095,17 @@ class NestedBendersSolver(object):
                 iter_time = time.time() - iter_start
                 self.gap_history.append({
                     "iteration": k, "ub": self.ub, "lb": self.lb, "gap": gap,
+                    # lb_backward: la cota que produjo el backward en ESTA
+                    # iteracion, ANTES del max con lb_monolithic_lp. Sin esto,
+                    # cuando la cota del LP monolitico domina, self.lb queda
+                    # constante y no se puede saber si el backward esta
+                    # subiendo o esta clavado -- que es justo lo que hay que
+                    # medir para decidir si los cortes fortalecidos sirven.
+                    "lb_backward": lb_k,
+                    "lb_monolithic_lp": self.lb_monolithic_lp,
                     "iter_time_sec": iter_time,
                 })
+                self._dump_history()
                 if verbose:
                     print(f"[NestedBenders] k={k}  UB={self.ub:.4f}  LB={self.lb:.4f}  "
                           f"gap={gap:.4%}  tiempo_iteracion={iter_time:.1f}s")
@@ -703,6 +1125,7 @@ class NestedBendersSolver(object):
 
         total_time = time.time() - solve_start
         self.iterations_run = k
+        self._dump_history()
         if verbose:
             self._report_capacity_bound_strength()
             print(f"[NestedBenders] tiempo total: {total_time:.1f}s "
@@ -710,6 +1133,7 @@ class NestedBendersSolver(object):
                   f"{self.forward_pass.feasibility_cuts_added} cortes de factibilidad)")
         return {
             "lb_monolithic_lp": self.lb_monolithic_lp,
+            "lb_operational": self.lb_operational,
             "capacity_bounds": self.capacity_bounds,
             "capacity_sum_bound": self.capacity_sum_bound,
             "capacity_presolve_time_sec": self.capacity_presolve_time,
@@ -760,7 +1184,9 @@ class NestedBendersSolver(object):
         # YearBlockBuilder.mccormick_residual y sec. 3.4/3.5 del documento).
         om = OptModel(self.mine_system, self.time_series, output_folder,
                       autonomous_mode=self.autonomous_mode,
-                      mccormick_degradation=True)
+                      mccormick_degradation=True,
+                      free_charging=self.free_charging,
+                      free_maintenance=self.free_maintenance)
         model = om.model
         om.opt_cost_result = self.best_ub
 

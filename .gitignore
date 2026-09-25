@@ -12,3 +12,12 @@ infeasible_log.txt
 
 # Gurobi LP/IIS dumps (can exceed 100MB, shouldn't be versioned)
 *.lp
+
+# Entorno aislado de GCG y sus wheels: se reconstruye con pip, no se versiona
+# (el .dll de ipopt solo pesa 85 MB y los wheels ~110 MB entre los tres).
+.venv_gcg/
+wheels_gcg/
+
+# Artefactos de export_mps.py: model.mps de un horizonte de 10 anios pesa
+# 329 MB -- por encima del limite duro de 100 MB de GitHub.
+runs/

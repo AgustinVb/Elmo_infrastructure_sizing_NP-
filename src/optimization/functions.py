@@ -19,12 +19,29 @@ from pyomo.environ import quicksum, value
 # modulo completo de una vez.
 P_SSEE_STEP = 500.0
 
+# Binarias OPERACIONALES: una por equipo/año/dia/intervalo. Son la masa del
+# modelo -- ~460k de las 460.851 enteras en la instancia de 10 años y 4 dias
+# representativos. Las de INVERSION (X, Delta_X, N_chargers,
+# Delta_N_chargers, n_ssee_k, R) son unas decenas y quedan fuera de esta lista.
+#
+# Relajar SOLO estas deja un MILP con decenas de enteras en vez de cientos de
+# miles, y como relajar integralidad agranda el factible, su optimo es una
+# COTA INFERIOR valida del modelo original. Lo usan dos caminos: el modelo
+# agregado de la tecnica de aceleracion (driver._accelerate_cuts) y el flag
+# --relax_operational del monolitico (OptModel), que resuelve esa misma
+# relajacion de una vez sobre todo el horizonte para medir cuanto del gap se
+# explica solo por la integralidad de las inversiones.
+OPERATIONAL_BINARY_VARS = (
+    "Y", "Z", "Z_charge", "StartCharge", "EndCharge", "StartAssign", "EndAssign",
+)
+
 
 class OptRules(object):
 
     def __init__(self, mine_system, time_series, autonomous_mode=False,
                  years_override=None, exogenous_stations=None,
-                 mccormick_degradation=False, macroblock=None):
+                 mccormick_degradation=False, macroblock=None,
+                 free_charging=False, free_maintenance=False):
         self.mine_system = mine_system
         self.time_series = time_series
         # Camino A (McCormick) aplicado al MONOLITICO completo (ver
@@ -40,6 +57,30 @@ class OptRules(object):
         # Escenario DET autonomo: durante la colacion el LHD puede ademas
         # operar (no solo cargar o estar detenido). Ver OptSets.build_sets.
         self.autonomous_mode = autonomous_mode
+        # Carga liberada (--free_charging): reemplaza la restriccion de
+        # ventana de carga (charge_only_meal_or_between_shifts_det, que solo
+        # deja cargar en meal/road_clearing/between_shifts DET -- 144 de los
+        # 480 min del turno) por no_charge_maintenance_det, que prohibe
+        # cargar UNICAMENTE durante maintenance DET, donde la maquina esta en
+        # servicio. Quedan cargables 408/480 min (85%).
+        #
+        # El esquema de DETENCIONES no cambia: det_stop_all sigue impidiendo
+        # operar durante maintenance y road_clearing, y between_shifts_elhd
+        # durante el cambio de turno. Este flag solo libera CUANDO se puede
+        # cargar, no CUANDO se puede operar.
+        self.free_charging = free_charging
+        # Mantenimiento liberado (--free_maintenance): maintenance DET deja de
+        # ser una detencion. Hoy entra en det_stop junto con road_clearing, asi
+        # que det_stop_all (Z + sum Z_charge == 1) impide OPERAR, y ademas
+        # ninguna regla de carga lo habilita, asi que queda Z = 1 forzado:
+        # detenido puro, 72 min por turno. Con el flag sale de det_stop y de la
+        # prohibicion de carga, y pasa a ser un intervalo libre como cualquier
+        # otro -- el LHD puede operar, cargar o estar detenido.
+        #
+        # Sube los intervalos operables de 97 a 126 por dia y los cargables de
+        # 54 a 83 (regimen restringido). Es la relajacion mas fuerte de las
+        # tres, porque toca las dos restricciones a la vez.
+        self.free_maintenance = free_maintenance
         # Descomposicion Nested Benders (ver
         # implementacion_descomposicion_carga_ob.md): years_override acota
         # model.years a los años de un bloque (p.ej. un solo año), sin tocar
@@ -341,7 +382,11 @@ class OptSets(OptRules):
         det_maintenance_intervals = self._get_time_intervals_for_pause_type("maintenance", pauses=det_pauses)
         det_road_clearing_intervals = self._get_time_intervals_for_pause_type("road_clearing", pauses=det_pauses)
         det_between_shifts_intervals = self._get_time_intervals_for_pause_type("between_shifts", pauses=det_pauses)
-        det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
+        if self.free_maintenance:
+            # maintenance deja de ser detencion: no bloquea operar.
+            det_stop = sorted(set(det_road_clearing_intervals))
+        else:
+            det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
 
         if self.autonomous_mode:
             model.time_intervals_det_set = pyo.Set(
@@ -1227,14 +1272,34 @@ class ConstraintRules(OptRules):
         debe permanecer detenido sin cargar, por lo que esa ventana no se
         incluye aqui. Fuera de esas ventanas la carga queda prohibida.
 
-        Definida pero no registrada en build_all_constraints (igual que
-        det_stop_all): el esquema activo hoy en esta rama sigue siendo DCH.
+        Registrada en build_all_constraints junto con det_stop_all: el
+        esquema activo en esta rama es DET, no DCH (el bloque DCH quedo
+        comentado ahi). Se registra solo cuando free_charging=False; con
+        --free_charging la reemplaza no_charge_maintenance_det.
         """
         if (
             t in model.time_intervals_meal_det_set
             or t in model.time_intervals_road_clearing_det_set
             or t in model.time_intervals_between_shifts_det_set
+            or (self.free_maintenance and t in model.time_intervals_maintenance_det_set)
         ):
+            return pyo.Constraint.Skip
+        return model.Z_charge[k,i,y,d,t] == 0
+
+    def no_charge_maintenance_det(self, model, k, i, y, d, t):
+        """Carga liberada (--free_charging): version permisiva de
+        charge_only_meal_or_between_shifts_det.
+
+        Aquella permite cargar SOLO en meal/road_clearing/between_shifts DET
+        y prohibe el resto del dia; esta invierte el criterio y prohibe
+        cargar UNICAMENTE durante maintenance DET, donde el LHD esta en
+        servicio. En esa ventana det_stop_all (Z + sum Z_charge == 1) queda
+        entonces con Z_charge = 0 forzado, o sea Z = 1: detenido puro, igual
+        que en el regimen restringido.
+
+        Se registra en lugar de charge_only_meal_or_between_shifts_det, nunca
+        junto a ella (ver build_all_constraints)."""
+        if t not in model.time_intervals_maintenance_det_set:
             return pyo.Constraint.Skip
         return model.Z_charge[k,i,y,d,t] == 0
 
@@ -1448,7 +1513,16 @@ class ConstraintRules(OptRules):
         # para carga_ob_multiaño (ver det_stop_all /
         # charge_only_meal_or_between_shifts_det).
         model.det_stop_all = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
-        model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
+        if self.free_charging and self.free_maintenance:
+            # Carga liberada + mantenimiento liberado: no queda ninguna ventana
+            # con la carga prohibida, asi que no se registra ninguna regla.
+            pass
+        elif self.free_charging:
+            # Carga liberada: unica ventana sin carga es maintenance DET.
+            model.no_charge_maintenance_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.no_charge_maintenance_det)
+        else:
+            # Carga restringida (default, regimen historico de esta rama).
+            model.charge_only_meal_or_between_shifts_det = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_between_shifts_det)
 
       
 class ObjectiveRules(OptRules):
