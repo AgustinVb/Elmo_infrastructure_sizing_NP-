@@ -478,6 +478,81 @@ class YearBlockBuilder(object):
                 con.activate()
 
     @contextlib.contextmanager
+    def lagrangean_mode(self, mu):
+        """Convierte el bloque EN SITU en su RELAJACION LAGRANGEANA respecto de
+        las igualdades de fijacion del estado heredado, y lo restaura al salir.
+        Es lo que hace falta para el Strengthened Benders cut (ec. 63 de Lara
+        et al. 2018, EJOR 271:1037-1054).
+
+            Phi^LR(mu) = min { f_y + alpha + mu^T (z - x_hat)
+                               : (x, u, z) en X_y }
+
+        Dos diferencias con relaxed_mode, y las dos son el punto:
+
+          - la INTEGRALIDAD SE MANTIENE. Por eso la cota resultante vale para
+            el casco entero y no para su relajacion lineal. Es lo que rompe el
+            techo del backward: con cortes de LP, alpha_1 converge exactamente
+            a la relajacion lineal del monolitico (medido en DET 4 dias:
+            1.807.131, contra 2.212.229 que Gurobi prueba con sus cortes).
+
+          - la igualdad z = x_hat se DESACOPLA y su violacion se paga en el
+            objetivo con el multiplicador mu, en vez de imponerse.
+
+        SIGNO. Se usa la convencion de BendersCutManager.read_duals, donde
+        mu = -pi y el lagrangiano es L = f + mu^T (z - x_hat), de modo que
+        Phi(x_hat) = g(mu) - mu^T x_hat con g(mu) = min {f + mu^T z}. El
+        termino -mu^T x_hat NO es opcional: es lo que deja Phi^LR en la misma
+        base que Phi^LP y hace que el corte quede anclado donde corresponde.
+        Como x_hat vive en los Param mutables <estado>_hat, alcanza con escribir
+        (z - hat) y el ancla viaja sola.
+
+        Para cada familia, z es la copia heredada <estado>_prev cuando existe, y
+        la variable real cuando el estado se decide una sola vez para todo el
+        horizonte (global_once: n_ssee_k, G_g, H), que es contra quien esta
+        escrita la igualdad en ese caso.
+
+        Los cortes ya acumulados en model.cuts se dejan activos: acotan alpha y
+        son parte de phi_{t,k} en la ec. (60) del paper.
+        """
+        model = self.model
+        desacoplados = []
+        termino_dual = 0.0
+
+        for link in self.state_links:
+            if link["hat"] is None:
+                continue
+            con = getattr(model, "link_" + link["state"])
+            if con.active:
+                con.deactivate()
+                desacoplados.append(con)
+
+            mu_fam = mu.get(link["state"])
+            if mu_fam is None:
+                continue
+            # z: la copia heredada si la hay; si no, la variable real.
+            z_comp = getattr(model, link["prev"]) if link["prev"] else \
+                getattr(model, link["state_var"])
+            hat = getattr(model, link["hat"])
+            if link["index_set"] is None:
+                termino_dual += mu_fam * (z_comp - hat)
+            else:
+                for idx, mu_v in mu_fam.items():
+                    termino_dual += mu_v * (z_comp[idx] - hat[idx])
+
+        model.obj.deactivate()
+        model.lagrangean_obj = pyo.Objective(expr=model.obj.expr + termino_dual,
+                                             sense=pyo.minimize)
+        try:
+            yield model
+        finally:
+            # Restaurar SIEMPRE: si no, el forward resolveria el anio con el
+            # estado desacoplado y con un objetivo que no es el suyo.
+            model.del_component("lagrangean_obj")
+            model.obj.activate()
+            for con in desacoplados:
+                con.activate()
+
+    @contextlib.contextmanager
     def elastic_mode(self):
         """Pone el bloque en modo elastico EN SITU, para generar un corte de
         FACTIBILIDAD cuando el anio resulta infactible con el estado recibido.

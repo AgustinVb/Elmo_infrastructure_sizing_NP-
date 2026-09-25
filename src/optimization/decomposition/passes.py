@@ -339,10 +339,69 @@ class BackwardPass(object):
     distingue al esquema anidado de aplicar Benders año a año por separado.
     """
 
-    def __init__(self, blocks, cut_manager=None, solver_kwargs=None):
+    def __init__(self, blocks, cut_manager=None, solver_kwargs=None,
+                 cut_type="benders", strengthened_timelimit=300):
+        """:param cut_type: "benders" (ec. 59 de Lara et al. 2018) toma la
+            constante del corte de la relajacion LINEAL del bloque hijo.
+            "strengthened" (ec. 63) reusa EL MISMO mu del dual del LP pero
+            calcula la constante con la relajacion LAGRANGEANA, que conserva la
+            integralidad. No lleva el bucle de subgradiente del corte
+            lagrangeano completo (ec. 62): un MILP extra por bloque y nada mas.
+
+            Cuando elegir cada uno: el paper mide que el Benders puro es el mas
+            rapido en SU instancia, y lo atribuye explicitamente a que ahi la
+            relajacion lineal es apretada. Aca no lo es -- el LP del monolitico
+            da 1.807.131 contra 2.212.229 que Gurobi prueba --, y el LB del
+            backward se quedo clavado en ese valor 3 iteraciones seguidas. Con
+            una relajacion floja el criterio del paper apunta al corte fuerte.
+
+        :param strengthened_timelimit: segundos por MILP lagrangeano. Cortarlo
+            NO invalida el corte: se usa la cota DUAL del solver, que subestima
+            Phi^LR (ver _lagrangean_bound).
+        """
         self.blocks = blocks
         self.cut_manager = cut_manager or BendersCutManager()
         self.solver_kwargs = solver_kwargs or {}
+        if cut_type not in ("benders", "strengthened"):
+            raise ValueError("cut_type tiene que ser 'benders' o 'strengthened'")
+        self.cut_type = cut_type
+        self.strengthened_timelimit = strengthened_timelimit
+        # Cuanto levanto el corte fuerte sobre el de LP, para poder decidir si
+        # paga su costo sin tener que releer los logs. `attempts` cuenta los
+        # intentos REALES: el pre-backward del warm start agrega una pasada de
+        # mas sobre las iteraciones, asi que el total no se deduce de k.
+        self.strengthen_gain = []
+        self.strengthen_attempts = 0
+
+    def _lagrangean_bound(self, block, mu, phi_lp, label):
+        """Constante del Strengthened Benders cut: Phi^LR(mu) con la
+        integralidad del bloque PUESTA, usando el mu que ya salio del dual del
+        LP. Devuelve (valor, se_uso_el_fuerte).
+
+        VALIDEZ CON TIMELIMIT. El corte necesita un valor que SUBESTIME
+        Phi^LR; si el MILP se corta por tiempo, su incumbente lo SOBREestima y
+        armar el corte con el lo haria demasiado fuerte -- podria recortar
+        soluciones factibles y producir LB > UB. Por eso se lee la cota DUAL
+        (result.problem.lower_bound), que subestima siempre, y por eso el solve
+        va con load_solutions=False: asi un MILP que ni siquiera encontro
+        incumbente igual devuelve su cota en vez de fallar al cargar.
+
+        PISO EN Phi^LP. Con el mu optimo del LP vale Phi^LR >= Phi^LP, porque
+        el minimo sobre el conjunto entero no puede ser menor que sobre su
+        relajacion. Si el MILP se corta antes de levantar la cota por encima de
+        Phi^LP, se devuelve Phi^LP: el corte queda exactamente igual al de
+        Benders puro, nunca peor.
+        """
+        kwargs = dict(self.solver_kwargs)
+        kwargs["timelimit"] = self.strengthened_timelimit
+        with block.lagrangean_mode(mu) as model:
+            result = _solve(model, label=label, load_solutions=False, **kwargs)
+        dual = result.problem.lower_bound
+        if dual is None or dual != dual or dual in (float("inf"), float("-inf")):
+            return phi_lp, False
+        if dual <= phi_lp:
+            return phi_lp, False
+        return float(dual), True
 
     def _relax_and_solve(self, block, label):
         """Devuelve (Phi^LP, mu) del bloque relajado. Se relaja EN SITU: ver
@@ -360,6 +419,8 @@ class BackwardPass(object):
         k_tag = f"k={iteration} " if iteration is not None else ""
         bounds_tag = _bounds_tag(current_ub, current_lb)
 
+        fuerte = self.cut_type == "strengthened"
+
         for i in range(len(self.blocks) - 1, 0, -1):
             child = self.blocks[i]
             parent = self.blocks[i - 1]
@@ -369,19 +430,56 @@ class BackwardPass(object):
                       f"relajando LP y leyendo duales (corte -> anio {parent.year})...")
             phi_lp, mu = self._relax_and_solve(child, label=f"backward y={child.year}")
 
+            phi = phi_lp
+            if fuerte:
+                if verbose:
+                    print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  "
+                          f"lagrangeano con integralidad (corte fortalecido)...")
+                phi, uso = self._lagrangean_bound(
+                    child, mu, phi_lp, label=f"lagrangeano y={child.year}")
+                self.strengthen_attempts += 1
+                if uso:
+                    self.strengthen_gain.append(phi - phi_lp)
+                    if verbose:
+                        print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  "
+                              f"Phi^LP={phi_lp:,.2f} -> Phi^LR={phi:,.2f} "
+                              f"(+{phi - phi_lp:,.2f})")
+                elif verbose:
+                    print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  "
+                          f"el lagrangeano no supero Phi^LP={phi_lp:,.2f}: "
+                          f"el corte queda como el de Benders puro")
+
             self.cut_manager.add_cut(
-                parent, phi_lp, mu, x_hat_by_year[parent.year], iteration=iteration
+                parent, phi, mu, x_hat_by_year[parent.year], iteration=iteration
             )
 
-        # LB_k = Phi_1 relajado, con el corte que se le acaba de agregar. Si el
-        # horizonte tiene un solo año no hay nada que propagar y la relajacion
-        # del unico bloque ya es la cota.
+        # LB_k = Phi_1 con los cortes recien agregados (ec. 57 del paper). Si el
+        # horizonte tiene un solo año no hay nada que propagar y el unico bloque
+        # ya es la cota.
+        #
+        # Con cortes fortalecidos se resuelve el año 1 como MILP y no como LP:
+        # los cortes ya valen para el casco entero, asi que relajar ademas la
+        # integralidad del PRIMER año tiraria gratis parte de lo que acaban de
+        # comprar. Sigue siendo cota inferior valida porque alpha_1 subestima el
+        # costo futuro verdadero. Con timelimit se lee la cota dual, que
+        # subestima siempre.
         first = self.blocks[0]
         if verbose:
+            modo = "MILP" if fuerte else "LP"
             print(f"[NestedBenders] {k_tag}BACKWARD anio {first.year}  {bounds_tag}  "
-                  f"relajando LP con los cortes actualizados (cota inferior)...")
+                  f"resolviendo {modo} con los cortes actualizados (cota inferior)...")
         phi_lp, _ = self._relax_and_solve(first, label=f"backward y={first.year}")
-        return phi_lp
+        if not fuerte:
+            return phi_lp
+
+        kwargs = dict(self.solver_kwargs)
+        kwargs["timelimit"] = self.strengthened_timelimit
+        result = _solve(first.model, label=f"cota y={first.year} (MILP)",
+                        load_solutions=False, **kwargs)
+        dual = result.problem.lower_bound
+        if dual is None or dual != dual or dual in (float("inf"), float("-inf")):
+            return phi_lp
+        return max(phi_lp, float(dual))
 
 
 class _YearInfeasible(Exception):

@@ -42,44 +42,38 @@ def build_mine(args):
 
     model = Reader(join(args.data_folder, args.model), start_in=1)
     series = Series(join(args.data_folder, args.series))
-    #time_series = timeseries.Timeseries(series, [1,91,181,271], 8/60)
-    #time_series = timeseries.Timeseries(series, [1,32,60,91,121,152,182,213,244,274,305,335], 8/60) #12 dias significativos
-    #time_series = timeseries.Timeseries(series, [15, 380, 745, 1110, 1475], 8/60)
-    #time_series = timeseries.Timeseries(series, [196, 561, 926, 1291, 1656], 8/60)
-    #time_series = timeseries.Timeseries(series, [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741, 4016, 4106, 4381, 4471, 4746, 4836], 8/60)  # 14 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
-    # 14 anios, 2 dias representativos/anio: dia 15 (verano, sin cobro de
-    # potencia) y dia 196 (invierno, con cobro). Se eligen 15 y 196 -- y no
-    # cualquier par -- porque son los unicos dias del anio para los que la hoja
-    # GenProfiles trae perfiles de solar/eolica que cumplan ese criterio: alli
-    # solo existen los dias-del-anio {15, 105, 196, 288}.
+    # --- Dias representativos ---------------------------------------------
+    # La eleccion NO es libre: get_alpha_g busca el perfil renovable con la
+    # clave ((day - 1) % 365) + 1 contra la columna 'day' de GenProfiles, asi
+    # que solo son utilizables los dias-del-anio que esa hoja trae con
+    # day <= 365. Hoy son exactamente {15, 105, 196, 288} (las filas con
+    # day > 365 existen pero son inalcanzables para el lookup).
     #
-    # OJO: get_alpha_g devuelve 0.0 cuando no encuentra el dia, sin avisar. Con
-    # la lista anterior (dias-del-anio 1 y 91) NINGUNO tenia perfil, asi que la
-    # generacion y el almacenamiento quedaban silenciosamente desactivados: el
-    # modelo podia invertir en solar/eolica, pagaba inversion y operacion y
-    # recibia cero energia. Si se cambia esta lista hay que verificar que los
-    # dias nuevos existan en GenProfiles.
-    #   lista anterior (perfiles de generacion en cero):
-    #   days = [1, 91, 366, 456, 731, 821, 1096, 1186, 1461, 1551, 1826, 1916, 2191, 2281, 2556, 2646, 2921, 3011, 3286, 3376, 3651, 3741]  # 11 años, 2 días representativos/año (verano sin cobro potencia + invierno con cobro potencia)
+    # OJO: get_alpha_g devuelve 0.0 cuando no encuentra el dia, SIN AVISAR. Una
+    # lista anterior usaba los dias-del-anio 1 y 91, que no tienen perfil: la
+    # generacion y el almacenamiento quedaban desactivados en silencio -- el
+    # modelo invertia en solar/eolica, pagaba inversion y operacion, y recibia
+    # cero energia. Si se agrega un dia hay que poblarlo antes en GenProfiles.
     #
-    # 14 anios: el horizonte completo del plan minero. ExtractionGoal,
-    # NodeAssignment y FleetByYear traen las 14 columnas, incluida la rampa de
-    # cierre (14.836 / 9.863 / 4.932 t-dia en los anios 12-14) que la lista
-    # anterior, cortada en el anio 11, dejaba fuera. El patron es
-    # (y-1)*365 + 15 y (y-1)*365 + 196, asi que los dias agregados son
-    # 4030/4211 (anio 12), 4395/4576 (anio 13) y 4760/4941 (anio 14); todos
-    # caen en los mismos dos dias-del-anio, que es lo que GenProfiles cubre.
-    #   lista anterior (11 anios, se quedaba corta contra la data):
-    #   days = [15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021, 2205, 2386, 2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846]
-    days = [15, 196, 380, 561, 745, 926, 1110, 1291, 1475, 1656, 1840, 2021,
-            2205, 2386, 2570, 2751, 2935, 3116, 3300, 3481, 3665, 3846,
-            4030, 4211, 4395, 4576, 4760, 4941]
-    # --n_years recorta el horizonte a los primeros N años (2 días por año),
-    # para poder correr validaciones cortas sin editar esta lista a mano. Sin
-    # el flag, el horizonte es el de siempre.
+    # Cobro de potencia: power_peak_limit solo ata P_pot entre los dias 91 y
+    # 244 (abril-septiembre, meses de punta). Con 2 dias cae 1 de 2 (el 196);
+    # con 4 caen 2 de 4 (105 y 196). La proporcion se mantiene, asi que las dos
+    # configuraciones siguen siendo comparables en ese termino.
+    DIAS_POR_ANIO = {
+        2: [15, 196],            # verano sin cobro + invierno con cobro
+        4: [15, 105, 196, 288],  # los cuatro que GenProfiles tiene poblados
+    }
+    ANIOS_HORIZONTE = 14  # plan minero completo (ExtractionGoal/FleetByYear traen 14)
+
+    doys = DIAS_POR_ANIO[getattr(args, 'days_per_year', 4)]
+    days = [(y - 1) * 365 + doy
+            for y in range(1, ANIOS_HORIZONTE + 1)
+            for doy in doys]
+    # --n_years recorta el horizonte a los primeros N anios, para validaciones
+    # cortas sin editar nada a mano.
     n_years = getattr(args, 'n_years', None)
     if n_years is not None:
-        days = days[:n_years * 2]
+        days = days[:n_years * len(doys)]
     time_series = timeseries.Timeseries(series, days, 8/60)
     #time_series = timeseries.Timeseries(series, [1, 91], 8/60)
     mine_system = mine.Mine(model)
@@ -128,6 +122,28 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         exogenous = {int(y): {k: int(v) for k, v in por_nave.items()}
                      for y, por_nave in crudo.items()}
 
+    # En --mode hybrid la cota del LP monolitico no se calcula. No es que aporte
+    # poco: no aporta nada. La fase monolitica posterior construye el MISMO
+    # modelo y su propio root bound la pasa por arriba enseguida -- medido en
+    # DET/Gen_Bat/241kW: 1,807,131 en 2,251 s aca, contra 2,149,198 a los 245 s
+    # del solve de Gurobi que igual se iba a correr. Encima obliga a construir
+    # el monolitico dos veces, que es justo el gasto que la descomposicion evita.
+    #
+    # Y ni siquiera son cotas del mismo problema: este LP va con X exogeno (mas
+    # las cotas del presolve de capacidad), mientras que build_report_model arma
+    # el OptModel sin exogenous_stations, con X libre. El conjunto factible del
+    # monolitico es mas grande, asi que su optimo puede ser menor y este numero
+    # NO es cota inferior valida para el. En el mismo log: 1,807,131 con X fijo
+    # contra 1,623,012 de root relaxation con X libre, y la diferencia es casi
+    # exactamente la apertura de naves que el X fraccionario esquiva.
+    #
+    # En --mode decomposed, en cambio, es la unica cota que hay: el backward no
+    # la supero en ninguna corrida.
+    monolithic_lp_bound = not args.no_monolithic_lp_bound and not hybrid
+    if hybrid and not args.no_monolithic_lp_bound:
+        print("[Hibrido] se omite la cota del LP monolitico: la fase monolitica "
+              "la supera con su propio root bound en una fraccion del tiempo.")
+
     solver = NestedBendersSolver(
         mine_system, time_series,
         exogenous_stations_by_year=exogenous,
@@ -137,8 +153,11 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         solver_kwargs={'solvername': args.solver, 'gap': args.gap_tol,
                        'timelimit': args.solve_timelimit},
         block_build_jobs=args.block_build_jobs,
-        monolithic_lp_bound=not args.no_monolithic_lp_bound,
+        monolithic_lp_bound=monolithic_lp_bound,
         capacity_presolve=args.capacity_presolve,
+        cut_type=args.cut_type,
+        strengthened_timelimit=args.strengthened_timelimit,
+        warm_start_cuts=args.warm_start_cuts,
     )
     resultado = solver.solve(verbose=True)
 
@@ -191,6 +210,15 @@ def main():
     parser.add_argument('--series', default='time_series.xlsx')
     parser.add_argument('--output_folder', default='output/')
     parser.add_argument(
+        '--days_per_year', type=int, choices=[2, 4], default=4,
+        help='Dias representativos por anio. 4 (default): dias-del-anio 15, 105, '
+             '196 y 288. 2: solo 15 y 196 (config historica de los escenarios '
+             'P_red). Solo esos cuatro tienen perfil renovable '
+             'cargado en GenProfiles; cualquier otro deja alpha_g = 0 en silencio. '
+             'Pasar a 4 duplica el tamanio del modelo y baja el factor de escalado '
+             'operacional de 182,5 a 91,25 dias por dia modelado.'
+    )
+    parser.add_argument(
         '--n_years', type=int, default=None,
         help='Recorta el horizonte a los primeros N años (2 dias representativos '
              'por año). Sin el flag se usa el horizonte completo de 11 años.'
@@ -202,6 +230,15 @@ def main():
         '--init_solution_folder',
         default=None,
         help='Carpeta opcional con JSONs de variables (<VarName>.json) para warm start completo',
+    )
+    parser.add_argument(
+        '--relax_operational', action='store_true',
+        help='[--mode monolithic] relaja SOLO las variables de operacion (Y, Sv, Z, '
+             'Z_swap, StartAssign, EndAssign, S, X_dch, X_ini, W) y deja enteras las '
+             'de inversion (X, N_bays, N_chargers, N_batteries, n_ssee_k, R). El '
+             'optimo es una cota inferior del MILP completo, mas apretada que la '
+             'relajacion lineal total, que tambien afloja la inversion. NO es un plan '
+             'reportable: la operacion queda fraccionaria.'
     )
     parser.add_argument(
         '--relax_integrality',
@@ -300,12 +337,44 @@ def main():
              'los anios, cota mas fuerte pero |naves|*|anios| MILP. off: sin presolve.'
     )
     parser.add_argument(
+        '--cut_type', choices=['benders', 'strengthened'], default='benders',
+        help='[--mode decomposed/hybrid] familia de cortes del backward pass '
+             '(Lara et al. 2018, EJOR 271:1037-1054). benders (default, ec. 59): '
+             'la constante sale de la relajacion LINEAL del bloque hijo; barato, '
+             'pero el LB converge como mucho a la relajacion lineal del '
+             'monolitico. strengthened (ec. 63): reusa el mismo mu del dual del '
+             'LP y recalcula la constante con la relajacion LAGRANGEANA, que '
+             'conserva la integralidad; un MILP extra por bloque, sin el bucle de '
+             'subgradiente del corte lagrangeano completo. Es el corte que rompe '
+             'ese techo cuando la relajacion lineal es floja, que es el caso de '
+             'este modelo (LP 1,807,131 contra 2,212,229 que Gurobi prueba).'
+    )
+    parser.add_argument(
+        '--strengthened_timelimit', type=int, default=300,
+        help='[--cut_type strengthened] segundos por MILP lagrangeano. Cortarlo '
+             'NO invalida el corte: se usa la cota dual del solver, que subestima '
+             'siempre, y si no llega a superar Phi^LP el corte queda igual al de '
+             'Benders puro.'
+    )
+    parser.add_argument(
+        '--warm_start_cuts', action='store_true',
+        help='[--mode decomposed/hybrid] Accelerated Nested Decomposition (Lara '
+             'et al. 2018, sec. 5.3): antes de la primera pasada forward corre un '
+             'backward completo sobre la trayectoria de la relajacion lineal del '
+             'monolitico, para que alpha no arranque sin cotas. En el paper baja '
+             'de 7 a 4 iteraciones para el mismo gap, y la ganancia es mayor en la '
+             'instancia grande. Reusa el LP que --no_monolithic_lp_bound ya '
+             'resolvia, asi que no cuesta un solve extra.'
+    )
+    parser.add_argument(
         '--no_monolithic_lp_bound', action='store_true',
         help='[--mode decomposed] no calcular la relajacion lineal del monolitico '
              'como cota inferior inicial. Por defecto SI se calcula: suele ser una '
              'cota mucho mejor que la del backward y cuesta un solo LP, pero obliga '
              'a construir el monolitico completo, que es el gasto de memoria que la '
-             'descomposicion evita.'
+             'descomposicion evita. En --mode hybrid NO se calcula nunca (la fase '
+             'monolitica la supera con su propio root bound), asi que el flag no '
+             'tiene efecto ahi.'
     )
 
     args = parser.parse_args()
@@ -329,6 +398,7 @@ def main():
         y_init_path=y_init_path,
         init_solution_folder=init_solution_folder,
         relax_integrality=args.relax_integrality,
+        relax_operational=args.relax_operational,
         autonomous_mode=args.autonomous_mode,
         mccormick_degradation=args.mccormick_degradation,
         mip_focus=args.mip_focus,

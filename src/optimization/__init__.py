@@ -8,6 +8,7 @@ class OptimizationModel(object):
                  solver_name, output_folder, timelimit=172800, y_init_path=None,
                  init_solution_folder=None,
                  relax_integrality=False,
+                 relax_operational=False,
                  autonomous_mode=False,
                  mccormick_degradation=False,
                  mip_focus=3):
@@ -26,7 +27,9 @@ class OptimizationModel(object):
             mip_focus=mip_focus,
         )
         print('formulation time:', time.time() - t0)
-        self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
+        self.opt_model.solve_model(gap, solver_name, timelimit=timelimit,
+                                   relax_integrality=relax_integrality,
+                                   relax_operational=relax_operational)
 
         if getattr(self.opt_model, 'opt_cost_result', None) is None:
             # Sin incumbente no hay nada que exportar: Printer evaluaria

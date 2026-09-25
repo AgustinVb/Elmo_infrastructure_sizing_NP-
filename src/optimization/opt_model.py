@@ -52,6 +52,76 @@ from src.optimization.functions import (
 #     con la salida piped, y desde otra terminal);
 #   - Ctrl+C, via la bandera que deja el handler de SIGINT.
 
+# ---------------------------------------------------------------------------
+# Relajacion PARCIAL: solo las variables de operacion
+# ---------------------------------------------------------------------------
+# Relaja la integralidad de las decisiones operativas (que LHD viaja a que nodo
+# en que intervalo, cuando swapea, cuantas baterias hay cargando) y deja
+# ENTERAS las de inversion (naves, bahias, cargadores, baterias del pool,
+# modulos de subestacion, reemplazo).
+#
+# Para que sirve: el optimo resultante es una cota inferior del MILP completo,
+# mucho mas apretada que la relajacion lineal total --que tambien afloja la
+# inversion, justo donde esta el costo--, y aisla cuanto de la dificultad viene
+# de la integralidad operativa y cuanto de la de inversion. Medido en este
+# escenario a 2 anios: 146.256 enteras operativas contra 23 de inversion, o sea
+# que esto quita el 99,98% de la integralidad y conserva todo el costo discreto.
+#
+# OJO: NO es el problema original. El plan de inversion que salga es factible
+# solo contra una operacion fraccionaria (medio LHD viajando a un nodo), asi
+# que sirve como cota y como diagnostico, no como dimensionamiento reportable.
+VARS_OPERACIONALES = [
+    'Y',            # asignacion LHD -> nodo de extraccion
+    'Sv',           # baterias cargando en la estacion
+    'Z',            # LHD detenido
+    'Z_swap',       # LHD haciendo swap
+    'StartAssign',  # inicio de asignacion
+    'EndAssign',    # fin de asignacion
+    'S',            # inventario de baterias en estacion
+    'X_dch',        # baterias descargadas
+    'X_ini',        # baterias al inicio del intervalo
+    'W',            # swaps demandados
+]
+
+
+def relax_operational_vars(model, verbose=True):
+    """Pasa a continuas las enteras de VARS_OPERACIONALES, conservando sus
+    cotas (una binaria queda en [0, 1], una entera no negativa en [0, ub]).
+
+    No se usa TransformationFactory('core.relax_integer_vars') porque relaja
+    TODAS las enteras del modelo, incluidas las de inversion, que es justo lo
+    que aca se quiere conservar.
+    """
+    relajadas, familias = 0, []
+    for nombre in VARS_OPERACIONALES:
+        comp = getattr(model, nombre, None)
+        if comp is None:
+            continue
+        n_fam = 0
+        for vd in comp.values():
+            if vd.is_continuous():
+                continue
+            lb, ub = vd.bounds          # binaria -> (0, 1); entera -> sus cotas
+            vd.domain = pyo.Reals
+            vd.setlb(lb)
+            vd.setub(ub)
+            n_fam += 1
+        if n_fam:
+            familias.append(f'{nombre}({n_fam:,})')
+            relajadas += n_fam
+    if verbose:
+        enteras_restantes = sum(
+            1 for v in model.component_objects(pyo.Var, active=True)
+            for vd in v.values() if not vd.is_continuous()
+        )
+        print(f"[RelajacionParcial] {relajadas:,} variables operativas pasadas a "
+              f"continuas: {' '.join(familias)}")
+        print(f"[RelajacionParcial] quedan {enteras_restantes:,} enteras "
+              f"(las de inversion). El optimo es una COTA INFERIOR del MILP "
+              f"completo, no un plan reportable.")
+    return relajadas
+
+
 STOP_FILENAME = "STOP"
 
 _stop_requested = False
@@ -483,13 +553,18 @@ class OptModel(object):
             except Exception as e:
                 print("WARN Could not read log file for summary:", e)
 
-    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False): 
+    def solve_model(self, gap, solvername, timelimit=172800, relax_integrality=False,
+                    relax_operational=False):
         log_file = self.gurobi_log_path
         if os.path.exists(log_file):
             os.remove(log_file)
 
         result = None
         model_to_solve = self.model
+        if relax_operational:
+            # Relajacion PARCIAL, en sitio y antes de cualquier clone: solo las
+            # familias operativas. Ver relax_operational_vars.
+            relax_operational_vars(self.model)
         if relax_integrality:
             self.original_model = self.model
             model_to_solve = self.model.clone()

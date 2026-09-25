@@ -62,7 +62,8 @@ class NestedBendersSolver(object):
     def __init__(self, mine_system, time_series, exogenous_stations_by_year=None,
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
                  block_build_jobs=None, monolithic_lp_bound=True,
-                 capacity_presolve="peak"):
+                 capacity_presolve="peak", cut_type="benders",
+                 strengthened_timelimit=300, warm_start_cuts=False):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -106,11 +107,18 @@ class NestedBendersSolver(object):
         self.forward_pass = ForwardPass(self.blocks, solver_kwargs=self.solver_kwargs,
                                         cut_manager=self.cut_manager)
         self.backward_pass = BackwardPass(
-            self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs
+            self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs,
+            cut_type=cut_type, strengthened_timelimit=strengthened_timelimit,
         )
 
         self.monolithic_lp_bound = monolithic_lp_bound
         self.lb_monolithic_lp = None
+        # Familia de cortes del backward y aceleracion por cortes pre-generados
+        # (Lara et al. 2018, secciones 5.2.2 y 5.3).
+        self.cut_type = cut_type
+        self.strengthened_timelimit = strengthened_timelimit
+        self.warm_start_cuts = warm_start_cuts
+        self.warm_start_time = 0.0
         if capacity_presolve not in ("peak", "all", "off", None):
             raise ValueError(f"capacity_presolve debe ser 'peak', 'all' u 'off' "
                              f"(recibido {capacity_presolve!r})")
@@ -418,7 +426,81 @@ class NestedBendersSolver(object):
                 f"el LP del monolitico no llego al optimo "
                 f"({result.solver.termination_condition})"
             )
-        return value(model.obj)
+        return value(model.obj), self._trayectoria_desde_monolitico(model)
+
+    def _trayectoria_desde_monolitico(self, mono):
+        """Lee del monolitico ya resuelto el estado año por año, en el MISMO
+        formato que YearBlockBuilder.extract_state(), para poder usarlo como
+        x_hat_{t,0} en el pre-backward pass (ver _pre_backward_pass).
+
+        Los valores son FRACCIONARIOS -- vienen de la relajacion lineal -- y eso
+        esta bien: x_hat solo fija el punto donde se ancla cada corte, no tiene
+        que ser factible entero. Un ancla razonable da cortes informativos; un
+        ancla mala da cortes validos pero flojos.
+        """
+        from pyomo.environ import value as _value
+
+        trayectoria = {}
+        for blk in self.blocks:
+            y = blk.year
+            estado = {}
+            for link in blk.state_links:
+                var = getattr(mono, link["state_var"], None)
+                if var is None:
+                    continue
+                es_global = link.get("kind") == "global_once"
+                if link["index_set"] is None:
+                    estado[link["state"]] = _value(var if es_global else var[y])
+                else:
+                    estado[link["state"]] = {
+                        idx: _value(var[idx] if es_global else var[idx, y])
+                        for idx in link["index_set"]
+                    }
+            trayectoria[y] = estado
+        return trayectoria
+
+    def _pre_backward_pass(self, trayectoria, verbose=True):
+        """Aceleracion de Lara et al. 2018, seccion 5.3: antes de la primera
+        pasada forward se corre UN backward completo sobre la trayectoria de un
+        modelo agregado, para que las aproximaciones del costo-to-go no arranquen
+        vacias.
+
+        El problema que ataca: en las primeras iteraciones el año 1 no tiene
+        ninguna informacion de lo que pasa despues -- alpha arranca sin cotas --
+        y el forward oscila. Medido en el paper: la version acelerada llego a 2%
+        de gap en 4 iteraciones y 3,5 h, contra 7 iteraciones y 4,6 h sin ella,
+        y la ganancia es MAYOR en la instancia grande, que es justo el caso de
+        uso aca.
+
+        QUE MODELO AGREGADO. El paper usa el monolitico con 1 dia representativo
+        por año y la integralidad del unit commitment relajada. Aca se usa la
+        relajacion lineal del monolitico COMPLETO, que es la otra forma de
+        agregar que el paper contempla y que ademas ya estaba implementada
+        (_monolithic_lp_bound): asi el warm start no cuesta un solve extra, sale
+        del mismo LP que ya se resolvia para la cota inicial. La variante por
+        dias representativos exigiria construir un segundo juego de bloques con
+        otro Timeseries.
+
+        Los cortes que salen de aca son los mismos que los de cualquier
+        iteracion -- valen para todo x, no solo para el ancla -- asi que entrar
+        con ellos no compromete la validez de nada.
+        """
+        for blk in self.blocks:
+            estado_previo = trayectoria.get(blk.year - 1)
+            if estado_previo:
+                blk.set_heritage(estado_previo)
+
+        t0 = time.time()
+        lb0 = self.backward_pass.run(
+            trayectoria, iteration=0, verbose=verbose,
+            current_ub=None, current_lb=None,
+        )
+        self.warm_start_time = time.time() - t0
+        if verbose:
+            print(f"[NestedBenders] pre-backward (cortes warm-start): "
+                  f"{len(self.blocks) - 1} cortes pre-generados, LB0={lb0:,.2f} "
+                  f"({self.warm_start_time:.0f}s)")
+        return lb0
 
 
     def build_report_model(self, output_folder, verbose=True, scan_residuals=True,
@@ -603,8 +685,28 @@ class NestedBendersSolver(object):
             t_res = time.time()
             report.mip_start_residuals, saltadas, sin_valor = self._mip_start_residuals(model)
             informe["mip_start_residuals"] = report.mip_start_residuals
-            if verbose:
-                print(f"[NestedBenders] residuo del MIP start por familia "
+            informe["mip_start_filas_sin_evaluar"] = saltadas
+            informe["mip_start_variables_sin_valor"] = sin_valor
+            # El detalle por familia solo se imprime cuando hay algo que
+            # arreglar: una fila sobre FeasibilityTol (Gurobi descartaria el
+            # arranque) o filas que no se pudieron evaluar (ahi el escaneo
+            # quedo ciego y no puede afirmar nada). Variables sin valor con
+            # saltadas == 0 son inocuas -- no aparecen en ninguna fila activa y
+            # Gurobi las completa -- asi que ese caso NO abre el detalle. En el
+            # caso sano basta una linea; el informe conserva todo igual.
+            peor = max((viol for _, (viol, _, _) in report.mip_start_residuals),
+                       default=0.0)
+            hay_problema = peor > 1e-6 or saltadas > 0
+            if not hay_problema:
+                if verbose:
+                    print(f"[NestedBenders] MIP start sin violaciones: max residuo "
+                          f"{peor:.1e} < FeasibilityTol 1e-6 "
+                          f"({time.time() - t_res:.0f}s)")
+            else:
+                # Sin guardar por verbose: que el arranque se vaya a descartar
+                # tiene que verse siempre.
+                print(f"[NestedBenders] ATENCION: el MIP start tiene residuos que "
+                      f"Gurobi puede rechazar -- residuo por familia "
                       f"(max |violacion|, {time.time() - t_res:.0f}s):")
                 for name, (viol, idx, n_over) in report.mip_start_residuals:
                     marca = "  <-- supera FeasibilityTol 1e-6" if viol > 1e-6 else ""
@@ -736,23 +838,52 @@ class NestedBendersSolver(object):
                 print(f"[NestedBenders] presolve de capacidad: "
                       f"{self.capacity_presolve_time:.0f}s")
 
-        if self.monolithic_lp_bound:
+        # El LP del monolitico sirve para dos cosas independientes: su VALOR es
+        # una cota inferior inicial, y su SOLUCION es la trayectoria agregada
+        # del warm start. Se resuelve una sola vez si hace falta cualquiera.
+        trayectoria_warm = None
+        if self.monolithic_lp_bound or self.warm_start_cuts:
             if verbose:
-                print("[NestedBenders] cota inicial: relajacion lineal del monolitico "
-                      "completo...")
+                destino = []
+                if self.monolithic_lp_bound:
+                    destino.append("cota inicial")
+                if self.warm_start_cuts:
+                    destino.append("trayectoria del warm start")
+                print(f"[NestedBenders] relajacion lineal del monolitico completo "
+                      f"({' + '.join(destino)})...")
                 sys.stdout.flush()
             t_lp = time.time()
             try:
-                self.lb_monolithic_lp = self._monolithic_lp_bound()
-                self.lb = max(self.lb, self.lb_monolithic_lp)
+                valor_lp, trayectoria_warm = self._monolithic_lp_bound()
+                if self.monolithic_lp_bound:
+                    self.lb_monolithic_lp = valor_lp
+                    self.lb = max(self.lb, valor_lp)
                 if verbose:
-                    print(f"[NestedBenders] cota del LP monolitico = "
-                          f"{self.lb_monolithic_lp:,.2f}  ({time.time() - t_lp:.0f}s)")
+                    print(f"[NestedBenders] LP monolitico = {valor_lp:,.2f}  "
+                          f"({time.time() - t_lp:.0f}s)")
             except Exception as exc:
-                # No es fatal: es una cota extra. Si el monolitico no entra en
-                # memoria o el LP no cierra, se sigue con la del backward.
-                print(f"[NestedBenders] sin cota del LP monolitico "
-                      f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
+                # No es fatal: es una cota extra y un warm start opcional. Si el
+                # monolitico no entra en memoria o el LP no cierra, se sigue con
+                # el backward solo.
+                print(f"[NestedBenders] sin LP del monolitico "
+                      f"({type(exc).__name__}: {exc}) -- se sigue sin el.")
+
+        if self.warm_start_cuts:
+            if trayectoria_warm is None:
+                print("[NestedBenders] warm start omitido: no hay trayectoria "
+                      "del LP monolitico.")
+            else:
+                if verbose:
+                    print("[NestedBenders] pre-backward pass sobre la trayectoria "
+                          "agregada (Lara et al. 2018, sec. 5.3)...")
+                    sys.stdout.flush()
+                try:
+                    lb0 = self._pre_backward_pass(trayectoria_warm, verbose=verbose)
+                    self.lb = max(self.lb, lb0)
+                except Exception as exc:
+                    print(f"[NestedBenders] el pre-backward fallo "
+                          f"({type(exc).__name__}: {exc}) -- se sigue sin cortes "
+                          f"pre-generados.")
 
         try:
             while gap > self.gap_tol and k < self.max_iter:
@@ -812,6 +943,18 @@ class NestedBendersSolver(object):
             print(f"[NestedBenders] tiempo total: {total_time:.1f}s "
                   f"({k} iteracion{'es' if k != 1 else ''}, "
                   f"{self.forward_pass.feasibility_cuts_added} cortes de factibilidad)")
+            ganancias = self.backward_pass.strengthen_gain
+            if self.cut_type == "strengthened":
+                if ganancias:
+                    print(f"[NestedBenders] cortes fortalecidos: {len(ganancias)} de "
+                          f"{self.backward_pass.strengthen_attempts} superaron Phi^LP "
+                          f"(promedio +{sum(ganancias) / len(ganancias):,.2f}, "
+                          f"maximo +{max(ganancias):,.2f})")
+                else:
+                    print("[NestedBenders] cortes fortalecidos: NINGUNO supero Phi^LP. "
+                          "O los lagrangeanos se cortan por tiempo antes de levantar "
+                          "la cota (subir --strengthened_timelimit), o la brecha de "
+                          "dualidad de este modelo no deja ganar nada por esta via.")
 
         return {
             "capacity_bounds": self.capacity_bounds,
@@ -825,6 +968,10 @@ class NestedBendersSolver(object):
             "iterations": k,
             "interrupted": interrupted,
             "lb_monolithic_lp": self.lb_monolithic_lp,
+            "cut_type": self.cut_type,
+            "warm_start_cuts": self.warm_start_cuts,
+            "warm_start_time_sec": self.warm_start_time,
+            "strengthen_gain": list(self.backward_pass.strengthen_gain),
             "total_time_sec": total_time,
             "best_solution": self.best_solution,
             "best_full_solution": self.best_full_solution,

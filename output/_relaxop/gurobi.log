@@ -1,0 +1,81 @@
+
+Gurobi 12.0.0 (win64) logging started Fri Sep 25 17:31:59 2026
+
+Set parameter LogFile to value "output/_relaxop\gurobi.log"
+Set parameter Threads to value 32
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 600
+Set parameter NonConvex to value 2
+Gurobi Optimizer version 12.0.0 build v12.0.0rc1 (win64 - Windows 11+.0 (26200.2))
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
+
+Non-default parameters:
+TimeLimit  600
+MIPGap  0.01
+Heuristics  0.5
+MIPFocus  3
+FlowCoverCuts  2
+NonConvex  2
+Presolve  2
+Threads  32
+
+Optimize a model with 198494 rows, 191504 columns and 857492 nonzeros
+Model fingerprint: 0x90c17c6d
+Model has 3 quadratic constraints
+Variable types: 191481 continuous, 23 integer (6 binary)
+Coefficient statistics:
+  Matrix range     [2e-02, 1e+03]
+  QMatrix range    [1e+00, 1e+00]
+  QLMatrix range   [1e+00, 9e+01]
+  Objective range  [9e-01, 5e+05]
+  Bounds range     [1e+00, 4e+05]
+  RHS range        [1e+00, 5e+03]
+Presolve removed 175102 rows and 152083 columns
+Presolve time: 0.37s
+Presolved: 23404 rows, 39422 columns, 227928 nonzeros
+Presolved model has 3 bilinear constraint(s)
+
+Solving non-convex MIQCP
+
+Variable types: 39413 continuous, 9 integer (2 binary)
+Performing another presolve...
+Presolve removed 426 rows and 213 columns
+Presolve time: 0.24s
+Root relaxation presolve removed 644 rows and 1 columns
+Root relaxation presolved: 22334 rows, 39209 columns, 226636 nonzeros
+
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing primal log only...
+
+Concurrent spin time: 0.18s
+
+Solved with dual simplex
+
+Root relaxation: objective 2.444446e+05, 36203 iterations, 2.93 seconds (8.19 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 936419.624    0    6          - 936419.624      -     -    4s
+     0     0 1000488.59    0    2          - 1000488.59      -     -    5s
+     0     0 1005061.03    0    2          - 1005061.03      -     -    5s
+H    0     0                    1123670.7307 1005061.03  10.6%     -    5s
+     0     2 1005061.03    0    2 1123670.73 1005061.03  10.6%     -    7s
+
+Cutting planes:
+  MIR: 2
+
+Explored 3 nodes (40601 simplex iterations) in 7.26 seconds (18.57 work units)
+Thread count was 32 (of 32 available processors)
+
+Solution count 1: 1.12367e+06 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 1.123670730682e+06, best bound 1.123670730682e+06, gap 0.0000%
+
+User-callback calls 3391, time in user-callback 0.01 sec
