@@ -61,7 +61,8 @@ class YearBlockBuilder(object):
 
     def __init__(self, mine_system, time_series, year, is_last_year,
                  exogenous_stations, autonomous_mode=False,
-                 mccormick_degradation=True):
+                 mccormick_degradation=True, free_charging=False,
+                 free_maintenance=False, days_override=None):
         """
         :param year: año de este bloque (debe pertenecer a time_series.years).
         :param is_last_year: True si `year` es el ultimo año del horizonte
@@ -93,14 +94,35 @@ class YearBlockBuilder(object):
 
         common = dict(years_override=[year],
                       exogenous_stations=self._exogenous_stations_for_rules)
+        # days_override: sub-bloque de un solo dia representativo, con el MISMO
+        # acople de estado que el bloque anual (N = prev + Delta, prev == hat,
+        # globales fijadas al heredado). Lo usa decomposition/day_blocks.py para
+        # el MIP start por dias. None = los cuatro dias, el bloque de siempre.
+        self.days_override = list(days_override) if days_override is not None else None
+        if self.days_override is not None:
+            common["days_override"] = self.days_override
+        # Se guardan para poder construir sub-bloques diarios "hermanos" de este
+        # bloque con exactamente la misma configuracion (ver day_blocks.py).
+        self.exogenous_stations = dict(exogenous_stations)
+        self.autonomous_mode = autonomous_mode
+        self.mccormick_degradation = mccormick_degradation
+        self.free_charging = free_charging
+        self.free_maintenance = free_maintenance
+        # Regimenes de swap/mantenimiento: tienen que valer IGUAL en todos los
+        # bloques y en el monolitico de reporte, si no la descomposicion estaria
+        # resolviendo un problema distinto del que reporta.
+        regimen = dict(free_charging=free_charging,
+                       free_maintenance=free_maintenance)
 
         self.set_builder = OptSets(
-            mine_system, time_series, autonomous_mode=autonomous_mode, **common
+            mine_system, time_series, autonomous_mode=autonomous_mode,
+            **regimen, **common
         )
         self.param_rules = OptParameters(mine_system, time_series, **common)
         self.bound_rules = BoundRules(mine_system, time_series, **common)
         self.constraint_rules = ConstraintRules(
-            mine_system, time_series, mccormick_degradation=mccormick_degradation, **common
+            mine_system, time_series, mccormick_degradation=mccormick_degradation,
+            **regimen, **common
         )
         self.objective_rules = ObjectiveRules(mine_system, time_series, **common)
 

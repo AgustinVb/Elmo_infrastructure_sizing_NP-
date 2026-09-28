@@ -150,14 +150,32 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         gap_tol=args.gap_tol,
         max_iter=args.max_iter,
         autonomous_mode=args.autonomous_mode,
-        solver_kwargs={'solvername': args.solver, 'gap': args.gap_tol,
-                       'timelimit': args.solve_timelimit},
+        solver_kwargs=dict(
+            solvername=args.solver, gap=args.gap_tol,
+            timelimit=args.solve_timelimit,
+            # MIPFocus por bloque: llega a _solve como extra_options y de ahi a
+            # Gurobi. Solo se pasa si se pidio, para no cambiar el default.
+            **({'extra_options': {'MIPFocus': args.block_mip_focus}}
+               if args.block_mip_focus is not None else {}),
+        ),
         block_build_jobs=args.block_build_jobs,
         monolithic_lp_bound=monolithic_lp_bound,
         capacity_presolve=args.capacity_presolve,
         cut_type=args.cut_type,
         strengthened_timelimit=args.strengthened_timelimit,
         warm_start_cuts=args.warm_start_cuts,
+        free_charging=args.free_charging,
+        free_maintenance=args.free_maintenance,
+        operational_bound=args.operational_bound,
+        op_bound_timelimit=args.op_bound_timelimit,
+        output_folder=args.output_folder,
+        day_warm_start=args.day_warm_start,
+        day_solver_overrides={'timelimit': args.day_timelimit, 'gap': args.day_gap},
+        lb_inicial=args.lb_inicial,
+        polish_each_iter=args.polish_each_iter,
+        skip_last_backward=args.skip_last_backward,
+        block_solver=args.block_solver,
+        gcg_blocks=args.gcg_blocks,
     )
     resultado = solver.solve(verbose=True)
 
@@ -182,16 +200,78 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         # has_warm_start puesto). Gurobi arranca con un incumbente que le habria
         # costado encontrar y se dedica a cerrar la cota, que es lo que hace bien.
         t0 = time.time()
-        print("[Hibrido] resolviendo el monolitico con la solucion descompuesta "
-              "como MIP start...")
-        report.mip_focus = args.mip_focus
-        report.solve_model(args.gap_tol, args.solver,
-                           timelimit=args.mono_timelimit or args.solve_timelimit)
-        mejora = resultado['ub'] - report.opt_cost_result
-        print(f"[Hibrido] monolitico resuelto en {time.time() - t0:.0f}s: "
-              f"costo = {report.opt_cost_result:,.2f} "
-              f"(la descomposicion habia llegado a {resultado['ub']:,.2f}; "
-              f"mejora de {mejora:,.2f} = {mejora / resultado['ub']:.2%})")
+        gap_dec = resultado.get('gap')
+        lb_dec = resultado.get('lb')
+
+        # Si la descomposicion YA certifico la tolerancia, entrar al monolitico
+        # es trabajo perdido: su cota propia es mucho peor que la que ya se
+        # tiene (la de relajacion operacional o la del LP), no la puede usar, y
+        # va a reportar un gap enorme mientras gasta el timelimit entero
+        # cerrando algo que ya esta cerrado.
+        saltear = (gap_dec is not None and gap_dec <= args.gap_tol
+                   and not args.force_hybrid_mono)
+        if saltear:
+            print(f"[Hibrido] la descomposicion ya certifico gap={gap_dec:.4%} "
+                  f"<= {args.gap_tol:.4%}: se OMITE la fase monolitica (no "
+                  f"aportaria cota y su cota propia es peor). Usa "
+                  f"--force_hybrid_mono para correrla igual.")
+        else:
+            print("[Hibrido] resolviendo el monolitico con la solucion descompuesta "
+                  "como MIP start...")
+            report.mip_focus = args.mip_focus
+            report.improve_start_time = args.mono_improve_start_time
+
+            # Corta en cuanto el incumbente alcance el gap objetivo MEDIDO
+            # CONTRA LA COTA EXTERNA. Gurobi mide contra la suya, que es peor,
+            # asi que sin esto no sabe cuando parar.
+            if lb_dec not in (None, float('-inf')) and args.gap_tol < 1:
+                report.best_obj_stop = lb_dec / (1.0 - args.gap_tol)
+                print(f"[Hibrido] BestObjStop = {report.best_obj_stop:,.2f} "
+                      f"(UB que cierra {args.gap_tol:.2%} contra LB={lb_dec:,.2f})")
+
+            # La cota externa, ADEMAS, como fila del modelo. BestObjStop solo
+            # dice cuando parar: no entra en la cota de Gurobi, que sigue
+            # partiendo de su propio LP de raiz. Con la fila, en cambio:
+            #   - es VALIDA: LB es cota inferior del optimo y toda solucion
+            #     factible cumple obj >= optimo >= LB, asi que no corta ninguna;
+            #   - todo LP de nodo queda con valor >= LB, asi que el BestBd que
+            #     Gurobi reporta y usa para su MIPGap pasa a ser la cota REAL y
+            #     el criterio de parada por gap vuelve a tener sentido;
+            #   - la fila entra en presolve y en el fijado por costo reducido
+            #     con un rango objetivo mucho mas chico.
+            # El margen 1e-6 relativo protege de que la cota dual venga al filo
+            # de las tolerancias de Gurobi. Si el monolitico diera INFACTIBLE
+            # con la fila puesta, la cota no era valida: correr con
+            # --no_mono_lb_cut para confirmarlo.
+            if lb_dec not in (None, float('-inf')) and not args.no_mono_lb_cut:
+                import pyomo.environ as _pyo
+                lb_cut = lb_dec - abs(lb_dec) * 1e-6
+                report.model.lb_externa = _pyo.Constraint(
+                    expr=report.model.obj.expr >= lb_cut)
+                print(f"[Hibrido] fila obj >= {lb_cut:,.2f} agregada al "
+                      f"monolitico (cota externa; sin ella Gurobi parte de su "
+                      f"LP de raiz)")
+
+            report.solve_model(args.gap_tol, args.solver,
+                               timelimit=args.mono_timelimit or args.solve_timelimit)
+            mejora = resultado['ub'] - report.opt_cost_result
+            print(f"[Hibrido] monolitico resuelto en {time.time() - t0:.0f}s: "
+                  f"costo = {report.opt_cost_result:,.2f} "
+                  f"(la descomposicion habia llegado a {resultado['ub']:,.2f}; "
+                  f"mejora de {mejora:,.2f} = {mejora / resultado['ub']:.2%})")
+            # Cota final = la mejor entre la externa y la de Gurobi: con la fila
+            # obj >= LB, el BestBd arranca en la externa y solo puede subir.
+            cotas = [c for c in (lb_dec, report.best_bound)
+                     if c not in (None, float('-inf'))]
+            if cotas and report.opt_cost_result:
+                lb_final = max(cotas)
+                origen = ("Gurobi (supero la externa)"
+                          if report.best_bound is not None and lb_dec is not None
+                          and report.best_bound > lb_dec + 1e-6 * abs(lb_dec)
+                          else "externa (descomposicion / cota operacional)")
+                gap_final = (report.opt_cost_result - lb_final) / abs(report.opt_cost_result)
+                print(f"[Hibrido] cota final = {lb_final:,.2f}  [{origen}]  "
+                      f"gap final = {gap_final:.4%}")
 
     printer = Printer(report, args.output_folder, time_series, mine_system)
     printer.create_all_plots()
@@ -283,6 +363,164 @@ def main():
              'asi que el hibrido le da a cada uno lo que al otro le falta. Renuncia a '
              'la ventaja de memoria: construye el monolitico completo. decomposed e '
              'hybrid requieren un solver con duales (gurobi).'
+    )
+    parser.add_argument(
+        '--free_charging',
+        action='store_true',
+        help='[monolithic|decomposed|hybrid] swap liberado: el LHD puede hacer '
+             'swap en cualquier intervalo salvo maintenance DET (donde la '
+             'maquina esta en servicio). Por defecto rige el regimen '
+             'restringido, que solo permite hacer swap en '
+             'meal/road_clearing/between_shifts DET. NO cambia el esquema de '
+             'detenciones: det_stop_all sigue impidiendo OPERAR durante '
+             'maintenance y road_clearing. El flag conserva el nombre de la '
+             'rama carga_ob_multiaño (donde libera la CARGA on-board) para que '
+             'los comandos sean intercambiables entre ramas. Ver '
+             'ConstraintRules.no_swap_maintenance_det en functions.py.'
+    )
+    parser.add_argument(
+        '--free_maintenance',
+        action='store_true',
+        help='[monolithic|decomposed|hybrid] mantenimiento liberado: las '
+             'ventanas de maintenance DET dejan de ser detenciones y el LHD '
+             'puede OPERAR y hacer SWAP en ellas, como en cualquier intervalo '
+             'libre. Por defecto maintenance esta en det_stop (impide operar) y '
+             'fuera de toda regla de swap, lo que lo deja detenido puro. '
+             'Combinable con --free_charging: juntos no dejan ninguna ventana '
+             'con el swap prohibido. Ver OptSets.build_sets en functions.py.'
+    )
+    parser.add_argument(
+        '--operational_bound',
+        action='store_true',
+        help='[decomposed|hybrid] antes de iterar, calcula una cota inferior '
+             'resolviendo el monolitico con las binarias OPERACIONALES '
+             'relajadas y las de INVERSION enteras, y la toma como LB inicial. '
+             'Es MUCHO mejor que la del LP: medido en carga_ob_multiaño sobre '
+             'P_red_gen_bat a 10 anios, 2.146.169 contra 1.593.859, o sea el '
+             'gap del incumbente baja de 26,64%% a 1,22%%, en 34,5 min. El '
+             'backward con cortes de Benders no puede superar la del LP por '
+             'construccion, asi que esta es la unica forma barata de tener una '
+             'cota decente. En --mode hybrid esa LB ademas entra al monolitico '
+             'de la fase 2 (BestObjStop + fila obj >= LB).'
+    )
+    parser.add_argument(
+        '--op_bound_timelimit', type=int, default=None,
+        help='[con --operational_bound] timelimit en segundos de ese solve. '
+             'Default 3600, PROPIO: no hereda --solve_timelimit, que es el tope '
+             'por bloque anual y no tiene relacion con un solve monolitico. Si '
+             'corta por tiempo la cota dual de ese momento sigue siendo valida, '
+             'solo que mas floja: degrada con gracia.'
+    )
+    parser.add_argument(
+        '--block_solver', choices=['gurobi', 'gcg'], default='gurobi',
+        help='[decomposed|hybrid] solver del MILP de cada bloque anual en el '
+             'forward. gcg: Dantzig-Wolfe / branch-and-price con GCG, que corre '
+             'aparte en .venv_gcg (ver decomposition/gcg_block.py). El backward '
+             'sigue con Gurobi. Usa --solve_timelimit y --gap_tol.'
+    )
+    parser.add_argument(
+        '--gcg_blocks', choices=['day', 'vehicle_day'], default='day',
+        help='[con --block_solver gcg] bloques del Dantzig-Wolfe. day (default): '
+             '4 bloques, maestro de 36 filas (0,1%%) en el bloque del anio 4. '
+             'vehicle_day: 16 bloques LHD-dia, maestro de 22.096 filas (36,5%%), '
+             'porque el pool de baterias de la estacion y el balance de potencia '
+             'los comparten todos los LHD intervalo por intervalo.'
+    )
+    parser.add_argument(
+        '--polish_each_iter', action='store_true',
+        help='[decomposed|hybrid] despues de cada forward, arma el monolitico con '
+             'esa solucion y la pule (enteras fijas, LP sobre las continuas con '
+             'todo el horizonte a la vista); el UB y la eleccion de la mejor '
+             'solucion pasan a usar el costo pulido. Medido en Mina_modelo a 10 '
+             'anios: el pulido final bajo el costo 8,8%%. Cuesta construir el '
+             'monolitico en cada iteracion (~5 GB de pico, se libera despues).'
+    )
+    parser.add_argument(
+        '--skip_last_backward', action='store_true',
+        help='[decomposed|hybrid] la ultima iteracion no corre backward: sus '
+             'cortes no los usa ningun forward y solo aportarian LB. Conviene '
+             'cuando hay una cota externa fuerte (--operational_bound o '
+             '--lb_inicial) que el backward no logra superar.'
+    )
+    parser.add_argument(
+        '--mono_improve_start_time', type=float, default=None,
+        help='[hybrid] Gurobi ImproveStartTime (segundos) de la fase monolitica: '
+             'pasado ese tiempo Gurobi se dedica a MEJORAR el incumbente en vez '
+             'de subir la cota. Con la cota externa como fila obj >= LB, 0 es '
+             'razonable: la cota ya viene de afuera.'
+    )
+    parser.add_argument(
+        '--lb_inicial', type=float, default=None,
+        help='[decomposed|hybrid] cota inferior ya conocida, de una corrida '
+             'anterior, que entra como LB inicial por max() y --en hybrid-- como '
+             'BestObjStop y fila obj >= LB del monolitico. Sirve para no '
+             'recalcular --operational_bound (determinista, ~20 min a 10 anios): '
+             'pasar su valor y omitir ese flag. SOLO es valida si viene de '
+             'EXACTAMENTE el mismo problema (datos, --n_years, --days_per_year, '
+             '--free_charging/--free_maintenance, presolve). Una cota invalida '
+             'por encima del optimo hace INFACTIBLE la fase monolitica del '
+             'hibrido; si pasa, repetir con --no_mono_lb_cut para confirmarlo.'
+    )
+    parser.add_argument(
+        '--force_hybrid_mono',
+        action='store_true',
+        help='[hybrid] corre la fase monolitica AUNQUE la descomposicion ya '
+             'haya certificado gap <= --gap_tol. Por defecto se omite: en ese '
+             'caso el monolitico no puede aportar cota (la suya es mucho peor '
+             'que la de relajacion operacional, que no conoce) y solo podria '
+             'mejorar el incumbente marginalmente, gastando el timelimit entero.'
+    )
+    parser.add_argument(
+        '--no_mono_lb_cut',
+        action='store_true',
+        help='[hybrid] NO agrega al monolitico la fila obj >= LB con la cota '
+             'externa de la descomposicion. Por defecto se agrega: toda '
+             'solucion factible cumple obj >= optimo >= LB, asi que la fila no '
+             'corta nada, y sin ella Gurobi arranca desde SU cota (la del LP '
+             'completo, mucho peor), reporta un gap enorme y su MIPGap nunca se '
+             'cumple.'
+    )
+    parser.add_argument(
+        '--day_warm_start', choices=['off', 'first', 'always', 'fallback'],
+        default='off',
+        help='[decomposed|hybrid] MIP start de cada bloque anual del forward por '
+             'descomposicion en DIAS (esquema --parallel_days de la rama '
+             'battery_swapping, ver decomposition/day_blocks.py): fase 1 cada dia '
+             'con infraestructura libre, maximo entre dias, fase 2 cada dia con '
+             'la infraestructura fija, y pulido LP sobre el bloque anual. Cada '
+             'sub-bloque tiene la cuarta parte de las enteras. Es una heuristica '
+             '(da UB, no LB): sirve para que Gurobi tenga incumbente en los anios '
+             'donde no encuentra ninguno solo. first: de entrada solo en la '
+             'primera iteracion (la unica sin solucion previa), y en las '
+             'siguientes como fallback. always: en cada forward. '
+             'fallback: solo cuando el bloque anual llega al timelimit sin '
+             'incumbente; no cuesta nada en los anios faciles.'
+    )
+    parser.add_argument(
+        '--day_timelimit', type=int, default=120,
+        help='[con --day_warm_start] timelimit en segundos de CADA solve diario '
+             '(8 por anio: 4 dias x 2 fases). Propio, no hereda '
+             '--solve_timelimit: el sub-bloque solo tiene que encontrar un '
+             'punto, no demostrar el gap del bloque anual.'
+    )
+    parser.add_argument(
+        '--day_gap', type=float, default=0.05,
+        help='[con --day_warm_start] MIPGap de cada solve diario. Mas holgado '
+             'que --gap_tol por la misma razon: medido en el anio 1, con 1%% '
+             'cada dia encontraba el incumbente y gastaba el resto del tope sin '
+             'poder cerrar el gap.'
+    )
+    parser.add_argument(
+        '--block_mip_focus', type=int, choices=[0, 1, 2, 3], default=None,
+        help='[decomposed|hybrid] Gurobi MIPFocus de CADA bloque anual del '
+             'forward/backward. Distinto de --mip_focus, que solo afecta al '
+             'monolitico de la fase 2. Sin el flag, Gurobi usa su default (0, '
+             'balanceado). 1 prioriza ENCONTRAR incumbentes por sobre cerrar la '
+             'cota: es lo que hay que usar cuando un bloque llega al '
+             '--solve_timelimit sin ninguna solucion factible, que hace fallar '
+             'al forward entero porque el bloque queda con variables sin valor. '
+             'Pasa en los anios de mayor meta de produccion, y mas todavia con '
+             '--free_charging/--free_maintenance, que agrandan el arbol.'
     )
     parser.add_argument(
         '--max_iter', type=int, default=20,
@@ -402,6 +640,8 @@ def main():
         autonomous_mode=args.autonomous_mode,
         mccormick_degradation=args.mccormick_degradation,
         mip_focus=args.mip_focus,
+        free_charging=args.free_charging,
+        free_maintenance=args.free_maintenance,
         **({'timelimit': args.mono_timelimit} if args.mono_timelimit else {}),
     )
 

@@ -1,0 +1,15 @@
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] gurobi y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=589,150.60  LB=571,205.19  gap=3.0460%
+[prueba] {'solver': 'gurobi', 'primal': 589150.6044669071, 'dual': 571205.1871053213, 'status': 'maxTimeLimit', 'tiempo': 1208.4681494235992}
+[GCG] y=4 day exportado en 13s: 4 bloques (day), maestro 36 filas (0.1%)
+[GCG] y=4 day status=timelimit  primal=1e+20  dual=249386.2033232902  (1220s)
+[prueba] {'solver': 'gcg_day', 'primal': 1e+20, 'dual': 249386.2033232902, 'dual_root': 249386.2033232902, 'status': 'timelimit', 'tiempo': 1220.1987137794495, 'maestro': 36, 'bloques': 4, 'cargo_solucion': False}
+[GCG] y=4 vehicle_day exportado en 14s: 16 bloques (vehicle_day), maestro 22,096 filas (36.4%)
+[GCG] y=4 vehicle_day status=timelimit  primal=1e+20  dual=249386.2033232902  (1219s)
+[prueba] {'solver': 'gcg_vehicle_day', 'primal': 1e+20, 'dual': 249386.2033232902, 'dual_root': 249386.2033232902, 'status': 'timelimit', 'tiempo': 1219.4223437309265, 'maestro': 22096, 'bloques': 16, 'cargo_solucion': False}
+
+solver                  incumbente            cota      gap   tiempo  estado
+gurobi                  589,150.60      571,205.19    3.05%    1208s  maxTimeLimit
+gcg_day           100,000,000,000,000,000,000.00      249,386.20        -    1220s  timelimit
+gcg_vehicle_day   100,000,000,000,000,000,000.00      249,386.20        -    1219s  timelimit

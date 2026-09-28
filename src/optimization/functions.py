@@ -28,9 +28,35 @@ class OptRules(object):
 
     def __init__(self, mine_system,  time_series, autonomous_mode=False,
                  mccormick_degradation=False, years_override=None,
-                 exogenous_stations=None):
+                 exogenous_stations=None, free_charging=False,
+                 free_maintenance=False, days_override=None):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Swap liberado (--free_charging): reemplaza la restriccion de ventana
+        # de swap (swap_only_meal_or_between_shifts_det, que solo deja hacer
+        # swap en meal/road_clearing/between_shifts DET) por
+        # no_swap_maintenance_det, que lo prohibe UNICAMENTE durante
+        # maintenance DET, donde la maquina esta en servicio.
+        #
+        # El flag conserva el nombre de la rama carga_ob_multiaño (donde libera
+        # la CARGA on-board) para que los comandos y los scripts de comparacion
+        # sean intercambiables entre ramas; aca el objeto liberado es Z_swap.
+        #
+        # El esquema de DETENCIONES no cambia: det_stop_all sigue impidiendo
+        # operar durante maintenance y road_clearing. Este flag solo libera
+        # CUANDO se puede hacer swap, no CUANDO se puede operar.
+        self.free_charging = free_charging
+        # Mantenimiento liberado (--free_maintenance): maintenance DET deja de
+        # ser una detencion. Por defecto entra en det_stop junto con
+        # road_clearing, asi que det_stop_all (Z + sum Z_swap == 1) impide
+        # OPERAR, y ademas ninguna regla de swap lo habilita, asi que queda
+        # Z = 1 forzado: detenido puro. Con el flag sale de det_stop y de la
+        # prohibicion de swap, y pasa a ser un intervalo libre como cualquier
+        # otro -- el LHD puede operar, hacer swap o estar detenido.
+        #
+        # Combinable con --free_charging: juntos no dejan ninguna ventana con
+        # el swap prohibido.
+        self.free_maintenance = free_maintenance
         # Escenario DET: False (default) = modo normal, la colacion solo
         # permite hacer swap o estar detenido. True = modo autonomo, la
         # colacion ademas permite operar (viajar/extraer). El cambio de turno
@@ -54,6 +80,20 @@ class OptRules(object):
         # monolitico (model.years = todo el horizonte).
         self.model_years = (list(years_override) if years_override is not None
                             else list(time_series.years))
+        # Descomposicion por DIA dentro de un año (ver decomposition/day_blocks.py):
+        # acota model.days a un subconjunto -- tipicamente un solo dia
+        # representativo -- sin tocar time_series, que sigue teniendo los cuatro.
+        # Esa distincion importa por scaling_factor_op_cost: se calcula en el
+        # constructor de TimeSeries como 365/len(days_within_year) (91,25 con
+        # cuatro dias) y NO se recalcula aca, asi que cada sub-bloque diario
+        # conserva el factor del año completo y los cuatro dias SUMAN el costo
+        # anual. Si se recalculara por dia daria 365 y cada dia contaria por un
+        # año entero.
+        #
+        # A diferencia de years_override, NO marca is_decomposed_block: los
+        # enlaces interanuales no tienen nada que ver con la particion por dia.
+        self.model_days = (list(days_override) if days_override is not None
+                           else None)
         # OJO: years_override esta pensado para bloques de UN año. Pasarlo --
         # aunque sea con el horizonte completo -- marca is_decomposed_block y por
         # lo tanto omite las cuatro link_*_stock, dejando el stock desacoplado de
@@ -364,7 +404,9 @@ class OptSets(OptRules):
         model.slhd_set = pyo.Set(initialize=self.mine_system.get_swap_lhds())
         model.nodes_set = pyo.Set(initialize=self.mine_system.get_system_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
-        model.days = pyo.Set(initialize=self.time_series.days_within_year)
+        model.days = pyo.Set(initialize=(self.model_days
+                                         if self.model_days is not None
+                                         else self.time_series.days_within_year))
         # self.model_years == time_series.years salvo en un bloque de la
         # descomposicion, donde es un solo año (ver OptRules.__init__).
         model.years = pyo.Set(initialize=self.model_years)
@@ -410,7 +452,11 @@ class OptSets(OptRules):
         det_maintenance_intervals = self._get_time_intervals_for_pause_type("maintenance", pauses=det_pauses)
         det_road_clearing_intervals = self._get_time_intervals_for_pause_type("road_clearing", pauses=det_pauses)
         det_between_shifts_intervals = self._get_time_intervals_for_pause_type("between_shifts", pauses=det_pauses)
-        det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
+        if self.free_maintenance:
+            # maintenance deja de ser detencion: no bloquea operar.
+            det_stop = sorted(set(det_road_clearing_intervals))
+        else:
+            det_stop = sorted(set(det_maintenance_intervals) | set(det_road_clearing_intervals))
 
         model.time_intervals_meal_det_set = pyo.Set(
             initialize=sorted(det_meal_intervals)
@@ -1067,12 +1113,36 @@ class ConstraintRules(OptRules):
         maintenance el LHD debe permanecer detenido sin swap, por lo que
         esas ventanas no se incluyen aquí. Fuera de esas ventanas el swap
         queda prohibido, sin importar si el equipo está detenido o no.
+
+        Se registra solo cuando free_charging=False; con --free_charging la
+        reemplaza no_swap_maintenance_det. Con --free_maintenance las ventanas
+        de maintenance DET pasan a habilitarse también aquí, porque dejan de
+        ser detención (ver OptRules.build_sets).
         """
         if (
             t in model.time_intervals_meal_det_set
             or t in model.time_intervals_road_clearing_det_set
             or t in model.time_intervals_between_shifts_det_set
+            or (self.free_maintenance and t in model.time_intervals_maintenance_det_set)
         ):
+            return pyo.Constraint.Skip
+        return model.Z_swap[k, i, y, d, t] == 0
+
+    def no_swap_maintenance_det(self, model, k, i, y, d, t):
+        """Swap liberado (--free_charging): versión permisiva de
+        swap_only_meal_or_between_shifts_det.
+
+        Aquella permite hacer swap SOLO en meal/road_clearing/between_shifts
+        DET y lo prohíbe en el resto del día; esta invierte el criterio y lo
+        prohíbe ÚNICAMENTE durante maintenance DET, donde el LHD está en
+        servicio. En esa ventana det_stop_all (Z + sum Z_swap == 1) queda
+        entonces con Z_swap = 0 forzado, o sea Z = 1: detenido puro, igual
+        que en el régimen restringido.
+
+        Se registra en lugar de swap_only_meal_or_between_shifts_det, nunca
+        junto a ella (ver build_all_constraints).
+        """
+        if t not in model.time_intervals_maintenance_det_set:
             return pyo.Constraint.Skip
         return model.Z_swap[k, i, y, d, t] == 0
 
@@ -2005,13 +2075,25 @@ class ConstraintRules(OptRules):
             model.time_intervals_between_shifts_det_set,
             rule=self.between_shifts_elhd_swap,
         )
-        # Swap restringido (DET): Z_swap solo durante colacion DET,
-        # road_clearing DET o entre turnos DET. Durante maintenance DET el
-        # equipo queda detenido sin swap (esta regla lo prohibe y det_stop_all
-        # lo fuerza a Z = 1).
-        model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
-            model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
-        )
+        # Regimen de swap (DET). Las tres variantes son excluyentes: se
+        # registra UNA sola regla, nunca dos (ver no_swap_maintenance_det).
+        if self.free_charging and self.free_maintenance:
+            # Swap liberado + mantenimiento liberado: no queda ninguna ventana
+            # con el swap prohibido, asi que no se registra ninguna regla.
+            pass
+        elif self.free_charging:
+            # Swap liberado: la unica ventana sin swap es maintenance DET.
+            model.no_swap_maintenance_det = pyo.Constraint(
+                model.ZSWAP_DAYS_TIME, rule=self.no_swap_maintenance_det
+            )
+        else:
+            # Swap restringido (default, regimen historico de esta rama):
+            # Z_swap solo durante colacion DET, road_clearing DET o entre
+            # turnos DET. Durante maintenance DET el equipo queda detenido sin
+            # swap (esta regla lo prohibe y det_stop_all lo fuerza a Z = 1).
+            model.swap_only_meal_or_between_shifts_det = pyo.Constraint(
+                model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts_det
+            )
         # Version DCH (inactiva con el esquema DET)
         #model.swap_only_meal_or_between_shifts = pyo.Constraint(
         #    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts

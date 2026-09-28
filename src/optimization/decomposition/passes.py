@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 from pyomo.environ import value, SolverFactory
 from pyomo.opt import TerminationCondition, SolverStatus
@@ -63,6 +64,13 @@ class SubproblemInfeasible(RuntimeError):
     corte de factibilidad."""
 
 
+class SubproblemNoIncumbent(RuntimeError):
+    """TimeLimit sin ninguna solucion factible: NO es infactibilidad (Gurobi no
+    la probo, y suele dar cota dual finita), es falta de tiempo para encontrar
+    un primer punto. Se distingue para que --day_warm_start fallback pueda
+    recuperarlo armando un MIP start por dias."""
+
+
 def _fmt_bound(v):
     if v is None or v in (float("inf"), float("-inf")):
         return "(sin cota aun)"
@@ -74,7 +82,8 @@ def _bounds_tag(current_ub, current_lb):
 
 
 def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, label="",
-           extra_options=None, require_optimal=False, load_solutions=True):
+           extra_options=None, require_optimal=False, load_solutions=True,
+           warmstart=False):
     """load_solutions=False deja las variables del modelo como estaban y solo
     devuelve el resultado (cotas primal/dual, condicion de termino). Lo usa el
     presolve de capacidad (driver._capacity_presolve), al que le alcanza con
@@ -93,7 +102,11 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
     else:
         opt = SolverFactory(solvername)
 
-    result = opt.solve(model, tee=tee, load_solutions=load_solutions)
+    # warmstart=True: Pyomo pasa como Start de Gurobi TODAS las variables con
+    # valor (GurobiDirect._warm_start). Lo usa el forward cuando el bloque
+    # trae un MIP start completo de la descomposicion por dias.
+    solve_kw = {"warmstart": True} if warmstart else {}
+    result = opt.solve(model, tee=tee, load_solutions=load_solutions, **solve_kw)
 
     # result.solver.status == aborted NO es exclusivo de una interrupcion real:
     # pyomo le asigna el mismo estado a grb.INTERRUPTED (Ctrl+C) y a
@@ -112,8 +125,29 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
     if result.solver.termination_condition == TerminationCondition.maxTimeLimit:
         ub = result.problem.upper_bound
         lb = result.problem.lower_bound
-        if ub not in (None, 0) and lb is not None:
-            gap_rel = abs(ub - lb) / abs(ub)
+        sin_incumbente = ub is None or ub in (float("inf"), float("-inf"))
+        if sin_incumbente:
+            # TimeLimit con SolCount=0: Gurobi corto sin ninguna solucion
+            # factible, asi que las variables del modelo quedaron SIN VALOR.
+            # Si se deja pasar, el reventon aparece mucho despues y lejos de
+            # su causa: _sweep hace value(block.model.obj) y Pyomo tira
+            # "No value for uninitialized NumericValue object", que no dice
+            # nada de que falto tiempo. Con load_solutions=False no importa
+            # (el llamador solo quiere la cota dual, ver _capacity_presolve).
+            if load_solutions:
+                cota = "sin cota dual" if lb is None else f"cota dual {lb:,.2f}"
+                raise SubproblemNoIncumbent(
+                    f"{label}: TimeLimit ({timelimit}s) alcanzado SIN ninguna "
+                    f"solucion factible ({cota}). El bloque queda con variables "
+                    f"sin valor y el forward no puede continuar. Subir "
+                    f"--solve_timelimit, usar --block_mip_focus 1 para que Gurobi "
+                    f"priorice encontrar incumbentes, o --day_warm_start para "
+                    f"armarle un MIP start por dias."
+                )
+            print(f"[NestedBenders] {label}  TimeLimit sin incumbente "
+                  f"(solo cota dual{'' if lb is None else f' {lb:,.2f}'})")
+        elif lb is not None:
+            gap_rel = abs(ub - lb) / abs(ub) if ub != 0 else float("inf")
             print(f"[NestedBenders] {label}  TimeLimit alcanzado sin cerrar MIPGap: "
                   f"UB={ub:,.2f}  LB={lb:,.2f}  gap={gap_rel:.4%}")
     if result.solver.termination_condition in (TerminationCondition.infeasible,
@@ -148,13 +182,84 @@ class ForwardPass(object):
     solucion factible de todo el horizonte, que es el candidato a cota
     superior."""
 
-    def __init__(self, blocks, solver_kwargs=None, cut_manager=None):
+    def __init__(self, blocks, solver_kwargs=None, cut_manager=None,
+                 day_warm_start="off", day_solver_overrides=None,
+                 block_solver="gurobi", gcg_blocks="day", gcg_output_folder=None):
         self.blocks = blocks  # lista de YearBlockBuilder, ordenada y1..Y
         self.solver_kwargs = solver_kwargs or {}
         # Necesario para los cortes de factibilidad: cuando un año no tiene
         # continuacion hay que prohibir ese estado en el año anterior.
         self.cut_manager = cut_manager
         self.feasibility_cuts_added = 0
+        # MIP start por descomposicion en dias (decomposition/day_blocks.py):
+        #   "off"     nunca (default, comportamiento historico);
+        #   "first"   de entrada solo en la primera iteracion, que es la unica en
+        #             que el bloque no trae ninguna solucion previa; en las
+        #             siguientes, como "fallback";
+        #   "always"  antes de cada resolucion del forward;
+        #   "fallback" solo cuando el bloque anual llega al timelimit SIN
+        #             incumbente: se arma el start y se vuelve a resolver. No
+        #             cuesta nada en los años faciles, a cambio de gastar una vez
+        #             el timelimit del bloque en los dificiles.
+        if day_warm_start not in ("off", "first", "always", "fallback"):
+            raise ValueError("day_warm_start tiene que ser off, first, always o fallback")
+        self.day_warm_start = day_warm_start
+        self.day_warm_start_time = 0.0
+        # Los solves DIARIOS tienen su propio gap/timelimit: solo tienen que
+        # encontrar un punto, no demostrar el gap del bloque anual. Medido en
+        # el año 1: con los del bloque (1%, 180 s) cada dia encuentra el
+        # incumbente y gasta el resto del tope sin poder cerrar el 1%.
+        self.day_solver_kwargs = dict(self.solver_kwargs, **(day_solver_overrides or {}))
+        # Con que se resuelve el MILP de cada bloque anual en el forward:
+        # "gurobi" (default) o "gcg" (Dantzig-Wolfe / branch-and-price, ver
+        # decomposition/gcg_block.py). El backward sigue con Gurobi: necesita
+        # los duales del LP relajado, no el MILP.
+        if block_solver not in ("gurobi", "gcg"):
+            raise ValueError("block_solver tiene que ser gurobi o gcg")
+        self.block_solver = block_solver
+        self.gcg_blocks = gcg_blocks
+        self.gcg_output_folder = gcg_output_folder or "gcg_bloques"
+
+    def _solve_block(self, block, label, warm, iteration):
+        """MILP del bloque anual con el solver elegido. Con GCG traduce su
+        resultado a las mismas excepciones que _solve, para que el forward (y el
+        respaldo por dias) no distingan entre solvers."""
+        if self.block_solver == "gurobi":
+            return _solve(block.model, label=label, warmstart=warm, **self.solver_kwargs)
+        from src.optimization.decomposition.gcg_block import solve_with_gcg
+        out_dir = os.path.join(self.gcg_output_folder, f"k{iteration}_y{block.year}")
+        r = solve_with_gcg(block.model, out_dir,
+                           timelimit=self.solver_kwargs.get("timelimit", 600),
+                           gap=self.solver_kwargs.get("gap", 0.01),
+                           mode=self.gcg_blocks, use_incumbent=warm, label=label)
+        if r["ok"]:
+            return r
+        if "infeasible" in str(r.get("status", "")).lower():
+            raise SubproblemInfeasible(f"Subproblema infactible ({label}, GCG)")
+        raise SubproblemNoIncumbent(
+            f"{label}: GCG sin solucion factible (status {r.get('status')}, "
+            f"error {r.get('error')}, cota dual {r.get('dual')})")
+
+    def _use_day_warm_start(self, iteration):
+        if self.day_warm_start == "always":
+            return True
+        return self.day_warm_start == "first" and iteration in (None, 1)
+
+    def _run_day_warm_start(self, block, heritage, verbose):
+        # Import local: day_blocks importa YearBlockBuilder, y este modulo lo
+        # cargan los workers del Pool que construye bloques.
+        from src.optimization.decomposition.day_blocks import day_warm_start
+        t_dw = time.time()
+        try:
+            return day_warm_start(block, heritage, self.day_solver_kwargs,
+                                  verbose=verbose)
+        except Exception as exc:
+            # Heuristica de arranque: si falla, se sigue como siempre.
+            print(f"[DayDecomp] año {block.year}: fallo "
+                  f"({type(exc).__name__}: {exc}) -- se sigue sin MIP start")
+            return False
+        finally:
+            self.day_warm_start_time += time.time() - t_dw
 
     def run(self, iteration=None, verbose=True, current_ub=None, current_lb=None,
             max_recoveries=25):
@@ -302,10 +407,49 @@ class ForwardPass(object):
             if verbose:
                 print(f"[NestedBenders] {k_tag}FORWARD  anio {block.year} ({i + 1}/{n})  "
                       f"{_bounds_tag(current_ub, current_lb)}  resolviendo MILP...")
-            if i > 0:
-                block.set_heritage(x_hat_by_year[self.blocks[i - 1].year])
+            heritage = x_hat_by_year[self.blocks[i - 1].year] if i > 0 else None
+            if heritage is not None:
+                block.set_heritage(heritage)
+            warm = False
+            if self._use_day_warm_start(iteration):
+                warm = self._run_day_warm_start(block, heritage, verbose)
             try:
-                _solve(block.model, label=f"forward y={block.year}", **self.solver_kwargs)
+                try:
+                    self._solve_block(block, f"forward y={block.year}", warm, iteration)
+                except SubproblemNoIncumbent as exc:
+                    # "fallback" siempre recupera. "first" tambien, en las
+                    # iteraciones en que NO armo el start de entrada: los
+                    # cortes y la herencia cambian el bloque, y nada garantiza
+                    # que el año que tuvo incumbente gracias al start en la
+                    # iteracion 1 lo vuelva a encontrar solo.
+                    respaldo = (self.day_warm_start == "fallback"
+                                or (self.day_warm_start == "first"
+                                    and not self._use_day_warm_start(iteration)))
+                    recuperado = False
+                    if respaldo and not warm:
+                        print(f"[DayDecomp] año {block.year}: el bloque anual no "
+                              f"encontro incumbente -- armando MIP start por dias "
+                              f"y resolviendo de nuevo")
+                        if self._run_day_warm_start(block, heritage, verbose):
+                            self._solve_block(block, f"forward y={block.year} (con start)",
+                                              True, iteration)
+                            recuperado = True
+                    if not recuperado:
+                        # Ultimo recurso antes de perder la iteracion: un reintento
+                        # con 4x el tope (minimo 20 min). Medido en la v2: con
+                        # "always" y 300 s, un año cuyo start por dias fallo se
+                        # quedo sin incumbente y la excepcion mato la corrida. Si
+                        # tambien falla, la excepcion sube y el driver corta la
+                        # descomposicion conservando la mejor solucion.
+                        largo = dict(self.solver_kwargs)
+                        largo["timelimit"] = max(4 * largo.get("timelimit", 600), 1200)
+                        print(f"[NestedBenders] año {block.year}: sin incumbente -- "
+                              f"reintento con {largo['timelimit']:.0f}s")
+                        if self.block_solver == "gurobi":
+                            _solve(block.model, label=f"forward y={block.year} (reintento)",
+                                   warmstart=warm, **largo)
+                        else:
+                            raise exc
             except SubproblemInfeasible:
                 raise _YearInfeasible(i, x_hat_by_year)
             phi_by_year[block.year] = value(block.model.obj)

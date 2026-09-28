@@ -18,14 +18,28 @@ from src.optimization.decomposition.year_block import YearBlockBuilder
 # ConstraintData/VarData) al devolverlo del worker al proceso principal.
 _RECURSION_LIMIT_FOR_DILL = 50000
 
+# Timelimit por defecto del solve de la relajacion operacional
+# (--operational_bound). PROPIO, no heredado de --solve_timelimit, que es el
+# tope por bloque anual y no tiene relacion con un solve monolitico: en la
+# instancia medida en carga_ob_multiaño el solve entero tardo 2.068 s, o sea
+# ~40x su LP de raiz, y con los 600 s del default por bloque se habria cortado
+# a mitad de camino.
+OP_BOUND_TIMELIMIT_DEFAULT = 3600
+
 _worker_state = {}
 
 
-def _init_year_block_worker(mine_system, time_series, autonomous_mode):
+def _init_year_block_worker(mine_system, time_series, autonomous_mode,
+                            free_charging=False, free_maintenance=False):
     sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
     _worker_state["mine_system"] = mine_system
     _worker_state["time_series"] = time_series
     _worker_state["autonomous_mode"] = autonomous_mode
+    # Los regimenes tienen que cruzar al worker: si no, los bloques que se
+    # construyen en paralelo quedarian con el regimen restringido por defecto
+    # y los secuenciales con el liberado.
+    _worker_state["free_charging"] = free_charging
+    _worker_state["free_maintenance"] = free_maintenance
 
 
 def _build_year_block_task(payload):
@@ -34,6 +48,8 @@ def _build_year_block_task(payload):
         _worker_state["mine_system"], _worker_state["time_series"], year=year,
         is_last_year=is_last_year, exogenous_stations=exogenous_stations,
         autonomous_mode=_worker_state["autonomous_mode"],
+        free_charging=_worker_state.get("free_charging", False),
+        free_maintenance=_worker_state.get("free_maintenance", False),
     )
 
 
@@ -63,7 +79,13 @@ class NestedBendersSolver(object):
                  gap_tol=0.01, max_iter=20, autonomous_mode=False, solver_kwargs=None,
                  block_build_jobs=None, monolithic_lp_bound=True,
                  capacity_presolve="peak", cut_type="benders",
-                 strengthened_timelimit=300, warm_start_cuts=False):
+                 strengthened_timelimit=300, warm_start_cuts=False,
+                 free_charging=False, free_maintenance=False,
+                 operational_bound=False, op_bound_timelimit=None,
+                 output_folder=None, day_warm_start="off",
+                 day_solver_overrides=None, lb_inicial=None,
+                 polish_each_iter=False, skip_last_backward=False,
+                 block_solver="gurobi", gcg_blocks="day"):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -100,12 +122,23 @@ class NestedBendersSolver(object):
             exogenous_stations_by_year if exogenous_stations_by_year is not None
             else infer_exogenous_stations(mine_system, time_series)
         )
+        # Regimenes de swap/mantenimiento (--free_charging/--free_maintenance).
+        # Se asignan ANTES de _build_blocks: los bloques anuales los leen de
+        # self al construirse, tanto por la via secuencial como por el Pool.
+        self.free_charging = free_charging
+        self.free_maintenance = free_maintenance
 
         self.blocks = self._build_blocks(block_build_jobs)
 
         self.cut_manager = BendersCutManager()
         self.forward_pass = ForwardPass(self.blocks, solver_kwargs=self.solver_kwargs,
-                                        cut_manager=self.cut_manager)
+                                        cut_manager=self.cut_manager,
+                                        day_warm_start=day_warm_start,
+                                        day_solver_overrides=day_solver_overrides,
+                                        block_solver=block_solver,
+                                        gcg_blocks=gcg_blocks,
+                                        gcg_output_folder=os.path.join(
+                                            output_folder or ".", "_gcg_bloques"))
         self.backward_pass = BackwardPass(
             self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs,
             cut_type=cut_type, strengthened_timelimit=strengthened_timelimit,
@@ -113,6 +146,26 @@ class NestedBendersSolver(object):
 
         self.monolithic_lp_bound = monolithic_lp_bound
         self.lb_monolithic_lp = None
+        # Cota por relajacion operacional -- ver _operational_bound. Se calcula
+        # una sola vez antes de iterar y entra por max() en self.lb, igual que
+        # la del LP. En --mode hybrid esa lb es ademas la que se le pasa a
+        # Gurobi en la fase 2 (BestObjStop + fila obj >= LB).
+        self.operational_bound = operational_bound
+        self.op_bound_timelimit = op_bound_timelimit
+        self.lb_operational = None
+        # Cota inferior externa, de una corrida anterior (--lb_inicial). Solo
+        # es valida si viene de EXACTAMENTE el mismo problema: mismos datos,
+        # horizonte, dias, regimen y presolve.
+        self.lb_inicial = lb_inicial
+        # --polish_each_iter: pule la solucion de cada forward sobre el
+        # monolitico y compara costos pulidos (ver _polish_iteration).
+        self.polish_each_iter = polish_each_iter
+        # --skip_last_backward: la ultima iteracion no corre backward.
+        self.skip_last_backward = skip_last_backward
+        # Carpeta de salida, solo para dejar el log de Gurobi del solve de la
+        # cota operacional. Ese solve puede durar una hora y media: sin log no
+        # hay forma de distinguir "avanzando" de "trabado".
+        self.output_folder = output_folder
         # Familia de cortes del backward y aceleracion por cortes pre-generados
         # (Lara et al. 2018, secciones 5.2.2 y 5.3).
         self.cut_type = cut_type
@@ -133,6 +186,11 @@ class NestedBendersSolver(object):
         self.ub = float("inf")
         self.lb = float("-inf")
         self.best_ub = float("inf")
+        # Costo con que se elige la mejor solucion: igual a best_ub, salvo con
+        # --polish_each_iter, donde es el costo PULIDO de esa solucion.
+        self.best_cost = float("inf")
+        # Error que corto la descomposicion (ver el except de solve); None si ninguno.
+        self.error = None
         self.best_solution = None
         self.best_full_solution = None
         self.gap_history = []
@@ -154,6 +212,8 @@ class NestedBendersSolver(object):
                     self.mine_system, self.time_series, year=year,
                     is_last_year=is_last_year, exogenous_stations=exogenous_stations,
                     autonomous_mode=self.autonomous_mode,
+                    free_charging=self.free_charging,
+                    free_maintenance=self.free_maintenance,
                 )
                 for year, is_last_year, exogenous_stations in tasks
             ]
@@ -170,7 +230,8 @@ class NestedBendersSolver(object):
         sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
         with multiprocess.Pool(
             processes=n_jobs, initializer=_init_year_block_worker,
-            initargs=(self.mine_system, self.time_series, self.autonomous_mode),
+            initargs=(self.mine_system, self.time_series, self.autonomous_mode,
+                      self.free_charging, self.free_maintenance),
         ) as pool:
             return pool.map(_build_year_block_task, tasks)
 
@@ -342,6 +403,141 @@ class NestedBendersSolver(object):
         print(f"[NestedBenders] presolve de capacidad, fuerza de la cota: "
               f"{'; '.join(partes)}")
 
+    def _build_monolithic_model(self, name="Monolitico"):
+        """Arma el monolitico COMPLETO -- sets, parametros, variables,
+        restricciones, objetivo y las cotas del presolve de capacidad -- con el
+        mismo regimen y la misma base de costos que los bloques anuales.
+
+        Lo comparten _monolithic_lp_bound, que despues relaja TODA la
+        integralidad, y _operational_bound, que relaja solo la operacional. Que
+        los dos partan del MISMO modelo es lo que hace comparables sus cotas.
+
+        El objetivo se construye con exogenous_stations puesto y SIN
+        years_override, igual que el descompuesto: deja fuera el costo de
+        apertura de naves (constante en modo descompuesto) pero conserva las
+        link_*_stock del monolitico.
+        """
+        import pyomo.environ as pyo
+
+        from src.optimization.functions import (
+            BoundRules, ConstraintRules, ObjectiveRules, OptParameters, OptSets,
+        )
+
+        exo_flat = {
+            (k, y): v
+            for y, per_station in self.exogenous_stations_by_year.items()
+            for k, v in per_station.items()
+        }
+        common = dict(exogenous_stations=exo_flat)
+        # MISMO regimen que los bloques anuales: si difiriera, la cota estaria
+        # calculada sobre un problema distinto del que la descomposicion
+        # optimiza y podria no ser valida.
+        regimen = dict(free_charging=self.free_charging,
+                       free_maintenance=self.free_maintenance)
+
+        model = pyo.ConcreteModel(name=name)
+        OptSets(self.mine_system, self.time_series,
+                autonomous_mode=self.autonomous_mode, **regimen, **common).build_sets(model)
+        OptParameters(self.mine_system, self.time_series, **common).build_parameters(model)
+        BoundRules(self.mine_system, self.time_series, **common).build_all_variables(model)
+        ConstraintRules(self.mine_system, self.time_series, mccormick_degradation=True,
+                        **regimen, **common).build_all_constraints(model)
+        model.obj = pyo.Objective(
+            rule=ObjectiveRules(self.mine_system, self.time_series, **common).total_cost,
+            sense=pyo.minimize,
+        )
+        if self.capacity_bounds:
+            # Desigualdad valida del problema completo (ver _capacity_presolve):
+            # aprieta la relajacion sin cambiar de problema. La inversion en
+            # subestacion sube directo en el LB.
+            for k, n_min in self.capacity_bounds.items():
+                model.n_ssee_k[k].setlb(n_min)
+            if self.capacity_sum_bound is not None:
+                model.presolve_capacity_sum = pyo.Constraint(
+                    expr=sum(model.n_ssee_k[k] for k in model.stations_set)
+                    >= self.capacity_sum_bound
+                )
+        return model
+
+    def _operational_bound(self):
+        """Cota inferior por RELAJACION OPERACIONAL: el monolitico con las
+        binarias OPERACIONALES relajadas a continuas (VARS_OPERACIONALES, ver
+        relax_operational_vars en opt_model.py) y las de INVERSION enteras.
+
+        Relajar integralidad solo agranda el factible, asi que el optimo del
+        relajado acota por abajo al original. A diferencia de la relajacion
+        lineal completa, esta CONSERVA la combinatoria de la inversion, que es
+        donde vive casi toda la cota.
+
+        Medido en la rama carga_ob_multiaño, P_red_gen_bat, 10 anios,
+        McCormick (2026-09-24):
+
+            cota LP completa   1.593.858,58   gap del incumbente 26,64%
+            cota operacional   2.146.169,22   gap del incumbente  1,22%
+
+        o sea +34,65% de cota en 34,5 min, sobre un modelo que como MILP
+        completo estuvo 9h20m sin encontrar un solo incumbente. El salto es
+        posible porque quedan unas decenas de enteras (X, Delta_X, N_bays,
+        N_chargers, n_ssee_k, R) en vez de cientos de miles.
+
+        Devuelve la COTA DUAL, no el valor objetivo: el incumbente del modelo
+        relajado tiene operacionales fraccionarias, no es factible para el
+        original y no acota nada. Confundirlos daria una "cota" por encima del
+        optimo verdadero.
+
+        Degrada con gracia: si corta por tiempo, el dual bound de ese momento
+        sigue siendo una cota inferior valida, solo que mas floja.
+        """
+        from pyomo.environ import SolverFactory
+        from pyomo.opt import TerminationCondition
+
+        from src.optimization.opt_model import relax_operational_vars
+
+        model = self._build_monolithic_model(name="MonoliticoRelajOperacional")
+        relajadas = relax_operational_vars(model, verbose=False)
+
+        opt = SolverFactory("gurobi", solver_io="python")
+        # Con OutputFlag=0 (como venia de carga_ob_multiaño) este solve es MUDO
+        # hasta una hora y media, y no hay forma de saber si avanza. Se deja el
+        # log de Gurobi en un archivo propio --no en gurobi.log, que lo pisaria
+        # la fase monolitica-- para poder seguir el BestBd, que es justamente
+        # la cota que se esta calculando.
+        if self.output_folder:
+            os.makedirs(self.output_folder, exist_ok=True)
+            opt.options["OutputFlag"] = 1
+            opt.options["LogFile"] = os.path.join(
+                self.output_folder, "op_bound_gurobi.log")
+            opt.options["LogToConsole"] = 0   # la consola ya tiene el forward
+        else:
+            opt.options["OutputFlag"] = 0
+        # Timelimit PROPIO, no heredado de solver_kwargs["timelimit"]: aquel es
+        # el tope por resolucion de UN bloque anual (default 600 s) y no tiene
+        # relacion con un solve de escala monolitica. Con 600 s, la medicion de
+        # P_red_gen_bat (que tardo 2.068 s) se habria cortado a mitad de camino.
+        opt.options["TimeLimit"] = (
+            self.op_bound_timelimit if self.op_bound_timelimit is not None
+            else OP_BOUND_TIMELIMIT_DEFAULT
+        )
+        # El gap es el knob que de verdad controla la CALIDAD de la cota: con
+        # MIPGap=g el dual bound queda dentro de g del optimo del relajado. El
+        # timelimit es solo la red de seguridad.
+        opt.options["MIPGap"] = self.solver_kwargs.get("gap", 0.01)
+        result = opt.solve(model, load_solutions=False)
+        cond = result.solver.termination_condition
+        if cond not in (TerminationCondition.optimal, TerminationCondition.maxTimeLimit,
+                        TerminationCondition.feasible):
+            raise RuntimeError(f"relajacion operacional sin cota utilizable ({cond})")
+
+        # La cota dual: ObjBound de Gurobi. Vale tanto si cerro como si corto
+        # por tiempo -- en los dos casos es una cota inferior valida.
+        gmodel = getattr(opt, "_solver_model", None)
+        cota = getattr(gmodel, "ObjBound", None) if gmodel is not None else None
+        if cota is None:
+            cota = getattr(result.problem, "lower_bound", None)
+        if cota is None:
+            raise RuntimeError("no se pudo leer la cota dual de la relajacion operacional")
+        return float(cota), relajadas
+
     def _monolithic_lp_bound(self):
         """Cota inferior adicional: el valor optimo de la relajacion lineal del
         modelo monolitico COMPLETO, calculado una sola vez antes de iterar.
@@ -380,39 +576,7 @@ class NestedBendersSolver(object):
         from pyomo.environ import SolverFactory, TransformationFactory, value
         from pyomo.opt import TerminationCondition
 
-        from src.optimization.functions import (
-            BoundRules, ConstraintRules, ObjectiveRules, OptParameters, OptSets,
-        )
-
-        exo_flat = {
-            (k, y): v
-            for y, per_station in self.exogenous_stations_by_year.items()
-            for k, v in per_station.items()
-        }
-        common = dict(exogenous_stations=exo_flat)
-
-        model = pyo.ConcreteModel(name="MonoliticoLP")
-        OptSets(self.mine_system, self.time_series,
-                autonomous_mode=self.autonomous_mode, **common).build_sets(model)
-        OptParameters(self.mine_system, self.time_series, **common).build_parameters(model)
-        BoundRules(self.mine_system, self.time_series, **common).build_all_variables(model)
-        ConstraintRules(self.mine_system, self.time_series, mccormick_degradation=True,
-                        **common).build_all_constraints(model)
-        model.obj = pyo.Objective(
-            rule=ObjectiveRules(self.mine_system, self.time_series, **common).total_cost,
-            sense=pyo.minimize,
-        )
-        if self.capacity_bounds:
-            # Desigualdad valida del problema completo (ver _capacity_presolve):
-            # aprieta la relajacion sin cambiar de problema. La inversion en
-            # subestacion sube directo en el LB.
-            for k, n_min in self.capacity_bounds.items():
-                model.n_ssee_k[k].setlb(n_min)
-            if self.capacity_sum_bound is not None:
-                model.presolve_capacity_sum = pyo.Constraint(
-                    expr=sum(model.n_ssee_k[k] for k in model.stations_set)
-                    >= self.capacity_sum_bound
-                )
+        model = self._build_monolithic_model(name="MonoliticoLP")
         TransformationFactory("core.relax_integer_vars").apply_to(model)
 
         opt = SolverFactory("gurobi", solver_io="python")
@@ -504,7 +668,8 @@ class NestedBendersSolver(object):
 
 
     def build_report_model(self, output_folder, verbose=True, scan_residuals=True,
-                           polish_mip_start=True):
+                           polish_mip_start=True, full_solution=None,
+                           ub_reference=None):
         """Arma un OptModel monolitico de SOLO LECTURA con la mejor solucion
         encontrada ya cargada sobre sus variables, para que Printer genere los
         CSV y los graficos sin enterarse de que el problema se resolvio
@@ -530,7 +695,12 @@ class NestedBendersSolver(object):
 
         from src.optimization.opt_model import OptModel
 
-        if self.best_full_solution is None:
+        # Por defecto, la MEJOR solucion. --polish_each_iter la llama con la
+        # solucion de cada iteracion para pulirla y comparar costos reales.
+        sol = full_solution if full_solution is not None else self.best_full_solution
+        ub_ref = ub_reference if ub_reference is not None else self.best_ub
+
+        if sol is None:
             raise RuntimeError(
                 "No hay solucion que reportar: solve() no completo ninguna "
                 "iteracion (o fue interrumpido antes de la primera)."
@@ -539,13 +709,18 @@ class NestedBendersSolver(object):
         report = OptModel(
             self.mine_system, self.time_series, output_folder,
             autonomous_mode=self.autonomous_mode, mccormick_degradation=True,
+            # Mismo regimen que los bloques: este modelo se reporta y, en
+            # --mode hybrid, es el que Gurobi resuelve en la fase 2 con el MIP
+            # start encima. Con otro regimen el arranque podria ser infactible.
+            free_charging=self.free_charging,
+            free_maintenance=self.free_maintenance,
         )
         model = report.model
 
         aplicadas = 0
         sin_equivalente = set()
         for year in self.years:
-            for nombre, valores in self.best_full_solution.get(year, {}).items():
+            for nombre, valores in sol.get(year, {}).items():
                 comp = getattr(model, nombre, None)
                 if comp is None or not isinstance(comp, pyo.Var):
                     sin_equivalente.add(nombre)
@@ -610,7 +785,7 @@ class NestedBendersSolver(object):
             for k in model.stations_set for y in self.years
         )
         comparable = costo_total
-        desvio = abs(comparable - self.best_ub)
+        desvio = abs(comparable - ub_ref)
         report.opt_cost_result = costo_total
 
         # El desvio tiene que ser cero: el modelo de reporte es el MISMO
@@ -620,7 +795,7 @@ class NestedBendersSolver(object):
         # describiendo una solucion distinta de la que reporto el algoritmo.
         # No se aborta -- descartar el reporte despues de horas de computo seria
         # peor -- pero tiene que quedar imposible de pasar por alto.
-        tolerancia = max(1e-6 * abs(self.best_ub), 1e-4)
+        tolerancia = max(1e-6 * abs(ub_ref), 1e-4)
         desvio_ok = desvio <= tolerancia
 
         informe = {
@@ -629,7 +804,7 @@ class NestedBendersSolver(object):
             "costo_total": costo_total,
             "inversion_estaciones": inv_estaciones,
             "costo_comparable": comparable,
-            "ub_del_solver": self.best_ub,
+            "ub_del_solver": ub_ref,
             "desvio": desvio,
             "desvio_ok": desvio_ok,
         }
@@ -637,7 +812,7 @@ class NestedBendersSolver(object):
         if verbose:
             print(f"[NestedBenders] reporte: {aplicadas:,} valores cargados; "
                   f"costo recomputado = {costo_total:,.2f} "
-                  f"contra UB {self.best_ub:,.2f} (desvio {desvio:,.6f}); "
+                  f"contra UB {ub_ref:,.2f} (desvio {desvio:,.6f}); "
                   f"incluye {inv_estaciones:,.2f} de apertura de naves")
             if sin_equivalente:
                 print(f"[NestedBenders] variables de bloque sin equivalente en el "
@@ -648,7 +823,7 @@ class NestedBendersSolver(object):
             print("[NestedBenders] ATENCION: el costo recomputado sobre el modelo de "
                   "reporte NO coincide con el UB del solver.")
             print(f"    comparable = {comparable:,.6f}")
-            print(f"    UB         = {self.best_ub:,.6f}")
+            print(f"    UB         = {ub_ref:,.6f}")
             print(f"    desvio     = {desvio:,.6f}  (tolerancia {tolerancia:,.6f})")
             print("    Los archivos de salida describen una solucion distinta de la "
                   "que reporto el algoritmo.")
@@ -719,6 +894,36 @@ class NestedBendersSolver(object):
 
         return report, informe
 
+    def _polish_iteration(self, fwd, k, verbose=True):
+        """--polish_each_iter: arma el monolitico con la solucion del forward de
+        la iteracion k, la pule (enteras fijas, LP sobre las continuas con todo el
+        horizonte a la vista) y devuelve su costo. El modelo se descarta al
+        terminar: el monolitico de 10 años ocupa ~5 GB y no conviene tenerlo vivo
+        junto a los bloques. None si algo falla -- es una mejora opcional del UB,
+        nunca debe cortar la corrida."""
+        import gc
+        carpeta = os.path.join(self.output_folder or ".", "_pulido_por_iteracion")
+        t0 = time.time()
+        report = None
+        try:
+            report, informe = self.build_report_model(
+                carpeta, verbose=False, scan_residuals=False, polish_mip_start=True,
+                full_solution=fwd["full_solution"], ub_reference=fwd["ub"])
+            costo = informe.get("costo_pulido", informe.get("costo_total"))
+            if verbose:
+                print(f"[NestedBenders] k={k} pulido de la solucion: "
+                      f"{fwd['ub']:,.2f} -> {costo:,.2f} "
+                      f"({(fwd['ub'] - costo) / fwd['ub']:.2%} menos, "
+                      f"{time.time() - t0:.0f}s)")
+            return costo
+        except Exception as exc:
+            print(f"[NestedBenders] k={k} pulido por iteracion fallo "
+                  f"({type(exc).__name__}: {exc}) -- se usa el UB sin pulir")
+            return None
+        finally:
+            report = None
+            gc.collect()
+
     def _polish_mip_start(self, report, verbose=True):
         """Fija las variables enteras/binarias del modelo de reporte en sus
         valores (ya redondeados) y resuelve el LP resultante con Gurobi, dejando
@@ -742,7 +947,9 @@ class NestedBendersSolver(object):
         antes = value(model.obj, exception=False)
         opt = SolverFactory("gurobi", solver_io="python")
         opt.options["OutputFlag"] = 0
-        opt.options["TimeLimit"] = self.solver_kwargs.get("timelimit", 900)
+        # Tope PROPIO: el LP del monolitico de 10 años tarda ~1 min, y el
+        # timelimit por bloque puede bajarse a pocos minutos (--solve_timelimit).
+        opt.options["TimeLimit"] = max(self.solver_kwargs.get("timelimit", 900), 1800)
         try:
             result = opt.solve(model, load_solutions=False)
             cond = result.solver.termination_condition
@@ -868,6 +1075,35 @@ class NestedBendersSolver(object):
                 print(f"[NestedBenders] sin LP del monolitico "
                       f"({type(exc).__name__}: {exc}) -- se sigue sin el.")
 
+        if self.operational_bound:
+            if verbose:
+                print("[NestedBenders] cota por relajacion operacional "
+                      "(inversion entera)...")
+                sys.stdout.flush()
+            t_ob = time.time()
+            try:
+                self.lb_operational, relajadas = self._operational_bound()
+                self.lb = max(self.lb, self.lb_operational)
+                if verbose:
+                    print(f"[NestedBenders] cota operacional = "
+                          f"{self.lb_operational:,.2f}  ({relajadas:,} binarias "
+                          f"relajadas, {time.time() - t_ob:.0f}s)")
+            except Exception as exc:
+                # No es fatal: es una cota extra. Si el monolitico no entra en
+                # memoria, se sigue con la del backward y la del LP.
+                print(f"[NestedBenders] sin cota por relajacion operacional "
+                      f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
+
+        if self.lb_inicial is not None:
+            # Cota calculada en una corrida anterior (tipicamente la operacional,
+            # que es determinista para una configuracion dada y cuesta ~20 min
+            # a 10 años). Entra por max(), igual que las demas: si fuera mas
+            # floja que otra ya calculada, no cambia nada.
+            self.lb = max(self.lb, self.lb_inicial)
+            if verbose:
+                print(f"[NestedBenders] cota inicial externa (--lb_inicial) = "
+                      f"{self.lb_inicial:,.2f}  -> LB = {self.lb:,.2f}")
+
         if self.warm_start_cuts:
             if trayectoria_warm is None:
                 print("[NestedBenders] warm start omitido: no hay trayectoria "
@@ -895,17 +1131,49 @@ class NestedBendersSolver(object):
                     current_ub=(self.ub if self.ub != float("inf") else None),
                     current_lb=(self.lb if self.lb != float("-inf") else None),
                 )
-                self.ub = min(self.ub, fwd["ub"])
-                if fwd["ub"] <= self.best_ub:
+                # Costo con el que se compara esta iteracion: el del forward, o
+                # --con --polish_each_iter-- el de la misma solucion pulida sobre
+                # el monolitico (enteras fijas, continuas reoptimizadas mirando
+                # todo el horizonte). En la corrida de 10 años de Mina_modelo el
+                # pulido final bajo el costo 8,8% sin tocar una entera: el UB del
+                # forward sobreestima porque las continuas que atan años (G_g,
+                # H, b_bar, D) se deciden miopes. El pulido es factible para el
+                # mismo problema, asi que su costo es un UB valido.
+                costo_k = fwd["ub"]
+                if self.polish_each_iter:
+                    pulido = self._polish_iteration(fwd, k, verbose=verbose)
+                    if pulido is not None:
+                        costo_k = pulido
+                self.ub = min(self.ub, costo_k)
+                if costo_k <= self.best_cost:
+                    self.best_cost = costo_k
+                    # best_ub queda en el costo SIN pulir de esa solucion: es el
+                    # que build_report_model verifica al recomputar el objetivo.
                     self.best_ub = fwd["ub"]
                     self.best_solution = fwd["x_hat"]
                     self.best_full_solution = fwd["full_solution"]
 
-                lb_k = self.backward_pass.run(
-                    fwd["x_hat"], iteration=k, verbose=verbose,
-                    current_ub=self.ub,
-                    current_lb=(self.lb if self.lb != float("-inf") else None),
-                )
+                if self.skip_last_backward and k >= self.max_iter:
+                    # Los cortes del ultimo backward no los usa ningun forward;
+                    # solo aportarian LB, y con una cota externa fuerte (la
+                    # operacional) el backward no la supero en ninguna de las 3
+                    # iteraciones medidas. Se ahorran ~45 min.
+                    if verbose:
+                        print(f"[NestedBenders] k={k}: ultima iteracion, se omite el "
+                              f"backward (--skip_last_backward)")
+                    lb_k = float("-inf")
+                else:
+                    lb_k = self.backward_pass.run(
+                        fwd["x_hat"], iteration=k, verbose=verbose,
+                        current_ub=self.ub,
+                        current_lb=(self.lb if self.lb != float("-inf") else None),
+                    )
+                    if verbose:
+                        # Se imprime SIEMPRE, tambien cuando pierde contra otra
+                        # cota (operacional, LP, --lb_inicial): si no, no hay forma
+                        # de ver si los cortes estan acercandose.
+                        manda = "manda" if lb_k >= self.lb else f"no supera LB={self.lb:,.2f}"
+                        print(f"[NestedBenders] k={k} cota del backward = {lb_k:,.2f}  ({manda})")
                 self.lb = max(self.lb, lb_k)
 
                 gap = ((self.ub - self.lb) / abs(self.ub)
@@ -932,6 +1200,22 @@ class NestedBendersSolver(object):
             else:
                 print(f"[NestedBenders] Interrumpido en la iteracion {k} -- se "
                       f"conserva la mejor solucion (UB={self.best_ub:.4f}).")
+        except Exception as exc:
+            # Un error en la iteracion k NO puede tirar las anteriores. Medido: la
+            # v2 de Mina_modelo murio en la iteracion 4 (un año sin incumbente)
+            # y se perdio la mejor solucion (2.118.775, gap 7,09%) tras 5,6 h: la
+            # descomposicion solo la conservaba ante Ctrl+C. Ahora se corta, se
+            # conserva la mejor y se sigue con el reporte y la fase monolitica.
+            # Sin ninguna iteracion completa no hay nada que conservar: se relanza.
+            if self.best_full_solution is None:
+                raise
+            interrupted = True
+            self.error = f"{type(exc).__name__}: {exc}"
+            print("=" * 78)
+            print(f"[NestedBenders] ERROR en la iteracion {k}: {self.error[:300]}")
+            print(f"[NestedBenders] se corta la descomposicion y se conserva la mejor "
+                  f"solucion (costo {min(self.best_cost, self.best_ub):,.2f}).")
+            print("=" * 78)
         finally:
             signal.signal(signal.SIGINT, old_handler)
             passes_module.clear_interrupt()
@@ -961,13 +1245,23 @@ class NestedBendersSolver(object):
             "capacity_sum_bound": self.capacity_sum_bound,
             "capacity_presolve_time_sec": self.capacity_presolve_time,
             "feasibility_cuts": self.forward_pass.feasibility_cuts_added,
-            "ub": self.best_ub,
+            # UB = costo de la mejor solucion; con --polish_each_iter, el PULIDO
+            # (menor o igual). best_ub (sin pulir) queda aparte: es contra el que
+            # build_report_model verifica el recomputo del objetivo.
+            "ub": min(self.best_cost, self.best_ub),
+            "ub_sin_pulir": self.best_ub,
             "lb": self.lb,
-            "gap": ((self.best_ub - self.lb) / abs(self.best_ub)
-                    if self.best_ub not in (0, float("inf")) else float("inf")),
+            "gap": ((min(self.best_cost, self.best_ub) - self.lb)
+                    / abs(min(self.best_cost, self.best_ub))
+                    if min(self.best_cost, self.best_ub) not in (0, float("inf"))
+                    else float("inf")),
             "iterations": k,
             "interrupted": interrupted,
+            "error": self.error,
             "lb_monolithic_lp": self.lb_monolithic_lp,
+            "lb_operational": self.lb_operational,
+            "lb_inicial": self.lb_inicial,
+            "day_warm_start_time_sec": self.forward_pass.day_warm_start_time,
             "cut_type": self.cut_type,
             "warm_start_cuts": self.warm_start_cuts,
             "warm_start_time_sec": self.warm_start_time,

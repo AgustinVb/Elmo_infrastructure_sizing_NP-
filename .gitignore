@@ -42,3 +42,16 @@ runs/
 
 # Logs del IIS: pueden superar los 100MB que acepta GitHub
 infeasible_log.txt
+
+# Artefactos de GCG: regenerables y pesados (un MPS del monolitico de 4 años
+# pesa 140 MB, sobre el limite de GitHub). Los resumenes (results.json,
+# certificado.json, comparacion.json) y los logs si se versionan.
+*.mps
+*.dec
+decomp.json
+*.sol
+gcg_stdout.log
+
+# Salidas de las colas de corridas (el historial legible esta en cola.log)
+cola*.stdout
+cola*.stderr

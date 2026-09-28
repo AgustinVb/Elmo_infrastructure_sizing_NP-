@@ -174,7 +174,7 @@ def make_gurobi_stop_callback(stop_path, poll_seconds=5.0):
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -194,10 +194,28 @@ class OptModel(object):
         # --mode hybrid el modelo llega con un incumbente bueno y lo que se
         # quiere es mejorarlo, para lo que 1 (incumbentes) puede convenir.
         self.mip_focus = mip_focus
-        self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode)
+        # Regimenes de swap/mantenimiento (--free_charging / --free_maintenance,
+        # ver OptRules.__init__ en functions.py). free_maintenance tiene que
+        # llegar tambien a OptSets: define si maintenance DET entra en det_stop.
+        self.free_charging = free_charging
+        self.free_maintenance = free_maintenance
+        # Gurobi BestObjStop: corta en cuanto el incumbente baja de este valor.
+        # Lo usa el modo hibrido para no seguir buscando despues de alcanzar el
+        # gap objetivo contra una cota EXTERNA (la de relajacion operacional),
+        # que Gurobi no conoce y no puede deducir. Sin esto, el monolitico mide
+        # el gap contra su propia cota --mucho peor-- y sigue trabajando horas
+        # sobre un problema que ya esta cerrado.
+        self.best_obj_stop = None
+        # Cota dual final del ultimo solve (ver solve_model). None si el solver
+        # no la reporta.
+        self.best_bound = None
+        # Gurobi ImproveStartTime (segundos). None = no se fija.
+        self.improve_start_time = None
+        regimen = dict(free_charging=free_charging, free_maintenance=free_maintenance)
+        self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode, **regimen)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)
-        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation, **regimen)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()
@@ -487,12 +505,25 @@ class OptModel(object):
             opt.options['LogToConsole'] = 1
             opt.options['MIPGap'] = gap
             opt.options['LogFile'] = log_file
-            opt.options['Threads'] = 32
+            # Threads NO se fija: estaba en 32 y esta maquina tiene 4 nucleos
+            # fisicos / 8 logicos ("Thread count was 32 (of 8 available
+            # processors)" en el log): 32 hilos compitiendo por 8 solo agrega
+            # cambios de contexto. Sin fijarlo, Gurobi usa los que hay.
             opt.options['Heuristics'] = 0.5
             opt.options['MIPFocus'] = self.mip_focus
             opt.options['Presolve'] = 2
             opt.options['FlowCoverCuts'] = 2
             opt.options['TimeLimit'] = timelimit
+            if self.best_obj_stop is not None:
+                opt.options['BestObjStop'] = self.best_obj_stop
+            if self.improve_start_time is not None:
+                # Pasado este tiempo Gurobi cambia a una estrategia de MEJORAR el
+                # incumbente (mas heuristicas, menos trabajo sobre la cota). Lo
+                # usa la fase monolitica del hibrido: la cota ya viene de afuera
+                # (fila obj >= LB), y medido en Mina_modelo a 10 años el solve
+                # paso >40 min en el ciclo de cortes de la raiz, en un solo hilo,
+                # sin mover ni la cota ni el incumbente.
+                opt.options['ImproveStartTime'] = self.improve_start_time
             if self.constraint_rules.mine_system.battery_degradation is not None and not self.mccormick_degradation:
                 # n_total_def/n_ciclos_link quedan como bilineales exactos
                 # (N_ciclos*n_battery_fleet, N_total*b_bar) -- Gurobi los
@@ -617,7 +648,14 @@ class OptModel(object):
                 solve_kwargs["warmstart"] = True
             result = opt.solve(model_to_solve, **solve_kwargs)
             self.solution_status = result.solver.termination_condition
-            
+            # Cota dual final de Gurobi (BestBd). En --mode hybrid, con la fila
+            # obj >= LB puesta, arranca en la cota externa y puede SUPERARLA a
+            # medida que Gurobi corta y ramifica; esa es la cota que vale al
+            # final, y sin guardarla solo quedaba en gurobi.log.
+            lb = getattr(result.problem, "lower_bound", None)
+            if lb is not None and lb == lb and lb not in (float("inf"), float("-inf")):
+                self.best_bound = float(lb)
+
         except KeyboardInterrupt:
             # Esto se activa si presionas "Stop" o Ctrl+C
             print("\nIntentando recuperar la mejor solución hasta ahora...")

@@ -1,0 +1,26 @@
+2026-09-28 00:38:17  cola iniciada (PID 28320), suspension bloqueada: True
+2026-09-28 00:38:17  esperando a que termine la corrida v1 (PID 12472)...
+2026-09-28 01:13:27  corrida v1 terminada
+2026-09-28 01:13:27  [diagnostico_cota_op_4anios] inicio: setup.py --data_folder data/Tesis_final/Mina_modelo/ --solver gurobi --days_per_year 4 --free_charging --free_maintenance --block_build_jobs 1 --output_folder output/Resultados_finales_tesis/Mina_modelo/diagnostico_cota_op_4anios/ --mode decomposed --n_years 4 --max_iter 0 --operational_bound --op_bound_timelimit 5400 --solve_timelimit 600
+2026-09-28 01:25:31  [diagnostico_cota_op_4anios] fin, codigo de salida 0 (log: C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\output\Resultados_finales_tesis\Mina_modelo\diagnostico_cota_op_4anios\run_diagnostico_cota_op_4anios.log)
+2026-09-28 01:25:31  [gcg_bloque_y4] inicio: gcg_bloque_anual.py --out output/Resultados_finales_tesis/Mina_modelo/gcg_bloque_y4 --year 4 --n_years 10 --timelimit 1200 --modos gurobi,day,vehicle_day
+2026-09-28 01:28:43  cola vieja detenida a mano para reordenar; la prueba de fuego (PID 9876) sigue
+2026-09-28 01:28:44  cola iniciada (PID 28456), suspension bloqueada: True
+2026-09-28 01:28:44  esperando a que termine el proceso previo (PID 9876)...
+2026-09-28 02:26:41  PID 9876 terminado
+2026-09-28 02:26:41  [gcg_certificado_4anios] inicio: gcg_certificado.py --n_years 4 --solucion output/Resultados_finales_tesis/Mina_modelo/solucion_benders_4anios --ub_esperado 1916141.92 --cota_operacional 1797006.58 --mode year_day --nodes 1 --timelimit 7200 --out output/Resultados_finales_tesis/Mina_modelo/gcg_certificado_4anios
+2026-09-28 04:28:59  [gcg_certificado_4anios] fin, codigo de salida 0 (log: C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\output\Resultados_finales_tesis\Mina_modelo\gcg_certificado_4anios\run_gcg_certificado_4anios.log)
+2026-09-28 04:28:59  [P_red_gen_bat_swap_libre_v2] inicio: setup.py --data_folder data/Tesis_final/Mina_modelo/ --solver gurobi --days_per_year 4 --free_charging --free_maintenance --block_build_jobs 1 --output_folder output/Resultados_finales_tesis/Mina_modelo/P_red_gen_bat_swap_libre_v2/ --mode hybrid --n_years 10 --lb_inicial 1968564.61 --cut_type benders --max_iter 5 --mip_focus 1 --block_mip_focus 1 --solve_timelimit 300 --day_warm_start always --day_timelimit 60 --day_gap 0.05 --polish_each_iter --skip_last_backward --mono_improve_start_time 0 --mono_timelimit 21600
+2026-09-28 10:08:06  [P_red_gen_bat_swap_libre_v2] fin, codigo de salida 1 (log: C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\output\Resultados_finales_tesis\Mina_modelo\P_red_gen_bat_swap_libre_v2\run_P_red_gen_bat_swap_libre_v2.log)
+2026-09-28 10:08:06  cola terminada
+2026-09-28 10:17:46  cola iniciada (PID 27880), suspension bloqueada: True
+2026-09-28 10:17:46  esperando a que termine el proceso previo (PID 28560)...
+2026-09-28 10:21:32  cola3 detenida a mano: se relanza detras de la prueba de GCG corregida (pricing de SCIP deshabilitado)
+2026-09-28 10:21:52  cola iniciada (PID 22892), suspension bloqueada: True
+2026-09-28 10:21:52  [gcg_bloque_y4_pricing_gurobi] inicio: gcg_bloque_anual.py --out output/Resultados_finales_tesis/Mina_modelo/gcg_bloque_y4_pricing_gurobi --year 4 --n_years 10 --timelimit 1200 --modos day_gurobi
+2026-09-28 10:42:26  [gcg_bloque_y4_pricing_gurobi] fin, codigo de salida 0 (log: C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\output\Resultados_finales_tesis\Mina_modelo\gcg_bloque_y4_pricing_gurobi\run_gcg_bloque_y4_pricing_gurobi.log)
+2026-09-28 10:42:26  [P_red_gen_bat_swap_libre_v3] inicio: setup.py --data_folder data/Tesis_final/Mina_modelo/ --solver gurobi --days_per_year 4 --free_charging --free_maintenance --block_build_jobs 1 --output_folder output/Resultados_finales_tesis/Mina_modelo/P_red_gen_bat_swap_libre_v3/ --mode hybrid --n_years 10 --lb_inicial 1968564.61 --cut_type strengthened --strengthened_timelimit 300 --max_iter 5 --mip_focus 1 --block_mip_focus 1 --solve_timelimit 300 --day_warm_start always --day_timelimit 60 --day_gap 0.05 --polish_each_iter --skip_last_backward --mono_improve_start_time 0 --mono_timelimit 21600
+2026-09-28 10:49:26  v3 detenida a pedido (construyendo bloques): pasa al final, detras de GCG largo y del certificado
+2026-09-28 10:50:09  cola iniciada (PID 8044), suspension bloqueada: True
+2026-09-28 10:50:09  [gcg_bloque_y4_pricing_gurobi_largo] inicio: gcg_bloque_anual.py --out output/Resultados_finales_tesis/Mina_modelo/gcg_bloque_y4_pricing_gurobi_largo --year 4 --n_years 10 --timelimit 14400 --modos day_gurobi
+2026-09-28 11:11:22  cola4 cortada a pedido: se sigue en otro equipo (ver PENDIENTES_mina_modelo.md)
