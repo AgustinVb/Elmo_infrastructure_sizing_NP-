@@ -35,6 +35,12 @@ Aislado porque PySCIPOpt 6 trae numpy 2, que rompe el pandas 2.0.3 del otro
 entorno. Tiene que llamarse exactamente `.venv_gcg` y estar en la raíz del repo
 (lo busca `src/optimization/decomposition/gcg_block.py`).
 
+**Tiene que ser Python 3.10, de 64 bits, en Windows.** Los tres wheels están
+compilados para esa combinación exacta (`cp310-win_amd64` en el nombre del
+archivo): con otra versión de Python pip los rechaza ("is not a supported wheel
+on this platform"), y como se instala con `--no-index` no puede buscar otros.
+Verificar antes con `py -3.10 --version`; si no está, instalar Python 3.10.
+
 ```powershell
 py -3.10 -m venv .venv_gcg
 # Los wheels NO están en git (92 MB): copiar la carpeta wheels_gcg/ del equipo viejo
