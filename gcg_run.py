@@ -66,6 +66,11 @@ def main():
     ap.add_argument("--convexification", action="store_true",
                     help="convexificacion en vez de discretizacion (GCG avisa que la "
                          "discretizacion con variables continuas es experimental)")
+    ap.add_argument("--hybrid-ascent", action="store_true",
+                    help="pricing/masterpricer/stabilization/hybridascent: al suavizado "
+                         "de duales de Wentges (in-out, activo por defecto) le suma la "
+                         "direccion de subgradiente (Pessoa et al. 2018). Por defecto "
+                         "GCG lo deja apagado")
     ap.add_argument("--detect-only", action="store_true",
                     help="corre la deteccion de GCG, reporta las descomposiciones "
                          "candidatas, las escribe a .dec y para SIN optimizar")
@@ -104,6 +109,12 @@ def main():
     if a.convexification:
         m.setParam("relaxing/gcg/discretization", False)
         m.setParam("relaxing/gcg/mipdiscretization", False)
+    if a.hybrid_ascent:
+        m.setParam("pricing/masterpricer/stabilization", True)
+        m.setParam("pricing/masterpricer/stabilization/hybridascent", True)
+    print(f"[gcg] estabilizacion: suavizado "
+          f"{m.getParam('pricing/masterpricer/stabilization')}, hybridascent "
+          f"{m.getParam('pricing/masterpricer/stabilization/hybridascent')}", flush=True)
 
     # --- descomposicion ---------------------------------------------------
     master, bloques, enlace = [], [], None

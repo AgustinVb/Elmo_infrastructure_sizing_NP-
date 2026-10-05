@@ -85,7 +85,12 @@ class NestedBendersSolver(object):
                  output_folder=None, day_warm_start="off",
                  day_solver_overrides=None, lb_inicial=None,
                  polish_each_iter=False, skip_last_backward=False,
-                 block_solver="gurobi", gcg_blocks="day"):
+                 block_solver="gurobi", gcg_blocks="day",
+                 stabilization="none", stab_center="operational",
+                 box_delta_int=1, box_frac_cont=0.25, box_min_cont=1.0,
+                 box_delta_int_max=None, stab_free_every=0, level_alpha=0.5,
+                 max_time_sec=None, t_origen=None, incumbente_inicial=None,
+                 op_bound_gap=None):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -106,6 +111,37 @@ class NestedBendersSolver(object):
             monolitico, que es justo lo que la descomposicion evita, asi que en
             horizontes largos puede no entrar en memoria; cualquier fallo se
             reporta y la corrida sigue sin esa cota.
+        :param stabilization: "none" (default) o "box": forward estabilizado
+            con Box-step (Göke, Schmidt & Kendziorski, EJOR 2024). Cada año se
+            resuelve dentro de una caja alrededor del CENTRO de estabilidad (la
+            mejor trayectoria conocida); ver YearBlockBuilder.set_trust_region.
+            Solo afecta al forward, o sea al UB: los cortes y las cotas (LB)
+            siguen valiendo para cualquier estado.
+        :param stab_center: centro inicial. "operational": la inversion de la
+            solucion de la cota operacional (requiere --operational_bound);
+            "first": ninguno, la primera iteracion va sin caja y su trayectoria
+            pasa a ser el centro.
+        :param box_delta_int, box_frac_cont, box_min_cont: tamaño inicial de la
+            caja: +-box_delta_int unidades en las enteras; en las continuas
+            (G, H) +-max(box_frac_cont*|centro|, box_min_cont).
+        :param box_delta_int_max: tope de box_delta_int al relajar la caja. None
+            (default) = igual a box_delta_int: caja FIJA, como el Box-step del
+            paper. Si es mayor, la caja se relaja +1 tras 3 pasos SERIOS
+            seguidos (al estilo del PBM del paper), nunca tras un paso nulo.
+        :param stab_free_every: cada cuantas iteraciones el forward va SIN caja
+            para explorar (0 = nunca).
+        :param level_alpha: con stabilization="level", el nivel de cada año es
+            L + level_alpha * gap * |L| (Pecci & Jenkins 2025: alpha = 0,5), con
+            L el bloque con la operacion relajada y gap el relativo UB-LB.
+        :param max_time_sec: tope de tiempo de pared, contado desde t_origen
+            (default: el inicio de solve()). No se empieza una iteracion si su
+            forward no alcanza a terminar, y se omite el backward si despues no
+            queda tiempo para otro forward (sus cortes no los usaria nadie); las
+            estimaciones son el maximo de las iteraciones anteriores. Si igual
+            se pasa, passes._solve corta como con el archivo STOP.
+        :param t_origen: instante (time.time()) desde el que corre el tope; el
+            de setup.py es el arranque del proceso, para que el tope incluya la
+            construccion de bloques y la cota operacional.
         :param block_build_jobs: procesos para construir los bloques en paralelo.
             None = min(años, cpus). 1 = secuencial (util para debug). Los bloques
             son independientes entre si, y construirlos es Pyomo puro-Python
@@ -195,6 +231,38 @@ class NestedBendersSolver(object):
         self.best_full_solution = None
         self.gap_history = []
         self.iterations_run = 0
+
+        # Forward estabilizado (Box-step) -- ver _stabilization_step.
+        if stabilization not in ("none", "box", "level", None):
+            raise ValueError(f"stabilization debe ser 'none', 'box' o 'level' "
+                             f"(recibido {stabilization!r})")
+        # Level-set (ver YearBlockBuilder.level_point): nivel = L + alpha*gap*|L|.
+        self.level_alpha = float(level_alpha)
+        self.max_time_sec = max_time_sec
+        self.t_origen = t_origen
+        # Carpeta con los JSON del reporte de una corrida anterior: su solucion
+        # entra como incumbente (UB), centro de la caja y start de los dias
+        # desde la iteracion 1 (ver _cargar_incumbente_inicial).
+        self.incumbente_inicial = incumbente_inicial
+        # MIPGap de la cota operacional (None = el de solver_kwargs). Es una
+        # cota: con 1 % se pierde hasta 1 % de LB (v4: 1.997.972 contra
+        # 1.999.044 con 1e-4).
+        self.op_bound_gap = op_bound_gap
+        self.parada_por_tiempo = False
+        if stab_center not in ("operational", "first"):
+            raise ValueError(f"stab_center debe ser 'operational' o 'first' (recibido {stab_center!r})")
+        self.stabilization = stabilization if stabilization != "none" else None
+        self.stab_center_mode = stab_center
+        self.stab_center = None          # {año: estado}; None = aun no hay centro
+        self.box_delta_int = int(box_delta_int)
+        self.box_frac_cont = float(box_frac_cont)
+        self.box_min_cont = float(box_min_cont)
+        self.box_delta_int_max = (int(box_delta_int_max) if box_delta_int_max is not None
+                                  else self.box_delta_int)
+        self.stab_serios_seguidos = 0
+        self.stab_free_every = int(stab_free_every)
+        self.stab_serious_steps = 0
+        self.stab_null_steps = 0
 
     def _build_blocks(self, block_build_jobs):
         tasks = [
@@ -521,7 +589,8 @@ class NestedBendersSolver(object):
         # El gap es el knob que de verdad controla la CALIDAD de la cota: con
         # MIPGap=g el dual bound queda dentro de g del optimo del relajado. El
         # timelimit es solo la red de seguridad.
-        opt.options["MIPGap"] = self.solver_kwargs.get("gap", 0.01)
+        opt.options["MIPGap"] = (self.op_bound_gap if self.op_bound_gap is not None
+                                 else self.solver_kwargs.get("gap", 0.01))
         result = opt.solve(model, load_solutions=False)
         cond = result.solver.termination_condition
         if cond not in (TerminationCondition.optimal, TerminationCondition.maxTimeLimit,
@@ -536,7 +605,19 @@ class NestedBendersSolver(object):
             cota = getattr(result.problem, "lower_bound", None)
         if cota is None:
             raise RuntimeError("no se pudo leer la cota dual de la relajacion operacional")
-        return float(cota), relajadas
+
+        # La INVERSION de su incumbente (entera: solo se relajo la operacion)
+        # sirve de centro inicial para el forward estabilizado. No es una
+        # solucion factible del original -- la operacion es fraccionaria --,
+        # pero para centrar la caja alcanza con que la inversion sea razonable.
+        trayectoria = None
+        try:
+            model.solutions.load_from(result)
+            trayectoria = self._trayectoria_desde_monolitico(model)
+        except Exception as exc:
+            print(f"[NestedBenders] la cota operacional no dejo solucion para "
+                  f"centrar la estabilizacion ({type(exc).__name__}: {exc})")
+        return float(cota), relajadas, trayectoria
 
     def _monolithic_lp_bound(self):
         """Cota inferior adicional: el valor optimo de la relajacion lineal del
@@ -591,6 +672,139 @@ class NestedBendersSolver(object):
                 f"({result.solver.termination_condition})"
             )
         return value(model.obj), self._trayectoria_desde_monolitico(model)
+
+    RESPALDO = "incumbente_respaldo.pkl"
+
+    def _guardar_respaldo(self, k, verbose=True):
+        """Guarda el incumbente en <output_folder>/incumbente_respaldo.pkl cada
+        vez que mejora. Un crash nativo (la v6 murio el 2026-10-04 con una
+        violacion de acceso en los hilos de los dias, sin traceback) se lleva
+        todo lo que no este en disco, y el reporte solo se escribe al final.
+        --incumbente_inicial acepta este .pkl para retomar."""
+        if not self.output_folder:
+            return
+        import pickle
+        try:
+            ruta = os.path.join(self.output_folder, self.RESPALDO)
+            tmp = ruta + ".tmp"
+            with open(tmp, "wb") as f:
+                pickle.dump({"iteracion": k, "best_cost": self.best_cost,
+                             "best_ub": self.best_ub, "best_solution": self.best_solution,
+                             "best_full_solution": self.best_full_solution,
+                             # Cortes de Benders (optimalidad y factibilidad) con
+                             # todo lo necesario para rearmarlos: año padre, Phi,
+                             # mu y el ancla x_hat (ver BendersCutManager.history).
+                             "cortes": list(self.cut_manager.history),
+                             "lb": self.lb}, f,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp, ruta)
+            if verbose:
+                print(f"[NestedBenders] k={k}: incumbente {self.best_cost:,.2f} y "
+                      f"{len(self.cut_manager.history)} cortes respaldados en {ruta}")
+        except Exception as exc:
+            print(f"[NestedBenders] no se pudo respaldar el incumbente "
+                  f"({type(exc).__name__}: {exc})")
+
+    def _cargar_respaldo(self, ruta, verbose=True):
+        import pickle
+        with open(ruta, "rb") as f:
+            r = pickle.load(f)
+        self.best_full_solution = r["best_full_solution"]
+        self.best_solution = r["best_solution"]
+        self.best_cost = self.ub = r["best_cost"]
+        self.best_ub = r["best_ub"]
+        self.stab_center = r["best_solution"]
+        if r.get("lb") is not None and r["lb"] > float("-inf"):
+            self.lb = max(self.lb, r["lb"])
+        # Los cortes se rearman en los bloques actuales. Siguen siendo validos:
+        # acotan por abajo el costo futuro del mismo modelo (o de uno que solo
+        # gano desigualdades validas desde entonces, que lo sube).
+        por_año = {blk.year: blk for blk in self.blocks}
+        n_opt = n_fact = 0
+        for c in r.get("cortes", []):
+            padre = por_año.get(c["parent_year"])
+            if padre is None:
+                continue
+            if str(c.get("kind", "")).startswith("feasibility"):
+                self.cut_manager.add_feasibility_cut(padre, c["v_hat"], c["mu"],
+                                                     c["x_hat_base"], c.get("iteration"))
+                n_fact += 1
+            else:
+                self.cut_manager.add_cut(padre, c["phi_lp"], c["mu"], c["x_hat_base"],
+                                         c.get("iteration"))
+                n_opt += 1
+        if verbose:
+            print(f"[NestedBenders] incumbente inicial del respaldo {ruta} (iteracion "
+                  f"{r['iteracion']}): {r['best_cost']:,.2f} -> UB, centro de la caja y "
+                  f"start de los dias desde la iteracion 1; {n_opt} cortes de optimalidad "
+                  f"y {n_fact} de factibilidad rearmados")
+        return r["best_cost"]
+
+    def _cargar_incumbente_inicial(self, carpeta, verbose=True):
+        """Carga la solucion de una corrida anterior (los JSON de su reporte)
+        como punto de partida: incumbente (UB), centro de la caja y MIP start de
+        la fase 1 de cada dia desde la iteracion 1. Sin esto, cada corrida a 10
+        años gasta ~5 iteraciones (~5 h en la v4) en volver a donde termino la
+        anterior.
+
+        Los JSON omiten los ceros: las enteras sin valor van a 0 y despues se
+        PULE (enteras fijas, LP de las continuas) sobre el monolitico, con el
+        mismo regimen que los bloques. El costo pulido es la UB de partida."""
+        import pyomo.environ as pyo
+        from pyomo.environ import SolverFactory
+        from pyomo.environ import value as _v
+        from pyomo.core.expr.visitor import identify_variables
+        from pyomo.opt import TerminationCondition
+
+        from src.optimization.opt_model import OptModel
+
+        t0 = time.time()
+        destino = os.path.join(self.output_folder or ".", "_incumbente_inicial")
+        om = OptModel(self.mine_system, self.time_series, destino,
+                      init_solution_folder=carpeta, autonomous_mode=self.autonomous_mode,
+                      mccormick_degradation=True, free_charging=self.free_charging,
+                      free_maintenance=self.free_maintenance)
+        m = om.model
+        usadas = set()
+        for c in m.component_data_objects(pyo.Constraint, active=True):
+            usadas.update(id(v) for v in identify_variables(c.body))
+        fijadas = []
+        for v in m.component_data_objects(pyo.Var):
+            if id(v) in usadas and not v.fixed and not v.is_continuous():
+                v.fix(int(round(v.value)) if v.value is not None else 0)
+                fijadas.append(v)
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options["OutputFlag"] = 0
+        opt.options["TimeLimit"] = 1800
+        try:
+            res = opt.solve(m, load_solutions=False)
+            if res.solver.termination_condition != TerminationCondition.optimal:
+                raise RuntimeError(f"el incumbente de {carpeta} no es factible al pulirlo "
+                                   f"({res.solver.termination_condition})")
+            m.solutions.load_from(res)
+        finally:
+            for v in fijadas:
+                v.unfix()
+        costo = float(_v(m.obj))
+
+        completa = {}
+        for comp in m.component_objects(pyo.Var, active=True):
+            if comp.is_indexed():
+                completa[comp.name] = {idx: vd.value for idx, vd in comp.items()
+                                       if vd.value is not None}
+            elif comp.value is not None:
+                completa[comp.name] = comp.value
+        # El mismo diccionario para todos los años: cada bloque (y cada dia)
+        # se queda con sus indices.
+        self.best_full_solution = {y: completa for y in self.years}
+        self.best_cost = self.best_ub = self.ub = costo
+        self.stab_center = self._trayectoria_desde_monolitico(m)
+        self.best_solution = self.stab_center
+        if verbose:
+            print(f"[NestedBenders] incumbente inicial de {carpeta}: {costo:,.2f} "
+                  f"({len(fijadas):,} enteras, pulido en {time.time() - t0:.0f}s) -> UB, "
+                  f"centro de la caja y start de los dias desde la iteracion 1")
+        return costo
 
     def _trayectoria_desde_monolitico(self, mono):
         """Lee del monolitico ya resuelto el estado año por año, en el MISMO
@@ -1007,6 +1221,92 @@ class NestedBendersSolver(object):
         return sorted(worst.items(), key=lambda kv: -kv[1][0])[:top], saltadas, sin_valor
 
 
+    # ------------------------------------------------------------------ #
+    # Forward estabilizado (Box-step)
+    # ------------------------------------------------------------------ #
+    # Adaptacion de Göke, Schmidt & Kendziorski (EJOR 316, 2024), Algoritmos 2
+    # y 6, a Nested Benders con inversion ENTERA:
+    #   - centro de estabilidad = mejor trayectoria conocida (o, al arrancar, la
+    #     inversion de la cota operacional);
+    #   - paso SERIO = la iteracion mejora el mejor costo, aunque sea poco (el
+    #     criterio con que el paper obtuvo sus mejores resultados): se re-centra;
+    #   - la caja es FIJA por defecto, como el Box-step del paper. Opcionalmente
+    #     (--box_delta_int_max > --box_delta_int) se relaja +1 tras 3 pasos serios
+    #     seguidos, como el PBM del paper, que afloja la penalizacion tras pasos
+    #     serios y la aprieta tras nulos. NUNCA se agranda tras un paso nulo: la
+    #     primera version lo hacia y en la v3 de 10 años (2026-09-29) tres pasos
+    #     nulos -- causados por bloques anuales que agotaban el tiempo, no por la
+    #     caja -- la llevaron a +-4 / 100 %, y el forward volvio a oscilar
+    #     (2,42 M y 2,43 M despues de 2,12 M);
+    #   - la LB no cambia: sale de la cota operacional y del backward, cuyos
+    #     cortes valen para cualquier estado (el paper la saca del maestro sin
+    #     estabilizar, por la misma razon).
+
+    def _trust_region_for(self, k, verbose=True):
+        """Caja para el forward de la iteracion k, o None si va sin caja."""
+        if not self.stabilization:
+            return None
+        if self.stab_center is None:
+            if verbose:
+                print(f"[Estabilizacion] k={k}: sin centro todavia -- forward sin caja")
+            return None
+        if self.stab_free_every and k % self.stab_free_every == 0:
+            if verbose:
+                print(f"[Estabilizacion] k={k}: forward LIBRE (cada {self.stab_free_every})")
+            return None
+        if self.stabilization == "level":
+            # Gap relativo actual entre la mejor UB y la LB (la cota operacional
+            # en cuanto existe). Sin UB todavia, un 5 % de referencia.
+            if self.ub < float("inf") and self.lb > float("-inf") and self.ub > 0:
+                gap_rel = max((self.ub - self.lb) / self.ub, 0.0)
+            else:
+                gap_rel = 0.05
+            if verbose:
+                print(f"[Estabilizacion] k={k}: LEVEL-SET alpha={self.level_alpha} sobre "
+                      f"gap {gap_rel:.2%} (l1 al centro en enteras, punto interior en G/H)")
+            return {"mode": "level", "center": self.stab_center, "alpha": self.level_alpha,
+                    "gap_rel": gap_rel, "delta_int": 0,
+                    "frac_cont": self.box_frac_cont, "min_cont": self.box_min_cont}
+        if verbose:
+            print(f"[Estabilizacion] k={k}: caja +-{self.box_delta_int} en enteras, "
+                  f"+-max({self.box_frac_cont:.0%}, {self.box_min_cont:g}) en continuas")
+        return {"center": self.stab_center, "delta_int": self.box_delta_int,
+                "frac_cont": self.box_frac_cont, "min_cont": self.box_min_cont}
+
+    def _stabilization_step(self, k, fwd, costo_k, verbose=True):
+        """Clasifica la iteracion en paso serio/nulo y actualiza centro y caja.
+        Devuelve el registro para gap_history (None sin estabilizacion)."""
+        if not self.stabilization:
+            return None
+        con_caja = self.forward_pass.trust_region is not None
+        activa = any((fwd.get("box_binding") or {}).values())
+        serio = costo_k < self.best_cost
+        registro = {"con_caja": con_caja, "caja_activa": activa,
+                    "paso": "serio" if serio else "nulo",
+                    "delta_int": self.box_delta_int, "frac_cont": self.box_frac_cont}
+        if serio:
+            self.stab_serious_steps += 1
+            self.stab_serios_seguidos += 1
+            self.stab_center = fwd["x_hat"]
+            accion = "re-centra en esta trayectoria"
+            if (self.stab_serios_seguidos >= 3
+                    and self.box_delta_int < self.box_delta_int_max):
+                self.box_delta_int += 1
+                self.box_frac_cont = min(self.box_frac_cont * 1.5, 1.0)
+                self.stab_serios_seguidos = 0
+                accion += (f"; 3 pasos serios seguidos -> se relaja a +-{self.box_delta_int} / "
+                           f"{self.box_frac_cont:.0%}")
+        else:
+            self.stab_null_steps += 1
+            self.stab_serios_seguidos = 0
+            accion = "se mantiene centro y caja"
+        if verbose:
+            print(f"[Estabilizacion] k={k}: paso {'SERIO' if serio else 'nulo'} "
+                  f"(costo {costo_k:,.2f} vs mejor "
+                  f"{self.best_cost if self.best_cost < float('inf') else float('nan'):,.2f}"
+                  f"{', caja activa' if activa else ''}) -- {accion}")
+        return registro
+
     def solve(self, verbose=True):
         """Ctrl+C en cualquier punto -- en medio de un solve de Gurobi o entre
         iteraciones -- corta el bucle limpio y devuelve la mejor solucion
@@ -1036,6 +1336,15 @@ class NestedBendersSolver(object):
         gap = float("inf")
         interrupted = False
         solve_start = time.time()
+        fin_plazo = None
+        if self.max_time_sec is not None:
+            fin_plazo = (self.t_origen or solve_start) + self.max_time_sec
+            passes_module.set_deadline(fin_plazo)
+            if verbose:
+                print(f"[NestedBenders] tope de tiempo: {self.max_time_sec / 3600:.2f} h "
+                      f"(hasta {time.strftime('%Y-%m-%d %H:%M', time.localtime(fin_plazo))})")
+        t_fwd_max = 0.0     # mayor tiempo de forward (+ pulido) visto
+        t_bwd_max = 0.0     # mayor tiempo de backward visto
 
         if self.capacity_presolve:
             t_pre = time.time()
@@ -1082,8 +1391,14 @@ class NestedBendersSolver(object):
                 sys.stdout.flush()
             t_ob = time.time()
             try:
-                self.lb_operational, relajadas = self._operational_bound()
+                self.lb_operational, relajadas, tray_op = self._operational_bound()
                 self.lb = max(self.lb, self.lb_operational)
+                if (self.stabilization and self.stab_center_mode == "operational"
+                        and tray_op is not None):
+                    self.stab_center = tray_op
+                    if verbose:
+                        print("[Estabilizacion] centro inicial = inversion de la "
+                              "cota operacional")
                 if verbose:
                     print(f"[NestedBenders] cota operacional = "
                           f"{self.lb_operational:,.2f}  ({relajadas:,} binarias "
@@ -1093,6 +1408,18 @@ class NestedBendersSolver(object):
                 # memoria, se sigue con la del backward y la del LP.
                 print(f"[NestedBenders] sin cota por relajacion operacional "
                       f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
+
+        if (self.stabilization and self.stab_center_mode == "operational"
+                and self.stab_center is None):
+            print("[Estabilizacion] no hay centro de la cota operacional (falta "
+                  "--operational_bound o no dejo solucion): la primera iteracion va "
+                  "sin caja y su trayectoria sera el centro.")
+
+        if self.incumbente_inicial:
+            if str(self.incumbente_inicial).endswith(".pkl"):
+                self._cargar_respaldo(self.incumbente_inicial, verbose=verbose)
+            else:
+                self._cargar_incumbente_inicial(self.incumbente_inicial, verbose=verbose)
 
         if self.lb_inicial is not None:
             # Cota calculada en una corrida anterior (tipicamente la operacional,
@@ -1123,9 +1450,22 @@ class NestedBendersSolver(object):
 
         try:
             while gap > self.gap_tol and k < self.max_iter:
+                if fin_plazo is not None and k >= 1:
+                    restante = fin_plazo - time.time()
+                    if restante < t_fwd_max:
+                        self.parada_por_tiempo = True
+                        if verbose:
+                            print(f"[NestedBenders] tope de tiempo: quedan {restante / 60:.0f} min "
+                                  f"y un forward tomo hasta {t_fwd_max / 60:.0f} min -- no se "
+                                  f"empieza la iteracion {k + 1}.")
+                        break
                 k += 1
                 iter_start = time.time()
 
+                self.forward_pass.trust_region = self._trust_region_for(k, verbose)
+                # La mejor trayectoria (con caja, el centro) da el MIP start de
+                # la fase 1 de cada dia; en k=1 no hay y los dias parten de cero.
+                self.forward_pass.incumbente = self.best_full_solution
                 fwd = self.forward_pass.run(
                     iteration=k, verbose=verbose,
                     current_ub=(self.ub if self.ub != float("inf") else None),
@@ -1145,6 +1485,8 @@ class NestedBendersSolver(object):
                     if pulido is not None:
                         costo_k = pulido
                 self.ub = min(self.ub, costo_k)
+                # Antes de actualizar best_cost: el paso es serio si mejora.
+                estab = self._stabilization_step(k, fwd, costo_k, verbose)
                 if costo_k <= self.best_cost:
                     self.best_cost = costo_k
                     # best_ub queda en el costo SIN pulir de esa solucion: es el
@@ -1152,8 +1494,23 @@ class NestedBendersSolver(object):
                     self.best_ub = fwd["ub"]
                     self.best_solution = fwd["x_hat"]
                     self.best_full_solution = fwd["full_solution"]
+                    self._guardar_respaldo(k, verbose)
+                t_fwd_max = max(t_fwd_max, time.time() - iter_start)
 
-                if self.skip_last_backward and k >= self.max_iter:
+                # Con tope de tiempo, la iteracion es la ultima si despues del
+                # backward ya no entra otro forward: su backward se omite igual
+                # que con --skip_last_backward. Sin backward medido aun (k=1) se
+                # hace siempre.
+                ultima_por_tiempo = (
+                    fin_plazo is not None and t_bwd_max > 0
+                    and fin_plazo - time.time() < t_bwd_max + t_fwd_max)
+                if ultima_por_tiempo:
+                    self.parada_por_tiempo = True
+                    if verbose:
+                        print(f"[NestedBenders] k={k}: tope de tiempo -- despues del backward "
+                              f"no alcanzaria otro forward; se omite el backward y se termina.")
+                    lb_k = float("-inf")
+                elif self.skip_last_backward and k >= self.max_iter:
                     # Los cortes del ultimo backward no los usa ningun forward;
                     # solo aportarian LB, y con una cota externa fuerte (la
                     # operacional) el backward no la supero en ninguna de las 3
@@ -1163,11 +1520,13 @@ class NestedBendersSolver(object):
                               f"backward (--skip_last_backward)")
                     lb_k = float("-inf")
                 else:
+                    t_bwd = time.time()
                     lb_k = self.backward_pass.run(
                         fwd["x_hat"], iteration=k, verbose=verbose,
                         current_ub=self.ub,
                         current_lb=(self.lb if self.lb != float("-inf") else None),
                     )
+                    t_bwd_max = max(t_bwd_max, time.time() - t_bwd)
                     if verbose:
                         # Se imprime SIEMPRE, tambien cuando pierde contra otra
                         # cota (operacional, LP, --lb_inicial): si no, no hay forma
@@ -1188,12 +1547,22 @@ class NestedBendersSolver(object):
                     # siempre al mismo punto (sintoma de cortes demasiado
                     # debiles, no de un bug).
                     "x_hat_primer_anio": fwd["x_hat"][self.years[0]],
+                    # Forward estabilizado: con caja o no, paso serio/nulo,
+                    # si la caja quedo activa y el tamaño con que se corrio.
+                    **({"estabilizacion": estab} if estab else {}),
                 })
                 if verbose:
                     print(f"[NestedBenders] k={k}  UB={self.ub:.4f}  LB={self.lb:.4f}  "
                           f"gap={gap:.4%}  tiempo_iteracion={iter_time:.1f}s")
+                # Respaldo al cierre de CADA iteracion: ademas del incumbente,
+                # los cortes que acaba de agregar el backward.
+                self._guardar_respaldo(k, verbose)
+                if ultima_por_tiempo:
+                    break
         except KeyboardInterrupt:
             interrupted = True
+            if passes_module.deadline_passed():
+                self.parada_por_tiempo = True
             if self.best_full_solution is None:
                 print("[NestedBenders] Interrumpido antes de completar la primera "
                       "iteracion -- no hay solucion factible que recuperar.")
@@ -1219,6 +1588,8 @@ class NestedBendersSolver(object):
         finally:
             signal.signal(signal.SIGINT, old_handler)
             passes_module.clear_interrupt()
+            # El reporte (build_report_model) tambien resuelve: no debe cortarlo.
+            passes_module.set_deadline(None)
 
         total_time = time.time() - solve_start
         self.iterations_run = k
@@ -1239,8 +1610,15 @@ class NestedBendersSolver(object):
                           "O los lagrangeanos se cortan por tiempo antes de levantar "
                           "la cota (subir --strengthened_timelimit), o la brecha de "
                           "dualidad de este modelo no deja ganar nada por esta via.")
+            if self.stabilization:
+                print(f"[Estabilizacion] {self.stab_serious_steps} pasos serios, "
+                      f"{self.stab_null_steps} nulos; caja final +-{self.box_delta_int} "
+                      f"/ {self.box_frac_cont:.0%}")
 
         return {
+            "stabilization": self.stabilization,
+            "stab_serious_steps": self.stab_serious_steps,
+            "stab_null_steps": self.stab_null_steps,
             "capacity_bounds": self.capacity_bounds,
             "capacity_sum_bound": self.capacity_sum_bound,
             "capacity_presolve_time_sec": self.capacity_presolve_time,
@@ -1257,6 +1635,7 @@ class NestedBendersSolver(object):
                     else float("inf")),
             "iterations": k,
             "interrupted": interrupted,
+            "parada_por_tiempo": self.parada_por_tiempo,
             "error": self.error,
             "lb_monolithic_lp": self.lb_monolithic_lp,
             "lb_operational": self.lb_operational,

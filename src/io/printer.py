@@ -25,6 +25,10 @@ import pyomo.environ as pyo
 from pyomo.environ import Var, Param, Constraint, value
 # (No usamos pandas)
 
+# Algunas variables van escaladas dentro del modelo (N_ciclos en miles de
+# ciclos, w_deg en MWh...): los JSON se escriben siempre en unidades fisicas.
+from src.optimization.functions import a_unidades_fisicas
+
 # ------------------------ utilidades genéricas ------------------------
 
 def _ensure_dir(path: str) -> None:
@@ -265,7 +269,7 @@ class Printer:
 
         if not var_comp.is_indexed():
             try:
-                scalar_value = value(var_comp)
+                scalar_value = a_unidades_fisicas(base_name, value(var_comp))
             except Exception:
                 scalar_value = None
             out_path = os.path.join(self.path, f"{base_name}.json")
@@ -282,7 +286,7 @@ class Printer:
             if x is None:
                 continue
             try:
-                xv = float(x)
+                xv = a_unidades_fisicas(base_name, float(x))
             except Exception:
                 continue
 

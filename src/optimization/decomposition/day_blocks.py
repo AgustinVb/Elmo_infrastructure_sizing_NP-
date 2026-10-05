@@ -55,12 +55,16 @@ DEGRADACION. Lo unico que no existia en el modelo de regimen. Se separa en dos:
     operacion, via P_bbar_zagg-- queda acotado por la capacidad heredada.
 """
 import math
+import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pyomo.environ as pyo
 from pyomo.environ import SolverFactory, value
 from pyomo.opt import TerminationCondition
+from pyomo.solvers.plugins.solvers.gurobi_direct import GurobiDirect
 
 from src.optimization.decomposition.year_block import YearBlockBuilder
 from src.optimization.functions import ObjectiveRules
@@ -124,6 +128,12 @@ def build_day_block(year_block, day, heritage=None, fixed_shared=None):
     )
     if heritage is not None:
         blk.set_heritage(heritage)
+    # Forward estabilizado: la misma caja que el bloque anual. Sin ella el start
+    # por dias podria elegir una inversion fuera de la caja y el bloque anual
+    # lo rechazaria por infactible.
+    caja = getattr(year_block, "_trust_region", None)
+    if caja:
+        blk.set_trust_region(**caja)
     m = blk.model
 
     # El costo futuro no es de este dia: sin cortes quedaria libre. Se fija.
@@ -296,12 +306,51 @@ def _set_values(model, sol):
             if idx in comp and not comp[idx].fixed:
                 comp[idx].set_value(round(val), skip_validation=True)
 
-def _solve_day(model, solver_kwargs, label, warmstart=False):
+# Dias en paralelo (--day_jobs). Los dias de un año son independientes, asi que
+# cada fase resuelve sus dias a la vez, en HILOS y no en procesos: los modelos
+# ya estan armados en este proceso, no hay que serializarlos ni duplicar
+# memoria (lo que colgaba el equipo anterior con un Pool de `multiprocess`).
+# Gurobi suelta el GIL en optimize(), asi que los solves corren de verdad en
+# paralelo. Pyomo, en cambio, NO es thread-safe (pila global de TempfileManager,
+# StaleFlagManager, symbol maps): todo lo que no es optimize() va bajo este
+# candado, y _GurobiDirectParalelo lo suelta solo mientras Gurobi optimiza.
+_PYOMO_LOCK = threading.Lock()
+
+
+class _GurobiDirectParalelo(GurobiDirect):
+    """GurobiDirect que libera _PYOMO_LOCK durante el solve. Se crea con
+    manage_env=True: un entorno de Gurobi por hilo, como pide Gurobi para
+    optimizar modelos en paralelo."""
+
+    def _apply_solver(self):
+        _PYOMO_LOCK.release()
+        try:
+            return super()._apply_solver()
+        finally:
+            _PYOMO_LOCK.acquire()
+
+
+def _solve_day(model, solver_kwargs, label, warmstart=False, paralelo=False):
     """Resuelve un sub-bloque diario con MIPFocus=1: aca solo interesa
-    ENCONTRAR una solucion, no cerrar la cota. Devuelve (ok, texto)."""
+    ENCONTRAR una solucion, no cerrar la cota. Devuelve (ok, texto).
+
+    `paralelo`: se llama desde un hilo de _solve_days (solo con Gurobi)."""
     solvername = solver_kwargs.get("solvername", "gurobi")
+    t0 = time.time()
+    if paralelo:
+        with _PYOMO_LOCK:
+            opt = _GurobiDirectParalelo(manage_env=True)
+            try:
+                return _solve_day_con(opt, model, solver_kwargs, label, warmstart,
+                                      solvername, t0)
+            finally:
+                opt.close()
     opt = SolverFactory("gurobi", solver_io="python") if solvername == "gurobi" \
         else SolverFactory(solvername)
+    return _solve_day_con(opt, model, solver_kwargs, label, warmstart, solvername, t0)
+
+
+def _solve_day_con(opt, model, solver_kwargs, label, warmstart, solvername, t0):
     if solvername == "gurobi":
         opt.options["MIPGap"] = solver_kwargs.get("gap", 0.01)
         opt.options["TimeLimit"] = solver_kwargs.get("timelimit", 600)
@@ -309,8 +358,17 @@ def _solve_day(model, solver_kwargs, label, warmstart=False):
         for k, v in (solver_kwargs.get("extra_options") or {}).items():
             opt.options[k] = v
         opt.options["MIPFocus"] = 1
+        # Diagnostico: ELMO_LOG_DIAS=<carpeta> deja el log de Gurobi de cada
+        # dia (p.ej. para ver si acepto el MIP start: "Loaded user MIP start").
+        # Solo con --day_jobs 1: en paralelo (manage_env) estas opciones van al
+        # entorno y Pyomo apaga OutputFlag en el modelo, el log queda vacio.
+        carpeta_log = os.environ.get("ELMO_LOG_DIAS")
+        if carpeta_log:
+            os.makedirs(carpeta_log, exist_ok=True)
+            opt.options["OutputFlag"] = 1
+            opt.options["LogToConsole"] = 0
+            opt.options["LogFile"] = os.path.join(carpeta_log, label.replace(" ", "_") + ".log")
 
-    t0 = time.time()
     kw = {"warmstart": True} if (warmstart and solvername == "gurobi") else {}
     res = opt.solve(model, load_solutions=False, **kw)
     cond = res.solver.termination_condition
@@ -324,15 +382,78 @@ def _solve_day(model, solver_kwargs, label, warmstart=False):
     return True, f"{label}: {ub:,.2f}  ({cond}, {time.time() - t0:.0f}s)"
 
 
-def solve_year_by_days(year_block, heritage, solver_kwargs, verbose=True):
+def _solve_days(trabajos, solver_kwargs, verbose=True):
+    """Resuelve `trabajos` = [(modelo, label, warmstart)] y devuelve
+    [(ok, texto)] en el mismo orden. Con solver_kwargs["jobs"] > 1 (y Gurobi)
+    los resuelve en paralelo, repartiendo los hilos de la maquina entre ellos;
+    si no, en serie como antes."""
+    jobs = min(int(solver_kwargs.get("jobs") or 1), len(trabajos))
+    if jobs <= 1 or solver_kwargs.get("solvername", "gurobi") != "gurobi":
+        salida = []
+        for m, label, warm in trabajos:
+            ok, txt = _solve_day(m, solver_kwargs, label, warmstart=warm)
+            if verbose:
+                print(f"[DayDecomp]   {txt}")
+                sys.stdout.flush()
+            salida.append((ok, txt))
+            if not ok:
+                break          # en serie no tiene sentido seguir con los demas
+        return salida
+
+    hilos = max(1, (os.cpu_count() or jobs) // jobs)
+    kw = dict(solver_kwargs)
+    kw["extra_options"] = {**(solver_kwargs.get("extra_options") or {}), "Threads": hilos}
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=jobs) as ex:
+        futuros = [ex.submit(_solve_day, m, kw, label, warm, True)
+                   for m, label, warm in trabajos]
+        salida = [f.result() for f in futuros]
+    if verbose:
+        for _, txt in salida:
+            print(f"[DayDecomp]   {txt}")
+        print(f"[DayDecomp]   {len(trabajos)} dias en paralelo ({jobs} x {hilos} "
+              f"hilos): {time.time() - t0:.0f}s")
+        sys.stdout.flush()
+    return salida
+
+
+def _enteras_del_incumbente(model, incumbente):
+    """{nombre: {idx: valor}} de las enteras/binarias libres de `model` que
+    trae `incumbente` (formato de YearBlockBuilder.extract_full_solution, del
+    año entero: _set_values se queda solo con los indices del dia)."""
+    out = {}
+    for v in model.component_objects(pyo.Var, active=True):
+        if v.name in NOT_TRANSFERRED:
+            continue
+        sol = incumbente.get(v.name)
+        if not isinstance(sol, dict):
+            continue
+        vals = {idx: sol[idx] for idx, vd in v.items()
+                if not vd.fixed and not vd.is_continuous() and idx in sol}
+        if vals:
+            out[v.name] = vals
+    return out
+
+
+def solve_year_by_days(year_block, heritage, solver_kwargs, verbose=True,
+                       incumbente=None):
     """Fases 1 y 2 para el año de `year_block`. Devuelve (solucion, informe).
 
     `solucion`: {nombre_var: {idx: valor}} con la operacion de todos los dias
     y la infraestructura agregada, o None si alguna fase fallo.
 
-    Los dias van en SERIE: cada solve ya usa todos los cores via Gurobi, y un
-    Pool de `multiprocess` con workers de cientos de MB es justo lo que cuelga
-    esta maquina (ver --block_build_jobs).
+    `incumbente`: solucion completa de ESTE año en la mejor trayectoria
+    conocida (el centro de la caja), o None. Sus enteras van de MIP start a la
+    fase 1 de cada dia, para que un dia cortado por --day_timelimit no termine
+    peor que lo que ya se tenia. Medido en la v4 de 10 años: sin start, el año
+    6 abrio una 2da bahia en las iteraciones 1 y 3 por UN dia (fase 1: 109.348
+    y 91.237 contra ~17-34 mil de los otros tres) y el año paso de ~120 mil a
+    373-464 mil. Con la herencia cambiada el start puede ser infactible: Gurobi
+    intenta repararlo y si no, el dia parte de cero como antes.
+
+    Dentro de cada fase los dias son independientes: con solver_kwargs["jobs"]
+    > 1 se resuelven en paralelo (ver _solve_days); la agregacion es la unica
+    barrera entre fases.
     """
     dias = list(year_block.time_series.days_within_year)
     y = year_block.year
@@ -340,23 +461,29 @@ def solve_year_by_days(year_block, heritage, solver_kwargs, verbose=True):
     t0 = time.time()
 
     # Fase 1
-    compartidas = []
-    enteras_fase1 = {}
-    for d in dias:
-        blk = build_day_block(year_block, d, heritage=heritage)
-        ok, txt = _solve_day(blk.model, solver_kwargs, f"y{y} d{d} fase1")
-        if verbose:
-            print(f"[DayDecomp]   {txt}")
-            sys.stdout.flush()
+    bloques = [build_day_block(year_block, d, heritage=heritage) for d in dias]
+    con_start = []
+    for b in bloques:
+        enteras_inc = _enteras_del_incumbente(b.model, incumbente) if incumbente else {}
+        _set_values(b.model, enteras_inc)
+        con_start.append(sum(len(v) for v in enteras_inc.values()))
+    if verbose and any(con_start):
+        print(f"[DayDecomp]   fase 1 con MIP start del incumbente "
+              f"({', '.join(f'd{d}: {n:,}' for d, n in zip(dias, con_start))} enteras)")
+    resultados = _solve_days([(b.model, f"y{y} d{d} fase1", n > 0)
+                              for d, b, n in zip(dias, bloques, con_start)],
+                             solver_kwargs, verbose=verbose)
+    for ok, txt in resultados:
         if not ok:
             return None, {**informe, "error": txt}
-        compartidas.append(read_shared(blk.model))
-        enteras_fase1[d] = _integer_values(blk.model)
+    compartidas = [read_shared(b.model) for b in bloques]
+    enteras_fase1 = {d: _integer_values(b.model) for d, b in zip(dias, bloques)}
+    del bloques
 
     agregada = aggregate_shared(compartidas, verbose=verbose)
 
     # Fase 2
-    solucion = {}
+    bloques = []
     for d in dias:
         blk = build_day_block(year_block, d, heritage=heritage, fixed_shared=agregada)
         # Start de la fase 2 = la solucion de la fase 1 del MISMO dia. Sigue
@@ -367,13 +494,16 @@ def solve_year_by_days(year_block, heritage, solver_kwargs, verbose=True):
         # continuas atadas a la infraestructura (p.ej. P_bbar_zagg a b_bar)
         # pueden necesitar reajuste, y eso lo completa Gurobi.
         _set_values(blk.model, enteras_fase1.get(d, {}))
-        ok, txt = _solve_day(blk.model, solver_kwargs, f"y{y} d{d} fase2",
-                             warmstart=bool(enteras_fase1.get(d)))
-        if verbose:
-            print(f"[DayDecomp]   {txt}")
-            sys.stdout.flush()
+        bloques.append(blk)
+    resultados = _solve_days([(b.model, f"y{y} d{d} fase2", bool(enteras_fase1.get(d)))
+                              for d, b in zip(dias, bloques)],
+                             solver_kwargs, verbose=verbose)
+    for ok, txt in resultados:
         if not ok:
             return None, {**informe, "error": txt}
+
+    solucion = {}
+    for blk in bloques:
         for v in blk.model.component_objects(pyo.Var, active=True):
             if v.name in NOT_TRANSFERRED:
                 continue
@@ -456,16 +586,17 @@ def load_and_polish(year_block, solucion, solver_kwargs, verbose=True):
             vd.unfix()
 
 
-def day_warm_start(year_block, heritage, solver_kwargs, verbose=True):
+def day_warm_start(year_block, heritage, solver_kwargs, verbose=True, incumbente=None):
     """Punto de entrada para el forward: descomposicion por dia + pulido.
-    Devuelve True si el bloque anual quedo con un MIP start completo."""
+    Devuelve True si el bloque anual quedo con un MIP start completo.
+    `incumbente`: ver solve_year_by_days."""
     t0 = time.time()
     if verbose:
         print(f"[DayDecomp] año {year_block.year}: MIP start por dias "
               f"(fase 1 libre, max, fase 2 fija, pulido)...")
         sys.stdout.flush()
     solucion, informe = solve_year_by_days(year_block, heritage, solver_kwargs,
-                                           verbose=verbose)
+                                           verbose=verbose, incumbente=incumbente)
     if solucion is None:
         if verbose:
             print(f"[DayDecomp] año {year_block.year}: sin MIP start "

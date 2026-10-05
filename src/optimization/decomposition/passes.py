@@ -51,6 +51,22 @@ def stop_file_requested():
     return _stop_file is not None and os.path.exists(_stop_file)
 
 
+# Plazo duro de --max_hours (instante absoluto, time.time()). Es la red de
+# seguridad: el driver ya no empieza una iteracion que no alcanza a terminar,
+# asi que esto solo salta si una iteracion se alarga mas de lo estimado. Se
+# chequea en el mismo lugar que el STOP y con el mismo efecto.
+_deadline = None
+
+
+def set_deadline(t):
+    global _deadline
+    _deadline = t
+
+
+def deadline_passed():
+    return _deadline is not None and time.time() > _deadline
+
+
 # El backend directo de Gurobi avisa "Cannot get duals for MIP." cada vez que
 # resuelve un bloque como MILP teniendo declarado un Suffix de duales (aunque no
 # se le pidan en ese solve: son para el backward, no para el forward). Es
@@ -122,6 +138,10 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
         print(f"[NestedBenders] parada manual pedida ({_stop_file}): se corta despues "
               f"de {label} y se conserva la mejor solucion completa.", flush=True)
         raise KeyboardInterrupt(f"Parada manual por archivo STOP (despues de {label}).")
+    if deadline_passed():
+        print(f"[NestedBenders] se cumplio el tope de tiempo (--max_hours): se corta "
+              f"despues de {label} y se conserva la mejor solucion completa.", flush=True)
+        raise KeyboardInterrupt(f"Tope de tiempo cumplido (despues de {label}).")
     if result.solver.termination_condition == TerminationCondition.maxTimeLimit:
         ub = result.problem.upper_bound
         lb = result.problem.lower_bound
@@ -219,6 +239,15 @@ class ForwardPass(object):
         self.block_solver = block_solver
         self.gcg_blocks = gcg_blocks
         self.gcg_output_folder = gcg_output_folder or "gcg_bloques"
+        # Forward estabilizado (Box-step): None = sin caja. Si no, dict con
+        # center ({año: estado}, formato de extract_state), delta_int,
+        # frac_cont y min_cont -- ver YearBlockBuilder.set_trust_region. Lo
+        # fija el driver antes de cada run().
+        self.trust_region = None
+        # Mejor trayectoria conocida, {año: extract_full_solution()}, o None.
+        # Sus enteras son el MIP start de la fase 1 de cada dia en el start por
+        # dias (ver day_blocks.solve_year_by_days). Lo fija el driver.
+        self.incumbente = None
 
     def _solve_block(self, block, label, warm, iteration):
         """MILP del bloque anual con el solver elegido. Con GCG traduce su
@@ -252,7 +281,8 @@ class ForwardPass(object):
         t_dw = time.time()
         try:
             return day_warm_start(block, heritage, self.day_solver_kwargs,
-                                  verbose=verbose)
+                                  verbose=verbose,
+                                  incumbente=(self.incumbente or {}).get(block.year))
         except Exception as exc:
             # Heuristica de arranque: si falla, se sigue como siempre.
             print(f"[DayDecomp] año {block.year}: fallo "
@@ -395,11 +425,101 @@ class ForwardPass(object):
                     fijadas += 1
         return fijadas
 
+    def _solve_year(self, block, heritage, iteration, verbose):
+        """MILP del año en el forward, con los respaldos de siempre (start por
+        dias, reintento largo). Levanta SubproblemInfeasible si el año no tiene
+        solucion con el estado heredado."""
+        warm = False
+        if self._use_day_warm_start(iteration):
+            warm = self._run_day_warm_start(block, heritage, verbose)
+        try:
+            self._solve_block(block, f"forward y={block.year}", warm, iteration)
+        except SubproblemNoIncumbent as exc:
+            # "fallback" siempre recupera. "first" tambien, en las
+            # iteraciones en que NO armo el start de entrada: los
+            # cortes y la herencia cambian el bloque, y nada garantiza
+            # que el año que tuvo incumbente gracias al start en la
+            # iteracion 1 lo vuelva a encontrar solo.
+            respaldo = (self.day_warm_start == "fallback"
+                        or (self.day_warm_start == "first"
+                            and not self._use_day_warm_start(iteration)))
+            recuperado = False
+            if respaldo and not warm:
+                print(f"[DayDecomp] año {block.year}: el bloque anual no "
+                      f"encontro incumbente -- armando MIP start por dias "
+                      f"y resolviendo de nuevo")
+                if self._run_day_warm_start(block, heritage, verbose):
+                    self._solve_block(block, f"forward y={block.year} (con start)",
+                                      True, iteration)
+                    recuperado = True
+            if not recuperado:
+                # Ultimo recurso antes de perder la iteracion: un reintento
+                # con 4x el tope (minimo 20 min). Medido en la v2: con
+                # "always" y 300 s, un año cuyo start por dias fallo se
+                # quedo sin incumbente y la excepcion mato la corrida. Si
+                # tambien falla, la excepcion sube y el driver corta la
+                # descomposicion conservando la mejor solucion.
+                largo = dict(self.solver_kwargs)
+                largo["timelimit"] = max(4 * largo.get("timelimit", 600), 1200)
+                print(f"[NestedBenders] año {block.year}: sin incumbente -- "
+                      f"reintento con {largo['timelimit']:.0f}s")
+                if self.block_solver == "gurobi":
+                    _solve(block.model, label=f"forward y={block.year} (reintento)",
+                           warmstart=warm, **largo)
+                else:
+                    raise exc
+
+    def _solve_year_stabilized(self, block, heritage, iteration, verbose):
+        """_solve_year dentro de la caja del forward estabilizado, si la hay.
+        Devuelve True si la caja termino ACTIVA (la solucion toca un borde).
+
+        Si el año falla DENTRO de la caja -- infactible o sin incumbente -- se
+        repite sin caja. Es obligatorio, no una comodidad: una infactibilidad
+        causada por la caja no es del problema, y dejarla subir generaria un
+        corte de factibilidad INVALIDO sobre el año anterior (prohibiria
+        estados que sin caja si tienen continuacion)."""
+        tr = self.trust_region
+        centro = tr["center"].get(block.year) if tr else None
+        if centro is None:
+            self._solve_year(block, heritage, iteration, verbose)
+            return False
+        if tr.get("mode") == "level":
+            # Level-set: la inversion del año sale de YearBlockBuilder.level_point
+            # (l1 al centro en las enteras, punto interior en G/H) y se FIJA
+            # (caja de radio 0); el MILP del año resuelve solo la operacion.
+            punto = block.level_point(centro, tr["alpha"], tr["gap_rel"],
+                                      verbose=verbose)
+            if punto is None:
+                print(f"[Level] año {block.year}: sin punto de nivel -- caja +-1 de respaldo")
+                block.set_trust_region(centro, delta_int=1, frac_cont=tr["frac_cont"],
+                                       min_cont=tr["min_cont"])
+            else:
+                block.set_trust_region(punto, delta_int=0, frac_cont=0.0, min_cont=1e-6)
+        else:
+            block.set_trust_region(centro, delta_int=tr["delta_int"],
+                                   frac_cont=tr["frac_cont"], min_cont=tr["min_cont"])
+        try:
+            try:
+                self._solve_year(block, heritage, iteration, verbose)
+                return block.trust_region_binding()
+            except (SubproblemInfeasible, SubproblemNoIncumbent) as exc:
+                print(f"[Estabilizacion] año {block.year}: sin solucion dentro de la "
+                      f"caja ({type(exc).__name__}) -- se repite sin caja")
+                block.clear_trust_region()
+                self._solve_year(block, heritage, iteration, verbose)
+                # Salir de la caja cuenta como caja activa: la limitaba.
+                return True
+        finally:
+            # La caja no puede sobrevivir al solve: el backward y los cortes de
+            # factibilidad usan este mismo bloque.
+            block.clear_trust_region()
+
     def _sweep(self, iteration=None, verbose=True, current_ub=None, current_lb=None):
         x_hat_by_year = {}
         phi_by_year = {}
         alpha_by_year = {}
         full_solution_by_year = {}
+        caja_activa = {}
 
         n = len(self.blocks)
         for i, block in enumerate(self.blocks):
@@ -410,46 +530,9 @@ class ForwardPass(object):
             heritage = x_hat_by_year[self.blocks[i - 1].year] if i > 0 else None
             if heritage is not None:
                 block.set_heritage(heritage)
-            warm = False
-            if self._use_day_warm_start(iteration):
-                warm = self._run_day_warm_start(block, heritage, verbose)
             try:
-                try:
-                    self._solve_block(block, f"forward y={block.year}", warm, iteration)
-                except SubproblemNoIncumbent as exc:
-                    # "fallback" siempre recupera. "first" tambien, en las
-                    # iteraciones en que NO armo el start de entrada: los
-                    # cortes y la herencia cambian el bloque, y nada garantiza
-                    # que el año que tuvo incumbente gracias al start en la
-                    # iteracion 1 lo vuelva a encontrar solo.
-                    respaldo = (self.day_warm_start == "fallback"
-                                or (self.day_warm_start == "first"
-                                    and not self._use_day_warm_start(iteration)))
-                    recuperado = False
-                    if respaldo and not warm:
-                        print(f"[DayDecomp] año {block.year}: el bloque anual no "
-                              f"encontro incumbente -- armando MIP start por dias "
-                              f"y resolviendo de nuevo")
-                        if self._run_day_warm_start(block, heritage, verbose):
-                            self._solve_block(block, f"forward y={block.year} (con start)",
-                                              True, iteration)
-                            recuperado = True
-                    if not recuperado:
-                        # Ultimo recurso antes de perder la iteracion: un reintento
-                        # con 4x el tope (minimo 20 min). Medido en la v2: con
-                        # "always" y 300 s, un año cuyo start por dias fallo se
-                        # quedo sin incumbente y la excepcion mato la corrida. Si
-                        # tambien falla, la excepcion sube y el driver corta la
-                        # descomposicion conservando la mejor solucion.
-                        largo = dict(self.solver_kwargs)
-                        largo["timelimit"] = max(4 * largo.get("timelimit", 600), 1200)
-                        print(f"[NestedBenders] año {block.year}: sin incumbente -- "
-                              f"reintento con {largo['timelimit']:.0f}s")
-                        if self.block_solver == "gurobi":
-                            _solve(block.model, label=f"forward y={block.year} (reintento)",
-                                   warmstart=warm, **largo)
-                        else:
-                            raise exc
+                caja_activa[block.year] = self._solve_year_stabilized(
+                    block, heritage, iteration, verbose)
             except SubproblemInfeasible:
                 raise _YearInfeasible(i, x_hat_by_year)
             phi_by_year[block.year] = value(block.model.obj)
@@ -468,6 +551,8 @@ class ForwardPass(object):
             "alpha": alpha_by_year,
             "x_hat": x_hat_by_year,
             "full_solution": full_solution_by_year,
+            # {año: True si la caja del forward estabilizado quedo activa}
+            "box_binding": caja_activa,
         }
 
 

@@ -16,6 +16,7 @@ from pyomo.opt import TerminationCondition
 from pyomo.util.infeasible import log_infeasible_constraints
 
 from src.optimization.functions import (
+    a_unidades_modelo,
     OptSets,
     OptParameters,
     BoundRules,
@@ -257,6 +258,7 @@ class OptModel(object):
             "EnergyConsumed": ["y"],
             "N_ciclos": ["y"],
             "N_total":  ["y"],
+            "w_deg":    ["y"],
             "P_bbar_zagg": ["i", "y", "d", "t"],
         }
         if self.init_solution_folder:
@@ -381,7 +383,8 @@ class OptModel(object):
                         continue
                     try:
                         vardata = var_comp[index_lookup[normalized_tokens]]
-                        value_to_set = float(raw_value)
+                        # Los JSON estan en unidades fisicas (ver printer).
+                        value_to_set = a_unidades_modelo(var_name, float(raw_value))
                         if vardata.is_binary() or vardata.is_integer():
                             value_to_set = int(round(value_to_set))
                         vardata.set_value(value_to_set, skip_validation=True)
@@ -391,7 +394,7 @@ class OptModel(object):
                         continue
             else:
                 try:
-                    value_to_set = float(payload)
+                    value_to_set = a_unidades_modelo(var_name, float(payload))
                     vardata = var_comp
                     if vardata.is_binary() or vardata.is_integer():
                         value_to_set = int(round(value_to_set))

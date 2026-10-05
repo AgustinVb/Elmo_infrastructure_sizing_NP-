@@ -1,0 +1,22 @@
+[bloque] año 4, herencia de output/Resultados_finales_tesis/Mina_modelo/P_red_gen_bat_swap_libre_v4_estab: {'N_bays': {'station_1': 1}, 'N_chargers': {'station_1': 1}, 'N_batteries': {'station_1': 1}, 'n_ssee_k': {'station_1': 1}, 'G': {'Solar_PV': 1.5626659920149772, 'Wind': 0.03709320245090551}, 'H': 1.1279585912866206, 'D': 472.41311134187066}
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y4 d15 fase1: 119,576.55  (optimal, 62s)
+[DayDecomp]   y4 d105 fase1: 121,159.95  (optimal, 75s)
+[DayDecomp]   y4 d196 fase1: 123,343.39  (optimal, 59s)
+[DayDecomp]   y4 d288 fase1: 119,245.47  (optimal, 70s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 75s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=2  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=1  G_g=1.563, 0.03709  H=1.128  P_pot=0  R=-0  b_bar=472.4
+[DayDecomp]   y4 d15 fase2: 119,576.55  (optimal, 6s)
+[DayDecomp]   y4 d105 fase2: 121,159.95  (optimal, 6s)
+[DayDecomp]   y4 d196 fase2: 123,343.39  (optimal, 7s)
+[DayDecomp]   y4 d288 fase2: 119,245.47  (optimal, 7s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 7s
+[DayDecomp]   pulido sobre el bloque anual: 59,484 valores, 45,774 enteras fijas, LP optimo en 5s -> incumbente 465,395.54
+[DayDecomp] año 4: listo en 111s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] actual y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=465,395.54  LB=445,996.05  gap=4.1684%
+[bloque] {'esquema': 'actual', 't_start_dias': 110.67592811584473, 'costo_start': 465395.5401934947, 'primal': 465395.5401934947, 'dual': 445996.0485795279, 'status': 'maxTimeLimit', 'inversion': {'N_bays': {"('station_1', 4)": 1.0}, 'N_chargers': {"('station_1', 4)": 2.0}, 'N_batteries': {"('station_1', 4)": 2.0}}, 'tiempo': 241.0863184928894}
+
+esquema         incumbente            cota      gap   tiempo  estado
+actual          465,395.54      445,996.05    4.17%     241s  maxTimeLimit

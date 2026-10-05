@@ -1,5 +1,7 @@
 import pyomo.environ as pyo
+import json
 import math
+import os
 import pandas as pd
 import numpy as np
 import time
@@ -22,6 +24,93 @@ from pyomo.environ import quicksum, value
 # descomposicion sigue funcionando igual: n_ssee_k tambien es entera, asi que el
 # redondeo de Chvatal-Gomory se aplica sin cambios.
 P_SSEE_STEP = 500.0
+
+# Corte de redondeo entero sobre las CARGAS del dia (min_charges_cut, ver
+# ConstraintRules.min_charges_n):
+#
+#     sum_{k, t < tf} X_ini[k, y, d, t]  >=  n_min[y, d]
+#               n_min[y, d] = ceil( E_min[y, d] / E_swap )
+#
+# POR QUE. Cada carga es una bateria completa (p_charger durante t_charge - 1
+# intervalos) y es TODO el costo operativo del dia. En la relajacion lineal las
+# cargas son divisibles: en Mina_modelo (año 4) el LP hace 16,35 cargas por dia
+# y el entero no menos de 17. Ni los cortes de Gurobi ni 60.000 nodos de B&B
+# mueven la cota del dia (queda en el LP de la raiz); con este corte la cota
+# operacional de 4 años sube de 1.797.007 a 1.824.373.
+#
+# Activo por defecto. Se apaga con la variable de entorno
+# ELMO_SIN_CORTE_CARGAS=1 (setup.py --sin_corte_cargas), para comparar con
+# corridas anteriores. Por entorno y no por argumento: asi lo respetan todos los
+# constructores del modelo -- OptModel, el monolitico del driver (cotas LP y
+# operacional), los bloques anuales y los diarios -- y los procesos hijos.
+def corte_cargas_activo():
+    return os.environ.get("ELMO_SIN_CORTE_CARGAS", "0") not in ("1", "true", "True")
+
+
+# n_min por dia calculado aparte (cortes_cargas.py --milp_s: cota dual del MILP
+# que minimiza las cargas del dia, con todo lo que el dia toma del resto libre
+# en rangos validos). ELMO_N_MIN_JSON=<json de cortes_cargas.py>: el corte usa
+# max(formula, ese valor). Es valido por construccion (ver cortes_cargas.py).
+_N_MIN_EXTERNO = None
+
+
+def n_min_externo():
+    global _N_MIN_EXTERNO
+    if _N_MIN_EXTERNO is None:
+        ruta = os.environ.get("ELMO_N_MIN_JSON")
+        _N_MIN_EXTERNO = {}
+        if ruta:
+            with open(ruta, encoding="utf-8") as f:
+                for c in json.load(f)["cortes"]:
+                    _N_MIN_EXTERNO[(int(c["y"]), int(c["d"]))] = int(c["n_min"])
+    return _N_MIN_EXTERNO
+
+# Escala interna de las variables de degradacion: valor_en_el_modelo =
+# valor_fisico / ESCALA_UNIDADES[nombre]. N_ciclos y N_total van en MILES de
+# ciclos y w_deg en MWh (en vez de kWh).
+#
+# Por que: en unidades fisicas, las envolventes de McCormick de la degradacion
+# (mc_w_deg_*, mc_n_total_*) tenian coeficientes de 1 a 1,3e5 y lados derechos
+# de hasta 6,3e7 en la misma fila -- el unico bloque mal escalado del modelo
+# (la operacion, SoC incluido, queda entre 0,02 y 1e3). Son filas anuales, asi
+# que caen al maestro en todas las descomposiciones: en GCG vehicle_station_day
+# (año 4 de Mina_modelo) el LP del maestro murio por "unresolved numerical
+# troubles". Escaladas quedan con coeficientes <= ~500 y lados derechos <= ~6e4.
+#
+# Las ecuaciones conservan su forma (N_total = N_ciclos*n_battery_fleet y
+# w_deg = N_total*b_bar valen igual en las unidades nuevas); solo cambian el
+# factor de energia (scaling_factor_op_cost / escala) y gamma_coef * escala en
+# d_y_fade. Las SALIDAS no cambian: el printer multiplica por este factor al
+# escribir los JSON y el warm start divide al leerlos (ver
+# a_unidades_fisicas / a_unidades_modelo), asi que N_ciclos.json & co. siguen en
+# ciclos y kWh, y las soluciones guardadas antes del cambio se cargan igual.
+#
+# EnergyConsumed (MWh en vez de kWh) por la misma razon, vista desde Dantzig-
+# Wolfe: energy_consumed_def suma la energia de TODO el dia de cada LHD, asi
+# que la entrada de una columna vehiculo-dia en esa fila del maestro llegaba a
+# ~2,9e4 (kWh), junto a entradas de 1 (convexidad, total_swaps). En MWh, ~29.
+ESCALA_UNIDADES = {"N_ciclos": 1e3, "N_total": 1e3, "w_deg": 1e3, "EnergyConsumed": 1e3}
+# N_total = N_ciclos*n_battery_fleet y w_deg = N_total*b_bar solo conservan su
+# forma si las tres comparten escala.
+assert ESCALA_UNIDADES["N_ciclos"] == ESCALA_UNIDADES["N_total"] == ESCALA_UNIDADES["w_deg"]
+
+# Escala de la FILA de produccion diaria (daily_production): se divide por
+# este factor a ambos lados, en kilotoneladas. No cambia ninguna variable, solo
+# la fila. Motivo, otra vez Dantzig-Wolfe: la fila suma las toneladas de todo el
+# dia, asi que la entrada de una columna vehiculo-dia llegaba a ~1,3e5 y el
+# lado derecho a ~2,4e4. Su dual no se usa en ningun corte (cuts.py solo lee
+# duales de las filas de enlace entre años).
+ESCALA_TONELADAS = 1e3
+
+
+def a_unidades_fisicas(nombre_var, valor):
+    """Valor del modelo -> unidad fisica (para escribir resultados)."""
+    return valor * ESCALA_UNIDADES.get(nombre_var, 1.0)
+
+
+def a_unidades_modelo(nombre_var, valor):
+    """Unidad fisica -> valor del modelo (para cargar soluciones guardadas)."""
+    return valor / ESCALA_UNIDADES.get(nombre_var, 1.0)
 
 
 class OptRules(object):
@@ -1026,13 +1115,18 @@ class BoundRules(OptRules):
             # tarde en el día puede no terminar de cargar ese mismo día), lo
             # que subestimaba el desgaste — además así es comparable con
             # on-board, que mide energía en la misma batería que descarga.
-            model.EnergyConsumed = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, max_energy_per_year))
-            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, n_ciclos_max))
+            # En MWh (ver ESCALA_UNIDADES); max_energy_per_year sigue en kWh.
+            model.EnergyConsumed = pyo.Var(model.years, domain=pyo.NonNegativeReals,
+                                           bounds=(0, max_energy_per_year / ESCALA_UNIDADES["EnergyConsumed"]))
+            # N_ciclos y N_total en MILES de ciclos (ver ESCALA_UNIDADES).
+            s_cic = ESCALA_UNIDADES["N_ciclos"]
+            model.N_ciclos = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, n_ciclos_max / s_cic))
             # N_total[y] = N_ciclos[y] * n_battery_fleet[y]: ciclos
             # equivalentes TOTALES de la flota de baterías en el año y (no
             # por batería) -- variable auxiliar elegida para la reducción de
             # grado del trilineal, ver nota de comparación empírica arriba.
-            model.N_total = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(0, n_ciclos_max * NF_max))
+            model.N_total = pyo.Var(model.years, domain=pyo.NonNegativeReals,
+                                    bounds=(0, n_ciclos_max * NF_max / ESCALA_UNIDADES["N_total"]))
 
             # Linealización exacta (big-M) de P_bbar_zagg[i,y,d,t] = b_bar[y] *
             # z_agg (z_agg = suma de Z_swap para el LHD i en (y,d,t)) — evita
@@ -1328,6 +1422,8 @@ class ConstraintRules(OptRules):
         """Production balance for the whole day d (sum over all nodes).
 
         Enforces: sum_{i,j,t} Y[i,j,d,t]*g_i*n_trips(j,i)*filling_factor[i] >= sum_j m_j[j,d]
+
+        Ambos lados en kilotoneladas (ESCALA_TONELADAS).
         """
         total_target = sum(model.m_j[j, y] for j in model.nodes_set)
 
@@ -1337,7 +1433,7 @@ class ConstraintRules(OptRules):
             if y2 == y and d2 == d
         )
 
-        return term_de >= total_target
+        return term_de / ESCALA_TONELADAS >= total_target / ESCALA_TONELADAS
 
     def production(self, model, y, d, j):
         """Production balance for node j on day d.
@@ -1348,25 +1444,27 @@ class ConstraintRules(OptRules):
         where prod_per_assign = g_i * n_trips(j,i) * filling_factor[i].
         All LHDs share the same model so n_trips is identical for all i at node j.
         """
-        import math
-        from pyomo.environ import value as pyo_value
-
         y_pairs = [(i2, t2) for (i2, j2, y2, d2, t2) in model.Y if j2 == j and y2 == y and d2 == d]
         if not y_pairs:
             return pyo.Constraint.Skip
 
-        i_rep = y_pairs[0][0]
-        prod_per_assign = (pyo_value(model.g_i[i_rep])
-                           * self.time_series.get_n_trips(j, i_rep)
-                           * pyo_value(model.filling_factor[i_rep]))
-
-        target = pyo_value(model.m_j[j, y])
-        lb = math.floor(target / prod_per_assign) - 1
-        ub = math.ceil(target / prod_per_assign)  + 2
-
+        lb, ub = self.production_visit_bounds(model, y, j, y_pairs[0][0])
         visits = sum(model.Y[i2, j, y, d, t2] for i2, t2 in y_pairs)
 
         return pyo.inequality(lb, visits, ub)
+
+    def production_visit_bounds(self, model, y, j, i_rep):
+        """(lb, ub) de visitas al nodo j en el año y de la restriccion
+        production, con i_rep = el PRIMER LHD de model.Y que puede visitar j ese
+        dia (el mismo que toma production). La usa tambien min_charges_n: el
+        corte de cargas tiene que acotar con EXACTAMENTE las mismas cotas."""
+        prod_per_assign = (value(model.g_i[i_rep])
+                           * self.time_series.get_n_trips(j, i_rep)
+                           * value(model.filling_factor[i_rep]))
+        target = value(model.m_j[j, y])
+        lb = math.floor(target / prod_per_assign) - 1
+        ub = math.ceil(target / prod_per_assign) + 2
+        return lb, ub
 
     def aux_zpen_1(self, model, i, j, d, t):
         # Z_pen >= Z_swap + Y - 1  ?  fuerza Z_pen=1 cuando Y=1 y S Z_swap=1
@@ -1804,14 +1902,15 @@ class ConstraintRules(OptRules):
         el día puede no terminar de cargar ese mismo día), lo que subestimaba
         el desgaste — y así queda comparable con on-board, que mide sobre la
         misma batería que descarga. Expresión lineal (suma de variables por
-        constantes)."""
+        constantes). EnergyConsumed va en MWh (ESCALA_UNIDADES), el consumo
+        de cada viaje en kWh."""
         return model.EnergyConsumed[y] == sum(
             model.Y[i, j, y, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
             for i in model.slhd_set
             for d in model.days
             for t in model.time_intervals_set
             for j in self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
-        )
+        ) / ESCALA_UNIDADES["EnergyConsumed"]
 
     # ------------------------------------------------------------------ #
     # Degradación de batería del pool de swap -- modelo por ciclos con
@@ -1839,8 +1938,12 @@ class ConstraintRules(OptRules):
         """(ec. 3b) N_total[y] * b_bar[y] == EnergyConsumed[y] *
         scaling_factor_op_cost -- segunda mitad de la reducción de grado del
         trilineal original (N_ciclos[y]*B[y]*n_battery_fleet[y]); junto con
-        n_total_def reconstruye exactamente esa ecuación sin aproximar."""
-        return model.N_total[y] * model.b_bar[y] == model.EnergyConsumed[y] * model.scaling_factor_op_cost
+        n_total_def reconstruye exactamente esa ecuación sin aproximar.
+        N_total va en miles de ciclos y EnergyConsumed en MWh
+        (ESCALA_UNIDADES): la energia se lleva a la escala de N_total."""
+        esc = ESCALA_UNIDADES["EnergyConsumed"] / ESCALA_UNIDADES["N_total"]
+        return (model.N_total[y] * model.b_bar[y]
+                == model.EnergyConsumed[y] * model.scaling_factor_op_cost * esc)
 
     def build_mccormick_degradation_block(self, model):
         """Camino A (McCormick, ver degradacion_descomposicion_mccormick.md
@@ -1893,6 +1996,7 @@ class ConstraintRules(OptRules):
         model.mc_n_total_ub2 = pyo.Constraint(model.years, rule=_mc_n_total_ub2)
 
         # --- Bilineal 2 (ec. 3b): w_deg[y] ~= N_total[y] * b_bar[y] == EnergyConsumed[y]*scaling ---
+        # w_deg en MWh = (miles de ciclos) x kWh: sale de N_total ya escalado.
         model.w_deg = pyo.Var(model.years, domain=pyo.NonNegativeReals)
 
         def _mc_w_deg_lb1(m, y):
@@ -1912,7 +2016,8 @@ class ConstraintRules(OptRules):
             return m.w_deg[y] <= NT_L * m.b_bar[y] + B_U * m.N_total[y] - NT_L * B_U
 
         def _mc_w_deg_energy(m, y):
-            return m.w_deg[y] == m.EnergyConsumed[y] * m.scaling_factor_op_cost
+            esc = ESCALA_UNIDADES["EnergyConsumed"] / ESCALA_UNIDADES["w_deg"]
+            return m.w_deg[y] == m.EnergyConsumed[y] * m.scaling_factor_op_cost * esc
 
         model.mc_w_deg_lb1    = pyo.Constraint(model.years, rule=_mc_w_deg_lb1)
         model.mc_w_deg_lb2    = pyo.Constraint(model.years, rule=_mc_w_deg_lb2)
@@ -1924,8 +2029,9 @@ class ConstraintRules(OptRules):
         """(ec. 4) D[y] = B[y] - gamma_coef*N_ciclos[y]: capacidad POR
         BATERÍA al final del año, degradada por los ciclos equivalentes del
         propio año (sin arrastre acumulado explícito -- el arrastre entre
-        años lo da D[y-1] vía b_y_link)."""
-        return model.D[y] == model.b_bar[y] - model.gamma_coef * model.N_ciclos[y]
+        años lo da D[y-1] vía b_y_link). gamma_coef es por ciclo y N_ciclos
+        va en miles de ciclos (ESCALA_UNIDADES)."""
+        return model.D[y] == model.b_bar[y] - model.gamma_coef * ESCALA_UNIDADES["N_ciclos"] * model.N_ciclos[y]
 
     def b_y_link(self, model, y):
         """(ec. 2) B[y] <= D[y-1] + 0.3*b_max_pool*R[y], para todo año salvo
@@ -1947,6 +2053,19 @@ class ConstraintRules(OptRules):
 
     def z_repl_lower(self, model, y):
         return model.Z_repl[y] >= model.n_battery_fleet[y] - model.NF_max_param * (1 - model.R[y])
+
+    def z_repl_lower2(self, model, y):
+        """Cuarta desigualdad de McCormick de Z_repl = R * n_battery_fleet:
+        Z_repl >= NF_min * R. Con R binaria y la flota acotada, las cuatro son
+        la envolvente convexa EXACTA del producto; sin esta, la relajacion deja
+        Z_repl = 0 con R fraccional y b_y_link sube b_bar gratis. Medido en la
+        CG del año 6 (2026-10-02): el maestro LP usaba R ~ 0,16 para operar con
+        b_bar 472-482 sobre una herencia de 458 (maestro 42,6 mil) y la
+        solucion entera pagaba el reemplazo completo (~1 M)."""
+        nf_min = model.n_battery_fleet[y].lb or 0.0
+        if nf_min <= 0:
+            return pyo.Constraint.Skip
+        return model.Z_repl[y] >= nf_min * model.R[y]
 
     def build_all_constraints(self, model):
         # 1) Energ�a / SOC de bater�as del LHD (swap)
@@ -2267,6 +2386,7 @@ class ConstraintRules(OptRules):
             model.z_repl_upper1 = pyo.Constraint(model.years, rule=self.z_repl_upper1)
             model.z_repl_upper2 = pyo.Constraint(model.years, rule=self.z_repl_upper2)
             model.z_repl_lower  = pyo.Constraint(model.years, rule=self.z_repl_lower)
+            model.z_repl_lower2 = pyo.Constraint(model.years, rule=self.z_repl_lower2)
 
             model.p_bbar_zagg_upper1 = pyo.Constraint(
                 model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.p_bbar_zagg_upper1
@@ -2277,6 +2397,110 @@ class ConstraintRules(OptRules):
             model.p_bbar_zagg_lower = pyo.Constraint(
                 model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.p_bbar_zagg_lower
             )
+
+        # 10) Corte de redondeo entero sobre las cargas del dia (ver
+        #     min_charges_n y el comentario al inicio del modulo).
+        if corte_cargas_activo():
+            self.n_min_cargas = {}
+            for y in model.years:
+                for d in model.days:
+                    n = self.min_charges_n(model, y, d)
+                    ext = n_min_externo().get((int(y), int(d)))
+                    if ext is not None:
+                        n = max(n or 0, ext)
+                    if n is not None and n > 0:
+                        self.n_min_cargas[(y, d)] = n
+            if self.n_min_cargas:
+                model.min_charges_cut = pyo.Constraint(
+                    list(self.n_min_cargas), rule=self.min_charges_cut)
+
+    def min_charges_n(self, model, y, d):
+        """n_min[y, d] = ceil(E_min / E_swap), o None si no se puede acotar.
+
+        E_swap: energia MAXIMA que repone un swap. La bateria que entra queda
+        llena y la que sale no baja de bmin (battery_soc_swap_update_1/_4), asi
+        que un swap repone a lo sumo (1 - bmin_b[i]) * capacidad, con capacidad
+        <= b_max_pool (b_bar[y], degradada, nunca la supera) o bmax_b[i] sin
+        degradacion. Se toma el maximo sobre los LHD de swap: mas capacidad por
+        swap -> menos swaps -> cota mas baja, nunca invalida.
+
+        E_min: energia de traccion MINIMA de los LHD de swap para cumplir la
+        produccion del dia. Mochila fraccionaria sobre las mismas cotas que el
+        modelo (production_visit_bounds y daily_production): cada frente parte
+        con su minimo de visitas -- con la energia mas baja y la produccion mas
+        alta entre los LHD que pueden visitarlo, lo que solo puede bajar E_min
+        --, y lo que falta de la meta del dia se completa con las visitas de
+        menor energia por tonelada, hasta el maximo de visitas de cada frente.
+        Las visitas de un LHD que no es de swap no consumen energia de swap.
+
+        VALIDEZ. El SOC del LHD es ciclico en el dia (battery_energy_conservation)
+        y la descarga solo se repone con swaps; por los inventarios ciclicos de
+        baterias (CI_S, CI_X_dch) cada swap con t > t0 se recarga dentro del dia,
+        y un swap en t0 no repone energia (battery_boundary_swap). Entonces
+            cargas = sum_{t<tf} X_ini  >=  swaps utiles  >=  E / E_swap >= E_min / E_swap
+        y por ser enteras, >= el techo. Verificado contra el minimo LP de las
+        cargas de cada dia (cortes_cargas.py): coinciden en los 16 dias de 4
+        años de Mina_modelo.
+        """
+        slhd = set(model.slhd_set)
+        if not slhd:
+            return None
+        con_degradacion = self.mine_system.battery_degradation is not None
+        e_swap = max(
+            (1 - value(model.bmin_b[i]))
+            * (value(model.b_max_pool) if con_degradacion else value(model.bmax_b[i]))
+            for i in slhd)
+        if e_swap <= 0:
+            return None
+
+        # Opciones de visita (i, j) del dia: disponibilidad, produccion y energia.
+        # i_rep[j] = primer LHD de model.Y en j, igual que en production.
+        disp, i_rep = {}, {}
+        for (i, j, y2, d2, t) in model.Y:
+            if y2 == y and d2 == d:
+                disp[(i, j)] = disp.get((i, j), 0) + 1
+                i_rep.setdefault(j, i)
+        if not disp:
+            return None
+        prod, ener = {}, {}
+        for (i, j) in disp:
+            nt = self.time_series.get_n_trips(j, i)
+            prod[(i, j)] = value(model.g_i[i]) * nt * value(model.filling_factor[i])
+            ener[(i, j)] = (value(model.pe_i[i, j]) * value(model.d_i[i, j]) * nt
+                            / value(model.eta_discharge_i[i])) if i in slhd else 0.0
+
+        meta = sum(value(model.m_j[j, y]) for j in model.nodes_set)
+        e_min, prod_base, cap_nodo = 0.0, 0.0, {}
+        for j in {j for (_, j) in disp}:
+            opciones = [(i, jj) for (i, jj) in disp if jj == j]
+            lb, ub = self.production_visit_bounds(model, y, j, i_rep[j])
+            lo = max(0, lb)
+            e_min += lo * min(ener[o] for o in opciones)
+            prod_base += lo * max(prod[o] for o in opciones)
+            cap_nodo[j] = max(0, min(ub, sum(disp[o] for o in opciones)) - lo)
+
+        falta = meta - prod_base
+        for o in sorted((o for o in disp if prod[o] > 0), key=lambda o: ener[o] / prod[o]):
+            if falta <= 1e-9:
+                break
+            j = o[1]
+            v = min(disp[o], cap_nodo[j], falta / prod[o])
+            if v <= 0:
+                continue
+            e_min += v * ener[o]
+            falta -= v * prod[o]
+            cap_nodo[j] -= v
+        if falta > 1e-6:
+            return None        # la meta no se alcanza ni relajada: sin corte
+        return math.ceil(e_min / e_swap - 1e-9)
+
+    def min_charges_cut(self, model, y, d):
+        """sum_{k, t<tf} X_ini >= n_min[y, d]. Sin t = tf: X_ini[.., tf] no
+        aparece en ninguna otra restriccion (la carga no alcanzaria a terminar
+        en el dia), y con ella el corte se cumpliria gratis."""
+        tf = self.time_series.get_time_intervals()[-1]
+        return sum(model.X_ini[k, y, d, t] for k in model.stations_set
+                   for t in model.time_intervals_set if t < tf) >= self.n_min_cargas[(y, d)]
 
 class ObjectiveRules(OptRules):
 

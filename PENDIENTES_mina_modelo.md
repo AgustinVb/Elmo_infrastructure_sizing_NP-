@@ -27,8 +27,13 @@ Instancia: `data/Tesis_final/Mina_modelo/`, 10 años, 4 días representativos
 ## 2. Preparar el equipo nuevo
 
 ### 2.1 `.venv_elmo` (modelo, descomposición)
-Python 3.10. `pip install -r requirements.txt`. Versiones con las que corrió:
-pyomo 6.8.2, pandas 2.0.3, **numpy 1.24.4**, gurobipy 10.0.0.
+Python 3.10. Versiones con las que corrió: pyomo 6.8.2, pandas 2.0.3,
+**numpy 1.24.4**, gurobipy 10.0.0.
+
+```powershell
+py -3.10 -m venv .venv_elmo
+.venv_elmo\Scripts\python.exe -m pip install -r requirements.txt
+```
 
 ### 2.2 `.venv_gcg` (GCG) — solo para las tareas 1 y 2
 Aislado porque PySCIPOpt 6 trae numpy 2, que rompe el pandas 2.0.3 del otro
@@ -43,14 +48,18 @@ Verificar antes con `py -3.10 --version`; si no está, instalar Python 3.10.
 
 ```powershell
 py -3.10 -m venv .venv_gcg
-# Los wheels NO están en git (92 MB): copiar la carpeta wheels_gcg/ del equipo viejo
+# Los wheels NO están en git (~105 MB): vienen en wheels_gcg.zip, que ya trae la
+# carpeta wheels_gcg/ adentro. Descomprimirlo en la raíz del repo:
+Expand-Archive wheels_gcg.zip -DestinationPath .
 .venv_gcg\Scripts\python.exe -m pip install --no-index --find-links wheels_gcg pygcgopt pyscipopt numpy
 .venv_gcg\Scripts\python.exe -m pip install "gurobipy>=13,<14"
 ```
 
 ### 2.3 Licencia de Gurobi
 La académica es **por equipo**: sacar una nueva en el equipo nuevo
-(`grbgetkey`, desde la red de la universidad). Tiene que ser **v13 o mayor**:
+(`grbgetkey`, desde la red de la universidad). `grbgetkey` **no** viene con
+`pip install gurobipy`: bajarlo aparte desde la página de Gurobi o instalar
+Gurobi completo. Tiene que ser **v13 o mayor**:
 `.venv_gcg` usa gurobipy 13 (una licencia v13 sirve también para el gurobipy 10
 de `.venv_elmo`).
 
@@ -58,10 +67,14 @@ de `.venv_elmo`).
 - Enchufado y **tapa abierta** (o "cerrar la tapa: no hacer nada").
 - Pausar Windows Update: fuera de las horas activas puede reiniciar solo.
 - La cola bloquea la suspensión por inactividad, no la de la tapa.
+- La cola completa dura **~24–30 h** (4 + 6 + 14–20): más de una noche.
 
 ---
 
 ## 3. Qué correr (en este orden)
+
+Todo desde la **raíz del repo** (las rutas son relativas). La tarea 2 usa
+`output/.../Mina_modelo/solucion_benders_4anios/`, que está en git.
 
 Todo junto, desacoplado de la terminal:
 
@@ -69,7 +82,23 @@ Todo junto, desacoplado de la terminal:
 Start-Process -FilePath .venv_elmo\Scripts\python.exe `
     -ArgumentList '-u','cola_mina_modelo.py' -WindowStyle Hidden `
     -RedirectStandardOutput cola.stdout -RedirectStandardError cola.stderr
-Get-Content output\Resultados_finales_tesis\Mina_modelo\cola.log -Tail 5   # progreso
+```
+
+Solo algunas tareas, en el orden dado (p. ej. si `.venv_gcg` no está listo, las
+tareas 1 y 2 fallan y la cola sigue, así que conviene lanzar solo la v3):
+
+```powershell
+Start-Process -FilePath .venv_elmo\Scripts\python.exe `
+    -ArgumentList '-u','cola_mina_modelo.py','v3' -WindowStyle Hidden `
+    -RedirectStandardOutput cola.stdout -RedirectStandardError cola.stderr
+```
+
+Seguimiento: `cola.log` solo anota inicio y fin de cada tarea; el detalle
+(lo que se describe abajo en "qué mirar") está en `_logs_cola\<tarea>.log`.
+
+```powershell
+Get-Content output\Resultados_finales_tesis\Mina_modelo\cola.log -Tail 5
+Get-Content output\Resultados_finales_tesis\Mina_modelo\_logs_cola\v3.log -Tail 20 -Wait
 ```
 
 Para cortar una corrida de `setup.py` **conservando la solución**: crear un

@@ -1,4 +1,5 @@
 import contextlib
+import math
 
 import pyomo.environ as pyo
 from pyomo.core.base import Suffix
@@ -331,6 +332,228 @@ class YearBlockBuilder(object):
             else:
                 for idx, v in new_value.items():
                     hat[idx].set_value(float(v))
+
+    # ------------------------------------------------------------------ #
+    # Region de confianza (Box-step) para el forward estabilizado
+    # ------------------------------------------------------------------ #
+    # Estabilizacion a la Göke, Schmidt & Kendziorski (EJOR 316, 2024, sec.
+    # 3.2.3): el forward busca la inversion de cada año dentro de una caja
+    # alrededor del CENTRO de estabilidad (la mejor trayectoria conocida), para
+    # que la trayectoria no salte de un extremo a otro entre iteraciones.
+    # Box-step (norma l-infinito) y no la region cuadratica del paper: aca son
+    # solo COTAS de variables -- el MILP no gana filas ni se vuelve MIQCP, y
+    # ademas se achica.
+    #
+    # Se encajan las DECISIONES de inversion que este bloque toma: los stocks
+    # N_bays/N_chargers/N_batteries del año, y n_ssee_k/G/H solo en el primer
+    # año global (despues los fija la igualdad de enlace). D no: es resultado de
+    # la degradacion, no una decision.
+    #
+    # La caja NUNCA debe llegar al backward ni a un corte de factibilidad: los
+    # cortes tienen que valer para cualquier estado. Por eso passes.py la quita
+    # apenas termina el solve del forward (clear_trust_region).
+
+    def _trust_region_vardata(self):
+        """[(state_name, idx, VarData)] de las decisiones que se encajan."""
+        out = []
+        for link in self.state_links:
+            if link["state"] == "D":
+                continue
+            es_global = link.get("kind") == "global_once"
+            if es_global and link["hat"] is not None:
+                continue   # años siguientes: la fija link_<estado>, no se decide aca
+            var = getattr(self.model, link["state_var"])
+            if link["index_set"] is None:
+                out.append((link["state"], None, var if es_global else var[self.year]))
+            else:
+                for idx in link["index_set"]:
+                    out.append((link["state"], idx,
+                                var[idx] if es_global else var[idx, self.year]))
+        return out
+
+    def set_trust_region(self, center, delta_int=1, frac_cont=0.25, min_cont=1.0):
+        """Aprieta las cotas de las decisiones de inversion a una caja alrededor
+        de `center` (mismo formato que extract_state()):
+
+            enteras:   [c - delta_int, c + delta_int]
+            continuas: [c - w, c + w],  w = max(frac_cont*|c|, min_cont)
+
+        intersectada con las cotas originales. Para los stocks, la caja se
+        estira hasta el valor heredado si hace falta: el stock no puede bajar
+        del año anterior (Delta >= 0), y una caja que no lo contuviera volveria
+        infactible el año por culpa de la estabilizacion y no del problema."""
+        self.clear_trust_region()
+        self._trust_region = dict(center=center, delta_int=delta_int,
+                                  frac_cont=frac_cont, min_cont=min_cont)
+        self._tr_saved = []
+        for state, idx, vd in self._trust_region_vardata():
+            if vd.fixed or state not in center:
+                continue
+            c = center[state] if idx is None else center[state].get(idx)
+            if c is None:
+                continue
+            c = float(c)
+            entera = not vd.is_continuous()
+            w = delta_int if entera else max(frac_cont * abs(c), min_cont)
+            lb0, ub0 = vd.lb, vd.ub
+            lo, hi = c - w, c + w
+            link = next(l for l in self.state_links if l["state"] == state)
+            if link.get("kind") == "simple" and link["hat"] is not None:
+                hat = getattr(self.model, link["hat"])
+                heredado = value(hat if idx is None else hat[idx])
+                hi = max(hi, heredado)
+            if lb0 is not None:
+                lo = max(lo, lb0)
+            if ub0 is not None:
+                hi = min(hi, ub0)
+            if entera:
+                lo, hi = math.ceil(lo - 1e-6), math.floor(hi + 1e-6)
+            if lo > hi:
+                continue   # sin interseccion con las cotas originales: no se encaja
+            self._tr_saved.append((vd, lb0, ub0, lo, hi))
+            vd.setlb(lo)
+            vd.setub(hi)
+
+    def trust_region_binding(self, tol=1e-6):
+        """True si la solucion actual toca algun borde de la caja que sea mas
+        apretado que la cota original: la caja esta limitando la decision."""
+        for vd, lb0, ub0, lo, hi in getattr(self, "_tr_saved", []):
+            x = value(vd, exception=False)
+            if x is None:
+                continue
+            if (lb0 is None or lo > lb0 + tol) and x <= lo + tol:
+                return True
+            if (ub0 is None or hi < ub0 - tol) and x >= hi - tol:
+                return True
+        return False
+
+    def clear_trust_region(self):
+        for vd, lb0, ub0, _lo, _hi in getattr(self, "_tr_saved", []):
+            vd.setlb(lb0)
+            vd.setub(ub0)
+        self._tr_saved = []
+        self._trust_region = None
+
+    # ------------------------------------------------------------------
+    # Forward con level-set (alternativa a la caja)
+    # ------------------------------------------------------------------
+    # Pecci & Jenkins (IEEE TPWRS 2025): el proximo punto no es el optimo del
+    # modelo aproximado sino un punto "central" de su conjunto de nivel
+    #     { costo aproximado <= L + alpha (U - L) }.
+    # Con enteras el punto interior pierde sentido (el mismo paper, etapa 2,
+    # fija las enteras y centra solo las continuas), asi que aca:
+    #   1. L: el bloque con la OPERACION RELAJADA (inversion entera, cortes
+    #      alpha incluidos) -- barato, pocas enteras;
+    #   2. enteras de inversion: las mas cercanas al centro en norma l1 dentro
+    #      del nivel (local branching, Baena, Castro & Frangioni, Mgmt Sci 2020);
+    #   3. continuas de estado (G_g, H, solo en el primer año): punto interior
+    #      del nivel con esas enteras fijas (barrier sin crossover).
+    # El forward fija despues esa inversion y resuelve el MILP real del año.
+
+    def level_point(self, center, alpha, gap_rel, solver_options=None, verbose=True):
+        """Inversion regularizada del año (formato de extract_state), o None
+        si no se pudo calcular (el forward sigue sin regularizar)."""
+        import pyomo.environ as pyo
+        from pyomo.environ import SolverFactory
+        from pyomo.opt import TerminationCondition
+        from src.optimization.opt_model import VARS_OPERACIONALES
+
+        m = self.model
+        vardata = [(s, i, vd) for s, i, vd in self._trust_region_vardata() if not vd.fixed]
+        if not vardata:
+            return None
+        guard_dom = []
+        for nombre in VARS_OPERACIONALES:
+            comp = getattr(m, nombre, None)
+            if comp is None:
+                continue
+            for vd in comp.values():
+                if not vd.is_continuous() and not vd.fixed:
+                    guard_dom.append((vd, vd.domain, vd.lb, vd.ub))
+                    lb, ub = vd.bounds
+                    vd.domain = pyo.Reals
+                    vd.setlb(lb)
+                    vd.setub(ub)
+        opt = SolverFactory("gurobi", solver_io="python")
+        opt.options.update({"OutputFlag": 0, "MIPGap": 1e-4, "TimeLimit": 300})
+        for k, v in (solver_options or {}).items():
+            if k in ("Threads",):
+                opt.options[k] = v
+        enteras = [(s, i, vd) for s, i, vd in vardata if not vd.is_continuous()]
+        continuas = [(s, i, vd) for s, i, vd in vardata if vd.is_continuous()]
+        fijadas = []
+        punto = None
+        try:
+            # 1) L con la operacion relajada
+            r = opt.solve(m, load_solutions=False)
+            if r.solver.termination_condition not in (TerminationCondition.optimal,
+                                                      TerminationCondition.maxTimeLimit):
+                return None
+            m.solutions.load_from(r)
+            L = value(m.obj)
+            nivel = L + alpha * max(gap_rel, 0.0) * abs(L)
+            # 2) enteras: l1 al centro dentro del nivel
+            m._lvl_nivel = pyo.Constraint(expr=m.obj.expr <= nivel)
+            m._lvl_d = pyo.Var(range(len(enteras)), domain=pyo.NonNegativeReals)
+            m._lvl_dev = pyo.ConstraintList()
+            terminos = 0
+            for k, (s, i, vd) in enumerate(enteras):
+                c = center.get(s)
+                c = c if i is None or c is None else c.get(i)
+                if c is None:
+                    continue
+                m._lvl_dev.add(m._lvl_d[k] >= vd - float(c))
+                m._lvl_dev.add(m._lvl_d[k] >= float(c) - vd)
+                terminos += 1
+            m.obj.deactivate()
+            m._lvl_obj = pyo.Objective(expr=sum(m._lvl_d[k] for k in range(len(enteras)))
+                                       if terminos else 0.0)
+            r = opt.solve(m, load_solutions=False)
+            if r.solver.termination_condition not in (TerminationCondition.optimal,
+                                                      TerminationCondition.maxTimeLimit):
+                return None
+            m.solutions.load_from(r)
+            dist = value(m._lvl_obj)
+            # 3) continuas: punto interior del nivel con TODAS las enteras fijas
+            #    (las de estado y las que dependen de ellas: Delta_*, flota,
+            #    reemplazo): asi es un LP y el barrier entrega un punto interior.
+            for vd in m.component_data_objects(pyo.Var, active=True):
+                if not vd.is_continuous() and not vd.fixed and vd.value is not None:
+                    vd.fix(round(value(vd)))
+                    fijadas.append(vd)
+            if continuas:
+                m._lvl_obj.deactivate()
+                m._lvl_cero = pyo.Objective(expr=0.0)
+                opt_b = SolverFactory("gurobi", solver_io="python")
+                opt_b.options.update({"OutputFlag": 0, "Method": 2, "Crossover": 0})
+                r = opt_b.solve(m, load_solutions=False)
+                if r.solver.termination_condition == TerminationCondition.optimal:
+                    m.solutions.load_from(r)
+            punto = {}
+            for s, i, vd in vardata:
+                v = value(vd)
+                if i is None:
+                    punto[s] = v
+                else:
+                    punto.setdefault(s, {})[i] = v
+            if verbose:
+                cont = ", ".join(f"{s}{'' if i is None else f'[{i}]'}={value(vd):.3f}"
+                                 for s, i, vd in continuas)
+                print(f"[Level] año {self.year}: L(op. relajada)={L:,.2f}  nivel={nivel:,.2f} "
+                      f"(alpha {alpha}, gap {gap_rel:.2%})  distancia l1 al centro={dist:.0f}"
+                      + (f"  continuas interiores: {cont}" if cont else ""))
+            return punto
+        finally:
+            for vd in fijadas:
+                vd.unfix()
+            for nombre in ("_lvl_nivel", "_lvl_dev", "_lvl_d", "_lvl_obj", "_lvl_cero"):
+                if hasattr(m, nombre):
+                    m.del_component(nombre)
+            m.obj.activate()
+            for vd, dom, lb, ub in guard_dom:
+                vd.domain = dom
+                vd.setlb(lb)
+                vd.setub(ub)
 
     def extract_state(self):
         """Extrae x̂_y: el estado optimo de ESTE bloque ya resuelto, para

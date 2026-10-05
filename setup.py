@@ -7,7 +7,12 @@ import pandas as pd
 from os.path import join
 import os
 import sys
+import time
 import xlrd
+
+# Origen del tope --max_hours: el arranque del proceso, para que cuente tambien
+# la lectura de datos, la construccion de bloques y la cota operacional.
+_T_INICIO = time.time()
 
 # En Windows la consola suele quedar en cp1252, que no puede codificar los
 # emojis usados en los prints de progreso (✅/⚠️/etc.) a lo largo del
@@ -170,18 +175,32 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         op_bound_timelimit=args.op_bound_timelimit,
         output_folder=args.output_folder,
         day_warm_start=args.day_warm_start,
-        day_solver_overrides={'timelimit': args.day_timelimit, 'gap': args.day_gap},
+        day_solver_overrides={'timelimit': args.day_timelimit, 'gap': args.day_gap,
+                              'jobs': args.day_jobs},
         lb_inicial=args.lb_inicial,
         polish_each_iter=args.polish_each_iter,
         skip_last_backward=args.skip_last_backward,
         block_solver=args.block_solver,
         gcg_blocks=args.gcg_blocks,
+        stabilization=args.stabilization,
+        stab_center=args.stab_center,
+        box_delta_int=args.box_delta_int,
+        box_frac_cont=args.box_frac_cont,
+        box_min_cont=args.box_min_cont,
+        box_delta_int_max=args.box_delta_int_max,
+        stab_free_every=args.stab_free_every,
+        level_alpha=args.level_alpha,
+        max_time_sec=(args.max_hours * 3600 if args.max_hours else None),
+        t_origen=_T_INICIO,
+        incumbente_inicial=args.incumbente_inicial,
+        op_bound_gap=args.op_bound_gap,
     )
     resultado = solver.solve(verbose=True)
 
     print(f"[NestedBenders] termino en {resultado['iterations']} iteraciones "
           f"({resultado['total_time_sec']:.0f}s): UB={resultado['ub']:,.2f}  "
           f"LB={resultado['lb']:,.2f}  gap={resultado['gap']:.4%}"
+          + ("  [TOPE DE TIEMPO]" if resultado['parada_por_tiempo'] else "")
           + ("  [INTERRUMPIDO]" if resultado['interrupted'] else ""))
 
     if resultado['best_full_solution'] is None:
@@ -419,13 +438,43 @@ def main():
              'sigue con Gurobi. Usa --solve_timelimit y --gap_tol.'
     )
     parser.add_argument(
-        '--gcg_blocks', choices=['day', 'vehicle_day'], default='day',
+        '--gcg_blocks', choices=['day', 'vehicle_day', 'vehicle_station_day'], default='day',
         help='[con --block_solver gcg] bloques del Dantzig-Wolfe. day (default): '
              '4 bloques, maestro de 36 filas (0,1%%) en el bloque del anio 4. '
              'vehicle_day: 16 bloques LHD-dia, maestro de 22.096 filas (36,5%%), '
              'porque el pool de baterias de la estacion y el balance de potencia '
-             'los comparten todos los LHD intervalo por intervalo.'
+             'los comparten todos los LHD intervalo por intervalo. '
+             'vehicle_station_day: como vehicle_day pero la estacion de cada dia '
+             'es un bloque propio; maestro de 1.480 filas (2,4%%).'
     )
+    parser.add_argument(
+        '--stabilization', choices=['none', 'box', 'level'], default='none',
+        help='[decomposed|hybrid] forward estabilizado (Göke, Schmidt & '
+             'Kendziorski, EJOR 2024). box: cada año se resuelve dentro de una '
+             'caja alrededor de la mejor trayectoria conocida (Box-step, solo '
+             'cotas de variables); se re-centra cuando una iteracion mejora el '
+             'mejor costo y se agranda cuando la caja limita sin mejorar. Solo '
+             'afecta al UB: los cortes y la LB valen igual.'
+    )
+    parser.add_argument(
+        '--stab_center', choices=['operational', 'first'], default='operational',
+        help='[con --stabilization box] centro inicial: operational (default) = '
+             'la inversion de la cota operacional (requiere --operational_bound); '
+             'first = la primera iteracion va sin caja y su trayectoria es el centro.'
+    )
+    parser.add_argument('--box_delta_int', type=int, default=1,
+                        help='[box] +- unidades de la caja en las inversiones enteras')
+    parser.add_argument('--box_frac_cont', type=float, default=0.25,
+                        help='[box] +- fraccion del centro en las continuas (G, H)')
+    parser.add_argument('--box_min_cont', type=float, default=1.0,
+                        help='[box] ancho minimo absoluto en las continuas (G, H)')
+    parser.add_argument('--box_delta_int_max', type=int, default=None,
+                        help='[box] tope al relajar la caja. Por defecto igual a '
+                             '--box_delta_int: caja FIJA (Box-step del paper). Si es '
+                             'mayor, se relaja +1 tras 3 pasos serios seguidos; nunca '
+                             'tras un paso nulo')
+    parser.add_argument('--stab_free_every', type=int, default=0,
+                        help='[box] cada cuantas iteraciones el forward va sin caja (0 = nunca)')
     parser.add_argument(
         '--polish_each_iter', action='store_true',
         help='[decomposed|hybrid] despues de cada forward, arma el monolitico con '
@@ -509,6 +558,14 @@ def main():
              'que --gap_tol por la misma razon: medido en el anio 1, con 1%% '
              'cada dia encontraba el incumbente y gastaba el resto del tope sin '
              'poder cerrar el gap.'
+    )
+    parser.add_argument(
+        '--day_jobs', type=int, default=1,
+        help='[con --day_warm_start] cuantos dias de una misma fase se resuelven '
+             'a la vez (hilos, cada uno con su entorno de Gurobi y cpu_count/jobs '
+             'hilos de Gurobi). Los dias de un anio son independientes; la unica '
+             'barrera es el maximo entre la fase 1 y la 2. 1 = en serie (default '
+             'historico); 4 = los 4 dias representativos juntos.'
     )
     parser.add_argument(
         '--block_mip_focus', type=int, choices=[0, 1, 2, 3], default=None,
@@ -614,8 +671,48 @@ def main():
              'monolitica la supera con su propio root bound), asi que el flag no '
              'tiene efecto ahi.'
     )
+    parser.add_argument(
+        '--level_alpha', type=float, default=0.5,
+        help='[--stabilization level] nivel de cada año = L + alpha*gap*|L| '
+             '(Pecci & Jenkins, IEEE TPWRS 2025: alpha = 0,5). level: en vez de la '
+             'caja, la inversion de cada año es la mas cercana (l1) al centro '
+             'dentro del conjunto de nivel del bloque con la operacion relajada, '
+             'con G/H en un punto interior (barrier sin crossover); despues se '
+             'fija y el MILP del año resuelve la operacion.'
+    )
+    parser.add_argument(
+        '--sin_corte_cargas', action='store_true',
+        help='desactiva el corte de cargas por dia, sum_{k,t<tf} X_ini[k,y,d,t] '
+             '>= ceil(E_min/E_swap) (min_charges_cut en functions.py), que por '
+             'defecto va en TODOS los modelos. Solo para comparar con corridas '
+             'anteriores a el: es una desigualdad valida y sube la cota (4 anios: '
+             'cota operacional 1.797.007 -> 1.824.373).'
+    )
+    parser.add_argument(
+        '--incumbente_inicial', default=None,
+        help='[--mode decomposed] carpeta con los JSON del reporte de una corrida '
+             'anterior: su solucion (pulida) entra como UB inicial, centro de la caja '
+             'y MIP start de los dias desde la iteracion 1, en vez de partir de cero')
+    parser.add_argument(
+        '--op_bound_gap', type=float, default=None,
+        help='MIPGap de la cota operacional (default: --gap_tol). Es una cota: con '
+             '1e-4 sale casi exacta (10 años: ~15 min)')
+    parser.add_argument(
+        '--max_hours', type=float, default=None,
+        help='[--mode decomposed/hybrid] tope de tiempo de pared de la '
+             'descomposicion, contado desde el arranque del proceso. No se empieza '
+             'una iteracion cuyo forward no alcance a terminar, se omite el backward '
+             'que ya no serviria a ningun forward, y si igual se pasa se corta como '
+             'con el archivo STOP; en todos los casos se conserva y se escribe la '
+             'mejor solucion. El reporte final corre despues del tope. Conviene '
+             'subir --max_iter para que mande el tope.'
+    )
 
     args = parser.parse_args()
+    if args.sin_corte_cargas:
+        # Por entorno: lo leen todos los constructores del modelo y los
+        # procesos hijos (ver corte_cargas_activo en functions.py).
+        os.environ["ELMO_SIN_CORTE_CARGAS"] = "1"
     series, mine_system, time_series = build_mine(args)
 
     if args.mode in ('decomposed', 'hybrid'):
