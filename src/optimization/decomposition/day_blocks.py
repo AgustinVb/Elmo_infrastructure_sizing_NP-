@@ -318,16 +318,57 @@ _PYOMO_LOCK = threading.Lock()
 
 
 class _GurobiDirectParalelo(GurobiDirect):
-    """GurobiDirect que libera _PYOMO_LOCK durante el solve. Se crea con
+    """GurobiDirect que libera _PYOMO_LOCK SOLO durante optimize(). Se crea con
     manage_env=True: un entorno de Gurobi por hilo, como pide Gurobi para
-    optimizar modelos en paralelo."""
+    optimizar modelos en paralelo.
+
+    _apply_solver es el de GurobiDirect (pyomo 6.8.2) con el candado soltado
+    unicamente alrededor de optimize(): antes se soltaba en todo _apply_solver,
+    y eso dejaba StaleFlagManager.mark_all_as_stale() (estado global de Pyomo)
+    corriendo sin candado."""
 
     def _apply_solver(self):
+        from pyomo.solvers.plugins.solvers import gurobi_direct as _gd
+
+        _gd.StaleFlagManager.mark_all_as_stale()
+        self._solver_model.setParam('OutputFlag', 1 if self._tee else 0)
+        if self._env_options:
+            nuevas = {k: o for k, o in self.options.items()
+                      if k not in self._env_options or self._env_options[k] != o}
+        else:
+            nuevas = self.options
+        _gd._set_options(self._solver_model, nuevas)
+        if self._version_major >= 5:
+            for suffix in self._suffixes:
+                if _gd.re.match(suffix, "dual"):
+                    self._solver_model.setParam(_gd.gurobipy.GRB.Param.QCPDual, 1)
         _PYOMO_LOCK.release()
         try:
-            return super()._apply_solver()
+            self._solver_model.optimize(self._callback)
         finally:
             _PYOMO_LOCK.acquire()
+        self._needs_updated = False
+        return _gd.Bunch(rc=None, log=None)
+
+    def cerrar(self):
+        """close() pero soltando ANTES las referencias de Pyomo a objetos de
+        gurobipy (Var/Constr) del modelo. Con close() a secas el modelo y el
+        entorno se destruyen mientras esos objetos siguen vivos en los mapas
+        del solver, y se liberan despues, cuando el recolector pasa -- en
+        cualquier punto del programa. Es la causa probable de las violaciones
+        de acceso (0xc0000005) de 2026-10-04/05: la ultima, con faulthandler,
+        reviento en una list comprehension de Python puro (functions.py,
+        production) al armar el modelo del reporte justo despues de los dias
+        en paralelo, o sea memoria ya corrupta."""
+        for nombre in ("_pyomo_var_to_solver_var_map", "_solver_var_to_pyomo_var_map",
+                       "_pyomo_con_to_solver_con_map", "_solver_con_to_pyomo_con_map",
+                       "_pyomo_sos_to_solver_sos_map", "_solver_sos_to_pyomo_sos_map",
+                       "_vars_referenced_by_con", "_vars_referenced_by_obj",
+                       "_referenced_variables"):
+            mapa = getattr(self, nombre, None)
+            if hasattr(mapa, "clear"):
+                mapa.clear()
+        self.close()
 
 
 def _solve_day(model, solver_kwargs, label, warmstart=False, paralelo=False):
@@ -344,7 +385,7 @@ def _solve_day(model, solver_kwargs, label, warmstart=False, paralelo=False):
                 return _solve_day_con(opt, model, solver_kwargs, label, warmstart,
                                       solvername, t0)
             finally:
-                opt.close()
+                opt.cerrar()
     opt = SolverFactory("gurobi", solver_io="python") if solvername == "gurobi" \
         else SolverFactory(solvername)
     return _solve_day_con(opt, model, solver_kwargs, label, warmstart, solvername, t0)

@@ -9,6 +9,13 @@ import os
 import sys
 import time
 import xlrd
+import faulthandler
+
+# Un crash nativo (violacion de acceso 0xc0000005 dentro de Gurobi o de
+# python310.dll) mata el proceso sin traceback de Python: paso dos veces el
+# 2026-10-04/05, ambas justo despues de los dias en paralelo. Con esto queda en
+# stderr la pila de Python de cada hilo en el momento del crash.
+faulthandler.enable(all_threads=True)
 
 # Origen del tope --max_hours: el arranque del proceso, para que cuente tambien
 # la lectura de datos, la construccion de bloques y la cota operacional.
