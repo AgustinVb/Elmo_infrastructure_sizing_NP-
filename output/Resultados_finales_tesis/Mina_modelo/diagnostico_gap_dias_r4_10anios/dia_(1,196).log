@@ -1,0 +1,70 @@
+
+Gurobi 13.0.2 (linux64) logging started Tue Oct  6 14:12:50 2026
+
+Set parameter OutputFlag to value 1
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 900
+Set parameter MIPGap to value 0.0001
+Set parameter MIPFocus to value 3
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+TimeLimit  900
+MIPFocus  3
+LogToConsole  0
+Threads  8
+
+Optimize a model with 15206 rows, 14896 columns and 80774 nonzeros (Min)
+Model fingerprint: 0x4e8e6a77
+Model has 198 linear objective coefficients
+Variable types: 3450 continuous, 11446 integer (8641 binary)
+Coefficient statistics:
+  Matrix range     [1e-02, 1e+03]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 5e+02]
+  RHS range        [1e+00, 3e+03]
+
+User MIP start produced solution with objective 12794.9 (0.11s)
+User MIP start produced solution with objective 12794.9 (0.12s)
+Loaded user MIP start with objective 12794.9
+
+Presolve removed 11445 rows and 7351 columns
+Presolve time: 0.49s
+Presolved: 3761 rows, 7545 columns, 32241 nonzeros
+Variable types: 1220 continuous, 6325 integer (6078 binary)
+Root relaxation presolve removed 16 rows and 0 columns
+Root relaxation presolved: 3745 rows, 7561 columns, 30241 nonzeros
+
+
+Root relaxation: objective 9.596182e+03, 2455 iterations, 0.16 seconds (0.20 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 9596.18182    0    5 12794.9091 9596.18182  25.0%     -    1s
+     0     0 9596.18182    0   76 12794.9091 9596.18182  25.0%     -    1s
+     0     0 9596.18182    0   76 12794.9091 9596.18182  25.0%     -    1s
+     0     0 9596.18182    0    7 12794.9091 9596.18182  25.0%     -    1s
+     0     0 9596.18182    0   37 12794.9091 9596.18182  25.0%     -    2s
+     0     0 9596.18182    0   16 12794.9091 9596.18182  25.0%     -    2s
+     0     0 9596.18182    0   76 12794.9091 9596.18182  25.0%     -    2s
+     0     0 infeasible    0      12794.9091 12794.9091  0.00%     -    3s
+
+Cutting planes:
+  Gomory: 13
+  Lift-and-project: 7
+  Cover: 1
+  MIR: 2
+  Flow cover: 2
+
+Explored 1 nodes (5546 simplex iterations) in 3.47 seconds (2.08 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 1: 12794.9 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 1.279490909091e+04, best bound 1.279490909091e+04, gap 0.0000%
+Set parameter MIPFocus to value 0
