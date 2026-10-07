@@ -94,6 +94,11 @@ class OptModel(object):
             "N_chargers": ["k", "y"],
             "Delta_N_chargers": ["k", "y"],
             "P_max_k": ["k"],
+            # Faltaban (portado de battery_swapping_multiaño): sin ellas el warm
+            # start por JSON dejaba n_ssee_k SIN VALOR -> 0 al pulir -> P_max_k
+            # = 0 y la solucion cargada salia infactible.
+            "n_ssee_k": ["k"],
+            "w_deg": ["y"],
             "X": ["k", "y"],
             "Delta_X": ["k", "y"],
             "StartCharge": ["k", "i", "y", "d", "t"],
