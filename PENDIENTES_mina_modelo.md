@@ -77,14 +77,15 @@ solución encontrada**, no el óptimo.
    Default). Limitar el turbo (`PROCTHROTTLEMAX 99`) NO evitó los crashes y quedó
    activo: revertir con `powercfg /setacvalueindex scheme_current sub_processor
    PROCTHROTTLEMAX 100; powercfg /setactive scheme_current`.
-6. **Sesgo en el objetivo diario de `day_blocks.py`** (MIP start por días):
-   `_day_objective` pone `gen_op_cost` y `bess_op_cost` (O&M ANUAL de G y H)
-   del lado del opex diario, sin dividir por el número de días, así que cada día
-   paga el O&M anual completo contra 1/4 de la inversión y la fase 1 queda
-   sesgada en contra de generación y BESS. No invalida nada (es la heurística del
-   MIP start), pero puede empeorar el incumbente en escenarios con generación.
-   Corregido en el porte a `carga_ob_multiaño`; acá sin tocar para no cambiar
-   corridas ya hechas.
+6. ~~Sesgo en el objetivo diario de `day_blocks.py`~~ — CORREGIDO (2026-10-07),
+   acá y en `carga_ob_multiaño`. `_day_objective` ponía `gen_op_cost` y
+   `bess_op_cost` (O&M ANUAL de G y H) del lado del opex diario sin dividir por
+   el número de días: cada día pagaba el O&M anual completo contra 1/4 de la
+   inversión y la fase 1 del MIP start por días quedaba sesgada en contra de
+   generación y BESS. Verificado en RED_GEN: subir G_g en 1 sube el objetivo del
+   día en (inversión + O&M)/4 = 31.761,36 (antes 33.977,27). Solo afecta la
+   heurística del MIP start (no el modelo ni ninguna cota); las corridas
+   anteriores (v4–v6, P_red_gen) se hicieron con el sesgo.
 
 ---
 
