@@ -20,13 +20,16 @@ Metodología de cada uno: Nested Benders → `mejorar_ub.py` → `certificar_inv
 | Escenario | Mejor UB | LB certificada | Gap | Solución | Certificado |
 |---|---:|---:|---:|---|---|
 | RED | 2.569.771,29 | 2.555.303,48 | 0,56 % | `mejorar_ub_r4/solucion` | `certificado_r4_0563` |
-| RED_GEN | 2.143.677,60 | 2.047.595,74 | 4,48 % | `mejorar_ub_red_gen/solucion` | `certificado_red_gen_3pc` |
+| RED_GEN | 2.139.391,51 | 2.047.595,74 | 4,29 % | `mejorar_ub_red_gen_2/solucion` | `certificado_red_gen_3pc` |
 | RED_GEN_BESS | 2.085.557,66 | 2.035.547,42 | 2,40 % | `mejorar_ub_gen_bat_v6b/solucion` | `certificado_gen_bat_v6b_2pc` |
 
 RED_GEN: Benders `P_red_gen` (7 iteraciones, UB 2.167.384,29, se cayó en k=8 por
-el PC) → `mejorar_ub_red_gen` (−1,09 %, 40 días a 600 s) → certificado con
-`--gap_objetivo 0.03` (7 candidatas, pool completo; manda la inversión del
-propio incumbente, VIVA en 2.047.595,74).
+el PC) → `mejorar_ub_red_gen` (−1,09 %, 40 días a 600 s) → `mejorar_ub_red_gen_2`
+(−0,20 %, años 3–9 a 900 s partiendo de la anterior: la mejora de la operación
+con esta inversión se está agotando) → certificado con `--gap_objetivo 0.03`
+(7 candidatas, pool completo; manda la inversión del propio incumbente, VIVA en
+2.047.595,74). El certificado se calculó con el UB anterior (2.143.677,60); la
+LB no depende del UB mientras la inversión sea la misma.
 
 Métricas: `python consumer.py <carpeta solucion>` (las tres carpetas ya tienen su
 `parameters.json`; para soluciones nuevas, `escribir_parameters.py`). El COSTO
@@ -36,9 +39,9 @@ TOTAL de consumer reproduce el UB al centavo en los tres.
 
 | Comparación | Ahorro garantizado | ¿Válida? |
 |---|---|---|
-| Generación vs solo red | 411.626 – 522.176 (16,0 – 20,4 %) | Sí: intervalos disjuntos. Certifica además que el óptimo de RED_GEN instala generación. |
+| Generación vs solo red | 415.912 – 522.176 (16,2 – 20,4 %) | Sí: intervalos disjuntos. Certifica además que el óptimo de RED_GEN instala generación. |
 | Gen + BESS vs solo red | 469.746 – 534.224 (18,3 – 20,9 %) | Sí |
-| Valor del BESS (RED_GEN → RED_GEN_BESS) | 0 – 108.130 (0 – ~5 %) | **No**: intervalos superpuestos en [2.047.596; 2.085.558]. Los 58.120 (2,7 %) entre incumbentes no están certificados. |
+| Valor del BESS (RED_GEN → RED_GEN_BESS) | 0 – 103.844 (0 – ~5 %) | **No**: intervalos superpuestos en [2.047.596; 2.085.558]. Los 53.834 (2,5 %) entre incumbentes no están certificados. |
 
 Las métricas de operación/inversión de cada escenario describen la **mejor
 solución encontrada**, no el óptimo.
@@ -56,16 +59,13 @@ solución encontrada**, no el óptimo.
 2. **Repetir el certificado de RED_GEN en el otro PC.** Se calculó en el PC con
    la CPU inestable (i9-14900K, microcode 0x123: ver violaciones de acceso). ~10 min:
    ```
-   python -u certificar_inversiones.py --data_folder data/Tesis_final/Mina_modelo/RED_GEN --solucion output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_red_gen/solucion --ub_esperado 2143677.604934195 --gap_objetivo 0.03 --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/certificado_red_gen_3pc_pc2
+   python -u certificar_inversiones.py --data_folder data/Tesis_final/Mina_modelo/RED_GEN --solucion output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_red_gen_2/solucion --ub_esperado 2139391.509378322 --gap_objetivo 0.03 --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/certificado_red_gen_3pc_pc2
    ```
-   Tiene que volver a dar LB 2.047.595,74 (gap 4,482 %).
-3. **Segunda pasada de `mejorar_ub` sobre RED_GEN** (años 3–9, 900 s por día,
-   partiendo de `mejorar_ub_red_gen/solucion`). Quedó corriendo en el PC
-   inestable al hacer este push; si no llega su resultado, repetirla:
-   ```
-   python -u mejorar_ub.py --data_folder data/Tesis_final/Mina_modelo/RED_GEN --solucion output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_red_gen/solucion --ub_esperado 2143677.604934195 --anios 3,4,5,6,7,8,9 --timelimit 900 --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_red_gen_2
-   ```
-   Si mejora: `escribir_parameters.py`, `consumer.py` y re-certificar con el UB nuevo.
+   Tiene que volver a dar LB 2.047.595,74 (ahora gap 4,29 % con el UB nuevo).
+3. ~~Segunda pasada de `mejorar_ub` sobre RED_GEN~~ — HECHA (2026-10-07):
+   UB 2.143.677,60 → 2.139.391,51 (`mejorar_ub_red_gen_2`; consumer.py reproduce
+   el costo). Otra pasada más rinde poco: los días siguen con gaps de 13–37 % a
+   900 s pero ya casi no mejoran.
 4. **RED_GEN compra el 2º cargador y la 2ª batería en el año 3** (los otros dos
    escenarios, en el año 4): +41.131 de inversión. Pulir en RED_GEN las soluciones
    de RED y de RED_GEN_BESS (calendario del año 4) dio PEOR: 2.311.398 y 2.231.626
@@ -77,6 +77,14 @@ solución encontrada**, no el óptimo.
    Default). Limitar el turbo (`PROCTHROTTLEMAX 99`) NO evitó los crashes y quedó
    activo: revertir con `powercfg /setacvalueindex scheme_current sub_processor
    PROCTHROTTLEMAX 100; powercfg /setactive scheme_current`.
+6. **Sesgo en el objetivo diario de `day_blocks.py`** (MIP start por días):
+   `_day_objective` pone `gen_op_cost` y `bess_op_cost` (O&M ANUAL de G y H)
+   del lado del opex diario, sin dividir por el número de días, así que cada día
+   paga el O&M anual completo contra 1/4 de la inversión y la fase 1 queda
+   sesgada en contra de generación y BESS. No invalida nada (es la heurística del
+   MIP start), pero puede empeorar el incumbente en escenarios con generación.
+   Corregido en el porte a `carga_ob_multiaño`; acá sin tocar para no cambiar
+   corridas ya hechas.
 
 ---
 
