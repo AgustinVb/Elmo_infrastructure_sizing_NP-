@@ -41,9 +41,20 @@ class OptRules(object):
     def __init__(self, mine_system, time_series, autonomous_mode=False,
                  years_override=None, exogenous_stations=None,
                  mccormick_degradation=False, macroblock=None,
-                 free_charging=False, free_maintenance=False):
+                 free_charging=False, free_maintenance=False, days_override=None):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Descomposicion por DIA dentro de un año (decomposition/day_blocks.py,
+        # portado de battery_swapping_multiaño): acota model.days a un
+        # subconjunto -- tipicamente un solo dia representativo -- sin tocar
+        # time_series, que sigue teniendo todos. Importa por
+        # scaling_factor_op_cost: se calcula en Timeseries como
+        # 365/len(days_within_year) y NO se recalcula aca, asi que cada
+        # sub-bloque diario conserva el factor del año completo y los dias
+        # SUMAN el costo anual. A diferencia de years_override, NO marca
+        # is_decomposed_block: los enlaces interanuales no tienen que ver con la
+        # particion por dia.
+        self.model_days = list(days_override) if days_override is not None else None
         # Camino A (McCormick) aplicado al MONOLITICO completo (ver
         # degradacion_descomposicion_mccormick.md sec. 3): si True, el
         # bilineal n_ciclos_link se reemplaza por su envolvente convexa
@@ -325,7 +336,9 @@ class OptSets(OptRules):
         model.elhd_set = pyo.Set(initialize=self._macroblock_elhds())
         model.nodes_set = pyo.Set(initialize=self._macroblock_nodes())
         model.time_intervals_set = pyo.Set(initialize=self.time_series.time_intervals)
-        model.days = pyo.Set(initialize=self.time_series.days_within_year)
+        model.days = pyo.Set(initialize=(self.model_days
+                                         if self.model_days is not None
+                                         else self.time_series.days_within_year))
         model.years = pyo.Set(initialize=self.model_years)
         model.shifts = pyo.Set(initialize=self.time_series.shifts)
         model.time_intervals_set_zero = pyo.Set(initialize=[0] + list(self.time_series.time_intervals))

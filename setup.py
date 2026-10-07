@@ -9,11 +9,21 @@ import json
 import os
 import sys
 import time
+import faulthandler
 import pandas as pd
 from os.path import join
 import xlrd
 xlrd.xlsx.ensure_elementtree_imported(False, None)
 xlrd.xlsx.Element_has_iter = True
+
+# Un crash nativo (violacion de acceso 0xc0000005) mata el proceso sin
+# traceback de Python. Con esto queda en stderr la pila de cada hilo en el
+# momento del crash (portado de battery_swapping_multiaño).
+faulthandler.enable(all_threads=True)
+
+# Origen del tope --max_hours: el arranque del proceso, para que cuente tambien
+# la lectura de datos, la construccion de bloques y la cota operacional.
+_T_INICIO = time.time()
 
 # En Windows la consola suele quedar en cp1252, que no puede codificar los
 # emojis usados en los prints de progreso (✅/⚠️/etc.) a lo largo del
@@ -402,6 +412,114 @@ def main():
              'construye toda estacion con al menos un LHD asignado, en todos los años.'
     )
 
+    # --- Portado de battery_swapping_multiaño (2026-10): mismas opciones de
+    # Nested Benders que alla, para correr las dos ramas en las mismas
+    # condiciones. Configuracion usada en las corridas finales de swap:
+    #   --operational_bound --op_bound_gap 1e-4 --stabilization box
+    #   --stab_center operational --box_delta_int 1 --strengthen
+    #   --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120
+    #   --polish_each_iter --skip_last_backward --max_hours <h>
+    parser.add_argument(
+        '--strengthened_timelimit', type=int, default=300,
+        help='[con --strengthen] segundos por MILP lagrangeano. Cortarlo NO '
+             'invalida el corte: se usa la cota dual del solver, que subestima '
+             'siempre, y si no supera Phi^LP el corte queda igual al de Benders.'
+    )
+    parser.add_argument(
+        '--op_bound_gap', type=float, default=None,
+        help='[con --operational_bound] MIPGap de la cota operacional (default: '
+             'el de los bloques, 1%%). Es una cota: con 1e-4 sale casi exacta.'
+    )
+    parser.add_argument(
+        '--block_mip_focus', type=int, choices=[0, 1, 2, 3], default=None,
+        help='[decomposed|hybrid] Gurobi MIPFocus de CADA bloque anual. 1 prioriza '
+             'encontrar incumbentes: es lo que hay que usar cuando un bloque llega '
+             'al --solve_timelimit sin ninguna solucion factible.'
+    )
+    parser.add_argument(
+        '--polish_each_iter', action='store_true',
+        help='[decomposed|hybrid] despues de cada forward pule la solucion sobre el '
+             'monolitico (enteras fijas, LP de las continuas con todo el horizonte a '
+             'la vista); el UB y la eleccion de la mejor solucion usan el costo '
+             'pulido. Cuesta construir el monolitico en cada iteracion.'
+    )
+    parser.add_argument(
+        '--skip_last_backward', action='store_true',
+        help='[decomposed|hybrid] la ultima iteracion no corre backward: sus cortes '
+             'no los usa ningun forward y solo aportarian LB.'
+    )
+    parser.add_argument(
+        '--stabilization', choices=['none', 'box'], default='none',
+        help='[decomposed|hybrid] forward estabilizado (Göke, Schmidt & '
+             'Kendziorski, EJOR 2024). box: cada año se resuelve dentro de una caja '
+             'alrededor de la mejor trayectoria conocida (Box-step, solo cotas de '
+             'variables); se re-centra cuando una iteracion mejora el mejor costo. '
+             'Solo afecta al UB: los cortes y la LB valen igual.'
+    )
+    parser.add_argument(
+        '--stab_center', choices=['operational', 'first'], default='operational',
+        help='[con --stabilization box] centro inicial: operational (default) = la '
+             'inversion de la cota operacional (requiere --operational_bound); '
+             'first = la primera iteracion va sin caja.'
+    )
+    parser.add_argument('--box_delta_int', type=int, default=1,
+                        help='[box] +- unidades de la caja en las inversiones enteras')
+    parser.add_argument('--box_frac_cont', type=float, default=0.25,
+                        help='[box] +- fraccion del centro en las continuas (G, H)')
+    parser.add_argument('--box_min_cont', type=float, default=1.0,
+                        help='[box] ancho minimo absoluto en las continuas (G, H)')
+    parser.add_argument('--box_delta_int_max', type=int, default=None,
+                        help='[box] tope al relajar la caja. Por defecto igual a '
+                             '--box_delta_int: caja FIJA (Box-step del paper)')
+    parser.add_argument('--stab_free_every', type=int, default=0,
+                        help='[box] cada cuantas iteraciones el forward va sin caja (0 = nunca)')
+    parser.add_argument(
+        '--max_hours', type=float, default=None,
+        help='[decomposed|hybrid] tope de tiempo de pared de la descomposicion, '
+             'contado desde el arranque del proceso. No se empieza una iteracion '
+             'cuyo forward no alcance a terminar, se omite el backward que ya no '
+             'serviria a ningun forward, y si igual se pasa se corta como con el '
+             'archivo STOP; en todos los casos se conserva la mejor solucion.'
+    )
+    parser.add_argument(
+        '--incumbente_inicial', default=None,
+        help='[decomposed|hybrid] incumbente_respaldo.pkl de una corrida anterior '
+             '(retoma UB, centro de la caja, cortes y LB) o carpeta con los JSON del '
+             'reporte (retoma UB y centro). Solo valido para EXACTAMENTE el mismo '
+             'problema.'
+    )
+    parser.add_argument(
+        '--day_warm_start', choices=['off', 'first', 'always', 'fallback'],
+        default='off',
+        help='[decomposed|hybrid] MIP start de cada bloque anual del forward por '
+             'descomposicion en DIAS (ver decomposition/day_blocks.py): fase 1 cada '
+             'dia con infraestructura libre, maximo entre dias, fase 2 cada dia con '
+             'la infraestructura fija, y pulido LP sobre el bloque anual. Es una '
+             'heuristica (da UB, no LB). first: solo en la primera iteracion y '
+             'despues como fallback. always: en cada forward. fallback: solo cuando '
+             'el bloque anual llega al timelimit sin incumbente.'
+    )
+    parser.add_argument(
+        '--day_timelimit', type=int, default=120,
+        help='[con --day_warm_start] timelimit en segundos de CADA solve diario.'
+    )
+    parser.add_argument(
+        '--day_gap', type=float, default=0.05,
+        help='[con --day_warm_start] MIPGap de cada solve diario.'
+    )
+    parser.add_argument(
+        '--day_jobs', type=int, default=1,
+        help='[con --day_warm_start] cuantos dias de una misma fase se resuelven a '
+             'la vez (hilos, cada uno con su entorno de Gurobi y cpu_count/jobs '
+             'hilos de Gurobi). 1 = en serie.'
+    )
+    parser.add_argument(
+        '--lb_inicial', type=float, default=None,
+        help='[decomposed|hybrid] cota inferior ya conocida de una corrida anterior '
+             'del MISMO problema (datos, --n_years, --days_per_year, regimen); '
+             'entra por max(). Sirve para no recalcular --operational_bound.'
+    )
+
     args = parser.parse_args()
     series, mine_system, time_series = build_mine(args)
     gap= 1/100;
@@ -443,8 +561,27 @@ def main():
             exogenous_stations_by_year = None
 
         solver_kwargs = {"solvername": solver_name, "gap": gap, "timelimit": args.solve_timelimit}
+        extra = {}
         if args.threads is not None:
-            solver_kwargs["extra_options"] = {"Threads": args.threads}
+            extra["Threads"] = args.threads
+        if args.block_mip_focus is not None:
+            # MIPFocus por bloque: llega a _solve como extra_options. Solo se
+            # pasa si se pidio, para no cambiar el default.
+            extra["MIPFocus"] = args.block_mip_focus
+        if extra:
+            solver_kwargs["extra_options"] = extra
+
+        # Archivo de parada manual (portado de battery_swapping_multiaño): la
+        # carpeta se crea ya, para que el STOP tenga donde vivir desde el
+        # minuto cero y un `| Tee-Object` a esa carpeta no falle al arrancar.
+        from src.optimization.decomposition import passes as passes_module
+        os.makedirs(output_folder, exist_ok=True)
+        stop_path = os.path.join(output_folder, "STOP")
+        if os.path.exists(stop_path):
+            os.remove(stop_path)
+            print("[STOP] habia un archivo de parada de una corrida anterior: se borro.")
+        passes_module.set_stop_file(stop_path)
+        print(f"[STOP] para cortar a mano conservando la solucion, cree: {stop_path}")
 
         solver = NestedBendersSolver(
             mine_system, time_series, exogenous_stations_by_year,
@@ -466,9 +603,35 @@ def main():
             capacity_presolve=args.capacity_presolve,
             free_charging=args.free_charging,
             free_maintenance=args.free_maintenance,
+            strengthened_timelimit=args.strengthened_timelimit,
+            op_bound_gap=args.op_bound_gap,
+            polish_each_iter=args.polish_each_iter,
+            skip_last_backward=args.skip_last_backward,
+            stabilization=args.stabilization,
+            stab_center=args.stab_center,
+            box_delta_int=args.box_delta_int,
+            box_frac_cont=args.box_frac_cont,
+            box_min_cont=args.box_min_cont,
+            box_delta_int_max=args.box_delta_int_max,
+            stab_free_every=args.stab_free_every,
+            max_time_sec=(args.max_hours * 3600 if args.max_hours else None),
+            t_origen=_T_INICIO,
+            incumbente_inicial=args.incumbente_inicial,
+            lb_inicial=args.lb_inicial,
+            output_folder=output_folder,
+            day_warm_start=args.day_warm_start,
+            day_solver_overrides={'timelimit': args.day_timelimit, 'gap': args.day_gap,
+                                  'jobs': args.day_jobs},
         )
         result = solver.solve()
-        interrupted_tag = " (interrumpido con Ctrl+C)" if result.get("interrupted") else ""
+        if result.get("parada_por_tiempo"):
+            interrupted_tag = " (tope de tiempo --max_hours)"
+        elif result.get("error"):
+            interrupted_tag = f" (cortado por error: {result['error'][:120]})"
+        elif result.get("interrupted"):
+            interrupted_tag = " (interrumpido: Ctrl+C o archivo STOP)"
+        else:
+            interrupted_tag = ""
         print(
             f"NestedBenders{interrupted_tag}: UB={result['ub']:.4f}  LB={result['lb']:.4f}  "
             f"gap={result['gap']:.4%}  iteraciones={result['iterations']}  "

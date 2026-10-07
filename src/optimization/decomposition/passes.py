@@ -1,4 +1,6 @@
 import logging
+import os
+import time
 
 import pyomo.environ as pyo
 from pyomo.environ import value, SolverFactory, TransformationFactory
@@ -43,6 +45,41 @@ def clear_interrupt():
     global _interrupt_requested
     _interrupt_requested = False
 
+
+# Archivo centinela de parada manual (portado de battery_swapping_multiaño).
+# Hace falta ADEMAS del Ctrl+C porque en PowerShell un Ctrl+C sobre un pipeline
+# con Tee-Object mata el proceso sin que Python vea nada. Se chequea DESPUES de
+# cada solve -- no durante --, asi que la parada tarda a lo sumo un solve de
+# bloque (--solve_timelimit) en hacerse efectiva; a cambio, el bloque en curso
+# termina limpio y el driver conserva la ultima pasada forward COMPLETA, que es
+# la unica que deja un UB valido.
+_stop_file = None
+
+
+def set_stop_file(path):
+    global _stop_file
+    _stop_file = path
+
+
+def stop_file_requested():
+    return _stop_file is not None and os.path.exists(_stop_file)
+
+
+# Plazo duro de --max_hours (instante absoluto, time.time()). Es la red de
+# seguridad: el driver ya no empieza una iteracion que no alcanza a terminar,
+# asi que esto solo salta si una iteracion se alarga mas de lo estimado. Se
+# chequea en el mismo lugar que el STOP y con el mismo efecto.
+_deadline = None
+
+
+def set_deadline(t):
+    global _deadline
+    _deadline = t
+
+
+def deadline_passed():
+    return _deadline is not None and time.time() > _deadline
+
 # El backend directo de Gurobi (solver_io="python") avisa "Cannot get duals
 # for MIP." cada vez que resuelve un bloque como MILP con un Suffix de
 # duales declarado (aunque no se le pidan duales en ese solve -- son para
@@ -55,6 +92,30 @@ class SubproblemInfeasible(RuntimeError):
     """El subproblema no tiene solucion. Se distingue de cualquier otro fallo
     del solver porque es el unico caso que el forward puede recuperar con un
     corte de factibilidad."""
+
+
+class SubproblemNoIncumbent(RuntimeError):
+    """TimeLimit sin ninguna solucion factible: NO es infactibilidad (Gurobi no
+    la probo, y suele dar cota dual finita), es falta de tiempo para encontrar
+    un primer punto. Se distingue para que el forward pueda reintentar con mas
+    tiempo (o con un MIP start por dias) en vez de cortar la corrida con un
+    error criptico de Pyomo mucho despues."""
+
+
+def _cota_dual(result):
+    """Cota DUAL del solve (ObjBound de Gurobi), o None si no hay una finita.
+    Es la que hay que usar como constante de un corte: subestima el optimo
+    aunque el MILP se haya cortado por tiempo o cerrado con MIPGap > 0, a
+    diferencia del valor del incumbente, que lo SOBREestima."""
+    lb = getattr(result.problem, "lower_bound", None)
+    if lb is None or lb != lb or lb in (float("inf"), float("-inf")):
+        return None
+    return float(lb)
+
+
+def _tiene_incumbente(result):
+    ub = getattr(result.problem, "upper_bound", None)
+    return ub is not None and ub == ub and ub not in (float("inf"), float("-inf"))
 
 
 class _YearInfeasible(Exception):
@@ -79,14 +140,19 @@ def _bounds_tag(current_ub, current_lb):
 
 
 def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, label="",
-           extra_options=None, require_optimal=False, load_solutions=True):
+           extra_options=None, require_optimal=False, load_solutions=True,
+           warmstart=False):
     """load_solutions=False deja las variables del modelo como estaban y solo
     devuelve el resultado (cotas primal/dual, condicion de termino). Lo usa el
     presolve de capacidad (driver._capacity_presolve), al que le alcanza con
     la cota dual de Gurobi (result.problem.lower_bound) y que no quiere pisar
     el punto de arranque del bloque -- y ademas asi un MILP que llega al
     TimeLimit sin incumbente sigue devolviendo su cota en vez de fallar al
-    cargar una solucion que no existe."""
+    cargar una solucion que no existe.
+
+    warmstart=True: Pyomo pasa como Start de Gurobi TODAS las variables con
+    valor (GurobiDirect._warm_start). Lo usa el forward cuando el bloque trae
+    un MIP start completo de la descomposicion por dias."""
     if solvername == "gurobi":
         opt = SolverFactory("gurobi", solver_io="python")
         opt.options["MIPGap"] = gap
@@ -101,7 +167,8 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
     else:
         opt = SolverFactory(solvername)
 
-    result = opt.solve(model, tee=tee, load_solutions=load_solutions)
+    solve_kw = {"warmstart": True} if warmstart else {}
+    result = opt.solve(model, tee=tee, load_solutions=load_solutions, **solve_kw)
     # Ver comentario junto a _interrupt_requested. Dos señales, no una sola
     # -- confirmado con una corrida real que la primera no alcanza: cuando
     # el SIGINT llega en medio de un solve activo, Gurobi lo atrapa el
@@ -129,10 +196,34 @@ def _solve(model, solvername="gurobi", gap=0.001, timelimit=900, tee=False, labe
     )
     if _interrupt_requested or aborted_by_interrupt:
         raise KeyboardInterrupt(f"Interrumpido por el usuario durante el solve ({label}).")
+    if stop_file_requested():
+        print(f"[NestedBenders] parada manual pedida ({_stop_file}): se corta despues "
+              f"de {label} y se conserva la mejor solucion completa.", flush=True)
+        raise KeyboardInterrupt(f"Parada manual por archivo STOP (despues de {label}).")
+    if deadline_passed():
+        print(f"[NestedBenders] se cumplio el tope de tiempo (--max_hours): se corta "
+              f"despues de {label} y se conserva la mejor solucion completa.", flush=True)
+        raise KeyboardInterrupt(f"Tope de tiempo cumplido (despues de {label}).")
     if result.solver.termination_condition == TerminationCondition.maxTimeLimit:
         ub = result.problem.upper_bound
         lb = result.problem.lower_bound
-        if ub not in (None, 0) and lb is not None:
+        if not _tiene_incumbente(result):
+            # TimeLimit con SolCount=0: las variables del modelo quedaron SIN
+            # VALOR. Si se deja pasar, el reventon aparece mucho despues y lejos
+            # de su causa ("No value for uninitialized NumericValue object" al
+            # leer el objetivo). Con load_solutions=False no importa: el
+            # llamador solo quiere la cota dual.
+            if load_solutions:
+                cota = "sin cota dual" if lb is None else f"cota dual {lb:,.2f}"
+                raise SubproblemNoIncumbent(
+                    f"{label}: TimeLimit ({timelimit}s) alcanzado SIN ninguna "
+                    f"solucion factible ({cota}). Subir --solve_timelimit o usar "
+                    f"--block_mip_focus 1 para que Gurobi priorice encontrar "
+                    f"incumbentes."
+                )
+            print(f"[NestedBenders] {label}  TimeLimit sin incumbente "
+                  f"(solo cota dual{'' if lb is None else f' {lb:,.2f}'})")
+        elif ub not in (None, 0) and lb is not None:
             gap_rel = abs(ub - lb) / abs(ub)
             print(f"[NestedBenders] {label}  TimeLimit alcanzado sin cerrar MIPGap: "
                   f"UB={ub:,.2f}  LB={lb:,.2f}  gap={gap_rel:.4%}")
@@ -168,7 +259,8 @@ class ForwardPass(object):
     UB)."""
 
     def __init__(self, blocks, solver_kwargs=None, macroblock_blocks=None,
-                 cut_manager=None, fleet_params=None):
+                 cut_manager=None, fleet_params=None, day_warm_start="off",
+                 day_solver_overrides=None):
         """
         :param macroblock_blocks: {year: {estacion: YearBlockBuilder}} para
             resolver ese año por macrobloque en vez de como un solo MILP (ver
@@ -193,6 +285,52 @@ class ForwardPass(object):
         # Estado de cada año en la ULTIMA iteracion, usado como valor de los
         # estados ajenos al replicar los cortes en cada macrobloque.
         self.last_state_by_year = {}
+        # Forward estabilizado (Box-step, portado de battery_swapping_multiaño):
+        # None = sin caja. Si no, dict con center ({año: estado}, formato de
+        # extract_state), delta_int, frac_cont y min_cont -- ver
+        # YearBlockBuilder.set_trust_region. Lo fija el driver antes de cada
+        # run(). No se aplica a los años resueltos por macrobloque.
+        self.trust_region = None
+        # Mejor trayectoria conocida, {año: extract_full_solution()}, o None.
+        # La fija el driver; la usa el MIP start por dias.
+        self.incumbente = None
+        # MIP start por descomposicion en dias (decomposition/day_blocks.py,
+        # portado de battery_swapping_multiaño):
+        #   "off"      nunca (default, comportamiento historico);
+        #   "first"    de entrada solo en la primera iteracion, y en las
+        #              siguientes como "fallback";
+        #   "always"   antes de cada resolucion del forward;
+        #   "fallback" solo cuando el bloque anual llega al timelimit SIN
+        #              incumbente: se arma el start y se vuelve a resolver.
+        if day_warm_start not in ("off", "first", "always", "fallback"):
+            raise ValueError("day_warm_start tiene que ser off, first, always o fallback")
+        self.day_warm_start = day_warm_start
+        self.day_warm_start_time = 0.0
+        # Los solves DIARIOS tienen su propio gap/timelimit/jobs: solo tienen
+        # que encontrar un punto, no demostrar el gap del bloque anual.
+        self.day_solver_kwargs = dict(self.solver_kwargs, **(day_solver_overrides or {}))
+
+    def _use_day_warm_start(self, iteration):
+        if self.day_warm_start == "always":
+            return True
+        return self.day_warm_start == "first" and iteration in (None, 1)
+
+    def _run_day_warm_start(self, block, heritage, verbose):
+        # Import local: day_blocks importa YearBlockBuilder, y este modulo lo
+        # cargan los workers del Pool que construye bloques.
+        from src.optimization.decomposition.day_blocks import day_warm_start
+        t_dw = time.time()
+        try:
+            return day_warm_start(block, heritage, self.day_solver_kwargs,
+                                  verbose=verbose,
+                                  incumbente=(self.incumbente or {}).get(block.year))
+        except Exception as exc:
+            # Heuristica de arranque: si falla, se sigue como siempre.
+            print(f"[DayDecomp] año {block.year}: fallo "
+                  f"({type(exc).__name__}: {exc}) -- se sigue sin MIP start")
+            return False
+        finally:
+            self.day_warm_start_time += time.time() - t_dw
 
     def run(self, iteration=None, verbose=True, current_ub=None, current_lb=None,
             max_recoveries=25):
@@ -321,12 +459,83 @@ class ForwardPass(object):
                     fijadas += 1
         return fijadas
 
+    def _solve_year(self, block, heritage, iteration, verbose):
+        """MILP del año en el forward, con los respaldos de battery_swapping_
+        multiaño: MIP start por dias y reintento largo. Levanta
+        SubproblemInfeasible si el año no tiene solucion con el estado heredado.
+        """
+        warm = False
+        if self._use_day_warm_start(iteration):
+            warm = self._run_day_warm_start(block, heritage, verbose)
+        try:
+            _solve(block.model, label=f"forward y={block.year}", warmstart=warm,
+                   **self.solver_kwargs)
+        except SubproblemNoIncumbent:
+            # "fallback" siempre recupera. "first" tambien, en las iteraciones
+            # en que NO armo el start de entrada: los cortes y la herencia
+            # cambian el bloque, y nada garantiza que el año que tuvo incumbente
+            # gracias al start en la iteracion 1 lo vuelva a encontrar solo.
+            respaldo = (self.day_warm_start == "fallback"
+                        or (self.day_warm_start == "first"
+                            and not self._use_day_warm_start(iteration)))
+            if respaldo and not warm:
+                print(f"[DayDecomp] año {block.year}: el bloque anual no encontro "
+                      f"incumbente -- armando MIP start por dias y resolviendo de nuevo")
+                if self._run_day_warm_start(block, heritage, verbose):
+                    _solve(block.model, label=f"forward y={block.year} (con start)",
+                           warmstart=True, **self.solver_kwargs)
+                    return
+            # Ultimo recurso antes de perder la iteracion: un reintento con 4x
+            # el tope (minimo 20 min). Medido en battery_swapping_multiaño: un
+            # año sin incumbente mataba la corrida entera. Si tambien falla, la
+            # excepcion sube y el driver corta la descomposicion conservando la
+            # mejor solucion.
+            largo = dict(self.solver_kwargs)
+            largo["timelimit"] = max(4 * largo.get("timelimit", 600), 1200)
+            print(f"[NestedBenders] año {block.year}: sin incumbente -- "
+                  f"reintento con {largo['timelimit']:.0f}s")
+            _solve(block.model, label=f"forward y={block.year} (reintento)",
+                   warmstart=warm, **largo)
+
+    def _solve_year_stabilized(self, block, heritage, iteration, verbose):
+        """_solve_year dentro de la caja del forward estabilizado, si la hay.
+        Devuelve True si la caja termino ACTIVA (la solucion toca un borde).
+
+        Si el año falla DENTRO de la caja -- infactible o sin incumbente -- se
+        repite sin caja. Es obligatorio, no una comodidad: una infactibilidad
+        causada por la caja no es del problema, y dejarla subir generaria un
+        corte de factibilidad INVALIDO sobre el año anterior (prohibiria
+        estados que sin caja si tienen continuacion)."""
+        tr = self.trust_region
+        centro = tr["center"].get(block.year) if tr else None
+        if centro is None:
+            self._solve_year(block, heritage, iteration, verbose)
+            return False
+        block.set_trust_region(centro, delta_int=tr["delta_int"],
+                               frac_cont=tr["frac_cont"], min_cont=tr["min_cont"])
+        try:
+            try:
+                self._solve_year(block, heritage, iteration, verbose)
+                return block.trust_region_binding()
+            except (SubproblemInfeasible, SubproblemNoIncumbent) as exc:
+                print(f"[Estabilizacion] año {block.year}: sin solucion dentro de la "
+                      f"caja ({type(exc).__name__}) -- se repite sin caja")
+                block.clear_trust_region()
+                self._solve_year(block, heritage, iteration, verbose)
+                # Salir de la caja cuenta como caja activa: la limitaba.
+                return True
+        finally:
+            # La caja no puede sobrevivir al solve: el backward y los cortes de
+            # factibilidad usan este mismo bloque.
+            block.clear_trust_region()
+
     def _sweep(self, iteration=None, verbose=True, current_ub=None, current_lb=None):
         x_hat_by_year = {}
         phi_by_year = {}
         alpha_by_year = {}
         full_solution_by_year = {}
         mccormick_residual_by_year = {}
+        caja_activa = {}
 
         n = len(self.blocks)
         for i, block in enumerate(self.blocks):
@@ -355,7 +564,8 @@ class ForwardPass(object):
                 continue
 
             try:
-                _solve(block.model, label=f"forward y={block.year}", **self.solver_kwargs)
+                caja_activa[block.year] = self._solve_year_stabilized(
+                    block, heritage, iteration, verbose)
             except SubproblemInfeasible:
                 raise _YearInfeasible(i, x_hat_by_year)
             phi_by_year[block.year] = value(block.model.obj)
@@ -390,6 +600,8 @@ class ForwardPass(object):
             "x_hat": x_hat_by_year,
             "full_solution": full_solution_by_year,
             "mccormick_residual": mccormick_residual_by_year,
+            # {año: True si la caja del forward estabilizado quedo activa}
+            "box_binding": caja_activa,
         }
 
 
@@ -560,7 +772,18 @@ class BackwardPass(object):
 
     def __init__(self, blocks, cut_manager=None, solver_kwargs=None,
                  degradation_cut_mode="mccormick", lagrangean_kwargs=None,
-                 strengthen_max_iter=1):
+                 strengthen_max_iter=1, strengthened_timelimit=300):
+        """:param strengthened_timelimit: segundos por MILP lagrangeano del
+            corte fortalecido (portado de battery_swapping_multiaño). Antes se
+            usaba el timelimit del bloque. Cortarlo NO invalida el corte: se usa
+            la cota DUAL del solver, que subestima siempre (ver _lagrangean_bound).
+        """
+        self.strengthened_timelimit = strengthened_timelimit
+        # Cuanto levanto el corte fuerte sobre el de LP, para poder decidir si
+        # paga su costo sin releer los logs. `attempts` cuenta los intentos
+        # REALES (la aceleracion agrega pasadas de mas sobre las iteraciones).
+        self.strengthen_gain = []
+        self.strengthen_attempts = 0
         self.blocks = blocks
         self.cut_manager = cut_manager or BendersCutManager()
         self.solver_kwargs = solver_kwargs or {}
@@ -618,6 +841,40 @@ class BackwardPass(object):
             mu = (self.cut_manager.read_duals(model, block.year, block.state_links)
                   if read_mu else None)
         return phi_lp, mu
+
+    def _lagrangean_bound(self, block, mu, phi_lp, label):
+        """Constante del Strengthened Benders cut (Lara et al. 2018, ec. 63):
+        Phi^LR(mu) con la integralidad del bloque PUESTA, usando el mu que ya
+        salio del dual del LP. Devuelve (valor, se_uso_el_fuerte). Portado de
+        battery_swapping_multiaño; reemplaza, para strengthen_max_iter=1, a
+        _strengthened_subgradient_cut.
+
+        VALIDEZ CON TIMELIMIT O MIPGAP. El corte necesita un valor que SUBESTIME
+        Phi^LR. Si el MILP se corta por tiempo -- o cierra con MIPGap > 0, que
+        es el caso normal con gap 1 % --, su incumbente lo SOBREestima, y armar
+        el corte con el lo haria demasiado fuerte: podria recortar estados
+        factibles y producir LB > UB. Por eso se lee la cota DUAL
+        (result.problem.lower_bound), que subestima siempre, y por eso el solve
+        va con load_solutions=False: asi un MILP sin incumbente igual devuelve
+        su cota. La version anterior de esta rama tomaba value(obj_lagrangian),
+        el valor del incumbente.
+
+        PISO EN Phi^LP. Con el mu optimo del LP vale Phi^LR >= Phi^LP: el
+        minimo sobre el conjunto entero no puede ser menor que sobre su
+        relajacion. Si el MILP se corta antes de levantar la cota por encima de
+        Phi^LP, se devuelve Phi^LP: el corte queda igual al de Benders puro,
+        nunca peor.
+
+        Se hace EN SITU (YearBlockBuilder.lagrangean_mode), sin clonar, y
+        dualizando todas las familias de estado, tambien las global_once."""
+        kwargs = dict(self.solver_kwargs)
+        kwargs["timelimit"] = self.strengthened_timelimit
+        with block.lagrangean_mode(mu) as model:
+            result = _solve(model, label=label, load_solutions=False, **kwargs)
+        dual = _cota_dual(result)
+        if dual is None or dual <= phi_lp:
+            return phi_lp, False
+        return dual, True
 
     def _make_exact_clone(self, block):
         """Clona el bloque y restaura la fisica EXACTA (bilineal, no
@@ -735,9 +992,18 @@ class BackwardPass(object):
 
         for it in range(1, max_iter + 1):
             clone = self._build_lagrangian_relaxation(child, mu, x_hat_base)
-            _solve(clone, label=f"{label_prefix}lagrangian it={it} y={y}", **exact_kwargs)
-
-            L_mu = value(clone.obj_lagrangian)
+            # L(mu) sale de la COTA DUAL, no del incumbente: con TimeLimit o
+            # MIPGap > 0 el incumbente sobreestima L y el corte armado con el
+            # podria ser invalido (ver _lagrangean_bound). La solucion primal se
+            # carga solo para el subgradiente.
+            result = _solve(clone, label=f"{label_prefix}lagrangian it={it} y={y}",
+                            load_solutions=False, **exact_kwargs)
+            L_mu = _cota_dual(result)
+            if L_mu is None:
+                break
+            hay_primal = _tiene_incumbente(result)
+            if hay_primal:
+                clone.solutions.load_from(result)
             for link in dualized_links:
                 state_name = link["state"]
                 if link["index_set"] is None:
@@ -755,6 +1021,8 @@ class BackwardPass(object):
                 best_L = L_mu
                 best_mu = {k: (dict(v) if isinstance(v, dict) else v) for k, v in mu.items()}
 
+            if not hay_primal:
+                break   # sin punto no hay subgradiente
             if phi_op - L_mu <= eps_gap * gap_scale:
                 break
             if prev_L is not None and abs(L_mu - prev_L) <= eps_stall * gap_scale:
@@ -910,7 +1178,10 @@ class BackwardPass(object):
             and link["state"] in mu_init
         ]
         if not dualized_links:
-            return target, mu_init
+            # Antes devolvia `target` (un valor primal, que con MIPGap > 0
+            # sobreestima Phi): sin familias que dualizar no hay nada que
+            # fortalecer, y el llamador cae al corte de Benders (piso Phi^LP).
+            return float("-inf"), mu_init
 
         mu = {k: (dict(v) if isinstance(v, dict) else v) for k, v in mu_init.items()}
         best_L = float("-inf")
@@ -918,11 +1189,19 @@ class BackwardPass(object):
         prev_L = None
         gap_scale = max(abs(target), 1.0)
 
+        kwargs_lr = dict(self.solver_kwargs)
+        kwargs_lr["timelimit"] = self.strengthened_timelimit
         for it in range(1, max_iter + 1):
             clone = self._build_strengthened_relaxation(child, mu, fix_vars=fix_vars)
-            _solve(clone, label=f"{label_prefix}strengthened it={it} y={y}", **self.solver_kwargs)
-
-            L_mu = value(clone.obj_lagrangian)
+            # Cota DUAL, no incumbente (ver _lagrangean_bound).
+            result = _solve(clone, label=f"{label_prefix}strengthened it={it} y={y}",
+                            load_solutions=False, **kwargs_lr)
+            L_mu = _cota_dual(result)
+            if L_mu is None:
+                break
+            hay_primal = _tiene_incumbente(result)
+            if hay_primal:
+                clone.solutions.load_from(result)
             for link in dualized_links:
                 state_name = link["state"]
                 if link["index_set"] is None:
@@ -939,11 +1218,12 @@ class BackwardPass(object):
                 best_L = L_mu
                 best_mu = {k: (dict(v) if isinstance(v, dict) else v) for k, v in mu.items()}
 
-            if it == max_iter:
+            if it == max_iter or not hay_primal:
                 # Ultima pasada: el gradiente y el paso de abajo actualizarian
                 # `mu`, pero se devuelve `best_mu`, asi que serian trabajo
                 # tirado. Importa con max_iter=1 (Strengthened Benders), donde
                 # es la UNICA pasada: queda exactamente una resolucion y nada mas.
+                # Sin punto primal tampoco hay subgradiente.
                 break
 
             if target - L_mu <= eps_gap * gap_scale:
@@ -1203,11 +1483,30 @@ class BackwardPass(object):
                                 else f"Lagrangeano, Lara ec. (62), <={self.strengthen_max_iter} it")
                         print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  {bounds_tag}  "
                               f"fortaleciendo corte ({tipo})...")
-                    phi_cut, mu_cut = self._strengthened_subgradient_cut(
-                        child, x_hat_by_year[parent.year], mu_init=mu,
-                        max_iter=self.strengthen_max_iter,
-                        verbose=verbose, label_prefix=f"{k_tag}",
-                    )
+                    self.strengthen_attempts += 1
+                    if self.strengthen_max_iter == 1:
+                        # ec. (63) EN SITU y con cota dual (portado de
+                        # battery_swapping_multiaño, ver _lagrangean_bound).
+                        phi_cut, _uso = self._lagrangean_bound(
+                            child, mu, phi_lp, label=f"{k_tag}lagrangeano y={child.year}")
+                    else:
+                        phi_cut, mu_cut = self._strengthened_subgradient_cut(
+                            child, x_hat_by_year[parent.year], mu_init=mu,
+                            max_iter=self.strengthen_max_iter,
+                            verbose=verbose, label_prefix=f"{k_tag}",
+                        )
+
+            # PISO EN Phi^LP: si el fortalecido (o el Camino B) no supero la
+            # constante del LP -- o no dejo cota --, el corte de Benders puro
+            # (phi_lp, mu) es valido y nunca peor.
+            if phi_cut is None or phi_cut <= phi_lp:
+                phi_cut, mu_cut = phi_lp, mu
+            elif strengthen and not use_lagrangean:
+                self.strengthen_gain.append(phi_cut - phi_lp)
+                if verbose:
+                    print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  "
+                          f"Phi^LP={phi_lp:,.2f} -> Phi^LR={phi_cut:,.2f} "
+                          f"(+{phi_cut - phi_lp:,.2f})")
 
             self.cut_manager.add_cut(
                 parent, phi_cut, mu_cut, x_hat_by_year[parent.year], iteration=iteration
@@ -1233,4 +1532,22 @@ class BackwardPass(object):
                   f"relajando LP (cota inferior LB)...")
         phi_lp, _mu = self._relax_and_solve(
             self.blocks[0], label=f"backward LB y={self.blocks[0].year}", read_mu=False)
-        return phi_lp
+        if not strengthen:
+            return phi_lp
+
+        # Con cortes fortalecidos el año 1 se resuelve ademas como MILP (portado
+        # de battery_swapping_multiaño): los cortes ya valen para el casco
+        # entero, y relajar tambien la integralidad del PRIMER año tiraria
+        # gratis parte de lo que acaban de comprar. Sigue siendo cota inferior
+        # valida porque alpha_1 subestima el costo futuro verdadero; con
+        # timelimit se lee la cota dual, que subestima siempre.
+        first = self.blocks[0]
+        if verbose:
+            print(f"[NestedBenders] {k_tag}BACKWARD anio {first.year}  {bounds_tag}  "
+                  f"MILP con los cortes actualizados (cota inferior)...")
+        kwargs = dict(self.solver_kwargs)
+        kwargs["timelimit"] = self.strengthened_timelimit
+        result = _solve(first.model, label=f"cota y={first.year} (MILP)",
+                        load_solutions=False, **kwargs)
+        dual = _cota_dual(result)
+        return phi_lp if dual is None else max(phi_lp, dual)

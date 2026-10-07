@@ -1,4 +1,5 @@
 import contextlib
+import math
 
 import pyomo.environ as pyo
 from pyomo.core.base import Suffix
@@ -63,7 +64,7 @@ class YearBlockBuilder(object):
 
     def __init__(self, mine_system, time_series, year, is_last_year,
                  exogenous_stations, autonomous_mode=False, macroblock=None,
-                 free_charging=False, free_maintenance=False):
+                 free_charging=False, free_maintenance=False, days_override=None):
         """
         :param year: año de este bloque (debe pertenecer a time_series.years).
         :param is_last_year: True si `year` es el ultimo año del horizonte
@@ -87,6 +88,17 @@ class YearBlockBuilder(object):
         self.year = year
         self.is_last_year = is_last_year
         self.macroblock = macroblock
+        # Configuracion del bloque, guardada para que el MIP start por dias
+        # (decomposition/day_blocks.py) arme sub-bloques "hermanos" con
+        # exactamente el mismo regimen y X exogena.
+        self.exogenous_stations = exogenous_stations
+        self.autonomous_mode = autonomous_mode
+        self.free_charging = free_charging
+        self.free_maintenance = free_maintenance
+        # days_override=[d]: sub-bloque de UN dia representativo (ver
+        # OptRules.model_days y day_blocks.build_day_block).
+        self.days_override = days_override
+        dias = dict(days_override=days_override) if days_override is not None else {}
 
         if exogenous_stations is None:
             raise ValueError(
@@ -102,26 +114,26 @@ class YearBlockBuilder(object):
 
         self.set_builder = OptSets(
             mine_system, time_series, autonomous_mode=autonomous_mode, years_override=[year],
-            macroblock=macroblock, free_maintenance=free_maintenance,
+            macroblock=macroblock, free_maintenance=free_maintenance, **dias,
         )
         self.param_rules = OptParameters(
-            mine_system, time_series, years_override=[year], macroblock=macroblock
+            mine_system, time_series, years_override=[year], macroblock=macroblock, **dias
         )
         self.bound_rules = BoundRules(
             mine_system, time_series, years_override=[year],
             exogenous_stations=self._exogenous_stations_for_rules,
-            macroblock=macroblock,
+            macroblock=macroblock, **dias,
         )
         self.constraint_rules = ConstraintRules(
             mine_system, time_series, years_override=[year],
             exogenous_stations=self._exogenous_stations_for_rules,
             macroblock=macroblock,
-            free_charging=free_charging, free_maintenance=free_maintenance,
+            free_charging=free_charging, free_maintenance=free_maintenance, **dias,
         )
         self.objective_rules = ObjectiveRules(
             mine_system, time_series, years_override=[year],
             exogenous_stations=self._exogenous_stations_for_rules,
-            macroblock=macroblock,
+            macroblock=macroblock, **dias,
         )
 
         # Nombres de los parametros heredados que el driver forward/backward
@@ -348,6 +360,179 @@ class YearBlockBuilder(object):
             model.obj.activate()
             for con in desacoplados:
                 con.activate()
+
+    @contextlib.contextmanager
+    def lagrangean_mode(self, mu):
+        """Convierte el bloque EN SITU en su RELAJACION LAGRANGEANA respecto de
+        las igualdades de fijacion del estado heredado, y lo restaura al salir.
+        Es lo que hace falta para el Strengthened Benders cut (ec. 63 de Lara
+        et al. 2018, EJOR 271:1037-1054). Portado de battery_swapping_multiaño.
+
+            Phi^LR(mu) = min { f_y + alpha + mu^T (z - x_hat)
+                               : (x, u, z) en X_y }
+
+        Dos diferencias con relaxed_mode, y las dos son el punto:
+
+          - la INTEGRALIDAD SE MANTIENE, asi que la cota vale para el casco
+            entero y no para su relajacion lineal;
+          - la igualdad z = x_hat se DESACOPLA y su violacion se paga en el
+            objetivo con el multiplicador mu, en vez de imponerse.
+
+        Diferencias con _build_strengthened_relaxation (el camino que esta rama
+        usaba antes): no clona el bloque -- clone() es un deepcopy del grafo de
+        Pyomo y se pagaria una vez por año e iteracion, ver relaxed_mode -- y
+        dualiza TODAS las familias, tambien las global_once (n_ssee_k, G, H),
+        que alla quedaban fijas en el heredado. Fijarlas no invalida nada, pero
+        deja afuera parte de la informacion que el corte puede llevar.
+
+        SIGNO. Convencion de BendersCutManager.read_duals: mu = -pi y el
+        lagrangiano es L = f + mu^T (z - x_hat), de modo que Phi(x_hat) =
+        g(mu) - mu^T x_hat con g(mu) = min {f + mu^T z}. El termino -mu^T x_hat
+        deja Phi^LR en la misma base que Phi^LP; como x_hat vive en los Param
+        mutables <estado>_hat, alcanza con escribir (z - hat).
+
+        z es la copia heredada <estado>_prev cuando existe, y la variable real
+        cuando el estado es global_once, que es contra quien esta escrita la
+        igualdad en ese caso. Los cortes ya acumulados en model.cuts quedan
+        activos: acotan alpha y son parte de phi_{t,k} en la ec. (60).
+        """
+        model = self.model
+        desacoplados = []
+        termino_dual = 0.0
+
+        for link in self.state_links:
+            if link["hat"] is None:
+                continue
+            con = getattr(model, "link_" + link["state"])
+            if con.active:
+                con.deactivate()
+                desacoplados.append(con)
+
+            mu_fam = mu.get(link["state"])
+            if mu_fam is None:
+                continue
+            z_comp = getattr(model, link["prev"]) if link["prev"] else \
+                getattr(model, link["state_var"])
+            hat = getattr(model, link["hat"])
+            if link["index_set"] is None:
+                termino_dual += mu_fam * (z_comp - hat)
+            else:
+                for idx, mu_v in mu_fam.items():
+                    termino_dual += mu_v * (z_comp[idx] - hat[idx])
+
+        model.obj.deactivate()
+        model.lagrangean_obj = pyo.Objective(expr=model.obj.expr + termino_dual,
+                                             sense=pyo.minimize)
+        try:
+            yield model
+        finally:
+            # Restaurar SIEMPRE: si no, el forward resolveria el anio con el
+            # estado desacoplado y con un objetivo que no es el suyo.
+            model.del_component("lagrangean_obj")
+            model.obj.activate()
+            for con in desacoplados:
+                con.activate()
+
+    # ------------------------------------------------------------------ #
+    # Region de confianza (Box-step) para el forward estabilizado
+    # ------------------------------------------------------------------ #
+    # Portado de battery_swapping_multiaño. Estabilizacion a la Göke, Schmidt &
+    # Kendziorski (EJOR 316, 2024, sec. 3.2.3): el forward busca la inversion
+    # de cada año dentro de una caja alrededor del CENTRO de estabilidad (la
+    # mejor trayectoria conocida), para que la trayectoria no salte de un
+    # extremo a otro entre iteraciones. Box-step (norma l-infinito) y no la
+    # region cuadratica del paper: aca son solo COTAS de variables -- el MILP
+    # no gana filas ni se vuelve MIQCP, y ademas se achica.
+    #
+    # Se encajan las DECISIONES de inversion que este bloque toma: el stock
+    # N_chargers del año, y n_ssee_k/G/H solo en el primer año global (despues
+    # los fija la igualdad de enlace). D no: es resultado de la degradacion,
+    # no una decision.
+    #
+    # La caja NUNCA debe llegar al backward ni a un corte de factibilidad: los
+    # cortes tienen que valer para cualquier estado. Por eso passes.py la quita
+    # apenas termina el solve del forward (clear_trust_region).
+
+    def _trust_region_vardata(self):
+        """[(state_name, idx, VarData)] de las decisiones que se encajan."""
+        out = []
+        for link in self.state_links:
+            if link["state"] == "D":
+                continue
+            es_global = link.get("kind") == "global_once"
+            if es_global and link["hat"] is not None:
+                continue   # años siguientes: la fija link_<estado>, no se decide aca
+            var = getattr(self.model, link["state_var"])
+            if link["index_set"] is None:
+                out.append((link["state"], None, var if es_global else var[self.year]))
+            else:
+                for idx in link["index_set"]:
+                    out.append((link["state"], idx,
+                                var[idx] if es_global else var[idx, self.year]))
+        return out
+
+    def set_trust_region(self, center, delta_int=1, frac_cont=0.25, min_cont=1.0):
+        """Aprieta las cotas de las decisiones de inversion a una caja alrededor
+        de `center` (mismo formato que extract_state()):
+
+            enteras:   [c - delta_int, c + delta_int]
+            continuas: [c - w, c + w],  w = max(frac_cont*|c|, min_cont)
+
+        intersectada con las cotas originales. Para los stocks, la caja se
+        estira hasta el valor heredado si hace falta: el stock no puede bajar
+        del año anterior (Delta >= 0), y una caja que no lo contuviera volveria
+        infactible el año por culpa de la estabilizacion y no del problema."""
+        self.clear_trust_region()
+        self._trust_region = dict(center=center, delta_int=delta_int,
+                                  frac_cont=frac_cont, min_cont=min_cont)
+        self._tr_saved = []
+        for state, idx, vd in self._trust_region_vardata():
+            if vd.fixed or state not in center:
+                continue
+            c = center[state] if idx is None else center[state].get(idx)
+            if c is None:
+                continue
+            c = float(c)
+            entera = not vd.is_continuous()
+            w = delta_int if entera else max(frac_cont * abs(c), min_cont)
+            lb0, ub0 = vd.lb, vd.ub
+            lo, hi = c - w, c + w
+            link = next(l for l in self.state_links if l["state"] == state)
+            if link.get("kind") == "simple" and link["hat"] is not None:
+                hat = getattr(self.model, link["hat"])
+                heredado = value(hat if idx is None else hat[idx])
+                hi = max(hi, heredado)
+            if lb0 is not None:
+                lo = max(lo, lb0)
+            if ub0 is not None:
+                hi = min(hi, ub0)
+            if entera:
+                lo, hi = math.ceil(lo - 1e-6), math.floor(hi + 1e-6)
+            if lo > hi:
+                continue   # sin interseccion con las cotas originales: no se encaja
+            self._tr_saved.append((vd, lb0, ub0, lo, hi))
+            vd.setlb(lo)
+            vd.setub(hi)
+
+    def trust_region_binding(self, tol=1e-6):
+        """True si la solucion actual toca algun borde de la caja que sea mas
+        apretado que la cota original: la caja esta limitando la decision."""
+        for vd, lb0, ub0, lo, hi in getattr(self, "_tr_saved", []):
+            x = value(vd, exception=False)
+            if x is None:
+                continue
+            if (lb0 is None or lo > lb0 + tol) and x <= lo + tol:
+                return True
+            if (ub0 is None or hi < ub0 - tol) and x >= hi - tol:
+                return True
+        return False
+
+    def clear_trust_region(self):
+        for vd, lb0, ub0, _lo, _hi in getattr(self, "_tr_saved", []):
+            vd.setlb(lb0)
+            vd.setub(ub0)
+        self._tr_saved = []
+        self._trust_region = None
 
 
     def _add_linear_state(self, model, state_name, state_var_name, delta_name, accum_var, index_set,
