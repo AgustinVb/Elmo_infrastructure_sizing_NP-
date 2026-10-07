@@ -341,7 +341,7 @@ class Subproblema:
             m.ModelSense = GRB.MINIMIZE
         return salida
 
-    def local(self, xhat, pi, lam, rangos_cont, timelimit, gap):
+    def local(self, xhat, pi, lam, rangos_cont, timelimit, gap, callback=None):
         """Lagrangiano LOCAL: copias ENTERAS fijas en xhat (la inversion de
         prueba), copias continuas y presupuestos libres con costo -pi / -lam.
 
@@ -376,7 +376,7 @@ class Subproblema:
         m.Params.TimeLimit = timelimit
         m.Params.MIPGap = gap
         t0 = time.time()
-        m.optimize()
+        m.optimize(callback)
         try:
             cota = m.ObjBound
         except gp.GurobiError:
