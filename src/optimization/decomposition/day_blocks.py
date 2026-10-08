@@ -179,19 +179,25 @@ def _inherit_bounds(annual, day_model):
 
 
 def _day_objective(obj_rules, n_dias):
-    """capex / n_dias + opex_del_dia.
+    """costos_del_año / n_dias + opex_del_dia.
 
-    total_cost mezcla costos que se pagan una vez y sirven a los cuatro dias
-    (inversion) con costos del dia ya escalados por scaling_factor_op_cost
-    (91,25). Con total_cost tal cual, cada sub-bloque pagaria el capex ENTERO
-    contra la cuarta parte del beneficio y quedaria sesgado en contra de
+    total_cost mezcla costos que se pagan una vez por año y sirven a los
+    cuatro dias con costos del dia ya escalados por scaling_factor_op_cost
+    (91,25). Con total_cost tal cual, cada sub-bloque pagaria el costo anual
+    ENTERO contra la cuarta parte del beneficio y quedaria sesgado en contra de
     invertir. Prorrateando, la suma sobre los dias reconstruye el costo anual
     exacto:
 
-        sum_d [capex/n + opex_d] = capex + sum_d opex_d
+        sum_d [anual/n + opex_d] = anual + sum_d opex_d
 
-    peak_power_cost va con el capex porque cobra sobre P_pot, la potencia
-    contratada del año. battery_replace_cost tambien: el reemplazo es del año.
+    Van con lo anual: la inversion, peak_power_cost (cobra sobre P_pot, la
+    potencia contratada del año), battery_replace_cost (el reemplazo es del
+    año) y gen_op_cost/bess_op_cost: son el O&M ANUAL de la capacidad G/H, no
+    dependen del dia. Hasta 2026-10-07 estos dos iban del lado del opex diario
+    sin dividir, asi que cada dia pagaba el O&M anual completo contra la
+    cuarta parte de la inversion y la fase 1 quedaba sesgada en contra de la
+    generacion y del BESS (solo la heuristica del MIP start: no cambia el
+    modelo ni la validez de ninguna cota).
     """
     capex = (obj_rules.inversion_cost,
              obj_rules.station_constant_cost,
@@ -199,10 +205,10 @@ def _day_objective(obj_rules, n_dias):
              obj_rules.gen_investment_cost,
              obj_rules.bess_investment_cost,
              obj_rules.peak_power_cost,
-             obj_rules.battery_replace_cost)
-    opex = (obj_rules.lhd_charge_cost_bs,
-            obj_rules.gen_op_cost,
-            obj_rules.bess_op_cost)
+             obj_rules.battery_replace_cost,
+             obj_rules.gen_op_cost,
+             obj_rules.bess_op_cost)
+    opex = (obj_rules.lhd_charge_cost_bs,)
 
     def _obj(m):
         return sum(f(m) for f in capex) / n_dias + sum(f(m) for f in opex)
