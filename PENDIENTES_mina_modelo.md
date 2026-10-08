@@ -21,7 +21,7 @@ Metodología de cada uno: Nested Benders → `mejorar_ub.py` → `certificar_inv
 |---|---:|---:|---:|---|---|
 | RED | 2.569.771,29 | 2.555.303,48 | 0,56 % | `mejorar_ub_r4/solucion` | `certificado_r4_0563` |
 | RED_GEN | 2.131.851,53 | 2.047.595,74 | 3,95 % | `mejorar_ub_red_gen_2/solucion` | `certificado_red_gen_2_3pc` |
-| RED_GEN_BESS | 2.085.557,66 | 2.035.547,42 | 2,40 % | `mejorar_ub_gen_bat_v6b/solucion` | `certificado_gen_bat_v6b_2pc` |
+| RED_GEN_BESS | 2.079.895,34 | 2.035.547,42 | 2,13 % | `mejorar_ub_gen_bat_v6c/solucion` | `certificado_gen_bat_v6c_2pc` |
 
 RED_GEN: Benders `P_red_gen` (7 iteraciones, UB 2.167.384,29, se cayó en k=8 por
 el PC) → `mejorar_ub_red_gen` (−1,09 %, 40 días a 600 s) → certificado con
@@ -34,6 +34,13 @@ la LB no cambia, el gap baja a 3,95 %). El certificado de RED_GEN se repitió en
 el PC r640-01 (`certificado_red_gen_3pc_pc2`): mismas LB, diferencias ≤ 1,2
 (tolerancia de Benders).
 
+RED_GEN_BESS: `mejorar_ub_gen_bat_v6b` (2.085.557,66) → `mejorar_ub_gen_bat_v6c`
+(años 3–9 a 900 s, −0,27 %: 2.079.895,34; misma inversión entera; −8,5k de
+red, +2,8k de inversión en generación) → `certificado_gen_bat_v6c_2pc`
+(`--gap_objetivo 0.02`, umbral 2.038.297,43, 4 candidatas, pool completo; la
+inversión del incumbente queda DESCARTADA en 2.039.816,85 y la LB la fija la
+otra, sin cambio: gap 2,40 % → 2,13 %).
+
 Métricas: `python consumer.py <carpeta solucion>` (las tres carpetas ya tienen su
 `parameters.json`; para soluciones nuevas, `escribir_parameters.py`). El COSTO
 TOTAL de consumer reproduce el UB al centavo en los tres.
@@ -43,27 +50,38 @@ TOTAL de consumer reproduce el UB al centavo en los tres.
 | Comparación | Ahorro garantizado | ¿Válida? |
 |---|---|---|
 | Generación vs solo red | 423.452 – 522.176 (16,5 – 20,4 %) | Sí: intervalos disjuntos. Certifica además que el óptimo de RED_GEN instala generación. |
-| Gen + BESS vs solo red | 469.746 – 534.224 (18,3 – 20,9 %) | Sí |
-| Valor del BESS (RED_GEN → RED_GEN_BESS) | 0 – 96.304 (0 – ~4,5 %) | **No**: intervalos superpuestos en [2.047.596; 2.085.558]. Los 46.294 (2,2 %) entre incumbentes no están certificados. |
+| Gen + BESS vs solo red | 475.408 – 534.224 (18,5 – 20,9 %) | Sí |
+| Valor del BESS (RED_GEN → RED_GEN_BESS) | 0 – 96.304 (0 – ~4,5 %) | **No**: intervalos superpuestos en [2.047.596; 2.079.895]. Los 51.956 (2,4 %) entre incumbentes no están certificados; la cota superior (≤ 96.304, ≤ 4,5 %) sí. |
 
 Las métricas de operación/inversión de cada escenario describen la **mejor
 solución encontrada**, no el óptimo.
 
 ### Pendientes
 
-1. **Certificar (o descartar) el valor del BESS.** Hace falta LB(RED_GEN) >
-   UB(RED_GEN_BESS) = 2.085.557,66: faltan **+37.962 (+1,9 %)**, y para TODAS las
-   candidatas bajo ese valor (incumbente +37.962, calendario del año 4 +27.974,
-   2ª batería en el año 2 +13.471, otra +5.710). Además el umbral del pool tiene
-   que quedar sobre 2.085.557,66: `--gap_objetivo` < 2,17 % con el UB actual.
-   **Diagnóstico de cotas MILP por día** (`diagnostico_milp_inversion_fija.py`,
-   `diagnostico_milp_red_gen`, inversión del incumbente, 40 días en paralelo con
-   1800 s cada uno): el lagrangiano local de `Subproblema.local` sube la LB solo
-   **+6.634** (60 s: +3.356; 600 s: +5.466; 1800 s: +6.634). La cota de Gurobi
-   se queda casi en la raíz: el hueco está en la formulación del día (LP débil),
-   no en el tiempo. Con cotas MILP por día no se cierra. Quedan: reforzar la
-   formulación diaria (desigualdades válidas, simetría entre LHD) o reportar el
-   BESS como **no concluyente**.
+1. **Valor del BESS: NO CONCLUYENTE (recomendación: reportarlo así).** Hace falta
+   LB(RED_GEN) > UB(RED_GEN_BESS) = 2.079.895,34: faltan **+32.300 (+1,6 %)**,
+   para todas las candidatas bajo ese valor, y con `--gap_objetivo` < 2,44 %.
+   Lo que se probó (2026-10-07/08, r640-01):
+   - **Cotas MILP por día** con la inversión fija (`diagnostico_milp_inversion_fija.py`,
+     `diagnostico_milp_red_gen`, lagrangiano local de `Subproblema.local`, 1800 s):
+     la LB del incumbente sube solo **+6.634** (60 s: +3.356; 600 s: +5.466).
+   - **Parámetros de Gurobi** (`diagnostico_gap_lp_milp.py`, `diagnostico_gap_lp_milp`,
+     días (4,105), (6,196), (8,288), todo fijo en el incumbente, 900 s): default,
+     MIPFocus=3, +Cuts=3, +Symmetry=2/Presolve=2 cierran a lo sumo 1–14 % del
+     hueco LP–incumbente. Las raíces son idénticas: los cortes no agregan nada.
+   - **Composición del hueco:** todo el hueco es energía de red y es igual, kWh a
+     kWh, al recorte solar extra del incumbente (4,105: +3.754; 6,196: +2.678;
+     8,288: +1.474). El LP carga baterías "en fracción" en las horas de sol
+     (cohortes `Sv` ~40 % fraccionarias, menos `S`, más `X_dch`); la operación
+     entera carga baterías indivisibles con duración fija y vierte sol. Por eso
+     RED (sin generación) cierra en 0,56 % y RED_GEN no. (El hueco también incluye
+     lo que el incumbente tenga de subóptimo; no se puede separar.)
+   - Lo que quedaría: desigualdades válidas que acoten la absorción solar por
+     intervalo con cohortes de carga enteras (o una formulación extendida por
+     cohorte). Investigación de semanas, sin garantía. Más Nested Benders no
+     sirve: su LB (2.010.853,92) es la cota operacional.
+   Para la tesis: valor del BESS ≤ 96.304 (≤ 4,5 %) certificado; 51.956 (2,4 %)
+   entre incumbentes como estimación no certificada; y la explicación de arriba.
 2. ~~Repetir el certificado de RED_GEN en el otro PC.~~ Hecho (2026-10-07, r640-01):
    `certificado_red_gen_3pc_pc2` da LB 2.047.595,74 (gap 4,482 %), igual.
 3. ~~Segunda pasada de `mejorar_ub` sobre RED_GEN.~~ Hecha (2026-10-07, r640-01):
