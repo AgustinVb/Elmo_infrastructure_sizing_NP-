@@ -132,8 +132,18 @@ perfil de generación, O&M solar 6,5 y cargador de 241 kW.
    del arreglo.
 10. **Tasa de descuento del 8 %** (hoy 10 %, hoja `BatteryDegradation`, columna
     `discount_rate`) en todos los escenarios de las dos ramas.
+11. **Capacidad de batería físicamente consistente** (cambio de MODELO, las dos
+    ramas). Hoy `b_y_link` es `b_bar[y] <= D[y-1] + 0,3·b_max_pool·R[y]`: sin
+    reemplazo el modelo puede elegir una capacidad MENOR que la que quedó, sin
+    costo dentro del año, y la "tira". Lo físico es `b_bar[y] = D[y-1]` si
+    `R[y] = 0` (p. ej. agregando `b_bar[y] >= D[y-1] - b_max_pool·R[y]`).
+    Medido: las soluciones finales de acá lo hacen en los últimos años (RED: el
+    año 9 parte con 432,7 kWh habiendo terminado el 8 con 438,1; RED_GEN y
+    RED_GEN_BESS, el año 10 con 424–429 contra ~435). En OB el forward de k=1
+    llegaba a bajar ~90 kWh/año hasta el piso y forzaba reemplazos (allá ya se
+    arregló la parte de la heurística del MIP start por días).
 
-Conviene juntar 8–10 en una sola tanda de corridas finales en las dos ramas.
+Conviene juntar 8–11 en una sola tanda de corridas finales en las dos ramas.
 
 ---
 
