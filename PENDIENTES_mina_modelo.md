@@ -38,14 +38,14 @@ de 500 kW, tasa de descuento (10 %) y su indexación.
 
 Benders (uno por escenario; `<ESC>` = `P_red`, `P_red_gen`, `P_red_gen_bat`):
 ```
-python -u setup.py --data_folder data/Resultados_finales_tesis/Mina_modelo/<ESC> --solver gurobi --days_per_year 4 --free_charging --free_maintenance --block_build_jobs 1 --output_folder output/Resultados_finales_tesis/Mina_modelo/<ESC>_v2 --mode decomposed --n_years 10 --gap_tol 0.01 --max_iter 50 --max_hours 11.75 --operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400 --no_monolithic_lp_bound --stabilization box --stab_center operational --box_delta_int 1 --strengthen --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 --polish_each_iter --skip_last_backward
+python -u setup.py --data_folder data/Resultados_finales_tesis/Mina_modelo/<ESC> --solver gurobi --days_per_year 4 --free_charging --free_maintenance --block_build_jobs 1 --output_folder output/Resultados_finales_tesis/Mina_modelo/<ESC>_v3 --mode decomposed --n_years 10 --gap_tol 0.01 --max_iter 50 --max_hours 11.75 --operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400 --no_monolithic_lp_bound --stabilization box --stab_center operational --box_delta_int 1 --strengthen --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 --polish_each_iter --skip_last_backward
 ```
 Cierre del gap (después de cada uno):
 ```
-python -u mejorar_ub.py --data_folder data/Resultados_finales_tesis/Mina_modelo/<ESC> --free_charging --free_maintenance --respaldo output/Resultados_finales_tesis/Mina_modelo/<ESC>_v2/incumbente_respaldo.pkl --anios 1,2,3,4,5,6,7,8,9,10 --timelimit 600 --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_<ESC>_v2
-python -u certificar_inversiones.py --data_folder data/Resultados_finales_tesis/Mina_modelo/<ESC> --free_charging --free_maintenance --solucion <carpeta solucion> --gap_objetivo 0.005 --evaluar_vivas --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/certificado_<ESC>_v2
+python -u mejorar_ub.py --data_folder data/Resultados_finales_tesis/Mina_modelo/<ESC> --free_charging --free_maintenance --respaldo output/Resultados_finales_tesis/Mina_modelo/<ESC>_v3/incumbente_respaldo.pkl --anios 1,2,3,4,5,6,7,8,9,10 --timelimit 600 --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_<ESC>_v3
+python -u certificar_inversiones.py --data_folder data/Resultados_finales_tesis/Mina_modelo/<ESC> --free_charging --free_maintenance --solucion <carpeta solucion> --gap_objetivo 0.005 --evaluar_vivas --jobs 4 --out output/Resultados_finales_tesis/Mina_modelo/certificado_<ESC>_v3
 ```
-`--solucion`: `mejorar_ub_<ESC>_v2/solucion` si mejoró, si no la carpeta de
+`--solucion`: `mejorar_ub_<ESC>_v3/solucion` si mejoró, si no la carpeta de
 Benders. `--gap_objetivo` tiene que quedar por DEBAJO del gap contra la cota
 operacional (si no, no hay candidatas y el certificado sale peor que la cota).
 Métricas: `escribir_parameters.py` + `python consumer.py <solucion>`.
@@ -68,19 +68,35 @@ Métricas: `escribir_parameters.py` + `python consumer.py <solucion>`.
 4. **Tasa de descuento del 8 %** (hoy 10 %, hoja `BatteryDegradation`,
    columna `discount_rate`) en todos los escenarios de las dos ramas.
 
-5. **Capacidad de batería físicamente consistente** (las dos ramas, cambio de
-   MODELO). Hoy `b_y_link` es `b_bar[y] <= D[y-1] + 0,3·b_max·R[y]`: sin
-   reemplazo el modelo puede elegir una capacidad MENOR que la que quedó, sin
-   costo dentro del año, y la "tira". Lo físico es `b_bar[y] = D[y-1]` si
-   `R[y] = 0` (p. ej. agregando `b_bar[y] >= D[y-1] - B_U·R[y]`). Medido:
+5. **Capacidad de batería físicamente consistente** (cambio de MODELO).
+   `b_y_link` (`b_bar[y] <= D[y-1] + 0,3·b_max·R[y]`) es solo cota superior:
+   sin reemplazo el modelo podía elegir una capacidad MENOR que la que quedó,
+   sin costo dentro del año, y la "tiraba". Medido:
    - en OB el forward de k=1 bajaba la batería ~90 kWh/año (la degradación
      real es ~4–5 kWh/año) hasta el piso (80 %) y forzaba reemplazos;
    - las soluciones finales de swap también lo hacen en los últimos años (RED:
      el año 9 parte con 432,7 kWh habiendo terminado el 8 con 438,1; RED_GEN y
      RED_GEN_BESS, el año 10 con 424–429 contra ~435).
-   Cambia los resultados de las dos ramas: va con la tanda final (2–4).
 
-Conviene juntar 2–5 en una sola tanda de corridas finales en las dos ramas.
+   **Arreglo** — agregar, para los años `y > y_1`:
+   ```
+   b_bar[y] >= D[y-1] - B_U·R[y]     (b_y_link_lower)
+   b_bar[y] >= b_max·R[y]            (b_y_replace)
+   ```
+   Con `b_y_link` y `b_bar <= B_U = b_max` queda `b_bar[y] = D[y-1]` si
+   `R[y] = 0` y `b_bar[y] = b_max` si `R[y] = 1`.
+
+   - **OB: IMPLEMENTADO el 2026-10-08** (`functions.py`: `b_y_link_lower`,
+     `b_y_replace`; `year_block.py`: `b_y_link_lower_local`,
+     `b_y_replace_local` con `D_prev`). Los tres escenarios de la sección 0 se
+     corren YA con el modelo corregido. El macrobloque ya era consistente
+     (`macroblocks.coordinate_b_bar`).
+   - **Swap: pendiente**, va con la tanda final (2–4). Ojo: hasta entonces la
+     comparación OB vs swap tiene esta diferencia de modelo (en swap el modelo
+     es más holgado, así que su costo puede quedar algo por debajo del físico).
+
+Conviene juntar 2–4 (y 5 en swap) en una sola tanda de corridas finales en las
+dos ramas.
 
 ## 1b. Arreglo del MIP start por días en OB (2026-10-08)
 

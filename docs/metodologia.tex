@@ -299,13 +299,15 @@ El nivel de energía de la batería del LHD \textit{on-board} se modela mediante
 
 Cuando el escenario incorpora degradación de batería, la capacidad utilizable decrece año a año en función de los ciclos equivalentes completos (EFC) del propio año. \change{A diferencia de una formulación con expansión binaria exacta (descartada), el modelo vigente deja el bilineal resultante \textbf{sin linealizar} y lo resuelve como restricción cuadrática no convexa directamente en Gurobi (parámetro \texttt{NonConvex=2}); una relajación de McCormick está disponible como alternativa (obligatoria en el modo de descomposición por año, opcional en el monolítico vía \texttt{--mccormick\_degradation}) pero no es la formulación "exacta" -- es una técnica de resolución.}
 
-\paragraph{On-board (por vehículo)} La energía total cargada por la flota en el año se agrega en $S_y$ \eqref{eq:s_def_onboard}; el bilineal continua$\times$continua $N^{ciclos}_y\cdot\bar b_y = S_y/n^{elhd}$ \eqref{eq:n_ciclos_link_onboard} define los EFC del año; la capacidad al final de año se degrada linealmente con esos EFC \eqref{eq:d_y_fade}; y el enlace entre años \eqref{eq:b_y_link} liga la capacidad de inicio de año con la capacidad heredada del año anterior, permitiendo recuperar hasta $f^{repl}\cdot b^{max}$ adicional si se reemplaza ($R_y=1$).
+\paragraph{On-board (por vehículo)} La energía total cargada por la flota en el año se agrega en $S_y$ \eqref{eq:s_def_onboard}; el bilineal continua$\times$continua $N^{ciclos}_y\cdot\bar b_y = S_y/n^{elhd}$ \eqref{eq:n_ciclos_link_onboard} define los EFC del año; la capacidad al final de año se degrada linealmente con esos EFC \eqref{eq:d_y_fade}; y el enlace entre años \eqref{eq:b_y_link} liga la capacidad de inicio de año con la capacidad heredada del año anterior, permitiendo recuperar hasta $f^{repl}\cdot b^{max}$ adicional si se reemplaza ($R_y=1$). \change{Como \eqref{eq:b_y_link} es solo una cota superior, sin reemplazo dejaría elegir una capacidad de inicio \emph{menor} que la heredada (descartar capacidad sin costo dentro del año). Las cotas inferiores \eqref{eq:b_y_link_lower}-\eqref{eq:b_y_replace}, junto con $\bar b_y\le B^U=b^{max}$, la vuelven físicamente consistente: $\bar b_y = D_{y-1}$ si $R_y=0$ y $\bar b_y = b^{max}$ (batería nueva) si $R_y=1$.}
 
 \begin{flalign}
     & S_y = \Delta t \cdot \frac{365}{\|D\|}\sum_{(k,i)\in\mathcal{KI}}\sum_{d,t} P_{k,i,y,d,t}, &&& \forall y \label{eq:s_def_onboard} \\[10pt]
     & N^{ciclos}_y \cdot \bar b_y = \frac{S_y}{n^{elhd}}, &&& \forall y \label{eq:n_ciclos_link_onboard} \\[10pt]
     & D_y = \bar b_y - \gamma_m \cdot N^{ciclos}_y, &&& \forall y \label{eq:d_y_fade} \\[10pt]
     & \bar b_y \le D_{y-1} + f^{repl}\cdot b^{max}\cdot R_y, &&& \forall y \ne y^1 \label{eq:b_y_link} \\[10pt]
+    & \change{\bar b_y \ge D_{y-1} - B^U\cdot R_y}, &&& \forall y \ne y^1 \label{eq:b_y_link_lower} \\[10pt]
+    & \change{\bar b_y \ge b^{max}\cdot R_y}, &&& \forall y \ne y^1 \label{eq:b_y_replace} \\[10pt]
     & \bar b_{y^1} = b^{max}, \qquad R_{y^1}=0 &&& \label{eq:cond_borde_deg}
 \end{flalign}
 

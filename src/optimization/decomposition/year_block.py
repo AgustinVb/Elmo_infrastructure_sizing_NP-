@@ -672,7 +672,10 @@ class YearBlockBuilder(object):
            b_max * R_y (doc sec. 3.3, ecuacion (2) reescrita con D_prev en
            vez de model.D[y-1] -- ese indice no existe en un bloque de un
            solo año, ver guard is_decomposed_block en
-           ConstraintRules.build_all_constraints).
+           ConstraintRules.build_all_constraints), mas sus dos cotas
+           inferiores (b_y_link_lower_local, b_y_replace_local) que la
+           vuelven fisica: b_bar_y = D_prev sin reemplazo, b_max con
+           reemplazo.
            Para el primer año, b_bar/R ya quedan fijados por BoundRules
            (b_bar[y1]=b_max, R[y1]=0): no hay heredado que enlazar.
 
@@ -743,6 +746,14 @@ class YearBlockBuilder(object):
         model.link_D = pyo.Constraint(expr=model.D_prev == model.D_hat)
         model.b_y_link_local = pyo.Constraint(expr=(
             model.b_bar[y] <= model.D_prev + model.replace_capacity_fraction * model.b_max_fleet * model.R[y]
+        ))
+        # Capacidad fisicamente consistente (ConstraintRules.b_y_link_lower /
+        # b_y_replace): sin reemplazo b_bar_y = D_prev, con reemplazo b_max.
+        model.b_y_link_lower_local = pyo.Constraint(expr=(
+            model.b_bar[y] >= model.D_prev - B_U * model.R[y]
+        ))
+        model.b_y_replace_local = pyo.Constraint(expr=(
+            model.b_bar[y] >= model.b_max_fleet * model.R[y]
         ))
 
         self.state_links.append({

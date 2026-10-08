@@ -36,9 +36,16 @@ Notas de interpretación (confirmadas):
 - **El `0.3` es un big-M de reemplazo.** La degradación máxima es 20 %, así que
   `b^max · 0.3 · R_y` con `R_y = 1` relaja por completo la cota heredada (2), y (1)
   `B_y ≤ b^max` pasa a mandar: la batería queda al 100 %.
-- **Las desigualdades operan como igualdades en el óptimo.** Mayor `B_y` abarata la
+- ~~**Las desigualdades operan como igualdades en el óptimo.** Mayor `B_y` abarata la
   operación, así que el optimizador empuja `B_y` a la cota. No hace falta forzar
-  igualdad explícita.
+  igualdad explícita.~~ **FALSO en la práctica (2026-10-08).** Cuando la capacidad
+  no ata la operación del año (último año, o el forward de k=1 de la
+  descomposición) `B_y` queda indiferente y el optimizador la "tira": medido en OB,
+  ~90 kWh/año menos hasta el piso, forzando reemplazos; en swap, en los últimos
+  años. Se agregan dos cotas inferiores (para `y > y_1`):
+  `B_y ≥ D_{y-1} − B^U · R_y` y `B_y ≥ b^max · R_y`, que con (1)–(2) dan
+  `B_y = D_{y-1}` si `R_y = 0` y `B_y = b^max` si `R_y = 1`. Implementado en OB
+  (`b_y_link_lower`, `b_y_replace`); en swap queda pendiente.
 - **La cuadrática es (3):** producto `N^ciclos_y · B_y` de dos variables continuas del
   **mismo año**. Se resuelve hoy como producto bilineal directo en Gurobi (no convexo).
 

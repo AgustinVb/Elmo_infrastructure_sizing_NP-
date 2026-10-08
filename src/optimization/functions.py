@@ -1423,6 +1423,32 @@ class ConstraintRules(OptRules):
             + model.replace_capacity_fraction * model.b_max_fleet * model.R[y]
         )
 
+    # ------------------------------------------------------------------ #
+    # Capacidad de inicio de año FISICAMENTE consistente (2026-10-08).
+    # b_y_link es solo una cota superior: sin reemplazo dejaba elegir una
+    # capacidad MENOR que la que quedo, sin costo dentro del año (b_bar solo
+    # entra en la ventana del SOC y en la cuenta de ciclos), y el modelo la
+    # "tiraba" donde le era indiferente: en el ultimo año, y en el forward de
+    # k=1 de la descomposicion, que bajaba la bateria ~90 kWh/año hasta el
+    # piso (la degradacion real es ~4-5 kWh/año) y forzaba reemplazos. El
+    # supuesto "las desigualdades operan como igualdades en el optimo"
+    # (degradacion_descomposicion_mccormick.md) no se cumple siempre.
+    # Con estas dos, junto con b_y_link y b_bar <= B_U = b_max:
+    #     R[y] = 0  ->  b_bar[y] = D[y-1]   (la que quedo)
+    #     R[y] = 1  ->  b_bar[y] = b_max    (bateria nueva)
+    # ------------------------------------------------------------------ #
+
+    def b_y_link_lower(self, model, y):
+        """b_bar[y] >= D[y-1] - B_U*R[y]: sin reemplazo la capacidad de
+        inicio de año no puede ser menor que la heredada (con b_y_link queda
+        la igualdad b_bar[y] = D[y-1]); con reemplazo no restringe."""
+        return model.b_bar[y] >= model.D[self._prev_year(y)] - model.B_U * model.R[y]
+
+    def b_y_replace(self, model, y):
+        """b_bar[y] >= b_max*R[y]: si se reemplaza, la bateria queda nueva
+        (b_bar[y] = b_max, con la cota b_bar <= B_U = b_max)."""
+        return model.b_bar[y] >= model.b_max_fleet * model.R[y]
+
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
         # Esquema DET activo: usa el set de entre-turnos especifico DET
@@ -1507,6 +1533,9 @@ class ConstraintRules(OptRules):
                     model.n_ciclos_link = pyo.Constraint(model.years, rule=self.n_ciclos_link)
                 if hasattr(model, 'later_years_set'):
                     model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
+                    # Capacidad fisicamente consistente (ver b_y_link_lower).
+                    model.b_y_link_lower = pyo.Constraint(model.later_years_set, rule=self.b_y_link_lower)
+                    model.b_y_replace = pyo.Constraint(model.later_years_set, rule=self.b_y_replace)
 
         model.daily_production      = pyo.Constraint(model.years, model.days, rule=self.daily_production)
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
