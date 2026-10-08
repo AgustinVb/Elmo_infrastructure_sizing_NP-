@@ -666,36 +666,25 @@ class Timeseries(object):
         return gp.sort_index()
 
     def get_alpha_g(self, gen_name: str, day: int, time_interval: int) -> float:
-        """Perfil de disponibilidad alpha[g, d, t] en [0, 1], interpolado
-        linealmente entre los valores horarios de GenProfiles (columnas 1..24).
-        Fuera del rango [1,24] se usa el valor del borde (sin extrapolar).
-        Retorna 0 si no hay perfil para ese generador/día."""
+        """Perfil de disponibilidad alpha[g, d, t] en [0, 1]. Retorna 0 si no existe.
+
+        ESCALON: el intervalo t toma el valor horario de GenProfiles de la hora a
+        la que pertenece, ceil(t * delta_t), igual que battery_swapping_multiaño.
+        Hasta 2026-10-08 esta rama interpolaba linealmente entre horas; con eso
+        el solar disponible por dia salia 1,4-2,9 % mayor (y bastante mayor en la
+        ventana de punta) que en swap, y los escenarios con generacion no eran
+        comparables entre ramas. Se eligio el metodo de swap para no invalidar
+        los resultados ya certificados alla."""
         df = self.mapper.get('GenProfiles')
         if df is None:
             return 0.0
         day_in_year1 = ((int(day) - 1) % 365) + 1
         key = (gen_name, day_in_year1)
-        if key not in df.index:
-            return 0.0
-        row = df.loc[key]
-
-        def _val(h: int) -> float:
-            if h not in row.index:
-                return 0.0
-            v = row[h]
-            return float(v.iloc[0]) if hasattr(v, 'iloc') else float(v)
-
-        hour_exact = int(time_interval) * self.delta_t
-        if hour_exact <= 1:
-            return _val(1)
-        if hour_exact >= 24:
-            return _val(24)
-
-        h_lo = int(math.floor(hour_exact))
-        h_hi = h_lo + 1
-        frac = hour_exact - h_lo
-        v_lo, v_hi = _val(h_lo), _val(h_hi)
-        return v_lo + (v_hi - v_lo) * frac
+        t_hour = math.ceil(int(time_interval) * self.delta_t)
+        if key in df.index and t_hour in df.columns:
+            val = df.loc[key, t_hour]
+            return float(val.iloc[0]) if hasattr(val, 'iloc') else float(val)
+        return 0.0
 
 
 
