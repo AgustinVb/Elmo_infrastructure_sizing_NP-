@@ -94,6 +94,29 @@ solución encontrada**, no el óptimo.
    heurística del MIP start (no el modelo ni ninguna cota); las corridas
    anteriores (v4–v6, P_red_gen) se hicieron con el sesgo.
 
+### Pendientes comunes con `carga_ob_multiaño` (2026-10-08)
+
+Los escenarios de OB (`data/Resultados_finales_tesis/Mina_modelo/P_red`,
+`P_red_gen`, `P_red_gen_bat`) quedaron alineados con RED, RED_GEN y
+RED_GEN_BESS: mismo `parameters.json` salvo lo propio de cada tecnología (ver
+el `PENDIENTES_mina_modelo.md` de esa rama). Para eso OB pasó a escalón en el
+perfil de generación, O&M solar 6,5 y cargador de 241 kW.
+
+7. **Primera comparación swap vs OB**: correr en OB los tres escenarios
+   equivalentes (comandos en el `PENDIENTES_mina_modelo.md` de OB). Ojo: el MIP
+   start por días de OB ya prorratea el O&M y los resultados de swap son de antes
+   (ver 6).
+8. **Perfil de generación con interpolación lineal** entre horas en vez de
+   escalón (`get_alpha_g` en `src/time_series/timeseries.py`), en las DOS ramas
+   a la vez. Hoy ambas usan escalón para ser comparables con lo ya corrido.
+9. **Volver a correr los escenarios de las dos ramas con el O&M prorrateado**
+   en el MIP start por días (ver 6): los resultados actuales de swap son de antes
+   del arreglo.
+10. **Tasa de descuento del 8 %** (hoy 10 %, hoja `BatteryDegradation`, columna
+    `discount_rate`) en todos los escenarios de las dos ramas.
+
+Conviene juntar 8–10 en una sola tanda de corridas finales en las dos ramas.
+
 ---
 
 ## 1. Dónde estamos (2026-09-28)
