@@ -2043,6 +2043,31 @@ class ConstraintRules(OptRules):
             model.D[self._prev_year(y)] + 0.3 * value(model.b_max_pool) * model.R[y]
         )
 
+    # ------------------------------------------------------------------ #
+    # Capacidad de inicio de año FISICAMENTE consistente (2026-10-08, igual
+    # que en carga_ob_multiaño). b_y_link es solo una cota superior: sin
+    # reemplazo dejaba elegir una capacidad MENOR que la que quedo, sin costo
+    # dentro del año, y el modelo la "tiraba" donde le era indiferente
+    # (medido: RED parte el año 9 con 432,7 kWh habiendo terminado el 8 con
+    # 438,1; RED_GEN y RED_GEN_BESS, el año 10 con 424-429 contra ~435). El
+    # supuesto "las desigualdades operan como igualdades en el optimo"
+    # (degradacion_descomposicion_mccormick.md) no se cumple siempre.
+    # Con estas dos, junto con b_y_link y b_bar <= B_U = b_max_pool:
+    #     R[y] = 0  ->  b_bar[y] = D[y-1]      (la que quedo)
+    #     R[y] = 1  ->  b_bar[y] = b_max_pool  (bateria nueva)
+    # ------------------------------------------------------------------ #
+
+    def b_y_link_lower(self, model, y):
+        """b_bar[y] >= D[y-1] - B_U*R[y]: sin reemplazo la capacidad de
+        inicio de año no puede ser menor que la heredada (con b_y_link queda
+        la igualdad b_bar[y] = D[y-1]); con reemplazo no restringe."""
+        return model.b_bar[y] >= model.D[self._prev_year(y)] - model.B_U * model.R[y]
+
+    def b_y_replace(self, model, y):
+        """b_bar[y] >= b_max_pool*R[y]: si se reemplaza, la bateria queda
+        nueva (b_bar[y] = b_max_pool, con la cota b_bar <= B_U = b_max_pool)."""
+        return model.b_bar[y] >= value(model.b_max_pool) * model.R[y]
+
     def z_repl_upper1(self, model, y):
         """Z_repl[y] = R[y] * n_battery_fleet[y] (linealización big-M) — al
         reemplazar se reemplaza TODA la flota física (pool + instaladas)."""
@@ -2382,6 +2407,9 @@ class ConstraintRules(OptRules):
                 # solo año: ahi la arma YearBlockBuilder como b_y_link_local,
                 # escrita sobre la copia local D_prev del estado heredado.
                 model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
+                # Capacidad fisicamente consistente (ver b_y_link_lower).
+                model.b_y_link_lower = pyo.Constraint(model.later_years_set, rule=self.b_y_link_lower)
+                model.b_y_replace = pyo.Constraint(model.later_years_set, rule=self.b_y_replace)
 
             model.z_repl_upper1 = pyo.Constraint(model.years, rule=self.z_repl_upper1)
             model.z_repl_upper2 = pyo.Constraint(model.years, rule=self.z_repl_upper2)

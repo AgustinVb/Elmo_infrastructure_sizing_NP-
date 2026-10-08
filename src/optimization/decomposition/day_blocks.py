@@ -99,8 +99,35 @@ ENERGY_DEGRADATION_CONSTRAINTS = (
 # bloque anual -- ahi las determina el pulido con la energia de los 4 dias.
 ENERGY_DEGRADATION_VARS = ("EnergyConsumed", "N_ciclos", "N_total", "w_deg", "D")
 
-# Nunca se trasladan del sub-bloque al anual.
-NOT_TRANSFERRED = set(ENERGY_DEGRADATION_VARS) | {"alpha"}
+# Nunca se trasladan del sub-bloque al anual. R (reemplazo de baterias) tampoco:
+# los dias no ven la degradacion, asi que eligen R = 0, y si la bateria heredada
+# esta cerca del piso (B_L) el año necesita R = 1 -- con R fijo en 0 el pulido
+# sale INFACTIBLE (medido en OB, P_red, años 3 y 7 del forward de k=1). Sin
+# trasladarlo, el pulido lo decide (un MILP de una sola binaria).
+NOT_TRANSFERRED = set(ENERGY_DEGRADATION_VARS) | {"alpha", "R"}
+
+
+def _fix_capacity_to_heritage(model, year):
+    """Fija b_bar del sub-bloque en la capacidad HEREDADA (D_hat).
+
+    Con b_y_link_lower_local / b_y_replace_local, b_bar = D_hat si R = 0 y
+    b_bar = b_max_pool si R = 1. Los dias no ven la degradacion ni el costo
+    del reemplazo completo, asi que fijarla en la heredada deja R = 0 y el
+    reemplazo para el pulido del bloque anual (R no se traslada). Igual que en
+    carga_ob_multiaño (commit 7fe8e6047).
+
+    Solo se fija si la capacidad heredada esta dentro de [B_L, B_U]: por debajo
+    del piso el año necesita reemplazo y se deja libre (el pulido decide R).
+    El primer año no tiene D_hat (b_bar ya viene fijo en la nominal)."""
+    b_bar = getattr(model, "b_bar", None)
+    d_hat = getattr(model, "D_hat", None)
+    if b_bar is None or d_hat is None or year not in b_bar or b_bar[year].fixed:
+        return
+    cap = value(d_hat)
+    lb, ub = b_bar[year].lb, b_bar[year].ub
+    if (lb is not None and cap < lb - 1e-9) or (ub is not None and cap > ub + 1e-9):
+        return
+    b_bar[year].fix(cap)
 
 
 # --------------------------------------------------------------------------
@@ -152,6 +179,7 @@ def build_day_block(year_block, day, heritage=None, fixed_shared=None):
                               sense=pyo.minimize)
 
     _neutralize_energy_degradation(m)
+    _fix_capacity_to_heritage(m, year_block.year)
     _inherit_bounds(year_block.model, m)
     if fixed_shared:
         fix_shared(m, fixed_shared)

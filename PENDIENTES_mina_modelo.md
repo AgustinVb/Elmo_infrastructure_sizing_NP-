@@ -132,8 +132,26 @@ perfil de generación, O&M solar 6,5 y cargador de 241 kW.
    del arreglo.
 10. **Tasa de descuento del 8 %** (hoy 10 %, hoja `BatteryDegradation`, columna
     `discount_rate`) en todos los escenarios de las dos ramas.
-11. **Capacidad de batería físicamente consistente** (cambio de MODELO, las dos
-    ramas). Hoy `b_y_link` es `b_bar[y] <= D[y-1] + 0,3·b_max_pool·R[y]`: sin
+11. ~~**Capacidad de batería físicamente consistente**~~ — HECHO acá también
+    (2026-10-08, r640-01), igual que en OB: `b_y_link_lower` y `b_y_replace` en
+    `functions.py`, sus versiones `_local` en `year_block.py`, y en
+    `day_blocks.py` `_fix_capacity_to_heritage` + `R` en `NOT_TRANSFERRED`.
+    **Los resultados actuales siguen valiendo:** pulidos con el modelo nuevo, los
+    tres incumbentes dan el MISMO costo al centavo (RED 2.569.771,29; RED_GEN
+    2.131.851,53; RED_GEN_BESS 2.079.895,34) con `b_bar[y] = D[y-1]` exacto (la
+    capacidad que se "tiraba" no tenía efecto en el costo), y como el modelo
+    nuevo es más restringido, las LB certificadas siguen siendo cotas válidas.
+    `docs/restricciones_modelo.tex` no se tocó: describe una formulación
+    anterior de la degradación del pool (ciclos acumulados, `B̄_y = b^max −
+    γ·AN_y` como igualdad), no la del código (`b_y_link`); hay que reescribir
+    esa sección. **Tests pendientes** con el cambio: `test_apertura_primer_anio_swap`
+    y `test_corte_fuera_del_ancla` (se cortaron por un tope de 25 min, sin
+    resultado; cada uno hace MILP de hasta 900 s, ~45–60+ min).
+    `test_bloque_anual_swap` falla en "el bloque reproduce el monolítico de un año
+    dentro del gap del solver", pero es de un solo año (sin las restricciones
+    nuevas): falla previa, a revisar aparte. Texto original del pendiente:
+
+    (cambio de MODELO, las dos ramas). Hoy `b_y_link` es `b_bar[y] <= D[y-1] + 0,3·b_max_pool·R[y]`: sin
     reemplazo el modelo puede elegir una capacidad MENOR que la que quedó, sin
     costo dentro del año, y la "tira". Medido: las soluciones finales de acá lo
     hacen en los últimos años (RED: el año 9 parte con 432,7 kWh habiendo
@@ -164,7 +182,8 @@ perfil de generación, O&M solar 6,5 y cargador de 241 kW.
     Hasta entonces la comparación con OB tiene esta diferencia de modelo (acá
     el modelo es más holgado: el costo puede quedar algo bajo el físico).
 
-Conviene juntar 8–11 en una sola tanda de corridas finales en las dos ramas.
+Conviene juntar 8–10 en una sola tanda de corridas finales en las dos ramas
+(el 11 ya está en las dos y no cambia los resultados de acá).
 
 ---
 
@@ -316,10 +335,9 @@ Qué mirar en `_logs_cola/v3.log`:
 
 ## 4. Pendientes de código y análisis
 
-1. **Commit del arreglo del test M0** (`tests/test_m0_regresion.py`, falla
-   "28 vs 25"): es un falso positivo, la fórmula no cuenta
-   `apertura_solo_primer_anio`. Arreglo propuesto, sin aplicar:
-   `esperadas += n_stations * max(0, len(years) - 1)`.
+1. ~~Arreglo del test M0~~ — HECHO (2026-10-08): la fórmula cuenta ahora
+   `apertura_solo_primer_anio` y las dos cotas nuevas del ítem 11
+   (`b_y_link_lower`, `b_y_replace`); pasa (30 vs 30).
 2. **Separar la causa del forward de 6,7 M** de la iteración 2 de la v2
    (cortes de Benders vs. tope de 300 s vs. start por días que ignora `alpha`).
    La v3 con cortes fortalecidos da un primer dato.

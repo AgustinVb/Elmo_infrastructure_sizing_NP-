@@ -246,7 +246,9 @@ class YearBlockBuilder(object):
         igualdad al parametro heredado D_hat, y b_y_link reescrita sobre esa
         copia (en el monolitico es b_y_link, que mira model.D[y-1] -- un indice
         que no existe aca; ver el guard is_decomposed_block en
-        ConstraintRules.build_all_constraints).
+        ConstraintRules.build_all_constraints), mas sus dos cotas inferiores
+        (b_y_link_lower_local, b_y_replace_local) que la vuelven fisica:
+        b_bar_y = D_prev sin reemplazo, b_max_pool con reemplazo.
         """
         if self.mine_system.battery_degradation is None:
             return
@@ -268,6 +270,14 @@ class YearBlockBuilder(object):
         # reemplazo, igual que alla.
         model.b_y_link_local = pyo.Constraint(expr=(
             model.b_bar[y] <= model.D_prev + 0.3 * value(model.b_max_pool) * model.R[y]
+        ))
+        # Capacidad fisicamente consistente (ConstraintRules.b_y_link_lower /
+        # b_y_replace): sin reemplazo b_bar_y = D_prev, con reemplazo b_max.
+        model.b_y_link_lower_local = pyo.Constraint(expr=(
+            model.b_bar[y] >= model.D_prev - B_U * model.R[y]
+        ))
+        model.b_y_replace_local = pyo.Constraint(expr=(
+            model.b_bar[y] >= value(model.b_max_pool) * model.R[y]
         ))
 
         self.state_links.append({

@@ -105,11 +105,15 @@ def main(scenario, n_years):
     check(nv_b == nv_o, "mismo numero de variables", f"{nv_b:,} vs {nv_o:,}")
 
     # years_override marca is_decomposed_block, que saca las 4 acumulaciones
-    # stock=stock[y-1]+Delta y b_y_link: esas las arma el bloque anual con la
-    # copia local. Es la UNICA diferencia esperada.
+    # stock=stock[y-1]+Delta, apertura_solo_primer_anio (una por nave y año
+    # salvo el primero) y b_y_link con sus dos cotas inferiores (b_y_link_lower,
+    # b_y_replace): esas las arma el bloque anual con la copia local. Es la
+    # UNICA diferencia esperada.
     n_stations = len(mine_system.get_system_stations())
-    esperadas = 4 * n_stations * len(years) + max(0, len(years) - 1)
-    print(f"       diferencia esperada (4 link_*_stock + b_y_link): {esperadas:,}")
+    n_later = max(0, len(years) - 1)
+    esperadas = 4 * n_stations * len(years) + n_stations * n_later + 3 * n_later
+    print(f"       diferencia esperada (4 link_*_stock + apertura_solo_primer_anio"
+          f" + b_y_link/_lower/b_y_replace): {esperadas:,}")
     check(nc_b - nc_o == esperadas,
           "la unica diferencia en restricciones son los enlaces interanuales",
           f"{nc_b - nc_o:,} vs {esperadas:,} esperadas")
