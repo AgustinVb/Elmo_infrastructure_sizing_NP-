@@ -68,7 +68,29 @@ Métricas: `escribir_parameters.py` + `python consumer.py <solucion>`.
 4. **Tasa de descuento del 8 %** (hoy 10 %, hoja `BatteryDegradation`,
    columna `discount_rate`) en todos los escenarios de las dos ramas.
 
-Conviene juntar 2–4 en una sola tanda de corridas finales en las dos ramas.
+5. **Capacidad de batería físicamente consistente** (las dos ramas, cambio de
+   MODELO). Hoy `b_y_link` es `b_bar[y] <= D[y-1] + 0,3·b_max·R[y]`: sin
+   reemplazo el modelo puede elegir una capacidad MENOR que la que quedó, sin
+   costo dentro del año, y la "tira". Lo físico es `b_bar[y] = D[y-1]` si
+   `R[y] = 0` (p. ej. agregando `b_bar[y] >= D[y-1] - B_U·R[y]`). Medido:
+   - en OB el forward de k=1 bajaba la batería ~90 kWh/año (la degradación
+     real es ~4–5 kWh/año) hasta el piso (80 %) y forzaba reemplazos;
+   - las soluciones finales de swap también lo hacen en los últimos años (RED:
+     el año 9 parte con 432,7 kWh habiendo terminado el 8 con 438,1; RED_GEN y
+     RED_GEN_BESS, el año 10 con 424–429 contra ~435).
+   Cambia los resultados de las dos ramas: va con la tanda final (2–4).
+
+Conviene juntar 2–5 en una sola tanda de corridas finales en las dos ramas.
+
+## 1b. Arreglo del MIP start por días en OB (2026-10-08)
+
+En OB el pulido del start por días salía INFACTIBLE (P_red, años 3 y 7 del
+forward de k=1; en swap, 0 de ~390): los días no ven la degradación, dejaban
+`b_bar` en el piso (indiferente dentro del día) y fijaban `R = 0`; con la
+batería heredada en el piso el año necesita `R = 1`. Ahora `day_blocks` fija
+`b_bar` de los días en la capacidad heredada (`D_hat`) y el pulido decide `R`.
+Verificado: con `D` heredado = 386 el pulido reemplaza (`R = 1`) y da MIP start;
+con 477,7 los días usan 477,7. Solo cambia la heurística, no el modelo.
 
 ## 2. Notas del porte (2026-10-07)
 

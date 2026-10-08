@@ -103,8 +103,39 @@ ENERGY_DEGRADATION_CONSTRAINTS = (
 # bloque anual -- ahi las determina el pulido con la energia de todos los dias.
 ENERGY_DEGRADATION_VARS = ("S", "N_ciclos", "w_deg", "D")
 
-# Nunca se trasladan del sub-bloque al anual.
-NOT_TRANSFERRED = set(ENERGY_DEGRADATION_VARS) | {"alpha"}
+# Nunca se trasladan del sub-bloque al anual. R (reemplazo de baterias) tampoco:
+# los dias no ven la degradacion, asi que siempre eligen R = 0, y si la bateria
+# heredada esta cerca del piso (B_L) el año necesita R = 1 -- con R fijo en 0 el
+# pulido salia INFACTIBLE (medido en P_red, años 3 y 7 del forward de k=1). Sin
+# trasladarlo, el pulido lo decide (un MILP de una sola binaria).
+NOT_TRANSFERRED = set(ENERGY_DEGRADATION_VARS) | {"alpha", "R"}
+
+
+def _fix_capacity_to_heritage(model, year):
+    """Fija b_bar del sub-bloque en la capacidad HEREDADA (D_hat), en vez de
+    dejarla libre en [B_L, D_hat].
+
+    Dentro de un dia b_bar no tiene costo propio (la degradacion esta
+    desactivada) y solo entra en los limites del SOC, asi que es indiferente y
+    Gurobi la deja en su cota inferior: el PISO de degradacion (80 % de la
+    nominal). Ese valor pasaba al bloque anual como punto de arranque y la
+    bateria "perdia" ~90 kWh en un año, sin ninguna razon fisica (la
+    degradacion real es ~4-5 kWh/año), lo que despues forzaba reemplazos. En
+    swap no pasa porque cada swap repone b_bar (mas capacidad, menos swaps) y
+    los dias la prefieren alta.
+
+    Solo se fija si la capacidad heredada esta dentro de [B_L, B_U]: por debajo
+    del piso el año necesita reemplazo y se deja libre (el pulido decide R).
+    El primer año no tiene D_hat (b_bar ya viene fijo en la nominal)."""
+    b_bar = getattr(model, "b_bar", None)
+    d_hat = getattr(model, "D_hat", None)
+    if b_bar is None or d_hat is None or year not in b_bar or b_bar[year].fixed:
+        return
+    cap = value(d_hat)
+    lb, ub = b_bar[year].lb, b_bar[year].ub
+    if (lb is not None and cap < lb - 1e-9) or (ub is not None and cap > ub + 1e-9):
+        return
+    b_bar[year].fix(cap)
 
 
 # --------------------------------------------------------------------------
@@ -157,6 +188,7 @@ def build_day_block(year_block, day, heritage=None, fixed_shared=None):
                               sense=pyo.minimize)
 
     _neutralize_energy_degradation(m)
+    _fix_capacity_to_heritage(m, year_block.year)
     _inherit_bounds(year_block.model, m)
     if fixed_shared:
         fix_shared(m, fixed_shared)
