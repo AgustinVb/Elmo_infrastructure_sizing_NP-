@@ -6,6 +6,80 @@ el equivalente en swap y de donde se portó la metodología.
 
 ---
 
+## 0a. VERSIÓN 1 de resultados (2026-10-09, r640-01) — congelada
+
+Primera comparación OB vs swap. Metodología en las dos ramas: Nested Benders →
+`mejorar_ub.py` → `certificar_inversiones.py`. Las LB son certificadas; los
+intervalos [LB; UB] de cada z\* son los que valen para comparar.
+
+**OB** (esta rama; corridas `<ESC>_v3`, `mejorar_ub_<ESC>_v3`, `certificado_<ESC>_v3`;
+comandos de la sección 0, `--gap_objetivo` = min(0,5 %, 0,8·gap operacional)):
+
+| Escenario | UB Benders (iter.) | UB final | LB certificada | Gap |
+|---|---:|---:|---:|---:|
+| P_red | 2.863.276,09 (1) | 2.862.291,64 | 2.845.199,25 | 0,60 % |
+| P_red_gen | 2.465.279,20 (6, tope 11,75 h) | 2.454.142,83 | 2.404.679,11 | 2,02 % |
+| P_red_gen_bat | 2.398.522,87 (4) | 2.383.306,25 | 2.375.055,34 | 0,35 % |
+
+| Comparación OB | Ahorro garantizado | ¿Válida? |
+|---|---|---|
+| Generación vs solo red | 391.056 – 457.613 (13,7 – 16,1 %) | Sí |
+| Gen + BESS vs solo red | 461.893 – 487.236 (16,1 – 17,1 %) | Sí |
+| Valor del BESS | 21.373 – 79.087 (0,9 – 3,3 %) | **Sí** (en swap NO) |
+
+P_red reemplaza la batería en el año 6 (`R[6] = 1`; en OB la batería se degrada
+~25 kWh/año en los años 4–5 contra ~5–7 en swap). En P_red_gen los días MILP
+de `mejorar_ub` cierran a 0,5–3,4 % a 600 s (en swap 13–39 %): el gap de 2 %
+está en la cota y una LB con cotas MILP por día lo bajaría a ~0,3–0,5 %.
+
+**Swap** (`battery_swapping_multiaño`, sección 0 de su PENDIENTES):
+
+| Escenario | UB final | LB certificada | Gap |
+|---|---:|---:|---:|
+| RED | 2.569.771,29 | 2.555.303,48 | 0,56 % |
+| RED_GEN | 2.131.851,53 | 2.047.595,74 | 3,95 % |
+| RED_GEN_BESS | 2.079.895,34 | 2.035.547,42 | 2,13 % |
+
+Valor del BESS en swap: no concluyente (≤ 96.304 certificado).
+
+**Diferencias de método entre las dos ramas en la v1** (a corregir en la final):
+- swap se corrió ANTES del arreglo del O&M en el MIP start por días (ítem 3);
+- las corridas de Benders de swap no son todas con los mismos flags que las de
+  OB (RED_GEN de swap: `P_red_gen`, con el MIP start por días pero sin la
+  estabilización/flags de la sección 0; RED y RED_GEN_BESS vienen de otras
+  versiones, `P_red_only_r4` y `v6_estab`), y `mejorar_ub` se aplicó con otros
+  años/tiempos (swap: varias pasadas a 600–900 s);
+- en OB el armado de los modelos era ~20 veces más lento (`timeseries.py` sin
+  las caches de swap, corregido en 149574ded): P_red_gen usó 6 iteraciones en
+  11,75 h, con el arreglo serían ~10–12.
+
+## 0b. Qué falta para la VERSIÓN FINAL (las dos ramas)
+
+Datos/modelo (aplicar en las dos ramas a la vez, ver sección 1):
+1. Perfil de generación con interpolación lineal (ítem 2).
+2. Tasa de descuento del 8 % (ítem 4), en los seis escenarios.
+3. (Ítem 5, capacidad física: ya está en las dos; en swap no cambió los
+   resultados de la v1.)
+
+Corridas (después de 1–2, los seis escenarios con el MISMO pipeline y flags):
+4. Benders con los comandos de la sección 0 (en swap, el equivalente con sus
+   carpetas `data/Tesis_final/Mina_modelo/<ESC>`), con el O&M prorrateado
+   (ítem 3) y el código rápido de `timeseries.py`.
+5. `mejorar_ub` (años 1–10, 600 s) + `certificar_inversiones` con el mismo
+   criterio de `--gap_objetivo` en las dos ramas.
+6. Opcional: LB con cotas MILP por día para los escenarios con generación
+   (en OB cerraría P_red_gen; en swap no alcanzó, ver su PENDIENTES ítem 1).
+
+Pendientes de código/documentación:
+7. Swap: tests largos sin correr con el ítem 11 (`test_apertura_primer_anio_swap`,
+   `test_corte_fuera_del_ancla`) y la falla previa de `test_bloque_anual_swap`.
+8. Swap: `docs/restricciones_modelo.tex` describe una formulación vieja de la
+   degradación del pool; reescribir esa sección.
+9. Para la tesis: comparar OB vs swap solo con la versión final (misma tanda de
+   datos y método); la v1 sirve como resultado preliminar.
+
+---
+
 ## 0. Escenarios equivalentes a los de swap
 
 `data/Resultados_finales_tesis/Mina_modelo/<ESC>`, armados desde los mismos
@@ -91,9 +165,9 @@ Métricas: `escribir_parameters.py` + `python consumer.py <solucion>`.
      `b_y_replace_local` con `D_prev`). Los tres escenarios de la sección 0 se
      corren YA con el modelo corregido. El macrobloque ya era consistente
      (`macroblocks.coordinate_b_bar`).
-   - **Swap: pendiente**, va con la tanda final (2–4). Ojo: hasta entonces la
-     comparación OB vs swap tiene esta diferencia de modelo (en swap el modelo
-     es más holgado, así que su costo puede quedar algo por debajo del físico).
+   - **Swap: IMPLEMENTADO el 2026-10-08** (commit 36d578710 de esa rama). Los
+     incumbentes de RED, RED_GEN y RED_GEN_BESS pulidos con el modelo nuevo dan
+     el mismo costo al centavo: los resultados de swap no cambian.
 
 Conviene juntar 2–4 (y 5 en swap) en una sola tanda de corridas finales en las
 dos ramas.
