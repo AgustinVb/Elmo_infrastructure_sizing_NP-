@@ -124,13 +124,15 @@ perfil de generación, O&M solar 6,5 y cargador de 241 kW.
    equivalentes (comandos en el `PENDIENTES_mina_modelo.md` de OB). Ojo: el MIP
    start por días de OB ya prorratea el O&M y los resultados de swap son de antes
    (ver 6).
-8. **Perfil de generación con interpolación lineal** entre horas en vez de
+8. ~~**Perfil de generación con interpolación lineal**~~ — HECHO (2026-10-13), igual
+   que en OB (`get_alpha_g`, misma función). Texto original: entre horas en vez de
    escalón (`get_alpha_g` en `src/time_series/timeseries.py`), en las DOS ramas
    a la vez. Hoy ambas usan escalón para ser comparables con lo ya corrido.
 9. **Volver a correr los escenarios de las dos ramas con el O&M prorrateado**
    en el MIP start por días (ver 6): los resultados actuales de swap son de antes
    del arreglo.
-10. **Tasa de descuento del 8 %** (hoy 10 %, hoja `BatteryDegradation`, columna
+10. ~~**Tasa de descuento del 8 %**~~ — HECHO (2026-10-13) en RED, RED_GEN y
+    RED_GEN_BESS (el resto del Excel idéntico). Texto original: (hoy 10 %, hoja `BatteryDegradation`, columna
     `discount_rate`) en todos los escenarios de las dos ramas.
 11. ~~**Capacidad de batería físicamente consistente**~~ — HECHO acá también
     (2026-10-08, r640-01), igual que en OB: `b_y_link_lower` y `b_y_replace` en
@@ -181,6 +183,12 @@ perfil de generación, O&M solar 6,5 y cargador de 241 kW.
 
     Hasta entonces la comparación con OB tiene esta diferencia de modelo (acá
     el modelo es más holgado: el costo puede quedar algo bajo el físico).
+
+**Versión final de swap:** `cola_final_swap.sh` (equivalente a `cola_final_ob.sh`
+de OB, ver la sección 0F del PENDIENTES de OB): Benders hasta 15 iteraciones /
+24 h / 1 % → `mejorar_ub` años 1–10 a 600 s → certificado con `--gap_objetivo` =
+min(0,5 %, 0,8·gap operacional). Carpetas `<ESC>_final`. La v1 de swap quedó en la
+etiqueta `swap_resultados_v1`.
 
 Conviene juntar 8–10 en una sola tanda de corridas finales en las dos ramas
 (el 11 ya está en las dos y no cambia los resultados de acá).
