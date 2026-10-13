@@ -2,10 +2,10 @@
 # Version final SWAP, equivalente a cola_final_ob.sh de carga_ob_multiaño: los 3
 # escenarios en serie, del que menos demoro al que mas en la version 1 de swap
 # (Benders de la v1: RED_GEN ~8,6 h; RED ~12-13 h, P_red_only -> r2 -> r3 -> r4;
-# RED_GEN_BESS ~37,2 h, v4 -> v5 -> v6), y con ese tiempo como tope de Benders.
+# RED_GEN_BESS ~37,2 h, v4 -> v5 -> v6). Tope de Benders: 36 h por escenario.
 # Datos: perfil de generacion interpolado y tasa de descuento del 8 %.
-# Por escenario: Nested Benders (hasta 15 iteraciones -- OB: P_red_gen se corto
-# tras k=15 --, el tope de horas de abajo, o gap 1 %) -> mejorar_ub
+# Por escenario: Nested Benders (hasta 36 h o gap 1 %; --max_iter 50 como en
+# el comando de OB) -> mejorar_ub
 # (años 1-10, 600 s) -> (parameters + consumer si mejora) -> certificar_inversiones.
 #
 #   bash cola_final_swap.sh                     # los tres, en ese orden
@@ -16,9 +16,9 @@
 cd "$(dirname "$0")"
 PY=~/miniconda3/envs/py310/bin/python
 O=output/Resultados_finales_tesis/Mina_modelo
-declare -A HORAS=([RED_GEN]=9 [RED]=13 [RED_GEN_BESS]=38)
+declare -A HORAS=([RED_GEN]=36 [RED]=36 [RED_GEN_BESS]=36)
 GAP=0.01
-ITER=15
+ITER=50
 ESCS=${@:-"RED_GEN RED RED_GEN_BESS"}
 LOG=$O/cola_final_swap.log
 
