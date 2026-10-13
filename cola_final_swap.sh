@@ -1,9 +1,11 @@
 #!/bin/bash
 # Version final SWAP, equivalente a cola_final_ob.sh de carga_ob_multiaño: los 3
-# escenarios en serie (RED, RED_GEN_BESS, RED_GEN: el mismo orden que en OB).
+# escenarios en serie, del que menos demoro al que mas en la version 1 de swap
+# (Benders de la v1: RED_GEN ~8,6 h; RED ~12-13 h, P_red_only -> r2 -> r3 -> r4;
+# RED_GEN_BESS ~37,2 h, v4 -> v5 -> v6), y con ese tiempo como tope de Benders.
 # Datos: perfil de generacion interpolado y tasa de descuento del 8 %.
-# Por escenario: Nested Benders (hasta 15 iteraciones, 24 h o gap 1 %: el mismo
-# presupuesto que tuvo OB, donde P_red_gen se corto tras k=15) -> mejorar_ub
+# Por escenario: Nested Benders (hasta 15 iteraciones -- OB: P_red_gen se corto
+# tras k=15 --, el tope de horas de abajo, o gap 1 %) -> mejorar_ub
 # (años 1-10, 600 s) -> (parameters + consumer si mejora) -> certificar_inversiones.
 #
 #   bash cola_final_swap.sh                     # los tres, en ese orden
@@ -14,10 +16,10 @@
 cd "$(dirname "$0")"
 PY=~/miniconda3/envs/py310/bin/python
 O=output/Resultados_finales_tesis/Mina_modelo
-HORAS=24
+declare -A HORAS=([RED_GEN]=9 [RED]=13 [RED_GEN_BESS]=38)
 GAP=0.01
 ITER=15
-ESCS=${@:-"RED RED_GEN_BESS RED_GEN"}
+ESCS=${@:-"RED_GEN RED RED_GEN_BESS"}
 LOG=$O/cola_final_swap.log
 
 msg() { echo "[cola $1] $(date '+%F %T') $2" | tee -a $LOG; }
@@ -25,10 +27,11 @@ msg() { echo "[cola $1] $(date '+%F %T') $2" | tee -a $LOG; }
 for esc in $ESCS; do
   D=data/Tesis_final/Mina_modelo/$esc; B=$O/${esc}_final
 
-  msg $esc "Nested Benders (max $ITER iteraciones / $HORAS h, gap $GAP)"
+  H=${HORAS[$esc]:-24}
+  msg $esc "Nested Benders (max $ITER iteraciones / $H h, gap $GAP)"
   $PY -u setup.py --data_folder $D --solver gurobi --days_per_year 4 --free_charging --free_maintenance \
       --block_build_jobs 1 --output_folder $B --mode decomposed --n_years 10 --gap_tol $GAP --max_iter $ITER \
-      --max_hours $HORAS --operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400 \
+      --max_hours $H --operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400 \
       --no_monolithic_lp_bound --stabilization box --stab_center operational --box_delta_int 1 \
       --cut_type strengthened --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 \
       --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 \
