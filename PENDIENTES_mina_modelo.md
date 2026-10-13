@@ -6,6 +6,43 @@ el equivalente en swap y de donde se portó la metodología.
 
 ---
 
+## 0F. VERSIÓN FINAL OB (2026-10-12/13, r640-01)
+
+Cambios respecto de la v1: perfil de generación INTERPOLADO (`get_alpha_g`),
+tasa de descuento 8 % y el código rápido de `timeseries.py` (commits cf3ab5642,
+149574ded). Pipeline: `cola_final_ob.sh` (Benders hasta 24 h o 1 %, flags de la
+sección 0 → `mejorar_ub` años 1–10 a 600 s → certificado con `--evaluar_vivas`).
+Carpetas `<ESC>_final`, `mejorar_ub_<ESC>_final`, `certificado_<ESC>_final`.
+
+| Escenario | Benders (iter., tiempo) | UB final | LB certificada | Gap |
+|---|---|---:|---:|---:|
+| P_red | 3.085.434,79 (1, 24 min) | 3.083.536,31 | 3.065.469,28 | 0,59 % |
+| P_red_gen | 2.614.944,94 (15, cortado con STOP; sin mejora desde k=9) | 2.604.420,93 | 2.550.695,52 | 2,06 % |
+| P_red_gen (prueba `_lagr3`) | 2.614.428,82 (+11 iter. con `--strengthen_max_iter 3`) | **2.603.500,43** | 2.550.696,31 | **2,03 %** |
+| P_red_gen_bat | 2.539.118,38 (6, 4,1 h) | 2.521.414,39 | 2.514.008,65 | 0,29 % |
+
+(P_red_gen_bat: el UB final lo dio `--evaluar_vivas` en el certificado, mejor que
+el de `mejorar_ub`, 2.522.448,57.)
+
+| Comparación OB final | Ahorro garantizado | ¿Válida? |
+|---|---|---|
+| Generación vs solo red | 461.048 – 532.841 (15,0 – 17,4 %) | Sí |
+| Gen + BESS vs solo red | 544.055 – 569.528 (17,6 – 18,6 %) | Sí |
+| Valor del BESS | 29.281 – 90.412 (1,1 – 3,5 %) | Sí |
+
+(Con el UB de `_lagr3` para P_red_gen los rangos cambian en < 1.000.)
+
+**Prueba del corte lagrangiano** (`cola_lagr_ob.sh`): retomando el respaldo de
+P_red_gen_final (k=15) con `--strengthen_max_iter 3` (ec. 62 de Lara et al. en
+vez de la 63) durante 7,5 h: la cota del backward sube ~36 mil más (1,878 → 1,914 M,
+aún ~640 mil bajo la operacional) y el UB de Benders baja solo 516 en 11
+iteraciones; tras `mejorar_ub`, −920 (0,035 %). No compensa: el gap de
+P_red_gen está en la cota, no en el incumbente. La única vía que queda para
+bajarlo es una LB con cotas MILP por día con la inversión fija (en OB los días
+cierran a 0,5–3,4 % a 600 s).
+
+---
+
 ## 0a. VERSIÓN 1 de resultados (2026-10-09, r640-01) — congelada
 
 Primera comparación OB vs swap. Metodología en las dos ramas: Nested Benders →
