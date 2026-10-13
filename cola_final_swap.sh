@@ -1,8 +1,8 @@
 #!/bin/bash
 # Version final SWAP, equivalente a cola_final_ob.sh de carga_ob_multiaño: los 3
-# escenarios en serie, del que menos demoro al que mas en la version 1 de swap
-# (Benders de la v1: RED_GEN ~8,6 h; RED ~12-13 h, P_red_only -> r2 -> r3 -> r4;
-# RED_GEN_BESS ~37,2 h, v4 -> v5 -> v6). Tope de Benders: 36 h por escenario.
+# escenarios en serie, en el mismo orden que la cola final de OB (RED,
+# RED_GEN_BESS, RED_GEN = P_red, P_red_gen_bat, P_red_gen: del que menos demoro
+# al que mas en la version 1 de OB). Tope de Benders: 36 h por escenario.
 # Datos: perfil de generacion interpolado y tasa de descuento del 8 %.
 # Por escenario: Nested Benders (hasta 36 h o gap 1 %; --max_iter 50 como en
 # el comando de OB) -> mejorar_ub
@@ -19,7 +19,7 @@ O=output/Resultados_finales_tesis/Mina_modelo
 declare -A HORAS=([RED_GEN]=36 [RED]=36 [RED_GEN_BESS]=36)
 GAP=0.01
 ITER=50
-ESCS=${@:-"RED_GEN RED RED_GEN_BESS"}
+ESCS=${@:-"RED RED_GEN_BESS RED_GEN"}
 LOG=$O/cola_final_swap.log
 
 msg() { echo "[cola $1] $(date '+%F %T') $2" | tee -a $LOG; }
