@@ -592,7 +592,8 @@ def main():
     )
     parser.add_argument(
         '--gap_tol', type=float, default=0.01,
-        help='[--mode decomposed] gap relativo (UB-LB)/|UB| con el que se corta.'
+        help='Gap relativo (UB-LB)/|UB| con el que se corta (decomposed/hybrid; '
+             'en monolithic es el MIPGap de Gurobi).'
     )
     parser.add_argument(
         '--solve_timelimit', type=int, default=900,
@@ -726,7 +727,7 @@ def main():
         run_decomposed(args, mine_system, time_series, hybrid=(args.mode == 'hybrid'))
         return
 
-    gap= 1/100;
+    gap = args.gap_tol
     solver_name=args.solver
     output_folder=args.output_folder
     y_init_path=args.y_init_path
