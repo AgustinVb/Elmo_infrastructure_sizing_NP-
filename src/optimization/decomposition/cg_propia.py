@@ -790,6 +790,7 @@ class GeneracionColumnas:
         Deja self.pi0, self.xm0 y self.LB_ext (cota valida)."""
         E, F = self.E, self.E.F
         t0 = time.time()
+        F.update()                  # relax()/copy() no ven cambios pendientes (ver _pulir)
         R = F.relax()
         R.Params.Method, R.Params.Crossover, R.Params.TimeLimit = 2, 0, timelimit
         R.optimize()
@@ -1087,6 +1088,12 @@ class GeneracionColumnas:
         finally:
             F.setAttr("LB", sel, lb0)
             F.setAttr("UB", sel, ub0)
+            # Gurobi aplica los cambios en el proximo optimize/update, y
+            # Model.copy()/relax() copian SIN los pendientes: sin esto, una
+            # relajacion armada despues de un pulido relajaba el modelo con la
+            # operacion todavia fija (la "cota" era el costo de la solucion
+            # pulida; medido en Nested Benders con --cg_lb, 2026-10-14).
+            F.update()
 
     def _pulir_secuencial(self, xm, objs, tl_dia, gap_dia, tl_pulido, fijar=None):
         """Respaldo si el pulido es infactible (la operacion de un año se
@@ -1131,6 +1138,7 @@ class GeneracionColumnas:
                 F.setAttr("LB", sel_f, lb0)
                 F.setAttr("UB", sel_f, ub0)
                 F.setAttr("VType", sel_r, vt0)
+                F.update()                        # ver _pulir
             # Capacidades del maestro, estado (b_bar) real de este pulido.
             xh = np.array(xm, float)
             for _y, kb, _kd, _kr in self._estado:
@@ -1152,7 +1160,8 @@ class GeneracionColumnas:
         capacidad y la energia); None = costos originales.
         variantes: "coherente" (b_bar coherente con el R redondeado, R fijo en
         el pulido; capacidades del maestro), "directa" (b_bar y R tal como
-        vienen del maestro) y/o "fases" (estado coherente, pero la capacidad la
+        vienen del maestro), "redondeo" (como coherente, pero la capacidad del
+        maestro al entero mas cercano) y/o "fases" (estado coherente, pero la capacidad la
         deciden los dias: el esquema de day_blocks de Nested Benders, ver
         _dias_fases). Devuelve la mejor."""
         mejor = (None, None)
@@ -1227,6 +1236,27 @@ class GeneracionColumnas:
             self.pricing[b].start = r1[b]["sols"][0]
         return self._dias_graduales(bl, objs, xm2, tl, gap), xm2
 
+    def _capacidades_redondeadas(self, xm):
+        """Capacidades enteras del maestro al entero MAS CERCANO (en vez de
+        hacia arriba). El maestro de la CG trae capacidades apenas fraccionarias
+        (p.ej. 2,3 cargadores) y redondear hacia arriba suma una unidad de cada
+        cosa (10 años: 3.750.698 contra 2.790.392 con la capacidad entera de la
+        relajacion). Los dias que no caben compran solo lo que les falta en el
+        respaldo que cobra la inversion (_dias_graduales)."""
+        E = self.E
+        xm = np.array(xm, float)
+        caps = {jm for b in range(E.nb) for jm in E.sombra[b]}
+        for b in range(E.nb):
+            B = E.bloques[b]
+            nloc = len(B["loc"])
+            for k in E.propias[b]:
+                if B["vtype"][k] != "C":
+                    caps.add(E.pos_m[int(B["cop"][k - nloc])])
+        for jm in caps:
+            if E.vtype[E.mvars[jm]] != "C":
+                xm[jm] = min(max(np.floor(xm[jm] + 0.5), self.lb_nodo[jm]), self.ub_nodo[jm])
+        return xm
+
     def _heuristica_maestro_una(self, xm, pi, tl_dia, gap_dia, tl_pulido, refinar, modo):
         E = self.E
         self._pi_heur = pi
@@ -1239,10 +1269,12 @@ class GeneracionColumnas:
                           f"no se intenta {paso}")
                 return True
             return False
-        if modo in ("coherente", "fases"):
+        if modo in ("coherente", "fases", "redondeo"):
             xm, fijar_R = self._estado_sin_mezcla(xm)
         else:
             fijar_R = {}
+        if modo == "redondeo":
+            xm = self._capacidades_redondeadas(xm)
         objs = {b: self.pricing[b].objetivo(pi) for b in range(E.nb)}
         if modo == "fases":
             res, xm2 = self._dias_fases(xm, pi, objs, tl_dia, gap_dia)

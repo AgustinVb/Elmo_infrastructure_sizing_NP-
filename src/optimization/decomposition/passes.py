@@ -204,8 +204,10 @@ class ForwardPass(object):
 
     def __init__(self, blocks, solver_kwargs=None, cut_manager=None,
                  day_warm_start="off", day_solver_overrides=None,
-                 block_solver="gurobi", gcg_blocks="day", gcg_output_folder=None):
+                 block_solver="gurobi", gcg_blocks="day", gcg_output_folder=None,
+                 cg_timelimit=600.0):
         self.blocks = blocks  # lista de YearBlockBuilder, ordenada y1..Y
+        self.cg_timelimit = cg_timelimit
         self.solver_kwargs = solver_kwargs or {}
         # Necesario para los cortes de factibilidad: cuando un año no tiene
         # continuacion hay que prohibir ese estado en el año anterior.
@@ -231,11 +233,12 @@ class ForwardPass(object):
         # incumbente y gasta el resto del tope sin poder cerrar el 1%.
         self.day_solver_kwargs = dict(self.solver_kwargs, **(day_solver_overrides or {}))
         # Con que se resuelve el MILP de cada bloque anual en el forward:
-        # "gurobi" (default) o "gcg" (Dantzig-Wolfe / branch-and-price, ver
-        # decomposition/gcg_block.py). El backward sigue con Gurobi: necesita
-        # los duales del LP relajado, no el MILP.
-        if block_solver not in ("gurobi", "gcg"):
-            raise ValueError("block_solver tiene que ser gurobi o gcg")
+        # "gurobi" (default), "gcg" (Dantzig-Wolfe / branch-and-price, ver
+        # decomposition/gcg_block.py) o "cg" (la generacion de columnas propia,
+        # ver cortes_dw.resolver_bloque_cg; si no encuentra solucion, Gurobi).
+        # El backward sigue con Gurobi: necesita los duales del LP relajado.
+        if block_solver not in ("gurobi", "gcg", "cg"):
+            raise ValueError("block_solver tiene que ser gurobi, gcg o cg")
         self.block_solver = block_solver
         self.gcg_blocks = gcg_blocks
         self.gcg_output_folder = gcg_output_folder or "gcg_bloques"
@@ -254,6 +257,25 @@ class ForwardPass(object):
         resultado a las mismas excepciones que _solve, para que el forward (y el
         respaldo por dias) no distingan entre solvers."""
         if self.block_solver == "gurobi":
+            return _solve(block.model, label=label, warmstart=warm, **self.solver_kwargs)
+        if self.block_solver == "cg":
+            from src.optimization.decomposition.cortes_dw import resolver_bloque_cg
+            out_dir = os.path.join(self.gcg_output_folder, f"cg_k{iteration}_y{block.year}")
+            try:
+                r = resolver_bloque_cg(block, out_dir, tiempo=self.cg_timelimit,
+                                       usar_start=warm)
+            except Exception as exc:              # cualquier falla: Gurobi
+                print(f"[NestedBenders] {label}: CG fallo ({type(exc).__name__}: {exc}) "
+                      f"-> Gurobi", flush=True)
+                r = None
+            if r is not None and r["UB"] < float("inf"):
+                gap = (r["UB"] - r["LB"]) / abs(r["UB"]) if r["UB"] else 0.0
+                print(f"[NestedBenders] {label}  CG: UB={r['UB']:,.2f}  LB={r['LB']:,.2f}  "
+                      f"gap={gap:.4%}  ({r['t']:.0f}s)", flush=True)
+                if deadline_passed() or stop_file_requested():
+                    raise KeyboardInterrupt(f"Tope de tiempo o STOP (despues de {label}).")
+                return r
+            print(f"[NestedBenders] {label}: CG sin solucion -> Gurobi", flush=True)
             return _solve(block.model, label=label, warmstart=warm, **self.solver_kwargs)
         from src.optimization.decomposition.gcg_block import solve_with_gcg
         out_dir = os.path.join(self.gcg_output_folder, f"k{iteration}_y{block.year}")
@@ -569,7 +591,9 @@ class BackwardPass(object):
     """
 
     def __init__(self, blocks, cut_manager=None, solver_kwargs=None,
-                 cut_type="benders", strengthened_timelimit=300):
+                 cut_type="benders", strengthened_timelimit=300,
+                 dw_cuts=False, dw_timelimit=300.0, dw_dir=None,
+                 cg_lb=False, cg_timelimit=600.0):
         """:param cut_type: "benders" (ec. 59 de Lara et al. 2018) toma la
             constante del corte de la relajacion LINEAL del bloque hijo.
             "strengthened" (ec. 63) reusa EL MISMO mu del dual del LP pero
@@ -601,6 +625,17 @@ class BackwardPass(object):
         # mas sobre las iteraciones, asi que el total no se deduce de k.
         self.strengthen_gain = []
         self.strengthen_attempts = 0
+        # --dw_cuts: ademas del corte de arriba, uno de Dantzig-Wolfe por bloque
+        # hijo (ver cortes_dw.py). Se AGREGA, no reemplaza: mas cortes validos
+        # nunca empeoran la cota, y si la generacion de columnas no llega a
+        # superar Phi^LP en el tope, el de Benders sigue ahi.
+        self.dw_cuts = dw_cuts
+        self.dw_timelimit = dw_timelimit
+        self.dw_dir = dw_dir or "_cortes_dw"
+        self.dw_gain = []
+        # --cg_lb: cota del año 1 con los cortes por generacion de columnas.
+        self.cg_lb = cg_lb
+        self.cg_timelimit = cg_timelimit
 
     def _lagrangean_bound(self, block, mu, phi_lp, label):
         """Constante del Strengthened Benders cut: Phi^LR(mu) con la
@@ -682,6 +717,31 @@ class BackwardPass(object):
                 parent, phi, mu, x_hat_by_year[parent.year], iteration=iteration
             )
 
+            if self.dw_cuts:
+                from src.optimization.decomposition.cortes_dw import corte_dw
+                if verbose:
+                    print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  "
+                          f"corte de Dantzig-Wolfe (generacion de columnas, "
+                          f"{self.dw_timelimit:.0f}s)...", flush=True)
+                try:
+                    res = corte_dw(child, os.path.join(self.dw_dir, f"y{child.year}"),
+                                   tiempo=self.dw_timelimit)
+                except Exception as exc:          # el corte es opcional
+                    res = None
+                    print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  corte DW "
+                          f"fallo ({type(exc).__name__}: {exc}); sigue sin el", flush=True)
+                if res is not None:
+                    phi_dw, mu_dw, inf = res
+                    self.cut_manager.add_cut(
+                        parent, phi_dw, mu_dw, x_hat_by_year[parent.year], iteration=iteration)
+                    self.dw_gain.append(phi_dw - phi)
+                    if verbose:
+                        print(f"[NestedBenders] {k_tag}BACKWARD anio {child.year}  "
+                              f"Phi^DW={phi_dw:,.2f} (corte de arriba {phi:,.2f}, "
+                              f"{phi_dw - phi:+,.2f}; {inf['rondas']} rondas, "
+                              f"{inf['t']:.0f}s, maestro {inf['z_rmp']:,.2f}"
+                              f"{', convergio' if inf['convergio'] else ''})", flush=True)
+
         # LB_k = Phi_1 con los cortes recien agregados (ec. 57 del paper). Si el
         # horizonte tiene un solo año no hay nada que propagar y el unico bloque
         # ya es la cota.
@@ -693,11 +753,37 @@ class BackwardPass(object):
         # costo futuro verdadero. Con timelimit se lee la cota dual, que
         # subestima siempre.
         first = self.blocks[0]
+        # --cg_lb: el año 1 con los cortes por generacion de columnas + B&P (ver
+        # cortes_dw.resolver_bloque_cg). Va ANTES de relajarlo: el bloque todavia
+        # tiene la solucion del forward, que entra como start. Su cota es valida
+        # para el MILP del año 1 con los cortes, igual que la dual de Gurobi.
+        lb_cg = None
+        if self.cg_lb:
+            from src.optimization.decomposition.cortes_dw import resolver_bloque_cg
+            if verbose:
+                print(f"[NestedBenders] {k_tag}BACKWARD anio {first.year}  {bounds_tag}  "
+                      f"cota del año 1 con los cortes por generacion de columnas "
+                      f"({self.cg_timelimit:.0f}s)...", flush=True)
+            try:
+                res = resolver_bloque_cg(first, os.path.join(self.dw_dir, f"lb_k{iteration}"),
+                                         tiempo=self.cg_timelimit, cargar=False)
+            except Exception as exc:
+                res = None
+                print(f"[NestedBenders] {k_tag}cota por CG fallo ({type(exc).__name__}: "
+                      f"{exc}); queda la de Gurobi", flush=True)
+            if res is not None and res["LB"] > float("-inf"):
+                lb_cg = float(res["LB"])
+                if verbose:
+                    print(f"[NestedBenders] {k_tag}BACKWARD anio {first.year}  cota por CG "
+                          f"{lb_cg:,.2f} (UB del año 1 con cortes {res['UB']:,.2f}, "
+                          f"{res['t']:.0f}s)", flush=True)
         if verbose:
             modo = "MILP" if fuerte else "LP"
             print(f"[NestedBenders] {k_tag}BACKWARD anio {first.year}  {bounds_tag}  "
                   f"resolviendo {modo} con los cortes actualizados (cota inferior)...")
         phi_lp, _ = self._relax_and_solve(first, label=f"backward y={first.year}")
+        if lb_cg is not None:
+            return max(phi_lp, lb_cg)
         if not fuerte:
             return phi_lp
 

@@ -52,6 +52,19 @@ from src.optimization.opt_model import OptModel                          # noqa:
 INF = float("inf")
 
 
+def escribir_reporte(om, por_var, nombres, vec, ts, ms, destino):
+    """Carga un vector del MPS en el modelo de Pyomo y escribe los JSON de las
+    variables con el Printer de setup.py (que deshace la normalizacion de
+    unidades): el formato que leen --incumbente_inicial y --solucion."""
+    from src.io.printer import Printer
+    for j, n in enumerate(nombres):
+        vd = por_var.get(n)
+        if vd is not None and not vd.fixed:
+            vd.set_value(float(vec[j]), skip_validation=True)
+    Printer(om, destino, ts, ms).write_variables_jsons()
+    print(f"[CG] solucion escrita como reporte JSON en {destino}", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", default="data/Tesis_final/Mina_modelo/RED")
@@ -88,8 +101,9 @@ def main():
     ap.add_argument("--refinar", type=int, default=1, help="pasadas de refinamiento de b_bar")
     ap.add_argument("--variantes_inicio", default="fases,directa",
                     help="variantes de la heuristica del maestro al arranque (coherente, "
-                         "directa, fases), separadas por coma; queda la mejor")
-    ap.add_argument("--variantes", default="coherente,fases",
+                         "directa, redondeo, fases), separadas por coma; queda la mejor. "
+                         "ninguna: no correrla (p.ej. con --solucion de Nested Benders)")
+    ap.add_argument("--variantes", default="redondeo",
                     help="variantes de la heuristica del maestro en las rondas")
     ap.add_argument("--tl_heur_max", type=float, default=900.0,
                     help="presupuesto de una heuristica del maestro: pasado, no prueba mas respaldos")
@@ -186,8 +200,9 @@ def main():
     rel = None
     if a.inicio == "relajacion":
         rel = cg.relajacion_inicial(a.relajacion, a.tl_relajacion, a.gap_relajacion)
-        cg._heuristicas(cg.xm0, cg.pi0, "maestro", 0.0, "inicio", **kw_h,
-                        variantes=tuple(a.variantes_inicio.split(",")))
+        if a.variantes_inicio != "ninguna":
+            cg._heuristicas(cg.xm0, cg.pi0, "maestro", 0.0, "inicio", **kw_h,
+                            variantes=tuple(a.variantes_inicio.split(",")))
     if not a.sin_acotar_por_costo and cg.UB < INF:
         n = cg.acotar_por_costo()
         print(f"[CG] cotas por costo: {n} variables del maestro acotadas con la UB", flush=True)
@@ -241,6 +256,10 @@ def main():
         nz = np.flatnonzero(np.abs(cg.mejor_vec) > 1e-9)
         np.savez_compressed(os.path.join(a.out, "mejor_solucion.npz"),
                             nombres=np.array([E.nombre[j] for j in nz]), valores=cg.mejor_vec[nz])
+        # Tambien como reporte JSON (mismo formato que setup.py): sirve de
+        # --incumbente_inicial para Nested Benders y de --solucion para la CG.
+        escribir_reporte(om, por_var, E.nombre, cg.mejor_vec, ts, ms,
+                         os.path.join(a.out, "solucion"))
     print("\n[CG] ================= RESUMEN =================")
     print(f"[CG] UB                     {ub:>16,.2f}  ({cg.origen_ub})" if ub < INF
           else "[CG] UB  (ninguna)")
