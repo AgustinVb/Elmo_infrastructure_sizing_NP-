@@ -86,6 +86,13 @@ def main():
     ap.add_argument("--tl_dia", type=float, default=60.0, help="tope de cada dia (heuristica)")
     ap.add_argument("--gap_dia", type=float, default=0.01)
     ap.add_argument("--refinar", type=int, default=1, help="pasadas de refinamiento de b_bar")
+    ap.add_argument("--variantes_inicio", default="fases,directa",
+                    help="variantes de la heuristica del maestro al arranque (coherente, "
+                         "directa, fases), separadas por coma; queda la mejor")
+    ap.add_argument("--variantes", default="coherente,fases",
+                    help="variantes de la heuristica del maestro en las rondas")
+    ap.add_argument("--tl_heur_max", type=float, default=900.0,
+                    help="presupuesto de una heuristica del maestro: pasado, no prueba mas respaldos")
     # Mejora 3: certificacion
     ap.add_argument("--exacto_cada", type=int, default=0,
                     help="intento exacto corto cada tantas rondas (0 = no)")
@@ -157,6 +164,7 @@ def main():
     print(f"[CG] estructura en {time.time() - t0:.0f}s: {E.resumen()}", flush=True)
     cg = GeneracionColumnas(E, jobs=a.jobs, hilos=a.hilos, out=a.out, M_art=a.M_art)
     cg.t_inicio = T_INICIO
+    cg.tl_heur_max = a.tl_heur_max
     if not a.sin_gemelos:
         t0 = time.time()
         cg.gemelos = gemelos_por_anio(E, om.model, por_var)
@@ -178,7 +186,8 @@ def main():
     rel = None
     if a.inicio == "relajacion":
         rel = cg.relajacion_inicial(a.relajacion, a.tl_relajacion, a.gap_relajacion)
-        cg._heuristicas(cg.xm0, cg.pi0, "maestro", 0.0, "inicio", **kw_h)
+        cg._heuristicas(cg.xm0, cg.pi0, "maestro", 0.0, "inicio", **kw_h,
+                        variantes=tuple(a.variantes_inicio.split(",")))
     if not a.sin_acotar_por_costo and cg.UB < INF:
         n = cg.acotar_por_costo()
         print(f"[CG] cotas por costo: {n} variables del maestro acotadas con la UB", flush=True)
@@ -194,7 +203,8 @@ def main():
               estanc_ventana=a.estanc_ventana, estanc_tol=a.estanc_tol, rc_min=a.rc_min,
               pool_columnas=not a.sin_pool, parcial=not a.sin_parcial,
               precio_completo_cada=a.precio_completo_cada, saltar_tras=a.saltar_tras,
-              compartir_cada=a.compartir_cada, box_rel=a.box_rel, box_crece=a.box_crece)
+              compartir_cada=a.compartir_cada, box_rel=a.box_rel, box_crece=a.box_crece,
+              variantes=tuple(a.variantes.split(",")))
     objetivo = a.cota_operacional if a.parar_en_operacional else None
     dl_raiz = deadline
     if deadline is not None and not a.sin_bp:

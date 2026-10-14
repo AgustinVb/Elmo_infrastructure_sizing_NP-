@@ -821,6 +821,8 @@ class GeneracionColumnas:
         self.pi0 = self._proyectar(self._duales_ext(Pi))
         self.xm0 = x[E.mvars]
         self.LB_ext = max(self.LB_ext, lb)
+        self._log(f"relajacion {modo} por componente: {self.desglose(x)}")
+        self._guardar_vector(f"relajacion_{modo}.npz", x)
         self._punto(f"relajacion {modo}", self.LB_ext)
         return {"LB": lb, "t": time.time() - t0, "modo": modo}
 
@@ -921,9 +923,10 @@ class GeneracionColumnas:
     # ------------------------------------------------------------------ #
     # Mejora 1: UB dirigida por el maestro
     # ------------------------------------------------------------------ #
-    def _cotas_heur(self, b, xm, capacidades=True):
+    def _cotas_heur(self, b, xm, capacidades=True, extra=0):
         """Cotas de un dia para la heuristica: capacidades <= redondeo hacia
-        arriba del maestro y estado (b_bar) fijo en el valor del maestro."""
+        arriba del maestro (+ extra unidades) y estado (b_bar) fijo en el valor
+        del maestro. capacidades=False: sin tope de capacidad."""
         E = self.E
         B = E.bloques[b]
         nloc = len(B["loc"])
@@ -932,27 +935,89 @@ class GeneracionColumnas:
             for jm, k in E.sombra[b].items():
                 v = float(xm[jm])
                 if E.vtype[E.mvars[jm]] != "C":
-                    u = float(np.ceil(v - 1e-6))
+                    u = float(np.ceil(v - 1e-6)) + extra
                 else:
-                    u = v * (1 + 1e-6) + 1e-6
+                    u = v * (1 + 1e-6) + 1e-6 + extra * max(0.1 * v, 100.0)
                 cot[k] = (-INF, u)
         for k in E.propias[b]:
             jm = E.pos_m[int(B["cop"][k - nloc])]
             v = float(xm[jm])
             if B["vtype"][k] != "C":
                 if capacidades:
-                    cot[k] = (-INF, float(np.ceil(v - 1e-6)))
+                    cot[k] = (-INF, float(np.ceil(v - 1e-6)) + extra)
             else:
                 p = self.pricing[b]
                 v = min(max(v, p.lb_act[k]), p.ub_act[k])
                 cot[k] = (v, v)
         return cot
 
+    def _objetivo_heur(self, b, pi):
+        """Objetivo de un dia en la heuristica: el de pricing en pi, pero cada
+        copia de capacidad paga al menos su precio de INVERSION (el costo de una
+        unidad mas en ese año, repartido entre los dias que la comparten). Con
+        los duales de capacidad ~0 un dia aislado usaba toda la capacidad que se
+        le dejara para ahorrar algo de energia, y el pulido la compraba para el
+        resto del horizonte (10 años: +1 bahia, cargador y bateria desde el año
+        3-4 y un modulo de subestacion mas que la relajacion operacional,
+        +930 mil)."""
+        if not hasattr(self, "_precios_inv"):
+            E = self.E
+            pos = {E.nombre[j]: kk for kk, j in enumerate(E.mvars)}
+            n_comp = Counter(jm for bb in range(E.nb) for jm in E.sombra[bb])
+            self._precios_inv = {}
+            for bb in range(E.nb):
+                d = {}
+                for jm, k in E.sombra[bb].items():
+                    nom = E.nombre[E.mvars[jm]]
+                    c = float(E.obj[E.mvars[jm]])
+                    if c <= 0:                        # stock: el costo esta en Delta_
+                        kk = pos.get("Delta_" + nom)
+                        c = float(E.obj[E.mvars[kk]]) if kk is not None else 0.0
+                    if c > 0:
+                        d[k] = c / max(1, n_comp[jm])
+                self._precios_inv[bb] = d
+        c = self.pricing[b].objetivo(pi)
+        for k, p in self._precios_inv[b].items():
+            c[k] = max(c[k], p)
+        return c
+
     def _resolver_dias(self, bloques, objs, cotas, tl, gap):
         out = list(self.pool.map(
             lambda b: (b, self.pricing[b].resolver(objs[b], tl, gap, 1, cotas=cotas[b])),
             bloques))
         return dict(out)
+
+    def _dias_graduales(self, bloques, objs, xm, tl, gap, xm_resp=None, pi=None):
+        """Dias con las capacidades del maestro. Los que no caben se reintentan
+        (xm_resp: con las capacidades de otro punto, p.ej. el del pulido
+        parcial del respaldo año por año) y despues con la capacidad LIBRE pero
+        cobrando la inversion (la fase 1 de _dias_fases, solo para esos dias):
+        asi toman solo la capacidad extra que necesitan. Probado y descartado:
+        +1/+2 unidades de TODAS las capacidades a la vez -- el dia usa todo lo
+        que se le da (con duales de capacidad ~0 sale gratis) y el pulido lo
+        compra (4 años: 2 bahias en vez de 1, 2,22 M en vez de 2,07 M). Si ni
+        asi hay solucion, sin tope y con el objetivo de pricing."""
+        res = self._resolver_dias(bloques, objs, {b: self._cotas_heur(b, xm) for b in bloques},
+                                  tl, gap)
+        if xm_resp is not None:
+            malos = [b for b in bloques if not res[b]["ok"]]
+            if malos:
+                res.update(self._resolver_dias(
+                    malos, objs, {b: self._cotas_heur(b, xm_resp) for b in malos}, tl, gap))
+        malos = [b for b in bloques if not res[b]["ok"]]
+        if malos:
+            libres = {b: self._cotas_heur(b, xm, capacidades=False) for b in malos}
+            res.update(self._resolver_dias(
+                malos, {b: self._objetivo_heur(b, pi if pi is not None else getattr(self, "_pi_heur", None))
+                        for b in malos}, libres,
+                2 * tl, max(gap, 0.05)))
+            malos = [b for b in malos if not res[b]["ok"]]
+            if malos:
+                self._log(f"   heuristica: {len(malos)} dias sin solucion ni con la capacidad "
+                          f"libre cobrando la inversion -> objetivo de pricing")
+                res.update(self._resolver_dias(malos, objs, {b: libres[b] for b in malos},
+                                               2 * tl, max(gap, 0.05)))
+        return res
 
     def _indices_estado(self):
         """[(año, pos b_bar(y), pos D(y-1), pos R(y))] en el maestro, por nombre."""
@@ -1023,30 +1088,37 @@ class GeneracionColumnas:
             F.setAttr("LB", sel, lb0)
             F.setAttr("UB", sel, ub0)
 
-    def _pulir_secuencial(self, xm, objs, tl_dia, gap_dia, tl_pulido):
+    def _pulir_secuencial(self, xm, objs, tl_dia, gap_dia, tl_pulido, fijar=None):
         """Respaldo si el pulido es infactible (la operacion de un año se
         resolvio con un b_bar que la degradacion real no da): año por año, el
         monolitico con los años anteriores fijos y los siguientes relajados da
-        el b_bar real del año, se resuelven sus dias con ese valor y se sigue."""
+        el b_bar real del año, se resuelven sus dias con ese valor (y las
+        capacidades del maestro) y se sigue. fijar: {variable del MPS: valor}
+        en todos los pulidos (el R redondeado: asi el b_bar real sale sin
+        reemplazos que el maestro no pidio)."""
         E, F, vs = self.E, self.E.F, self._F_vars
         anios = sorted({a for a in E.anio if a is not None})
         if not anios:
             return None, None, None
+        if not hasattr(self, "_estado"):
+            self._estado = self._indices_estado()
         ints = {a: [] for a in anios}
         for b in range(E.nb):
             B = E.bloques[b]
             nloc = len(B["loc"])
             ints[E.anio[b]].extend((b, k, int(B["loc"][k])) for k in B["ent"] if k < nloc)
+        extra = list((fijar or {}).items())
+        sel_x = [vs[j] for j, _ in extra]
         zs = [None] * E.nb
         for a in anios:
             fijas = [(b, k, j) for aa in anios if aa < a for (b, k, j) in ints[aa]]
             relaj = [j for aa in anios if aa >= a for (_, _, j) in ints[aa]]
-            sel_f = [vs[j] for _, _, j in fijas]
+            sel_f = [vs[j] for _, _, j in fijas] + sel_x
             sel_r = [vs[j] for j in relaj]
             lb0, ub0 = F.getAttr("LB", sel_f), F.getAttr("UB", sel_f)
             vt0 = F.getAttr("VType", sel_r)
             try:
-                vals = [float(round(zs[b][k])) for b, k, _ in fijas]
+                vals = [float(round(zs[b][k])) for b, k, _ in fijas] + [float(v) for _, v in extra]
                 F.setAttr("LB", sel_f, vals)
                 F.setAttr("UB", sel_f, vals)
                 F.setAttr("VType", sel_r, ["C"] * len(sel_r))
@@ -1059,52 +1131,158 @@ class GeneracionColumnas:
                 F.setAttr("LB", sel_f, lb0)
                 F.setAttr("UB", sel_f, ub0)
                 F.setAttr("VType", sel_r, vt0)
+            # Capacidades del maestro, estado (b_bar) real de este pulido.
+            xh = np.array(xm, float)
+            for _y, kb, _kd, _kr in self._estado:
+                xh[kb] = xa[kb]
             bl = [b for b in range(E.nb) if E.anio[b] == a]
-            res = self._resolver_dias(bl, objs, {b: self._cotas_heur(b, xa) for b in bl},
-                                      tl_dia, gap_dia)
-            malos = [b for b in bl if not res[b]["ok"]]
-            if malos:
-                res.update(self._resolver_dias(
-                    malos, objs, {b: self._cotas_heur(b, xa, capacidades=False) for b in malos},
-                    tl_dia, gap_dia))
+            res = self._dias_graduales(bl, objs, xh, tl_dia, gap_dia, xm_resp=xa)
             for b in bl:
                 if not res[b]["ok"]:
                     return None, None, None
                 zs[b] = res[b]["sols"][0]
-        costo, vec = self._pulir(zs, tl_pulido)
+        costo, vec = self._pulir(zs, tl_pulido, fijar=fijar)
         return costo, vec, zs
 
     def heuristica_maestro(self, xm, pi=None, tl_dia=60.0, gap_dia=0.01, tl_pulido=300.0,
-                           refinar=1):
+                           refinar=1, variantes=("coherente",)):
         """Mejora 1. Dias resueltos por separado con la inversion y el estado
         del maestro fijos, pulido del monolitico con la operacion fija, y
         refinamiento de b_bar. pi: duales para el objetivo de los dias (cobra la
-        capacidad y la energia); None = costos originales."""
+        capacidad y la energia); None = costos originales.
+        variantes: "coherente" (b_bar coherente con el R redondeado, R fijo en
+        el pulido; capacidades del maestro), "directa" (b_bar y R tal como
+        vienen del maestro) y/o "fases" (estado coherente, pero la capacidad la
+        deciden los dias: el esquema de day_blocks de Nested Benders, ver
+        _dias_fases). Devuelve la mejor."""
+        mejor = (None, None)
+        for v in variantes:
+            c, vec = self._heuristica_maestro_una(xm, pi, tl_dia, gap_dia, tl_pulido, refinar,
+                                                  modo=v)
+            if len(variantes) > 1:
+                self._log(f"   variante {v}: "
+                          + ("sin solucion" if c is None else f"{c:,.2f} ({self.desglose(vec)})"))
+            if c is not None and (mejor[0] is None or c < mejor[0]):
+                mejor = (c, vec)
+        return mejor
+
+    def desglose(self, vec, n=8):
+        """Costo por componente (el nombre antes del indice) de un vector del
+        MPS, de mayor a menor: para ver de donde sale una UB mala."""
         E = self.E
-        xm, fijar_R = self._estado_sin_mezcla(xm)
-        objs = {b: self.pricing[b].objetivo(pi) for b in range(E.nb)}
-        cot = {b: self._cotas_heur(b, xm) for b in range(E.nb)}
-        res = self._resolver_dias(range(E.nb), objs, cot, tl_dia, gap_dia)
-        malos = [b for b in range(E.nb) if not res[b]["ok"]]
+        por = defaultdict(float)
+        for j in np.flatnonzero(np.abs(E.obj * vec) > 1e-9):
+            por[E.nombre[j].split("(")[0]] += float(E.obj[j] * vec[j])
+        top = sorted(por.items(), key=lambda kv: -abs(kv[1]))[:n]
+        return ", ".join(f"{k} {v:,.0f}" for k, v in top)
+
+    def _guardar_vector(self, nombre, vec):
+        if not self.out or vec is None:
+            return
+        E = self.E
+        nz = np.flatnonzero(np.abs(vec) > 1e-9)
+        np.savez_compressed(os.path.join(self.out, nombre),
+                            nombres=np.array([E.nombre[j] for j in nz]), valores=vec[nz])
+
+    def _dias_fases(self, xm, pi, objs, tl, gap):
+        """Capacidad decidida por los dias, como day_blocks de Nested Benders:
+          Fase 1      cada dia con la infraestructura LIBRE y cobrando la
+                      inversion (_objetivo_heur): sin tope siempre hay solucion
+                      rapida desde el start del pricing, y la inversion la
+                      mantiene minima.
+          Agregacion  por capacidad, el maximo entre dias; propagado por las
+                      filas de stock (N(y) >= N(y-1)).
+          Fase 2      cada dia otra vez con esa capacidad como tope, desde la
+                      solucion de la fase 1 (que cabe por construccion).
+        Cobrar la inversion CON tope (lo primero que se probo) dejaba al MILP
+        del dia sin solucion en 60 s. Devuelve (resultados, punto del maestro
+        con la capacidad agregada) o (None, None)."""
+        E = self.E
+        bl = list(range(E.nb))
+        cot1 = {b: self._cotas_heur(b, xm, capacidades=False) for b in bl}
+        obj1 = {b: self._objetivo_heur(b, pi) for b in bl}
+        r1 = self._resolver_dias(bl, obj1, cot1, 2 * tl, max(gap, 0.05))
+        malos = [b for b in bl if not r1[b]["ok"]]
         if malos:
-            # Capacidad del maestro insuficiente para la operacion entera de
-            # ese dia: se libera (el pulido la paga).
-            res.update(self._resolver_dias(
-                malos, objs, {b: self._cotas_heur(b, xm, capacidades=False) for b in malos},
-                tl_dia, gap_dia))
-            malos = [b for b in malos if not res[b]["ok"]]
+            r1.update(self._resolver_dias(malos, objs, {b: cot1[b] for b in malos},
+                                          2 * tl, max(gap, 0.05)))
+            if any(not r1[b]["ok"] for b in malos):
+                self._log(f"   fases: fase 1 sin solucion en "
+                          f"{[E.claves[b] for b in malos if not r1[b]['ok']]}")
+                return None, None
+        lb, ub = self.lb_nodo.copy(), self.ub_nodo.copy()
+        for b in bl:
+            z = r1[b]["sols"][0]
+            for jm, k in E.sombra[b].items():
+                v = float(z[k])
+                if E.vtype[E.mvars[jm]] != "C":
+                    v = float(np.ceil(v - 1e-6))
+                lb[jm] = max(lb[jm], v)
+        lb, _ub = E.propagar(lb, np.maximum(ub, lb))
+        xm2 = np.array(xm, float)
+        for b in bl:
+            for jm in E.sombra[b]:
+                xm2[jm] = lb[jm]
+        for b in bl:
+            self.pricing[b].start = r1[b]["sols"][0]
+        return self._dias_graduales(bl, objs, xm2, tl, gap), xm2
+
+    def _heuristica_maestro_una(self, xm, pi, tl_dia, gap_dia, tl_pulido, refinar, modo):
+        E = self.E
+        self._pi_heur = pi
+        t0 = time.time()
+        presupuesto = getattr(self, "tl_heur_max", 900.0)
+
+        def sin_tiempo(paso):
+            if time.time() - t0 > presupuesto:
+                self._log(f"   heuristica del maestro: {time.time() - t0:.0f}s > {presupuesto:.0f}s, "
+                          f"no se intenta {paso}")
+                return True
+            return False
+        if modo in ("coherente", "fases"):
+            xm, fijar_R = self._estado_sin_mezcla(xm)
+        else:
+            fijar_R = {}
+        objs = {b: self.pricing[b].objetivo(pi) for b in range(E.nb)}
+        if modo == "fases":
+            res, xm2 = self._dias_fases(xm, pi, objs, tl_dia, gap_dia)
+            if res is None:
+                return None, None
+            xm = xm2
+        else:
+            # Capacidad del maestro insuficiente para la operacion entera de un
+            # dia: se agranda de a poco (el pulido la paga).
+            res = self._dias_graduales(list(range(E.nb)), objs, xm, tl_dia, gap_dia)
+        malos = [b for b in range(E.nb) if not res[b]["ok"]]
         if malos:
             self._log(f"   heuristica del maestro: dias sin solucion {[E.claves[b] for b in malos]}")
             return None, None
         zs = [res[b]["sols"][0] for b in range(E.nb)]
+        # Orden de respaldo: pulido con R fijo; año por año con R fijo (b_bar
+        # real de cada año); recien despues R libre, que puede terminar pagando
+        # reemplazos que el maestro no pidio (medido a 4 años: 5,2-6,4 M).
         costo, vec = self._pulir(zs, tl_pulido, fijar=fijar_R)
-        if costo is None and fijar_R:
-            costo, vec = self._pulir(zs, tl_pulido)          # R libre
+        camino = "directo"
+        if costo is None and fijar_R and not sin_tiempo("año por año con R fijo"):
+            costo, vec, zs2 = self._pulir_secuencial(xm, objs, tl_dia, gap_dia, tl_pulido,
+                                                     fijar=fijar_R)
+            camino = "año por año con R fijo"
+            if costo is not None:
+                zs = zs2
+        if costo is None and not sin_tiempo("R libre"):
+            costo, vec = self._pulir(zs, tl_pulido)
+            camino = "R libre"
+        if costo is None and not sin_tiempo("año por año con R libre"):
+            costo, vec, zs2 = self._pulir_secuencial(xm, objs, tl_dia, gap_dia, tl_pulido)
+            camino = "año por año con R libre"
+            if costo is not None:
+                zs = zs2
         if costo is None:
-            self._log("   heuristica del maestro: pulido infactible -> respaldo año por año")
-            costo, vec, zs = self._pulir_secuencial(xm, objs, tl_dia, gap_dia, tl_pulido)
-            if costo is None:
-                return None, None
+            self._log("   heuristica del maestro: ningun pulido factible")
+            return None, None
+        if camino != "directo":
+            self._log(f"   heuristica del maestro: pulido directo infactible -> {camino}: "
+                      f"{costo:,.2f}")
         for _ in range(refinar):
             rehacer = []
             for b in range(E.nb):
@@ -1150,6 +1328,8 @@ class GeneracionColumnas:
         if costo < self.UB - 1e-6:
             self.UB, self.mejor_vec, self.origen_ub = costo, vec, origen
             self._punto(origen)
+            self._log(f"   nueva UB {costo:,.2f} por componente: {self.desglose(vec)}")
+            self._guardar_vector("mejor_solucion.npz", vec)
             n = self.acotar_por_costo()
             if n:
                 self._log(f"   cotas por costo: {n} variables del maestro acotadas con la UB")
@@ -1222,12 +1402,28 @@ class GeneracionColumnas:
 
     ub_heuristica = ub_columnas      # nombre anterior
 
-    def _heuristicas(self, xm, pi, modo, art, etiqueta, tl_dia, gap_dia, tl_pulido, refinar):
+    def _heuristicas_rmp(self, xm, art, caja_activa, pi_c, delta, pi, modo, etiqueta, kw_h):
+        """Heuristicas desde el maestro restringido de una ronda. Con la caja
+        activa el punto del maestro viene distorsionado (artificiales baratas):
+        se re-resuelve sin caja y, si todavia usa artificiales, no se intenta
+        (a 10 años la heuristica desde ese punto gastaba 27 min y fallaba)."""
+        if caja_activa:
+            xm, art = self._xm_sin_caja()
+            self.maestro.poner_box(pi_c, delta)
+        if art > 1e-6:
+            self._log(f"   UB ({etiqueta}): se omite, el maestro restringido todavia usa "
+                      f"artificiales ({art:.2g})")
+            return
+        self._heuristicas(xm, pi, modo, art, etiqueta, **kw_h)
+
+    def _heuristicas(self, xm, pi, modo, art, etiqueta, tl_dia, gap_dia, tl_pulido, refinar,
+                     variantes=("coherente",)):
         if xm is None:
             return
         if modo in ("maestro", "ambos"):
             tu = time.time()
-            c, v = self.heuristica_maestro(xm, pi, tl_dia, gap_dia, tl_pulido, refinar)
+            c, v = self.heuristica_maestro(xm, pi, tl_dia, gap_dia, tl_pulido, refinar,
+                                           variantes=variantes)
             mej = self._registrar_ub(c, v, f"maestro {etiqueta}")
             txt = "sin solucion" if c is None else f"{c:,.2f}"
             self._log(f"   UB maestro ({etiqueta}): {txt}{'  *** nueva UB' if mej else ''}"
@@ -1341,7 +1537,7 @@ class GeneracionColumnas:
                pool_columnas=True, parcial=True, precio_completo_cada=5, saltar_tras=2,
                compartir_cada=3, box_rel=1.0, box_crece=4.0,
                centro=None, LB0=-INF, deadline=None, fase="raiz", gap_ub=None,
-               ub_final=True, tl_exacto_corto=60.0):
+               ub_final=True, tl_exacto_corto=60.0, variantes=("coherente",)):
         """estab: combinacion con '+' de "wentges", "barrier", "box" (o
         "ninguna"). ub_cada: cada cuantas rondas se intentan las UB heuristicas
         (0 = solo al final); ub_modo: "maestro", "columnas" o "ambos".
@@ -1376,7 +1572,8 @@ class GeneracionColumnas:
         dormido = np.zeros(E.nb, int)
         z_rmp, xm, pi_rmp, art, k, convergio = INF, None, None, INF, 0, False
         reintentos = 0
-        kw_h = dict(tl_dia=tl_dia, gap_dia=gap_dia, tl_pulido=ub_timelimit, refinar=refinar)
+        kw_h = dict(tl_dia=tl_dia, gap_dia=gap_dia, tl_pulido=ub_timelimit, refinar=refinar,
+                    variantes=tuple(variantes))
 
         while k < max_rondas:
             k += 1
@@ -1517,7 +1714,8 @@ class GeneracionColumnas:
                 alpha = alpha0                        # vuelve a suavizar
 
             if ub_cada and k % ub_cada == 0:
-                self._heuristicas(xm, pi_rmp, ub_modo, art, f"{fase} r{k}", **kw_h)
+                self._heuristicas_rmp(xm, art, caja and delta is not None, pi_c, delta, pi_rmp,
+                                      ub_modo, f"{fase} r{k}", kw_h)
 
             if mejora:
                 self._punto(f"{fase} r{k}", LB if fase == "raiz" else None)
@@ -1609,8 +1807,9 @@ class GeneracionColumnas:
                     if (z0 - z1) / max(1.0, abs(z1)) < estanc_tol:
                         estancado, hist_z = True, []
                         self._log("maestro estancado -> ronda exacta")
-        if ub_final:
-            self._heuristicas(xm, pi_rmp, ub_modo, art, f"{fase} final", **kw_h)
+        if ub_final and xm is not None:
+            self._heuristicas_rmp(xm, art, caja and delta is not None, pi_c, delta, pi_rmp,
+                                  ub_modo, f"{fase} final", kw_h)
         return {"LB": LB, "UB": self.UB, "z_rmp": z_rmp, "rondas": k, "cols": M.n_cols,
                 "t": time.time() - t0, "xm": xm, "pi_c": pi_c, "convergio": convergio,
                 "art": art}
@@ -1682,7 +1881,8 @@ class GeneracionColumnas:
         kw = dict(kw)
         ub_modo = kw.get("ub_modo", "ambos")
         kw_h = dict(tl_dia=kw.get("tl_dia", 60.0), gap_dia=kw.get("gap_dia", 0.01),
-                    tl_pulido=kw.get("ub_timelimit", 300.0), refinar=kw.get("refinar", 1))
+                    tl_pulido=kw.get("ub_timelimit", 300.0), refinar=kw.get("refinar", 1),
+                    variantes=tuple(kw.get("variantes", ("coherente",))))
         for clave in ("max_rondas", "centro", "LB0", "deadline", "fase", "objetivo",
                       "ub_final", "tiempo_max", "gap_ub"):
             kw.pop(clave, None)
