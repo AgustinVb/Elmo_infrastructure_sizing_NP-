@@ -10,6 +10,10 @@
 #
 #   bash cola_final_swap.sh                     # los tres, en ese orden
 #   bash cola_final_swap.sh RED_GEN             # solo algunos
+#   SOLO_POST="RED RED_GEN_BESS" bash cola_final_swap.sh
+#        # para esos escenarios NO corre Benders: usa su <ESC>_final.log y su
+#        # incumbente_respaldo.pkl (p.ej. tras un corte o un reinicio) y sigue
+#        # con mejorar_ub + certificado; los demas, completos.
 #
 # Todo se ve en la consola y queda en output/.../<archivo>.log. Para cortar
 # Benders conservando la solucion: touch output/.../<ESC>_final/STOP
@@ -28,6 +32,9 @@ for esc in $ESCS; do
   D=data/Tesis_final/Mina_modelo/$esc; B=$O/${esc}_final
 
   H=${HORAS[$esc]:-24}
+  if [[ " $SOLO_POST " == *" $esc "* ]]; then
+    msg $esc "SOLO_POST: se usa el Benders ya corrido ($B.log)"
+  else
   msg $esc "Nested Benders (max $ITER iteraciones / $H h, gap $GAP)"
   $PY -u setup.py --data_folder $D --solver gurobi --days_per_year 4 --free_charging --free_maintenance \
       --block_build_jobs 1 --output_folder $B --mode decomposed --n_years 10 --gap_tol $GAP --max_iter $ITER \
@@ -36,10 +43,14 @@ for esc in $ESCS; do
       --cut_type strengthened --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 \
       --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 \
       --polish_each_iter --skip_last_backward 2>&1 | tee $B.log
+  fi
 
   read UB0 LBOP < <($PY -c "
 import re;t=open('$B.log',encoding='utf-8',errors='replace').read()
-m=re.findall(r'NestedBenders[^\n]*: UB=([\d.]+)\s+LB=([\d.]+)',t); print(*(m[-1] if m else ('','')))")
+m=re.findall(r'NestedBenders[^\n]*: UB=([\d.]+)\s+LB=([\d.]+)',t)
+# Cortado con STOP o por un reinicio no hay linea de cierre: la ultima iteracion completa.
+m=m or re.findall(r'k=\d+  UB=([\d.]+)\s+LB=([\d.]+)',t)
+print(*(m[-1] if m else ('','')))")
   if [ -z "$UB0" ] || [ ! -f $B/incumbente_respaldo.pkl ]; then
     msg $esc "Benders sin resultado: se salta el escenario"; continue
   fi
