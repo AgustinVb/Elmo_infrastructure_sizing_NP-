@@ -954,10 +954,48 @@ class GeneracionColumnas:
             bloques))
         return dict(out)
 
-    def _pulir(self, zs, timelimit, gap=1e-4):
+    def _indices_estado(self):
+        """[(año, pos b_bar(y), pos D(y-1), pos R(y))] en el maestro, por nombre."""
+        import re
+        E = self.E
+        pos = {E.nombre[j]: k for k, j in enumerate(E.mvars)}
+        out = []
+        for n, k in pos.items():
+            m = re.fullmatch(r"b_bar\((\d+)\)", n)
+            if m:
+                y = int(m.group(1))
+                out.append((y, k, pos.get(f"D({y - 1})"), pos.get(f"R({y})")))
+        return sorted(out)
+
+    def _estado_sin_mezcla(self, xm):
+        """El maestro LP mezcla columnas con reemplazo de baterias (R = 1,
+        b_bar = nominal) y sin el, y da un b_bar intermedio que ninguna
+        trayectoria real tiene: resueltos los dias con ese b_bar, el pulido
+        termina pagando reemplazos para cuadrarlo (medido a 4 años: UB 5,4-6,0 M
+        contra 2,07 M). Aca R se redondea y b_bar se pone coherente con la
+        degradacion: D(y-1) si R(y) = 0, la nominal si R(y) = 1. Devuelve el
+        maestro corregido y {variable del MPS: R redondeado} para el pulido."""
+        E = self.E
+        xm = np.array(xm, float)
+        fijar = {}
+        if not hasattr(self, "_estado"):
+            self._estado = self._indices_estado()
+        for y, kb, kd, kr in self._estado:
+            r = int(round(xm[kr])) if kr is not None else 0
+            if kr is not None:
+                xm[kr] = r
+                fijar[int(E.mvars[kr])] = float(r)
+            if r == 0 and kd is not None:
+                xm[kb] = min(max(xm[kd], self.lb_nodo[kb]), self.ub_nodo[kb])
+            elif r == 1:
+                xm[kb] = self.ub_nodo[kb]
+        return xm, fijar
+
+    def _pulir(self, zs, timelimit, gap=1e-4, fijar=None):
         """Fija las enteras propias de cada dia (operacion y copias de
         capacidad) y resuelve el resto del monolitico: inversion entera,
-        degradacion y energia. Devuelve (costo, vector) o (None, None)."""
+        degradacion y energia. fijar: {variable del MPS: valor} adicionales.
+        Devuelve (costo, vector) o (None, None)."""
         E, F, vs = self.E, self.E.F, self._F_vars
         idx, vals = [], []
         for b, z in enumerate(zs):
@@ -967,6 +1005,9 @@ class GeneracionColumnas:
                 if k < nloc:
                     idx.append(int(B["loc"][k]))
                     vals.append(float(round(z[k])))
+        for j, v in (fijar or {}).items():
+            idx.append(int(j))
+            vals.append(float(v))
         sel = [vs[j] for j in idx]
         lb0, ub0 = F.getAttr("LB", sel), F.getAttr("UB", sel)
         F.setAttr("LB", sel, vals)
@@ -1040,6 +1081,7 @@ class GeneracionColumnas:
         refinamiento de b_bar. pi: duales para el objetivo de los dias (cobra la
         capacidad y la energia); None = costos originales."""
         E = self.E
+        xm, fijar_R = self._estado_sin_mezcla(xm)
         objs = {b: self.pricing[b].objetivo(pi) for b in range(E.nb)}
         cot = {b: self._cotas_heur(b, xm) for b in range(E.nb)}
         res = self._resolver_dias(range(E.nb), objs, cot, tl_dia, gap_dia)
@@ -1055,7 +1097,9 @@ class GeneracionColumnas:
             self._log(f"   heuristica del maestro: dias sin solucion {[E.claves[b] for b in malos]}")
             return None, None
         zs = [res[b]["sols"][0] for b in range(E.nb)]
-        costo, vec = self._pulir(zs, tl_pulido)
+        costo, vec = self._pulir(zs, tl_pulido, fijar=fijar_R)
+        if costo is None and fijar_R:
+            costo, vec = self._pulir(zs, tl_pulido)          # R libre
         if costo is None:
             self._log("   heuristica del maestro: pulido infactible -> respaldo año por año")
             costo, vec, zs = self._pulir_secuencial(xm, objs, tl_dia, gap_dia, tl_pulido)
