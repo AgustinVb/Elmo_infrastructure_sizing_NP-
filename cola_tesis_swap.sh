@@ -8,10 +8,11 @@
 #   2. mejorar_ub pasada 1 (años 1-10, 600 s) y pasada 2 (años 3-9, 900 s).
 #   3. parameters + consumer sobre la mejor solucion y certificado.
 # Diferencias con OB (propias de swap):
-#   - HORAS = 8 por caso en la ronda 1 (OB: 6): las iteraciones de swap duran ~70 min
-#     (OB ~45) y las mejoras grandes del UB llegaron hasta k=5 (~6,9 h en RED_GEN_BESS
-#     v3; ~5 h en RED_GEN v2). Los que queden >= 1 % se siguen en la ronda 2 desde su
-#     respaldo (12 h). Tope global 66 h, como OB: 5 casos x (8 h + ~3 h) ~ 55 h.
+#   - HORAS = 12 por caso en la ronda 1 (OB: 6), igual que los casos base de la v3:
+#     las iteraciones de swap duran ~70 min (OB ~45) y las mejoras grandes del UB
+#     llegaron hasta k=5 (~6,9 h en RED_GEN_BESS v3). Los que queden >= 1 % se
+#     siguen en la ronda 2 desde su respaldo (12 h). Tope global 78 h: 5 casos
+#     nuevos x (12 h + ~3 h) = 75 h.
 #   - Casos 1-3 (base/norte/05C): si la cola v3 (cola_v3_swap.sh) ya los dejo
 #     certificados en $O/v3, se COPIAN de ahi (misma data; Benders de hasta 18 h).
 #     Si no, se corren como los demas.
@@ -38,8 +39,8 @@ O=output/Resultados_finales_tesis/Mina_modelo
 V=$O/casos_finales
 V3=$O/v3
 RONDA=${RONDA:-1}
-HORAS=${HORAS:-8}; HORAS_R2=${HORAS_R2:-12}
-TOPE_H=${TOPE_H:-66}; RESERVA_H=${RESERVA_H:-3}; MIN_H=${MIN_H:-2}
+HORAS=${HORAS:-12}; HORAS_R2=${HORAS_R2:-12}
+TOPE_H=${TOPE_H:-78}; RESERVA_H=${RESERVA_H:-3}; MIN_H=${MIN_H:-2}
 CORTE=${CORTE:-1}
 GAP=0.01; ITER=50; SIN_MEJORA=4
 FLAGS="--free_charging --free_maintenance"
