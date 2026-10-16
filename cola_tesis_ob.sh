@@ -80,11 +80,11 @@ leer_benders() {  # "UB LB" de la linea final o de la ultima iteracion cerrada
   $PY -c "
 import re;t=open('$1',encoding='utf-8',errors='replace').read()
 m=re.findall(r'NestedBenders[^\n]*: UB=([\d.]+)\s+LB=([\d.]+)',t) or re.findall(r'k=\d+  UB=([\d.]+)\s+LB=([\d.]+)',t)
-print(*(m[-1] if m else ('','')))"
+print(*(m[-1] if m else ('','')))" | tr -d '\r'
 }
 ub_resumen() {  # "solucion ub_final" de un resumen.json de mejorar_ub, o "- -"
   [ -f $1 ] && $PY -c "
-import json;r=json.load(open('$1')); print(r.get('solucion') or '-', repr(r['ub_final']))" || echo "- -"
+import json;r=json.load(open('$1')); print(r.get('solucion') or '-', repr(r['ub_final']))" | tr -d '\r' || echo "- -"
 }
 certificado() { grep -E 'LB CERTIFICADA' $1 2>/dev/null | tail -1 | sed 's/^\[cert\] //'; }
 gap_de() { certificado $1 | sed -E 's/.*gap ([0-9.]+)%.*/\1/'; }
@@ -185,7 +185,7 @@ for n in $SEL; do
   fi
 
   # --- 3. certificado -------------------------------------------------------
-  GO=$($PY -c "g=($UB-$LBOP)/$UB; print(round(max(1e-5, min(0.005, 0.8*g)), 6))")
+  GO=$($PY -c "g=($UB-$LBOP)/$UB; print(round(max(1e-5, min(0.005, 0.8*g)), 6))" | tr -d '\r')
   msg "$TAG" "certificar (UB $UB, gap_objetivo $GO)"
   $PY -u certificar_inversiones.py --data_folder $D $FLAGS $FUENTE --ub_esperado $UB --gap_objetivo $GO \
       --evaluar_vivas --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
