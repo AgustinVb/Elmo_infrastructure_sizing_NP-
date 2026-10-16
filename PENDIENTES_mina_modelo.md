@@ -32,10 +32,10 @@ replica EXACTAMENTE la de OB (verificado celda a celda contra los Excel de OB):
 
 Método: el de OB (corte tras 4 iteraciones sin mejora, `mejorar_ub` en dos
 pasadas, certificado, ronda 2 para los ≥ 1 % desde el respaldo por 12 h), con:
-- **12 h de Benders por caso en la ronda 1** (OB: 6), igual que los casos base de
+- **10 h de Benders por caso en la ronda 1** (OB: 6), igual que los casos base de
   la v3: las iteraciones de swap duran ~70 min y las mejoras grandes llegaron
   hasta ~k=5 (~5–7 h). Los que queden ≥ 1 % se siguen en la ronda 2 (12 h, desde
-  su respaldo). Tope global 78 h.
+  su respaldo). Tope global 68 h.
 - Casos 1–3 se **copian de la cola v3** (`output/.../v3`) cuando están
   certificados ahí (RED_GEN_BESS y RED_GEN corriendo al 2026-10-16).
 - **Corte de cargas por LHD en la cota operacional** (`CORTE=1`, default),

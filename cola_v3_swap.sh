@@ -3,7 +3,7 @@
 # interpolado y descuento del 8 %. Salida en output/.../Mina_modelo/v3/.
 #
 # Por escenario (RED_GEN_BESS y RED_GEN, del mas rapido al mas lento):
-#   1. Nested Benders, hasta 12 h o gap 1 %, con CORTE AUTOMATICO: si el UB lleva
+#   1. Nested Benders, hasta 10 h o gap 1 %, con CORTE AUTOMATICO: si el UB lleva
 #      4 iteraciones seguidas sin mejorar, se crea STOP apenas se cierra esa
 #      iteracion (tras su backward) y Benders corta conservando la solucion.
 #   2. mejorar_ub pasada 1 (años 1-10, 600 s) y pasada 2 (años 3-9, 900 s).
@@ -21,7 +21,7 @@
 cd "$(dirname "$0")"
 PY=~/miniconda3/envs/py310/bin/python
 V=output/Resultados_finales_tesis/Mina_modelo/v3
-HORAS=12; GAP=0.01; ITER=50; SIN_MEJORA=4
+HORAS=10; GAP=0.01; ITER=50; SIN_MEJORA=4
 EXTRA_BENDERS=""
 [ -n "$CORTE_CARGAS" ] && EXTRA_BENDERS="--corte_cargas_lhd $CORTE_CARGAS"
 ESCS=${@:-"RED_GEN_BESS RED_GEN RED"}
