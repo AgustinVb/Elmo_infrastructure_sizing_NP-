@@ -90,7 +90,7 @@ class NestedBendersSolver(object):
                  box_delta_int=1, box_frac_cont=0.25, box_min_cont=1.0,
                  box_delta_int_max=None, stab_free_every=0, level_alpha=0.5,
                  max_time_sec=None, t_origen=None, incumbente_inicial=None,
-                 op_bound_gap=None):
+                 op_bound_gap=None, corte_cargas_lhd=None):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -188,6 +188,10 @@ class NestedBendersSolver(object):
         # Gurobi en la fase 2 (BestObjStop + fila obj >= LB).
         self.operational_bound = operational_bound
         self.op_bound_timelimit = op_bound_timelimit
+        # JSON de corte_cargas_op.py: corte de cargas por LHD condicional al
+        # reemplazo, que se agrega SOLO a la cota operacional (ver
+        # _agregar_corte_cargas_lhd). None = sin corte (comportamiento previo).
+        self.corte_cargas_lhd = corte_cargas_lhd
         self.lb_operational = None
         # Cota inferior externa, de una corrida anterior (--lb_inicial). Solo
         # es valida si viene de EXACTAMENTE el mismo problema: mismos datos,
@@ -527,6 +531,47 @@ class NestedBendersSolver(object):
                 )
         return model
 
+    def _agregar_corte_cargas_lhd(self, model, ruta):
+        """Agrega a la cota operacional el corte de cargas por LHD del
+        certificado, en su version valida para TODA inversion (ver
+        corte_cargas_op.py):
+
+            sum_{k, t<tf} X_ini[k,y,d,t] >= n_sinR - (n_sinR - n_nom) * sum_{s<=y} R[s]
+
+        Sin reemplazo hasta y la bateria esta degradada (capacidad <= cap_sinR[y])
+        y hacen falta n_sinR cargas; con algun reemplazo basta n_nom (bateria
+        nueva). Toda solucion factible del original lo cumple, asi que la cota
+        sigue siendo valida; la sube porque la relajacion operacional, con las
+        cargas fraccionarias, quedaba bajo el minimo entero de cargas."""
+        import json
+        import pyomo.environ as pyo
+
+        with open(ruta, encoding="utf-8") as fh:
+            datos = json.load(fh)
+        tf = max(model.time_intervals_set)
+        anios = sorted(model.years)
+        tiene_R = hasattr(model, "R")
+        filas = []
+        for c in datos["cortes"]:
+            y, d = int(c["y"]), int(c["d"])
+            if y not in model.years or d not in model.days:
+                continue
+            n_nom, n_sinR = float(c["n_nom"]), float(c["n_sinR"])
+            if not tiene_R:
+                n_sinR = n_nom   # sin degradacion no hay reemplazo ni bateria degradada
+            filas.append((y, d, n_nom, n_sinR))
+        model.corte_cargas_lhd = pyo.ConstraintList()
+        for y, d, n_nom, n_sinR in filas:
+            cargas = sum(model.X_ini[k, y, d, t] for k in model.stations_set
+                         for t in model.time_intervals_set if t < tf)
+            rhs = n_sinR
+            if n_sinR > n_nom:
+                rhs = n_sinR - (n_sinR - n_nom) * sum(model.R[s] for s in anios if s <= y)
+            model.corte_cargas_lhd.add(cargas >= rhs)
+        print(f"[NestedBenders] corte de cargas por LHD en la cota operacional: "
+              f"{len(filas)} dias de {ruta} (suma n_nom {sum(f[2] for f in filas):.0f}, "
+              f"n_sinR {sum(f[3] for f in filas):.0f})", flush=True)
+
     def _operational_bound(self):
         """Cota inferior por RELAJACION OPERACIONAL: el monolitico con las
         binarias OPERACIONALES relajadas a continuas (VARS_OPERACIONALES, ver
@@ -563,6 +608,8 @@ class NestedBendersSolver(object):
 
         model = self._build_monolithic_model(name="MonoliticoRelajOperacional")
         relajadas = relax_operational_vars(model, verbose=False)
+        if self.corte_cargas_lhd:
+            self._agregar_corte_cargas_lhd(model, self.corte_cargas_lhd)
 
         opt = SolverFactory("gurobi", solver_io="python")
         # Con OutputFlag=0 (como venia de carga_ob_multiaño) este solve es MUDO

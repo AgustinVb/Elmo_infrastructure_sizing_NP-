@@ -15,10 +15,15 @@
 #   bash cola_v3_swap.sh                    # todo, en ese orden
 #   bash cola_v3_swap.sh RED_GEN            # solo algunos
 #   SOLO_POST="RED_GEN" bash cola_v3_swap.sh RED_GEN   # sin repetir Benders
+#   CORTE_CARGAS=data/Tesis_final/Mina_modelo/corte_cargas_lhd.json bash cola_v3_swap.sh RED_GEN
+#        # agrega a la cota operacional el corte de cargas por LHD condicional
+#        # al reemplazo (corte_cargas_op.py, setup.py --corte_cargas_lhd)
 cd "$(dirname "$0")"
 PY=~/miniconda3/envs/py310/bin/python
 V=output/Resultados_finales_tesis/Mina_modelo/v3
 HORAS=18; GAP=0.01; ITER=50; SIN_MEJORA=4
+EXTRA_BENDERS=""
+[ -n "$CORTE_CARGAS" ] && EXTRA_BENDERS="--corte_cargas_lhd $CORTE_CARGAS"
 ESCS=${@:-"RED_GEN_BESS RED_GEN RED"}
 LOG=$V/cola_v3.log
 mkdir -p $V
@@ -60,7 +65,7 @@ for esc in $ESCS; do
   if [ "$esc" = "RED" ] || [[ " $SOLO_POST " == *" $esc "* ]]; then
     msg $esc "sin Benders: se usa $B.log"
   else
-    msg $esc "Nested Benders (max $HORAS h, gap $GAP, corte tras $SIN_MEJORA iteraciones sin mejora)"
+    msg $esc "Nested Benders (max $HORAS h, gap $GAP, corte tras $SIN_MEJORA iteraciones sin mejora${CORTE_CARGAS:+, corte de cargas en la cota operacional})"
     mkdir -p $B; rm -f $B/STOP
     vigia $B.log $B/STOP & VP=$!
     $PY -u setup.py --data_folder $D --solver gurobi --days_per_year 4 --free_charging --free_maintenance \
@@ -69,7 +74,7 @@ for esc in $ESCS; do
         --no_monolithic_lp_bound --stabilization box --stab_center operational --box_delta_int 1 \
         --cut_type strengthened --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 \
         --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 \
-        --polish_each_iter --skip_last_backward 2>&1 | tee $B.log
+        --polish_each_iter --skip_last_backward $EXTRA_BENDERS 2>&1 | tee $B.log
     kill $VP 2>/dev/null; wait $VP 2>/dev/null
   fi
   read UB0 LBOP < <(leer_benders $B.log)

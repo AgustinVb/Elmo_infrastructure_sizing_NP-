@@ -180,6 +180,7 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         free_maintenance=args.free_maintenance,
         operational_bound=args.operational_bound,
         op_bound_timelimit=args.op_bound_timelimit,
+        corte_cargas_lhd=args.corte_cargas_lhd,
         output_folder=args.output_folder,
         day_warm_start=args.day_warm_start,
         day_solver_overrides={'timelimit': args.day_timelimit, 'gap': args.day_gap,
@@ -428,6 +429,15 @@ def main():
              'construccion, asi que esta es la unica forma barata de tener una '
              'cota decente. En --mode hybrid esa LB ademas entra al monolitico '
              'de la fase 2 (BestObjStop + fila obj >= LB).'
+    )
+    parser.add_argument(
+        '--corte_cargas_lhd', default=None,
+        help='[con --operational_bound] JSON de corte_cargas_op.py: agrega a la '
+             'cota operacional el corte de cargas por LHD del certificado, en su '
+             'version condicional al reemplazo (valida para toda inversion). Sube '
+             'la LB desde el arranque (RED_GEN v2: ~2,113 M contra 2,072 M) y '
+             'puede cambiar el centro de la estabilizacion. Sin el flag, igual que '
+             'antes.'
     )
     parser.add_argument(
         '--op_bound_timelimit', type=int, default=None,
