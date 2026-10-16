@@ -80,6 +80,7 @@ class NestedBendersSolver(object):
                  block_build_jobs=None, monolithic_lp_bound=True,
                  capacity_presolve="peak", cut_type="benders",
                  strengthened_timelimit=300, warm_start_cuts=False,
+                 dw_cuts=False, dw_timelimit=300.0, cg_lb=False, cg_block_timelimit=600.0,
                  free_charging=False, free_maintenance=False,
                  operational_bound=False, op_bound_timelimit=None,
                  output_folder=None, day_warm_start="off",
@@ -173,11 +174,15 @@ class NestedBendersSolver(object):
                                         day_solver_overrides=day_solver_overrides,
                                         block_solver=block_solver,
                                         gcg_blocks=gcg_blocks,
+                                        cg_timelimit=cg_block_timelimit,
                                         gcg_output_folder=os.path.join(
                                             output_folder or ".", "_gcg_bloques"))
         self.backward_pass = BackwardPass(
             self.blocks, cut_manager=self.cut_manager, solver_kwargs=self.solver_kwargs,
             cut_type=cut_type, strengthened_timelimit=strengthened_timelimit,
+            dw_cuts=dw_cuts, dw_timelimit=dw_timelimit,
+            cg_lb=cg_lb, cg_timelimit=cg_block_timelimit,
+            dw_dir=os.path.join(output_folder or ".", "_cortes_dw"),
         )
 
         self.monolithic_lp_bound = monolithic_lp_bound

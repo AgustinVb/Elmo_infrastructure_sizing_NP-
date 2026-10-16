@@ -175,6 +175,10 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         capacity_presolve=args.capacity_presolve,
         cut_type=args.cut_type,
         strengthened_timelimit=args.strengthened_timelimit,
+        dw_cuts=args.dw_cuts,
+        dw_timelimit=args.dw_timelimit,
+        cg_lb=args.cg_lb,
+        cg_block_timelimit=args.cg_block_timelimit,
         warm_start_cuts=args.warm_start_cuts,
         free_charging=args.free_charging,
         free_maintenance=args.free_maintenance,
@@ -448,11 +452,25 @@ def main():
              'solo que mas floja: degrada con gracia.'
     )
     parser.add_argument(
-        '--block_solver', choices=['gurobi', 'gcg'], default='gurobi',
+        '--block_solver', choices=['gurobi', 'gcg', 'cg'], default='gurobi',
         help='[decomposed|hybrid] solver del MILP de cada bloque anual en el '
              'forward. gcg: Dantzig-Wolfe / branch-and-price con GCG, que corre '
-             'aparte en .venv_gcg (ver decomposition/gcg_block.py). El backward '
-             'sigue con Gurobi. Usa --solve_timelimit y --gap_tol.'
+             'aparte en .venv_gcg (ver decomposition/gcg_block.py). cg: la '
+             'generacion de columnas propia, con un bloque de pricing por dia, '
+             'heuristicas y B&P (decomposition/cortes_dw.py); tope '
+             '--cg_block_timelimit, y si no encuentra solucion resuelve Gurobi. '
+             'El backward sigue con Gurobi. Usa --solve_timelimit y --gap_tol.'
+    )
+    parser.add_argument(
+        '--cg_lb', action='store_true',
+        help='[decomposed|hybrid] la cota del backward (año 1 con los cortes) por '
+             'generacion de columnas + B&P en vez de la cota dual de Gurobi, que en '
+             'este modelo es la que limita la LB (4 años: 2.028.362 contra un '
+             'incumbente de 2.041.394 en ese mismo MILP).'
+    )
+    parser.add_argument(
+        '--cg_block_timelimit', type=float, default=600.0,
+        help='[--block_solver cg / --cg_lb] segundos por bloque anual.'
     )
     parser.add_argument(
         '--gcg_blocks', choices=['day', 'vehicle_day', 'vehicle_station_day'], default='day',
@@ -602,7 +620,8 @@ def main():
     )
     parser.add_argument(
         '--gap_tol', type=float, default=0.01,
-        help='[--mode decomposed] gap relativo (UB-LB)/|UB| con el que se corta.'
+        help='Gap relativo (UB-LB)/|UB| con el que se corta (decomposed/hybrid; '
+             'en monolithic es el MIPGap de Gurobi).'
     )
     parser.add_argument(
         '--solve_timelimit', type=int, default=900,
@@ -660,6 +679,19 @@ def main():
              'subgradiente del corte lagrangeano completo. Es el corte que rompe '
              'ese techo cuando la relajacion lineal es floja, que es el caso de '
              'este modelo (LP 1,807,131 contra 2,212,229 que Gurobi prueba).'
+    )
+    parser.add_argument(
+        '--dw_cuts', action='store_true',
+        help='[--mode decomposed/hybrid] ademas del corte de --cut_type, un corte '
+             'de Dantzig-Wolfe por bloque hijo en el backward: generacion de '
+             'columnas sobre el bloque anual con un bloque de pricing por dia '
+             '(ver src/optimization/decomposition/cortes_dw.py). La relajacion por '
+             'dia convexifica la operacion entera, que es donde esta el gap.'
+    )
+    parser.add_argument(
+        '--dw_timelimit', type=float, default=300.0,
+        help='[--dw_cuts] segundos de generacion de columnas por corte. Cortarlo '
+             'no invalida el corte (vale para cualquier vector de duales).'
     )
     parser.add_argument(
         '--strengthened_timelimit', type=int, default=300,
@@ -736,7 +768,7 @@ def main():
         run_decomposed(args, mine_system, time_series, hybrid=(args.mode == 'hybrid'))
         return
 
-    gap= 1/100;
+    gap = args.gap_tol
     solver_name=args.solver
     output_folder=args.output_folder
     y_init_path=args.y_init_path

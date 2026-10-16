@@ -306,10 +306,12 @@ def export(model, out_dir, mode="day", split=True):
     smap = model.solutions.symbol_map[smap_id]
     try:
         por_etiqueta = {}
+        etiqueta_de = {}
         for cd, clave in asignacion.items():
             et = smap.byObject.get(id(cd))
             if et is not None:
                 por_etiqueta[et] = clave
+                etiqueta_de[id(cd)] = et
         claves = sorted({c for c in asignacion.values() if c != MASTER}, key=str)
         id_bloque = {c: i for i, c in enumerate(claves)}
         master, bloques, sin_mapear = [], {i: [] for i in id_bloque.values()}, []
@@ -353,7 +355,10 @@ def export(model, out_dir, mode="day", split=True):
     info = {"mps": mps, "decomp": decomp, "mode": mode, "split": split, "n_rows": n,
             "n_master": len(master), "n_blocks": len(bloques),
             "master_frac": len(master) / n if n else 0.0,
-            "one_var_constant": tiene_constante}
+            "one_var_constant": tiene_constante,
+            # id(ConstraintData) -> etiqueta en el MPS (sin la decoracion c_e_/_):
+            # para leer duales de filas puntuales (cortes_dw.py).
+            "etiqueta_de": etiqueta_de}
     return info, por_var
 
 
