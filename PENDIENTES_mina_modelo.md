@@ -6,6 +6,49 @@ el equivalente en swap y de donde se portó la metodología.
 
 ---
 
+## 0G. CASOS DE ESTUDIO FINALES OB (2026-10-16) — cola `cola_tesis_ob.sh`
+
+Datos en `data/Resultados_finales_tesis/Mina_modelo/<Produccion>/<zona>/<carga>/<ESC>/`
+(reemplazan a las carpetas planas `Mina_modelo/P_red*`). Todos tienen el
+`GenProfiles` corregido (idéntico al de swap, commit f92c97b4c), salvo zona_centro,
+que tiene su propio perfil (misma convención: solar de la hora 23 a la 11; por
+unidad, en los 4 días: solar 17,1 h equivalentes contra 29,1 en norte, viento
+15,4 contra 23,7).
+
+Orden de prioridad (= orden de la cola). La diferencia es contra el caso base
+`Produccion_base/zona_norte/05C` del mismo escenario:
+
+| Prioridad | Caso | Diferencia con el base |
+|---:|---|---|
+| 1 | `Produccion_base/zona_norte/05C/P_red` | caso base (se copia de `P_red_final`; P_red no usa generación) |
+| 2 | `Produccion_base/zona_norte/05C/P_red_gen_bat` | caso base |
+| 3 | `Produccion_base/zona_norte/05C/P_red_gen` | caso base |
+| 4 | `Produccion_escalada/zona_norte/05C/P_red` | `ExtractionGoal` ×8/7 en todos los años (700 → 800) |
+| 5 | `Produccion_escalada/zona_norte/05C/P_red_gen_bat` | ídem |
+| 6 | `Produccion_base/zona_centro/05C/P_red_gen_bat` | `GenProfiles` de zona centro |
+| 7 | `Produccion_base/zona_norte/1C/P_red_gen_bat` | cargador 482 kW (costo 482.000), `gamma_coef` 0,0273 |
+| 8 | `Produccion_base/zona_norte/2C/P_red_gen_bat` | cargador 964 kW (costo 964.000), `gamma_coef` 0,0451 |
+
+Método (el de `cola_v3_swap.sh`): Nested Benders 6 h por caso o gap 1 %, cortado
+tras 4 iteraciones sin mejora del UB → `mejorar_ub` (años 1–10 a 600 s; años 3–9
+a 900 s) → certificado con `--evaluar_vivas`. Tope global 66 h; estimado ~45 h.
+Ronda 2 (`RONDA=2`): relanza los casos con gap certificado ≥ 1 %, retomando su
+`incumbente_respaldo.pkl` (`--incumbente_inicial`) por 12 h. Salida en
+`output/.../Mina_modelo/casos_finales/<caso>/` (ronda 2 en `<caso>/r2/`) y
+tabla en `casos_finales/resumen.txt`.
+
+```
+PY=.venv_elmo/Scripts/python.exe bash cola_tesis_ob.sh 2>&1 | tee cola_tesis_ob.out
+RONDA=2 PY=.venv_elmo/Scripts/python.exe bash cola_tesis_ob.sh 2>&1 | tee cola_tesis_ob_r2.out
+```
+
+Expectativa: P_red y P_red_gen_bat cerraron bajo 1 % en la versión final (0,59 %
+y 0,29 %); P_red_gen no (2,06 %, el gap está en la cota: ver 0F y la prueba
+lagrangiana), así que lo más probable es que pase a la ronda 2 y que ni así baje
+de 1 %.
+
+---
+
 ## 0F. VERSIÓN FINAL OB (2026-10-12/13, r640-01)
 
 Cambios respecto de la v1: perfil de generación INTERPOLADO (`get_alpha_g`),
