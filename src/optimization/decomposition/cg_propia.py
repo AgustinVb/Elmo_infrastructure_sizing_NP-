@@ -612,6 +612,7 @@ class Maestro:
         m.update()
         self.m = m
         self.lams = {b: [] for b in range(E.nb)}
+        self.idx_lam = {b: {} for b in range(E.nb)}     # clave de la columna -> indice
         self.pool = {b: [] for b in range(E.nb)}
         self.vistas = {b: set() for b in range(E.nb)}
         self.n_cols = 0
@@ -629,8 +630,25 @@ class Maestro:
     def _agregar_col(self, b, z, costo, cf):
         col = gp.Column([v for _, v in cf] + [1.0],
                         [self.filas[r] for r, _ in cf] + [self.conv[b]])
+        self.idx_lam.setdefault(b, {})[self._clave(z)] = len(self.lams[b])
         self.lams[b].append((self.m.addVar(obj=costo, column=col), z, costo, cf))
         self.n_cols += 1
+
+    def indice(self, b, z):
+        """Indice en lams[b] de la columna z: la agrega si es nueva y la pasa
+        del pool al maestro si estaba ahi."""
+        clave = self._clave(z)
+        i = self.idx_lam.get(b, {}).get(clave)
+        if i is not None:
+            return i
+        if clave in self.vistas[b]:               # en el pool
+            for t, (zp, costo, cf) in enumerate(self.pool[b]):
+                if self._clave(zp) == clave:
+                    del self.pool[b][t]
+                    self._agregar_col(b, zp, costo, cf)
+                    return len(self.lams[b]) - 1
+        self.agregar(b, z)
+        return len(self.lams[b]) - 1
 
     def agregar(self, b, z, costo=None, cf=None):
         """Agrega la columna z del bloque b si no estaba (ni en el maestro ni en
@@ -794,6 +812,18 @@ class GeneracionColumnas:
         R = F.relax()
         R.Params.Method, R.Params.Crossover, R.Params.TimeLimit = 2, 0, timelimit
         R.optimize()
+        # La barrera sin crossover puede quedar SUBOPTIMAL (13) sin llegar a las
+        # tolerancias: el año 1 de RED_GEN con los cortes de Benders (--cg_lb)
+        # lo hacia siempre y la CG devolvia None sin cota. Se repite con
+        # crossover y, si tampoco, con simplex dual.
+        for metodo, cross in ((2, -1), (1, -1)):
+            if R.Status == GRB.OPTIMAL:
+                break
+            self._log(f"relajacion LP con status {R.Status}: se repite con Method={metodo}"
+                      f"{' y crossover' if metodo == 2 else ''}")
+            R.reset()
+            R.Params.Method, R.Params.Crossover = metodo, cross
+            R.optimize()
         if R.Status != GRB.OPTIMAL:
             raise RuntimeError(f"relajacion LP sin optimo (status {R.Status})")
         lb = R.ObjVal - 1e-6 * abs(R.ObjVal)
@@ -1369,14 +1399,15 @@ class GeneracionColumnas:
         return False
 
     # Heuristica anterior: maestro entero sobre las columnas.
-    def _elegir_columnas_mip(self, timelimit, soltar_enlace=False):
+    def _elegir_columnas_mip(self, timelimit, soltar_enlace=False, permitidas=None):
         """Maestro restringido ENTERO sobre el pool: una columna por bloque
         (lambda binaria), inversion entera, sin artificiales. Con
         soltar_enlace=True se sueltan las filas de enlace de las variables
         CONTINUAS (b_bar, ...) -- solo como respaldo: sin ellas el maestro
         combina dias con b_bar distintas y el monolitico termina pagando un
         reemplazo de baterias para cuadrarlas (medido en el año 6: UB ~1,06 M
-        contra 56 mil). Devuelve el indice elegido por bloque, o None."""
+        contra 56 mil). permitidas: {bloque: indices} a los que se restringe
+        (heuristica_ip_bbar). Devuelve el indice elegido por bloque, o None."""
         E, M = self.E, self.maestro
         M.m.update()
         R = M.m.copy()
@@ -1396,12 +1427,26 @@ class GeneracionColumnas:
                 for i, (lam, *_r) in enumerate(M.lams[b]):
                     pos_lam[(b, i)] = lam.index
                     rv[lam.index].VType = GRB.BINARY
+                    if permitidas is not None and i not in permitidas.get(b, ()):
+                        rv[lam.index].UB = 0.0
             if soltar_enlace:
+                # True: las copias CONTINUAS. "no_propias": ademas las que el
+                # bloque solo tiene por la replica de filas del maestro (stocks,
+                # apertura, R, D, ...): son redundantes -- las variables reales
+                # estan en el maestro -- y cada columna trae su propio valor, asi
+                # que exigirlas iguales deja el MIP infactible (10 años). Quedan
+                # solo las enteras que el dia usa en sus propias filas (X).
                 rc = R.getConstrs()
                 for r, f in enumerate(E.ext):
-                    if f["nombre"].startswith("enlace_"):
-                        j = E.mvars[f["m_pos"][0]]
-                        if E.vtype[j] == "C":
+                    if not f["nombre"].startswith("enlace_"):
+                        continue
+                    j = E.mvars[f["m_pos"][0]]
+                    if E.vtype[j] == "C":
+                        R.remove(rc[r])
+                    elif soltar_enlace == "no_propias":
+                        b = f["b"]
+                        k = E.bloques[b]["cpos"][f["j"]]
+                        if k not in set(E.propias[b].tolist()):
                             R.remove(rc[r])
             R.optimize()
             if R.SolCount == 0:
@@ -1434,6 +1479,89 @@ class GeneracionColumnas:
 
     ub_heuristica = ub_columnas      # nombre anterior
 
+    def heuristica_ip_bbar(self, xm, rondas=2, tl=30.0, gap=0.02, pool=5, tl_mip=300.0,
+                           tl_pulido=300.0):
+        """Price-and-branch con el estado de degradacion COMUN.
+
+        Lo estandar en los papers de planificacion (p.ej. Flores-Quiroz y
+        Strunz 2021) es resolver el maestro restringido como MIP -- una columna
+        por bloque, inversion entera -- y pulir (ub_columnas). Ahi los bloques
+        solo se enlazan por la inversion (copia <= capacidad) y cualquier
+        combinacion de columnas es compatible. Aca los dias de un año ademas
+        comparten b_bar(y), continua y enlazada por IGUALDAD: cada columna trae
+        su propio b_bar (y sus copias de D, N_ciclos, ... por las filas
+        replicadas), casi nunca coinciden, y a 10 años el MIP solo encontraba
+        la combinacion de la solucion de partida.
+
+        Aca: (1) trayectoria coherente desde el maestro (R redondeado, b_bar(y)
+        = D(y-1) sin reemplazo); (2) `rondas` de pricing en los duales actuales
+        con b_bar y R de cada año FIJOS: todas las columnas de un año comparten
+        el estado; (3) MIP del maestro restringido solo sobre esas columnas,
+        soltando el enlace de las copias continuas (con b_bar comun ya no hace
+        falta: la degradacion la recalcula el maestro con la energia de las
+        columnas, energy_consumed_def sigue puesta), y (4) pulido con R fijo."""
+        E, M = self.E, self.maestro
+        xm2, fijar_R = self._estado_sin_mezcla(xm)
+        xr = self._capacidades_redondeadas(xm2)
+        pos_R = {kr: float(xm2[kr]) for _y, _kb, _kd, kr in self._estado if kr is not None}
+
+        def cotas(b, capacidades):
+            # b_bar fijo (y, con capacidades, tope en la redondeada del maestro)
+            c = self._cotas_heur(b, xr, capacidades=capacidades)
+            for j, k in E.bloques[b]["cpos"].items():
+                jm = E.pos_m[j]
+                if jm in pos_R:
+                    c[k] = (pos_R[jm], pos_R[jm])                  # R fijo
+            return c
+        permitidas = {b: set() for b in range(E.nb)}
+        for ronda in range(rondas):
+            _z, pi_r, _s, _x, _art, _af = M.resolver(barrier=False)
+            pi_r = self._proyectar(pi_r)
+            # Rondas alternadas, para que el MIP tenga columnas austeras: con la
+            # capacidad LIBRE pero cobrando la inversion (cada dia toma solo la
+            # que necesita; con los duales de capacidad ~0 usaba toda y el MIP
+            # compraba 4-5 veces la de la relajacion: 7,0 M a 10 años), y con
+            # TOPE en la capacidad redondeada del maestro.
+            libre = ronda % 2 == 0
+            objs = {b: (self._objetivo_heur(b, pi_r) if libre else self.pricing[b].objetivo(pi_r))
+                    for b in range(E.nb)}
+            cot = {b: cotas(b, capacidades=not libre) for b in range(E.nb)}
+            res = dict(self.pool.map(
+                lambda b: (b, self.pricing[b].resolver(objs[b], tl, gap, pool, cotas=cot[b])),
+                range(E.nb)))
+            for b, r in res.items():
+                for z in r["sols"]:
+                    if self._compatible(b, z):
+                        permitidas[b].add(M.indice(b, z))
+        faltan = [b for b in range(E.nb) if not permitidas[b]]
+        if faltan:
+            # Dias de produccion alta: con el estado fijo y 30 s el pricing puede
+            # no encontrar ninguna solucion (10 años, dia (4, 15)). Reintento con
+            # la capacidad libre, el objetivo de pricing y 4x el tope.
+            objs = {b: self.pricing[b].objetivo(pi_r) for b in faltan}
+            res = dict(self.pool.map(
+                lambda b: (b, self.pricing[b].resolver(objs[b], 4 * tl, max(gap, 0.05), pool,
+                                                       cotas=cotas(b, capacidades=False))),
+                faltan))
+            for b, r in res.items():
+                for z in r["sols"]:
+                    if self._compatible(b, z):
+                        permitidas[b].add(M.indice(b, z))
+        sin = [E.claves[b] for b in range(E.nb) if not permitidas[b]]
+        if sin:
+            self._log(f"   IP b_bar comun: dias sin columnas con el estado fijo {sin}")
+            return None, None
+        elegidas = self._elegir_columnas_mip(tl_mip, soltar_enlace="no_propias",
+                                             permitidas=permitidas)
+        if elegidas is None:
+            self._log("   IP b_bar comun: el MIP del maestro restringido no encontro solucion")
+            return None, None
+        zs = [M.lams[b][elegidas[b]][1] for b in range(E.nb)]
+        costo, vec = self._pulir(zs, tl_pulido, fijar=fijar_R)
+        if costo is None:
+            costo, vec = self._pulir(zs, tl_pulido)
+        return costo, vec
+
     def _heuristicas_rmp(self, xm, art, caja_activa, pi_c, delta, pi, modo, etiqueta, kw_h):
         """Heuristicas desde el maestro restringido de una ronda. Con la caja
         activa el punto del maestro viene distorsionado (artificiales baratas):
@@ -1460,6 +1588,10 @@ class GeneracionColumnas:
             txt = "sin solucion" if c is None else f"{c:,.2f}"
             self._log(f"   UB maestro ({etiqueta}): {txt}{'  *** nueva UB' if mej else ''}"
                       f"  ({time.time() - tu:.0f}s)")
+            if c is not None and not mej:
+                # Tambien los intentos que NO mejoran: a 10 años daban 3,6-5,8 M
+                # y sin el desglose no se sabe que se dispara.
+                self._log(f"   (por componente: {self.desglose(v)})")
         if modo in ("columnas", "ambos") and art < 1e-6:
             tu = time.time()
             c, v = self.ub_columnas(tl_pulido)
@@ -1468,6 +1600,15 @@ class GeneracionColumnas:
             enl = "con enlace" if getattr(self, "ub_con_enlace", False) else "enlace SUELTO"
             self._log(f"   UB columnas ({etiqueta}, {enl}): {txt}"
                       f"{'  *** nueva UB' if mej else ''}  ({time.time() - tu:.0f}s)")
+        if modo in ("ip", "ambos") and art < 1e-6 and getattr(self, "ub_ip", True):
+            tu = time.time()
+            c, v = self.heuristica_ip_bbar(xm, tl_mip=tl_pulido, tl_pulido=tl_pulido)
+            mej = self._registrar_ub(c, v, f"IP b_bar comun {etiqueta}")
+            txt = "sin solucion" if c is None else f"{c:,.2f}"
+            self._log(f"   UB IP b_bar comun ({etiqueta}): {txt}"
+                      f"{'  *** nueva UB' if mej else ''}  ({time.time() - tu:.0f}s)")
+            if c is not None and not mej:
+                self._log(f"   (por componente: {self.desglose(v)})")
 
     # ------------------------------------------------------------------ #
     def lagrangiano(self, pi, bounds, xm_rmp):

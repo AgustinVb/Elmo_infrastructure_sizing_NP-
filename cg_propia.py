@@ -92,7 +92,8 @@ def main():
     ap.add_argument("--M_art", type=float, default=1e7,
                     help="costo de las artificiales del maestro (arranque en frio)")
     # Mejora 1: UB
-    ap.add_argument("--ub_modo", choices=["maestro", "columnas", "ambos"], default="ambos")
+    ap.add_argument("--ub_modo", choices=["maestro", "columnas", "ip", "ambos"], default="ambos",
+                    help="ambos = las tres: del maestro, por columnas e IP con b_bar comun")
     ap.add_argument("--ub_cada", type=int, default=10,
                     help="UB heuristica cada tantas rondas (0 = solo al final)")
     ap.add_argument("--ub_timelimit", type=float, default=300.0, help="tope del pulido")

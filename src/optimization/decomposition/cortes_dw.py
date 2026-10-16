@@ -81,17 +81,21 @@ def resolver_bloque_cg(block, out_dir, tiempo=600.0, cargar=True, usar_start=Tru
                 cg._registrar_ub(c0, v0, "start del forward")
         try:
             cg.relajacion_inicial("operacional", timelimit=max(10.0, tiempo / 4))
-        except RuntimeError:
+        except RuntimeError as exc:
+            print(f"[CG bloque y={block.year}] sin cota: {exc}", flush=True)
             return None                          # relajacion sin optimo: Gurobi
         if cg.UB >= INF:
             cg._heuristicas(cg.xm0, cg.pi0, "maestro", 0.0, "inicio", **kw_h,
                             variantes=("fases", "directa"))
         cg.acotar_por_costo()
-        kw = dict(estab="box+wentges", ub_cada=10, ub_modo="ambos", tl_dia=60.0,
-                  gap_dia=0.01, ub_timelimit=300.0, refinar=1, variantes=("redondeo",))
+        # Solo la cota (cargar=False, --cg_lb): sin heuristicas de UB en las
+        # rondas ni al final; la UB para podar ya la trae el start del forward.
+        kw = dict(estab="box+wentges", ub_cada=10 if cargar else 0, ub_modo="ambos",
+                  tl_dia=60.0, gap_dia=0.01, ub_timelimit=300.0, refinar=1,
+                  variantes=("redondeo",))
         dl_raiz = t0 + 0.6 * tiempo if bp else dl
         r = cg.correr(**kw, deadline=max(dl_raiz, time.time() + 1.0), LB0=cg.LB_ext,
-                      gap_ub=1e-4, fase=f"bloque y={block.year}")
+                      gap_ub=1e-4, fase=f"bloque y={block.year}", ub_final=cargar)
         LB = max(r["LB"], cg.LB_ext)
         res_bp = None
         if (bp and time.time() < dl and cg.UB < INF
