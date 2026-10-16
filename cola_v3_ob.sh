@@ -18,7 +18,7 @@
 #   bash cola_v3_ob.sh P_red_gen               # solo algunos
 #   SOLO_POST="P_red_gen" bash cola_v3_ob.sh P_red_gen   # sin repetir Benders
 cd "$(dirname "$0")"
-PY=~/miniconda3/envs/py310/bin/python
+PY=${PY:-~/miniconda3/envs/py310/bin/python}   # en otro equipo: PY=<ruta a python> bash cola_v3_ob.sh
 O=output/Resultados_finales_tesis/Mina_modelo
 V=$O/v3
 HORAS=18; GAP=0.01; ITER=50; SIN_MEJORA=4
