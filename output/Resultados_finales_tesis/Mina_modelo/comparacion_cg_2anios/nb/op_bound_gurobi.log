@@ -1,0 +1,61 @@
+
+Gurobi 10.0.0 (win64) logging started Tue Oct 13 16:47:20 2026
+
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/comparacion_cg_2anios/nb\op_bound_gurobi.log"
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 1800
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
+
+Optimize a model with 121176 rows, 130846 columns and 600188 nonzeros
+Model fingerprint: 0xd1e9c608
+Variable types: 130827 continuous, 19 integer (2 binary)
+Coefficient statistics:
+  Matrix range     [1e-02, 1e+03]
+  Objective range  [1e+00, 5e+05]
+  Bounds range     [1e+00, 5e+02]
+  RHS range        [1e+00, 6e+04]
+Presolve removed 95343 rows and 108020 columns
+Presolve time: 0.91s
+Presolved: 25833 rows, 22826 columns, 104838 nonzeros
+Variable types: 22817 continuous, 9 integer (1 binary)
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing first log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   25929    2.1510262e+05   3.168971e-01   5.788225e+07      5s
+   27380    9.1183015e+06   0.000000e+00   5.875827e+06      6s
+Concurrent spin time: 0.19s
+
+Solved with dual simplex
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   24291    8.0095131e+05   0.000000e+00   0.000000e+00      8s
+
+Root relaxation: objective 8.009513e+05, 24291 iterations, 6.59 seconds (5.99 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 800951.307    0    6          - 800951.307      -     -    7s
+H    0     0                    4633506.5638 800951.307  82.7%     -    8s
+H    0     0                    1241658.4842 800951.307  35.5%     -   10s
+     0     0 1241658.48    0    3 1241658.48 1241658.48  0.00%     -   12s
+
+Cutting planes:
+  Gomory: 2
+
+Explored 1 nodes (29215 simplex iterations) in 12.41 seconds (10.55 work units)
+Thread count was 32 (of 32 available processors)
+
+Solution count 2: 1.24166e+06 4.63351e+06 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 1.241658484225e+06, best bound 1.241658484225e+06, gap 0.0000%
