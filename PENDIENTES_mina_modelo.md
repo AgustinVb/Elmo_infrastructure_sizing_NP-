@@ -8,6 +8,46 @@ Instancia: `data/Tesis_final/Mina_modelo/`, 10 años, 4 días representativos
 
 ---
 
+
+## 0G. CASOS DE ESTUDIO FINALES SWAP (2026-10-16) — cola `cola_tesis_swap.sh`
+
+Equivalente de la sección 0G de `carga_ob_multiaño` (`cola_tesis_ob.sh`): los
+mismos 8 casos y prioridad. Datos en
+`data/Tesis_final/Mina_modelo/<Produccion>/<zona>/<carga>/<ESC>/` (las carpetas
+planas `Mina_modelo/RED*` siguen, porque la cola v3 las usa). Cada variante
+replica EXACTAMENTE la de OB (verificado celda a celda contra los Excel de OB):
+
+| Prioridad | Caso | Diferencia con el base (`Produccion_base/zona_norte/05C`) |
+|---:|---|---|
+| 1 | `Produccion_base/zona_norte/05C/RED` | caso base (= `RED`, perfiles corregidos) |
+| 2 | `Produccion_base/zona_norte/05C/RED_GEN_BESS` | caso base |
+| 3 | `Produccion_base/zona_norte/05C/RED_GEN` | caso base |
+| 4 | `Produccion_escalada/zona_norte/05C/RED` | `ExtractionGoal`: por nodo, meta pico 700→800, 600→650, 550→600, 500→510 (año 4: 23.500 → 25.600) |
+| 5 | `Produccion_escalada/zona_norte/05C/RED_GEN_BESS` | ídem |
+| 6 | `Produccion_base/zona_centro/05C/RED_GEN_BESS` | `GenProfiles` de zona centro (solar 17,3 h equivalentes contra 29,5) |
+| 7 | `Produccion_base/zona_norte/1C/RED_GEN_BESS` | cargador 482 kW (482.000 USD), `gamma_coef` 0,0273 → `t_charge` 13 → 6 |
+| 8 | `Produccion_base/zona_norte/2C/RED_GEN_BESS` | cargador 964 kW (964.000 USD), `gamma_coef` 0,0451 → `t_charge` 13 → 3 |
+
+(En swap `t_charge` se calcula de la potencia del cargador, `functions.py`.)
+
+Método: el de OB (corte tras 4 iteraciones sin mejora, `mejorar_ub` en dos
+pasadas, certificado, ronda 2 para los ≥ 1 % desde el respaldo por 12 h), con:
+- **18 h de Benders por caso** (OB: 6): en swap sigue mejorando más tarde. Tope
+  global 110 h.
+- Casos 1–3 se **copian de la cola v3** (`output/.../v3`) cuando están
+  certificados ahí (RED_GEN_BESS y RED_GEN corriendo al 2026-10-16).
+- **Corte de cargas por LHD en la cota operacional** (`CORTE=1`, default),
+  precalculado por caso con `corte_cargas_op.py` (depende de la producción y de
+  la degradación).
+
+```
+bash cola_tesis_swap.sh 2>&1 | tee cola_tesis_swap.out
+RONDA=2 bash cola_tesis_swap.sh 2>&1 | tee cola_tesis_swap_r2.out
+```
+Salida en `output/.../Mina_modelo/casos_finales/<caso>/` y `casos_finales/resumen.txt`.
+
+---
+
 ## 0. Comparación RED / RED_GEN / RED_GEN_BESS (2026-10-07)
 
 Los tres escenarios (`data/Tesis_final/Mina_modelo/<ESC>`) tienen datos
