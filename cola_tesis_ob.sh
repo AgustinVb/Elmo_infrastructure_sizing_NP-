@@ -84,7 +84,7 @@ print(*(m[-1] if m else ('','')))" | tr -d '\r'
 }
 ub_resumen() {  # "solucion ub_final" de un resumen.json de mejorar_ub, o "- -"
   [ -f $1 ] && $PY -c "
-import json;r=json.load(open('$1')); print(r.get('solucion') or '-', repr(r['ub_final']))" | tr -d '\r' || echo "- -"
+import json;r=json.load(open('$1')); print((r.get('solucion') or '-').replace(chr(92), '/'), repr(r['ub_final']))" | tr -d '\r' || echo "- -"
 }
 certificado() { grep -E 'LB CERTIFICADA' $1 2>/dev/null | tail -1 | sed 's/^\[cert\] //'; }
 gap_de() { certificado $1 | sed -E 's/.*gap ([0-9.]+)%.*/\1/'; }
@@ -155,7 +155,7 @@ for n in $SEL; do
         --polish_each_iter --skip_last_backward $INC 2>&1 | tee $R/benders.log
     kill $VP 2>/dev/null; wait $VP 2>/dev/null
   fi
-  read UB0 LBOP < <(leer_benders $R/benders.log)
+  read -r UB0 LBOP < <(leer_benders $R/benders.log)
   if [ -z "$UB0" ] || [ ! -f $B/incumbente_respaldo.pkl ]; then msg "$TAG" "Benders sin resultado: se salta"; continue; fi
   msg "$TAG" "Benders: UB $UB0  LB $LBOP"
 
@@ -165,7 +165,7 @@ for n in $SEL; do
     $PY -u mejorar_ub.py --data_folder $D $FLAGS --respaldo $B/incumbente_respaldo.pkl --ub_esperado $UB0 \
         --anios 1,2,3,4,5,6,7,8,9,10 --timelimit 600 --jobs 4 --out $R/mejorar_ub_1 2>&1 | tee $R/mejorar_ub_1.log
   fi
-  read SOL UB < <(ub_resumen $R/mejorar_ub_1/resumen.json)
+  read -r SOL UB < <(ub_resumen $R/mejorar_ub_1/resumen.json)
   [ $COPIA = 1 ] && SOL=$R/mejorar_ub_1/solucion
   if [ "$SOL" = "-" ]; then FUENTE="--respaldo $B/incumbente_respaldo.pkl"; UB=$UB0; SOL=""
   else FUENTE="--solucion $SOL"; fi
@@ -176,7 +176,7 @@ for n in $SEL; do
     $PY -u mejorar_ub.py --data_folder $D $FLAGS $FUENTE --ub_esperado $UB --anios 3,4,5,6,7,8,9 \
         --timelimit 900 --jobs 4 --out $R/mejorar_ub_2 2>&1 | tee $R/mejorar_ub_2.log
   fi
-  read SOL2 UB2 < <(ub_resumen $R/mejorar_ub_2/resumen.json)
+  read -r SOL2 UB2 < <(ub_resumen $R/mejorar_ub_2/resumen.json)
   if [ "$SOL2" != "-" ]; then SOL=$SOL2; UB=$UB2; FUENTE="--solucion $SOL"; fi
   msg "$TAG" "tras pasada 2: UB $UB (${SOL:-respaldo de Benders})"
   if [ -n "$SOL" ]; then
