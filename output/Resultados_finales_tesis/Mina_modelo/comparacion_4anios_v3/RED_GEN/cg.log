@@ -1,0 +1,135 @@
+[CG] monolitico de 4 años armado en 20s
+[GCG] separacion de capacidades: 120 copias (G_g 32, H 16, N_batteries 16, N_bays 16, N_chargers 16, P_pot 8, n_ssee_k 16), 29,008 filas de bloque reescritas, 120 filas copia <= capacidad al maestro
+[CG] estructura en 15s: 238,054 columnas y 243,119 filas; 16 bloques de 14,878-14,887 variables; maestro 78 variables, 407 filas extendidas (7 variables de enlace con igualdad, 116 filas del maestro replicadas en bloques); capacidades separadas por bloque 7-8 (96 copias con cota finita por propagacion); hermanos por bloque 1-1
+[CG] 16 pricing y maestro armados en 5s (8 bloques a la vez x 4 hilos)
+[CG] gemelos: 0 pares de bloques (dia, año) con filas identicas (8s)
+[CG] relajacion LP: 1,184,785.38 en 14s
+[CG] relajacion operacional: 1,850,982.72 en 347s
+[CG] relajacion operacional por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, Delta_N_bays 217,455, Delta_X 203,236, G_g 168,426, n_ssee_k 139,815, P_red 86,414
+[CG]    variante fases: 2,379,466.24 (Delta_N_batteries 800,190, Delta_N_chargers 475,045, Delta_N_bays 390,077, P_red 214,487, Delta_X 203,236, n_ssee_k 139,815, G_g 112,402, P_pot 44,215)
+[CG]    variante directa: 1,916,914.10 (Delta_N_batteries 560,591, Delta_N_chargers 475,045, Delta_N_bays 217,455, P_red 209,228, Delta_X 203,236, n_ssee_k 139,815, G_g 111,544)
+[CG]    nueva UB 1,916,914.10 por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, Delta_N_bays 217,455, P_red 209,228, Delta_X 203,236, n_ssee_k 139,815, G_g 111,544
+[CG]    UB maestro (inicio): 1,916,914.10  *** nueva UB  (365s)
+[CG] cotas por costo: 0 variables del maestro acotadas con la UB
+[CG] raiz      r  1     971s heur  RMP   1,916,914.10  L   1,425,448.41  LB   1,850,982.72  gap   3.44%  +33 cols (+0 pool, +0 comp.)  a=0.50  pricing 63s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  2    1033s heur  (16/16) RMP   1,916,914.10  L      -8,906.23  LB   1,850,982.72  gap   3.44%  +50 cols (+0 pool, +0 comp.)  a=0.55  pricing 62s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  3    1109s heur  (15/16) RMP   1,916,914.10  L           -inf  LB   1,850,982.72  gap   3.44%  +37 cols (+1 pool, +10 comp.)  a=0.55  pricing 62s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  4    1171s heur  (11/16) RMP   1,916,914.10  L           -inf  LB   1,850,982.72  gap   3.44%  +23 cols (+1 pool, +0 comp.)  a=0.55  pricing 62s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  5    1233s heur  RMP   1,916,914.10  L   1,060,512.36  LB   1,850,982.72  gap   3.44%  +49 cols (+0 pool, +0 comp.)  a=0.55  pricing 62s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  6    1309s heur  (12/16) RMP   1,916,914.10  L           -inf  LB   1,850,982.72  gap   3.44%  +32 cols (+0 pool, +9 comp.)  a=0.60  pricing 61s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] maestro estancado -> ronda exacta
+[CG] raiz      r  7    1430s exact RMP   1,916,914.10  L     958,737.78  LB   1,850,982.72  gap   3.44%  +22 cols (+0 pool, +0 comp.)  a=0.60  pricing 121s (max 61s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  8    1490s heur  (10/16) RMP   1,916,914.10  L           -inf  LB   1,850,982.72  gap   3.44%  +28 cols (+4 pool, +0 comp.)  a=0.64  pricing 60s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r  9    1567s heur  (12/16) RMP   1,916,914.10  L           -inf  LB   1,850,982.72  gap   3.44%  +27 cols (+0 pool, +9 comp.)  a=0.64  pricing 62s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG]    UB maestro (raiz r10): 1,985,314.28  (231s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 233,527, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 113,131, P_pot 42,514)
+[CG]    UB columnas (raiz r10, con enlace): 1,916,914.10  (3s)
+[CG]    UB IP b_bar comun (raiz r10): 1,952,332.74  (110s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 224,012, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 115,013, P_pot 17,165)
+[CG] raiz      r 10    1974s heur  RMP   1,916,914.10  L     899,850.41  LB   1,850,982.72  gap   3.44%  +23 cols (+0 pool, +0 comp.)  a=0.64  pricing 62s (max 32s)  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 11    2036s heur  (11/16) RMP   1,916,588.77  L           -inf  LB   1,850,982.72  gap       -  +21 cols (+0 pool, +0 comp.)  a=0.67  pricing 61s (max 32s)  art=0.034  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 12    2109s heur  (10/16) RMP   1,916,218.88  L           -inf  LB   1,850,982.72  gap       -  +17 cols (+1 pool, +7 comp.)  a=0.67  pricing 62s (max 32s)  art=0.93  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 13    2170s heur  (10/16) RMP   1,910,595.97  L           -inf  LB   1,850,982.72  gap       -  +22 cols (+0 pool, +0 comp.)  a=0.67  pricing 61s (max 32s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 14    2231s heur  (10/16) RMP   1,910,357.42  L           -inf  LB   1,850,982.72  gap       -  +8 cols (+0 pool, +0 comp.)  a=0.67  pricing 61s (max 32s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 15    2303s heur  RMP   1,910,357.40  L   1,206,534.70  LB   1,850,982.72  gap       -  +11 cols (+0 pool, +4 comp.)  a=0.67  pricing 62s (max 31s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 16    2335s heur  (7/16) RMP   1,910,356.89  L           -inf  LB   1,850,982.72  gap       -  +12 cols (+0 pool, +0 comp.)  a=0.57  pricing 31s (max 31s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 17    2366s heur  (6/16) RMP   1,910,356.52  L           -inf  LB   1,850,982.72  gap       -  +8 cols (+0 pool, +0 comp.)  a=0.57  pricing 31s (max 31s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 18    2398s heur  (6/16) RMP   1,910,356.50  L           -inf  LB   1,850,982.72  gap       -  +1 cols (+0 pool, +1 comp.)  a=0.57  pricing 31s (max 31s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 19    2459s heur  (4/16) RMP   1,910,356.50  L           -inf  LB   1,850,982.72  gap       -  +13 cols (+0 pool, +0 comp.)  a=0.57  pricing 61s (max 30s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG]    UB maestro (raiz r20): 2,000,445.02  (245s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 249,405, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 112,384, P_pot 42,514)
+[CG]    UB columnas (raiz r20, con enlace): 1,916,914.10  (3s)
+[CG]    UB IP b_bar comun (raiz r20): 1,996,697.18  (126s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 245,643, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 112,402, P_pot 42,511)
+[CG] raiz      r 20    2896s heur  RMP   1,910,356.50  L   1,036,587.87  LB   1,850,982.72  gap       -  +21 cols (+0 pool, +0 comp.)  a=0.50  pricing 62s (max 31s)  art=1.3  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 21    2969s heur  (9/16) RMP   1,904,807.90  L           -inf  LB   1,850,982.72  gap       -  +16 cols (+5 pool, +5 comp.)  a=0.40  pricing 62s (max 32s)  art=0.43  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 22    3030s heur  (10/16) RMP   1,902,608.98  L           -inf  LB   1,850,982.72  gap       -  +18 cols (+0 pool, +0 comp.)  a=0.40  pricing 62s (max 32s)  art=0.87  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 23    3063s heur  (8/16) RMP   1,901,211.30  L           -inf  LB   1,850,982.72  gap       -  +12 cols (+6 pool, +0 comp.)  a=0.40  pricing 32s (max 32s)  art=0.88  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 24    3134s heur  (9/16) RMP   1,900,765.31  L           -inf  LB   1,850,982.72  gap       -  +7 cols (+0 pool, +3 comp.)  a=0.40  pricing 61s (max 32s)  art=0.83  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 25    3198s heur  RMP   1,899,874.58  L     861,012.15  LB   1,850,982.72  gap       -  +27 cols (+1 pool, +0 comp.)  a=0.40  pricing 64s (max 33s)  art=0.86  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 26    3240s heur  (10/16) RMP   1,899,703.95  L           -inf  LB   1,850,982.72  gap       -  +14 cols (+2 pool, +0 comp.)  a=0.30  pricing 42s (max 31s)  art=0.87  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 27    3298s heur  (10/16) RMP   1,899,385.32  L           -inf  LB   1,850,982.72  gap       -  +8 cols (+3 pool, +3 comp.)  a=0.30  pricing 47s (max 31s)  art=0.88  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 28    3329s heur  (8/16) RMP   1,899,209.01  L           -inf  LB   1,850,982.72  gap       -  +9 cols (+0 pool, +0 comp.)  a=0.30  pricing 31s (max 31s)  art=0.89  UB 1,916,914.10 (gap 3.44%)
+[CG] raiz      r 29    3360s heur  (6/16) RMP   1,899,116.11  L           -inf  LB   1,850,982.72  gap       -  +14 cols (+0 pool, +0 comp.)  a=0.30  pricing 31s (max 31s)  art=0.91  UB 1,916,914.10 (gap 3.44%)
+[CG]    UB maestro (raiz r30): 2,009,292.43  (234s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 236,912, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 110,767, P_pot 65,471)
+[CG]    UB columnas (raiz r30, con enlace): 1,916,914.10  (3s)
+[CG]    UB IP b_bar comun (raiz r30): 2,003,433.37  (118s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 231,053, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 110,767, P_pot 65,471)
+[CG] raiz      r 30    3788s heur  RMP   1,898,930.34  L   1,060,024.25  LB   1,850,982.72  gap       -  +6 cols (+1 pool, +4 comp.)  a=0.30  pricing 62s (max 31s)  art=0.92  UB 1,916,914.10 (gap 3.44%)
+[CG] tope de tiempo
+[CG]    UB maestro (raiz final): 1,969,120.34  (207s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 218,160, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 110,604, P_pot 44,215)
+[CG]    UB columnas (raiz final, con enlace): 1,916,914.10  (3s)
+[CG]    UB IP b_bar comun (raiz final): 1,968,894.96  (121s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, P_red 217,949, Delta_N_bays 217,455, Delta_X 203,236, n_ssee_k 139,815, G_g 110,589, P_pot 44,215)
+[CG] B&P: diving desde la raiz
+[CG] dive 0    r  1    4185s heur  RMP  42,635,652.19  L -83,501,906.84  LB -83,501,906.84  gap       -  +21 cols (+8 pool, +0 comp.)  a=0.50  pricing 66s (max 34s)  art=3.2e+03  UB 1,916,914.10 (gap 4456.06%)
+[CG] dive 0    r  2    4250s heur  (15/16) RMP   1,982,087.15  L           -inf  LB -83,501,906.84  gap       -  +21 cols (+2 pool, +0 comp.)  a=0.55  pricing 64s (max 34s)  art=12  UB 1,916,914.10 (gap 4456.06%)
+[CG] dive 0    r  3    4304s heur  (12/16) RMP   1,949,138.26  L           -inf  LB -83,501,906.84  gap       -  +21 cols (+0 pool, +9 comp.)  a=0.55  pricing 42s (max 35s)  art=5.5  UB 1,916,914.10 (gap 4456.06%)
+[CG] dive 0    r  4    4343s heur  (11/16) RMP   1,946,708.63  L           -inf  LB -83,501,906.84  gap       -  +13 cols (+2 pool, +0 comp.)  a=0.55  pricing 40s (max 33s)  art=5.2  UB 1,916,914.10 (gap 4456.06%)
+[CG] dive 0    r  5    4409s heur  RMP   1,945,898.57  L -45,232,396.87  LB -45,232,396.87  gap       -  +15 cols (+2 pool, +0 comp.)  a=0.55  pricing 65s (max 35s)  art=5.2  UB 1,916,914.10 (gap 2459.65%)
+[CG] dive 0    r  6    4456s heur  (9/16) RMP   1,959,730.72  L           -inf  LB -45,232,396.87  gap       -  +10 cols (+2 pool, +5 comp.)  a=0.45  pricing 36s (max 33s)  art=0.84  UB 1,916,914.10 (gap 2459.65%)
+[CG] dive 0    r  7    4487s heur  (7/16) RMP   1,959,138.55  L           -inf  LB -45,232,396.87  gap       -  +7 cols (+2 pool, +0 comp.)  a=0.45  pricing 31s (max 31s)  art=0.81  UB 1,916,914.10 (gap 2459.65%)
+[CG] dive 0    r  8    4520s heur  (8/16) RMP   1,958,966.25  L           -inf  LB -45,232,396.87  gap       -  +5 cols (+5 pool, +0 comp.)  a=0.45  pricing 32s (max 32s)  art=0.82  UB 1,916,914.10 (gap 2459.65%)
+[CG] dive 0    r  9    4562s heur  (6/16) RMP   1,958,855.27  L           -inf  LB -45,232,396.87  gap       -  +10 cols (+0 pool, +5 comp.)  a=0.45  pricing 31s (max 31s)  art=0.82  UB 1,916,914.10 (gap 2459.65%)
+[CG] dive 0    r 10    4624s heur  RMP   1,958,817.54  L -20,171,481.00  LB -20,171,481.00  gap       -  +20 cols (+0 pool, +0 comp.)  a=0.45  pricing 62s (max 32s)  art=0.82  UB 1,916,914.10 (gap 1152.29%)
+[CG] dive 0    r 11    4661s heur  (10/16) RMP   1,927,274.03  L           -inf  LB -20,171,481.00  gap       -  +12 cols (+4 pool, +0 comp.)  a=0.35  pricing 37s (max 31s)  art=0.9  UB 1,916,914.10 (gap 1152.29%)
+[CG] dive 0    r 12    4709s heur  (11/16) RMP   1,920,821.14  L           -inf  LB -20,171,481.00  gap       -  +8 cols (+1 pool, +6 comp.)  a=0.35  pricing 36s (max 32s)  art=0.98  UB 1,916,914.10 (gap 1152.29%)
+[CG] dive 0    r 13    4745s heur  (11/16) RMP   1,918,375.17  L           -inf  LB -20,171,481.00  gap       -  +7 cols (+0 pool, +0 comp.)  a=0.35  pricing 36s (max 31s)  art=1.1  UB 1,916,914.10 (gap 1152.29%)
+[CG] dive 0    r 14    4776s heur  (7/16) RMP   1,916,749.79  L           -inf  LB -20,171,481.00  gap       -  +6 cols (+1 pool, +0 comp.)  a=0.35  pricing 31s (max 30s)  art=1.1  UB 1,916,914.10 (gap 1152.29%)
+[CG] dive 0    r 15    4841s heur  RMP   1,914,119.84  L  -6,739,836.43  LB  -6,739,836.43  gap       -  +10 cols (+0 pool, +6 comp.)  a=0.35  pricing 55s (max 31s)  art=1.1  UB 1,916,914.10 (gap 451.60%)
+[CG] dive 0    r  1    4906s heur  RMP   1,913,909.73  L     816,181.22  LB     816,181.22  gap       -  +28 cols (+8 pool, +0 comp.)  a=0.50  pricing 64s (max 33s)  art=0.021  UB 1,916,914.10 (gap 57.42%)
+[CG] dive 0    r  2    4971s heur  (16/16) RMP   1,914,027.33  L   1,121,890.53  LB   1,121,890.53  gap       -  +20 cols (+0 pool, +0 comp.)  a=0.55  pricing 65s (max 34s)  art=5.8e-05  UB 1,916,914.10 (gap 41.47%)
+[CG] dive 0    r  3    5044s heur  (12/16) RMP   1,914,023.43  L           -inf  LB   1,121,890.53  gap       -  +10 cols (+1 pool, +5 comp.)  a=0.55  pricing 62s (max 33s)  art=0.00022  UB 1,916,914.10 (gap 41.47%)
+[CG] dive 0    r  4    5106s heur  (11/16) RMP   1,914,022.78  L           -inf  LB   1,121,890.53  gap       -  +12 cols (+0 pool, +0 comp.)  a=0.55  pricing 62s (max 32s)  art=0.00019  UB 1,916,914.10 (gap 41.47%)
+[CG] dive 0    r  5    5170s heur  RMP   1,914,017.84  L   1,250,685.38  LB   1,250,685.38  gap       -  +4 cols (+0 pool, +0 comp.)  a=0.55  pricing 64s (max 33s)  art=2.6e-05  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r  6    5208s heur  (8/16) RMP   1,914,018.29  L           -inf  LB   1,250,685.38  gap  34.66%  +6 cols (+0 pool, +3 comp.)  a=0.45  pricing 31s (max 31s)  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r  7    5239s heur  (5/16) RMP   1,914,018.28  L           -inf  LB   1,250,685.38  gap  34.66%  +10 cols (+0 pool, +0 comp.)  a=0.45  pricing 31s (max 31s)  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r  8    5269s heur  (4/16) RMP   1,914,018.26  L           -inf  LB   1,250,685.38  gap  34.66%  +4 cols (+0 pool, +0 comp.)  a=0.45  pricing 30s (max 30s)  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r  9    5310s heur  (4/16) RMP   1,914,018.26  L           -inf  LB   1,250,685.38  gap  34.66%  +10 cols (+0 pool, +2 comp.)  a=0.45  pricing 31s (max 31s)  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r 10    5376s heur  RMP   1,914,018.25  L   1,242,333.00  LB   1,250,685.38  gap  34.66%  +13 cols (+0 pool, +0 comp.)  a=0.45  pricing 65s (max 35s)  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r 11    5408s heur  (8/16) RMP   1,913,990.65  L           -inf  LB   1,250,685.38  gap       -  +8 cols (+3 pool, +0 comp.)  a=0.35  pricing 33s (max 32s)  art=2.5e-05  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r 12    5451s heur  (8/16) RMP   1,913,989.61  L           -inf  LB   1,250,685.38  gap       -  +6 cols (+1 pool, +4 comp.)  a=0.35  pricing 32s (max 32s)  art=2.4e-05  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r 13    5483s heur  (7/16) RMP   1,913,988.20  L           -inf  LB   1,250,685.38  gap       -  +4 cols (+0 pool, +0 comp.)  a=0.35  pricing 32s (max 32s)  art=2.4e-05  UB 1,916,914.10 (gap 34.76%)
+[CG] dive 0    r 14    5514s heur  (6/16) RMP   1,913,988.10  L           -inf  LB   1,250,685.38  gap  34.66%  +4 cols (+0 pool, +0 comp.)  a=0.35  pricing 31s (max 31s)  UB 1,916,914.10 (gap 34.76%)
+[CG] maestro estancado -> ronda exacta
+[CG] dive 0    r 15    5638s exact RMP   1,913,985.43  L   1,250,950.75  LB   1,250,950.75  gap  34.64%  +8 cols (+0 pool, +0 comp.)  a=0.35  pricing 124s (max 63s)  UB 1,916,914.10 (gap 34.74%)
+[CG]    UB maestro (dive): 1,942,282.74  (310s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, Delta_N_bays 217,455, P_red 206,070, Delta_X 203,236, n_ssee_k 139,815, G_g 118,814, P_pot 21,257)
+[CG]    UB columnas (dive, con enlace): 1,916,914.10  (3s)
+[CG]    UB IP b_bar comun (dive): 1,942,282.74  (49s)
+[CG]    (por componente: Delta_N_batteries 560,591, Delta_N_chargers 475,045, Delta_N_bays 217,455, P_red 206,070, Delta_X 203,236, n_ssee_k 139,815, G_g 118,814, P_pot 21,257)
+[CG] nodo 0    r  1    6066s heur  RMP   1,897,536.51  L   1,114,664.22  LB   1,850,982.72  gap       -  +13 cols (+5 pool, +0 comp.)  a=0.50  pricing 65s (max 35s)  art=0.96  UB 1,916,914.10 (gap 3.44%)  SIN SOL ['(3, 288)']
+[CG] nodo 0    r  2    6129s heur  (16/16) RMP   1,903,699.93  L     782,846.52  LB   1,850,982.72  gap       -  +23 cols (+0 pool, +0 comp.)  a=0.40  pricing 63s (max 38s)  art=0.94  UB 1,916,914.10 (gap 3.44%)  SIN SOL ['(3, 288)']
+[CG] nodo 0    r  3    6202s heur  (10/16) RMP   1,903,689.38  L           -inf  LB   1,850,982.72  gap       -  +7 cols (+0 pool, +3 comp.)  a=0.40  pricing 62s (max 33s)  art=0.94  UB 1,916,914.10 (gap 3.44%)
+[CG] nodo 0    r  4    6264s heur  (9/16) RMP   1,903,622.82  L           -inf  LB   1,850,982.72  gap       -  +6 cols (+0 pool, +0 comp.)  a=0.40  pricing 62s (max 32s)  art=0.93  UB 1,916,914.10 (gap 3.44%)
+[CG] nodo 0    r  5    6327s heur  RMP   1,903,518.20  L     825,350.73  LB   1,850,982.72  gap       -  +5 cols (+0 pool, +0 comp.)  a=0.40  pricing 63s (max 35s)  art=0.93  UB 1,916,914.10 (gap 3.44%)  SIN SOL ['(3, 288)']
+[CG] nodo 0    r  6    6362s heur  (5/16) RMP   1,903,515.47  L           -inf  LB   1,850,982.72  gap       -  +4 cols (+0 pool, +3 comp.)  a=0.30  pricing 31s (max 31s)  art=0.93  UB 1,916,914.10 (gap 3.44%)
+[CG] nodo 0    r  7    6393s heur  (4/16) RMP   1,903,503.04  L           -inf  LB   1,850,982.72  gap       -  +6 cols (+0 pool, +0 comp.)  a=0.30  pricing 30s (max 30s)  art=0.93  UB 1,916,914.10 (gap 3.44%)
+[CG] nodo 0    r  8    6423s heur  (3/16) RMP   1,903,341.70  L           -inf  LB   1,850,982.72  gap       -  +7 cols (+0 pool, +0 comp.)  a=0.30  pricing 30s (max 30s)  art=0.92  UB 1,916,914.10 (gap 3.44%)
+[CG] nodo 0    r  9    6456s heur  (3/16) RMP   1,903,341.60  L           -inf  LB   1,850,982.72  gap       -  +1 cols (+0 pool, +1 comp.)  a=0.30  pricing 30s (max 30s)  art=0.92  UB 1,916,914.10 (gap 3.44%)
+[CG]    heuristica del maestro: pulido directo infactible -> año por año con R fijo: 2,713,442.85
+[CG]    UB maestro (nodo 0 r10): 2,670,225.33  (1541s)
+[CG]    (por componente: Delta_N_batteries 781,022, Delta_N_chargers 661,838, Delta_N_bays 390,077, n_ssee_k 279,630, P_red 220,814, Delta_X 203,236, G_g 110,651, P_pot 22,958)
+[CG]    UB columnas (nodo 0 r10, con enlace): 2,670,225.33  (3s)
+[CG]    UB IP b_bar comun (nodo 0 r10): 2,663,225.44  (132s)
+[CG]    (por componente: Delta_N_batteries 781,022, Delta_N_chargers 661,838, Delta_N_bays 390,077, n_ssee_k 279,630, P_red 214,186, Delta_X 203,236, G_g 110,279, P_pot 22,958)
+[CG] nodo 0    r 10    8197s heur  RMP   1,903,341.60  L     734,640.49  LB   1,850,982.72  gap       -  +6 cols (+0 pool, +0 comp.)  a=0.30  pricing 64s (max 34s)  art=0.92  UB 1,916,914.10 (gap 3.44%)  SIN SOL ['(3, 288)']
+[CG] tope de tiempo
+[CG]    UB maestro (nodo 0): 2,659,907.44  (193s)
+[CG]    (por componente: Delta_N_batteries 781,022, Delta_N_chargers 661,838, Delta_N_bays 390,077, n_ssee_k 279,630, Delta_X 203,236, P_red 199,867, G_g 112,028, P_pot 32,209)
+[CG]    UB columnas (nodo 0, con enlace): 2,659,907.44  (3s)
+[CG]    UB IP b_bar comun (nodo 0): 2,659,907.44  (89s)
+[CG]    (por componente: Delta_N_batteries 781,022, Delta_N_chargers 661,838, Delta_N_bays 390,077, n_ssee_k 279,630, Delta_X 203,236, P_red 199,867, G_g 112,028, P_pot 32,209)
+[CG] B&P nodo 0: inversion entera sin podar (cota 1,850,982.72); queda como hoja abierta
+[CG] B&P nodo 0 (prof 1): cota 1,850,982.72; LB global 1,850,982.72  UB 1,916,914.10  abiertos 1  hojas 1  podados 0
+[CG] solucion escrita como reporte JSON en output/Resultados_finales_tesis/Mina_modelo/comparacion_4anios_v3/RED_GEN/cg\solucion
+
+[CG] ================= RESUMEN =================
+[CG] UB                         1,916,914.10  (maestro inicio)
+[CG] LB                         1,850,982.72   gap 3.4395%
+[CG] cota de la relajacion      1,850,982.72  (operacional)
+[CG] cota de la raiz (DW)       1,850,982.72   maestro 1,898,930.34  (sin converger)
+[CG] B&P: 1 nodos, 1 abiertos, 1 hojas, 0 podados
+[CG] 30 rondas en la raiz, 1880 columnas, 8492s
