@@ -649,6 +649,13 @@ def main():
              'a presupuesto igual entre monolitico solo e hibrido.'
     )
     parser.add_argument(
+        '--mono_reloj', action='store_true',
+        help='En --mode monolithic, --mono_timelimit cuenta desde el arranque del '
+             'proceso (lectura de datos y armado del modelo incluidos), como '
+             '--max_hours en Nested Benders y --tiempo_max en cg_propia.py: para '
+             'comparar metodos al mismo tiempo de reloj.'
+    )
+    parser.add_argument(
         '--mip_focus', type=int, choices=[0, 1, 2, 3], default=3,
         help='Gurobi MIPFocus del solve monolitico (monolithic e hybrid). 3 (default, '
              'el historico) prioriza la cota; 1 prioriza encontrar incumbentes, que '
@@ -789,6 +796,7 @@ def main():
         free_charging=args.free_charging,
         free_maintenance=args.free_maintenance,
         **({'timelimit': args.mono_timelimit} if args.mono_timelimit else {}),
+        t_origen=(_T_INICIO if args.mono_reloj else None),
     )
 
 
