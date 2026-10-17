@@ -47,6 +47,47 @@ y 0,29 %); P_red_gen no (2,06 %, el gap está en la cota: ver 0F y la prueba
 lagrangiana), así que lo más probable es que pase a la ronda 2 y que ni así baje
 de 1 %.
 
+### Estado al 2026-10-17 08:40 (notebook AGUSTINHP, cortado por Windows Update)
+
+| Prioridad | Caso | Hecho | Falta |
+|---:|---|---|---|
+| 1 | base/norte/05C/P_red | **listo: gap 0,586 %** (UB 3.083.536,31; LB 3.065.469,54) | — |
+| 2 | base/norte/05C/P_red_gen_bat | Benders 7 it., 5,6 h: UB 2.493.105,07, LB = cota operacional 2.461.610,88 (1,26 %); pasada 1: UB **2.485.812,20** (0,97 % contra la cota) | pasada 2 + certificado (~1 h) |
+| 3 | base/norte/05C/P_red_gen | Benders 6 it., 5,1 h: UB 2.568.522,35, LB 2.513.260,39 (2,15 %; la final quedó en 2,46 %) | pasada 1 + pasada 2 + certificado (~3 h) |
+| 4–8 | escalada P_red, escalada P_red_gen_bat, centro, 1C, 2C | — | todo (~10 h c/u con generación en el notebook) |
+
+Lo hecho está commiteado en `output/.../casos_finales/` (sin `_mps/` ni
+`_monolitico/`, que se regeneran), así que en otro equipo la cola **retoma sola**:
+salta el caso 1 (certificado), no repite el Benders de los casos 2 y 3 (su
+`benders.log` termina en la línea `NestedBenders ...` y está el
+`incumbente_respaldo.pkl`), y no repite la pasada 1 del caso 2 (`resumen.json`).
+Frente a la versión final: UB −1,4 a −1,8 % y cota −1,5 a −2,1 % en los dos
+escenarios con generación (perfiles corregidos).
+
+### Cómo correrla en otro equipo
+
+```
+git checkout carga_ob_multiaño && git pull
+# Linux (tmux para que siga al cerrar la sesión):
+tmux new -s casos
+PY=<python con gurobi> bash cola_tesis_ob.sh 2>&1 | tee -a cola_tesis_ob.out      # Ctrl+B, D
+# Windows (PowerShell, desde la carpeta del repo; pausar antes Windows Update):
+& "C:\Program Files\Git\bin\bash.exe" -c "PY=.venv_elmo/Scripts/python.exe bash cola_tesis_ob.sh 2>&1 | tee -a cola_tesis_ob.out"
+# seguimiento:
+tail -f output/Resultados_finales_tesis/Mina_modelo/casos_finales/cola.log
+# al terminar, relanzar los que quedaron >= 1 % (esperado: P_red_gen):
+RONDA=2 PY=<python> bash cola_tesis_ob.sh 2>&1 | tee -a cola_tesis_ob_r2.out
+```
+
+- El reloj de 66 h (`TOPE_H`) parte de cero en el equipo nuevo (`casos_finales/.inicio_r1`
+  no se commitea). Lo que falta son ~45 h en el notebook; en un equipo con más
+  hilos (r640-01) bastante menos. `TOPE_H=72` si se quiere más margen.
+- Los caches de datos (`*.npy`, `series.ini`, `simple_time_series.xlsx`) no están
+  en git: se regeneran solos la primera vez.
+- Arreglos de Windows ya incluidos (commits 5ee2b0370, 42df5478d): `\r` de
+  python.exe y rutas con `\` en `resumen.json`. Con ellos el certificado del caso 2
+  (que se había caído) se rehace al retomar.
+
 ---
 
 ## 0F. VERSIÓN FINAL OB (2026-10-12/13, r640-01)
