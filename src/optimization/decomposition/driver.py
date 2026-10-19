@@ -1455,6 +1455,13 @@ class NestedBendersSolver(object):
                     print(f"[NestedBenders] cota operacional = "
                           f"{self.lb_operational:,.2f}  ({relajadas:,} binarias "
                           f"relajadas, {time.time() - t_ob:.0f}s)")
+                    if tray_op:
+                        # Inversion de la relajacion operacional (la del centro de la
+                        # caja): generacion G y BESS H se deciden una vez, en y1.
+                        y1 = min(tray_op)
+                        print(f"[NestedBenders] inversion de la cota operacional (y{y1}): "
+                              + ", ".join(f"{k}={v}" for k, v in tray_op[y1].items()),
+                              flush=True)
             except Exception as exc:
                 # No es fatal: es una cota extra. Si el monolitico no entra en
                 # memoria, se sigue con la del backward y la del LP.
