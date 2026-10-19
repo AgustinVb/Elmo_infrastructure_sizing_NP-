@@ -36,7 +36,7 @@ cd "$(dirname "$0")"
 PY=${PY:-~/miniconda3/envs/py310/bin/python}
 DATA=data/Tesis_final/Mina_modelo
 O=output/Resultados_finales_tesis/Mina_modelo
-V=$O/casos_finales
+V=${V:-$O/casos_finales}   # V=<carpeta> para pruebas aparte (p. ej. v4)
 V3=$O/v3
 RONDA=${RONDA:-1}
 HORAS=${HORAS:-10}; HORAS_R2=${HORAS_R2:-12}
@@ -57,6 +57,8 @@ CASOS=(
   "Produccion_base/zona_norte/1C/RED_GEN_BESS"
   "Produccion_base/zona_norte/2C/RED_GEN_BESS"
 )
+# CASOS_ENV="<caso> [<caso> ...]": reemplaza la lista (pruebas aparte, p. ej. v4).
+[ -n "$CASOS_ENV" ] && read -r -a CASOS <<< "$CASOS_ENV"
 SEL=${@:-$(seq 1 ${#CASOS[@]})}
 
 mkdir -p $V
