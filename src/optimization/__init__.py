@@ -13,7 +13,8 @@ class OptimizationModel(object):
                  mccormick_degradation=False,
                  mip_focus=3,
                  free_charging=False,
-                 free_maintenance=False):
+                 free_maintenance=False,
+                 t_origen=None):
 
         t0 = time.time()
 
@@ -31,6 +32,13 @@ class OptimizationModel(object):
             free_maintenance=free_maintenance,
         )
         print('formulation time:', time.time() - t0)
+        if t_origen is not None:
+            # --mono_reloj: el tope cuenta desde el arranque del proceso (como
+            # --max_hours de Nested Benders y --tiempo_max de la CG), no solo el
+            # solve: se descuenta lo que tomo leer los datos y armar el modelo.
+            usado = time.time() - t_origen
+            timelimit = max(60.0, timelimit - usado)
+            print(f'tope del solve: {timelimit:.0f}s ({usado:.0f}s ya usados desde el arranque)')
         self.opt_model.solve_model(gap, solver_name, timelimit=timelimit,
                                    relax_integrality=relax_integrality,
                                    relax_operational=relax_operational)
