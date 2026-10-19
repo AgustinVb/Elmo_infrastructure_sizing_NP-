@@ -22,8 +22,8 @@ replica EXACTAMENTE la de OB (verificado celda a celda contra los Excel de OB):
 | 1 | `Produccion_base/zona_norte/05C/RED` | caso base (= `RED`, perfiles corregidos) |
 | 2 | `Produccion_base/zona_norte/05C/RED_GEN_BESS` | caso base |
 | 3 | `Produccion_base/zona_norte/05C/RED_GEN` | caso base |
-| 4 | `Produccion_escalada20/zona_norte/1C/RED` | `ExtractionGoal` ×1,20 en todos los años (pico 23.500 → 28.200 t/día) y cargador/degradación de 1C (482 kW, `gamma_coef` 0,0273) |
-| 5 | `Produccion_escalada20/zona_norte/1C/RED_GEN_BESS` | ídem |
+| 4 | `Produccion_escalada20/zona_norte/05C/RED` (alternativa `.../1C/RED`) | `ExtractionGoal` ×1,20 en todos los años (pico 23.500 → 28.200 t/día). Se corre primero con 0,5C; solo si no es factible, con 1C (482 kW, `gamma_coef` 0,0273) |
+| 5 | `Produccion_escalada20/zona_norte/05C/RED_GEN_BESS` (alternativa `.../1C/RED_GEN_BESS`) | ídem |
 
 (2026-10-19: el escalado al 20 % con 1C reemplaza al escalado anterior, +8,9 % con
 0,5C: `Produccion_escalada/zona_norte/05C/{RED,RED_GEN_BESS}`, cuyos datos y

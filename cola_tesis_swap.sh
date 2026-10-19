@@ -46,13 +46,15 @@ GAP=0.01; ITER=50; SIN_MEJORA=4
 FLAGS="--free_charging --free_maintenance"
 
 # En orden de prioridad (relativos a $DATA). "|v3:<ESC>": se copia de la cola v3 si
-# esta certificado ahi.
+# esta certificado ahi. "|alt:<caso>": si Benders no encuentra solucion factible
+# (ningun UB tras 2 iteraciones, o sin resultado), se corre <caso> en su lugar
+# (escalado al 20 %: primero con 0,5C; con 1C solo si 0,5C no es factible).
 CASOS=(
   "Produccion_base/zona_norte/05C/RED|v3:RED"
   "Produccion_base/zona_norte/05C/RED_GEN_BESS|v3:RED_GEN_BESS"
   "Produccion_base/zona_norte/05C/RED_GEN|v3:RED_GEN"
-  "Produccion_escalada20/zona_norte/1C/RED"
-  "Produccion_escalada20/zona_norte/1C/RED_GEN_BESS"
+  "Produccion_escalada20/zona_norte/05C/RED|alt:Produccion_escalada20/zona_norte/1C/RED"
+  "Produccion_escalada20/zona_norte/05C/RED_GEN_BESS|alt:Produccion_escalada20/zona_norte/1C/RED_GEN_BESS"
   "Produccion_base/zona_centro/05C/RED_GEN_BESS"
   "Produccion_base/zona_norte/1C/RED_GEN_BESS"
   "Produccion_base/zona_norte/2C/RED_GEN_BESS"
@@ -78,6 +80,7 @@ vigia() {
     if $PY -c "
 import re,sys
 t=open('$L',encoding='utf-8',errors='replace').read()
+if len(re.findall(r'k=\d+  UB=inf',t))>=2: sys.exit(0)   # sin solucion factible
 ub=[float(u) for u in re.findall(r'k=\d+  UB=([\d.]+)\s+LB=',t)]
 s=0
 for i in range(len(ub)-1,0,-1):
@@ -127,6 +130,10 @@ resumen_final() {
     local i=0
     for c in "${CASOS[@]}"; do
       i=$((i+1)); local caso=${c%%|*} R=$V/${c%%|*} r=r1
+      if [[ "$c" == *"|alt:"* ]] && [ -z "$(certificado $R/certificado.log)" ] \
+         && [ -n "$(certificado $V/${c##*|alt:}/certificado.log)" ]; then
+        caso=${c##*|alt:}; R=$V/$caso
+      fi
       local f=$R/certificado.log
       [ -n "$(certificado $R/r2/certificado.log)" ] && { f=$R/r2/certificado.log; r=r2; }
       local linea=$(certificado $f)
@@ -141,13 +148,18 @@ msg "inicio" "casos $(echo $SEL | tr '\n' ' ')| Benders $([ $RONDA = 2 ] && echo
 
 for n in $SEL; do
   c=${CASOS[$((n-1))]}; [ -z "$c" ] && { msg "?" "no existe el caso $n"; continue; }
+  ALT=""; [[ "$c" == *"|alt:"* ]] && ALT=${c##*|alt:}
+  while :; do
   caso=${c%%|*}; E3=""; [[ "$c" == *"|v3:"* ]] && E3=${c##*|v3:}
   D=$DATA/$caso; R1=$V/$caso; TAG="$n/${#CASOS[@]} $caso"
   INC=""; H_CASO=$HORAS
+  # Ronda 2 de un caso que en la ronda 1 se resolvio con su alternativa (1C).
+  if [ $RONDA = 2 ] && [ -n "$ALT" ] && [ -z "$(certificado $R1/certificado.log)" ] \
+     && [ -n "$(certificado $V/$ALT/certificado.log)" ]; then c=$ALT; ALT=""; continue; fi
   if [ $RONDA = 2 ]; then
     G1=$(gap_de $R1/certificado.log)
-    if [ -z "$G1" ]; then msg "$TAG" "sin certificado de la ronda 1: se salta"; continue; fi
-    if awk -v g=$G1 'BEGIN{exit !(g<1.0)}'; then msg "$TAG" "ronda 1 ya cerro ($G1 %): se salta"; continue; fi
+    if [ -z "$G1" ]; then msg "$TAG" "sin certificado de la ronda 1: se salta"; continue 2; fi
+    if awk -v g=$G1 'BEGIN{exit !(g<1.0)}'; then msg "$TAG" "ronda 1 ya cerro ($G1 %): se salta"; continue 2; fi
     R=$R1/r2; INC="--incumbente_inicial $R1/benders/incumbente_respaldo.pkl"; H_CASO=$HORAS_R2; E3=""
     msg "$TAG" "ronda 1 quedo en $G1 %: se relanza desde su incumbente"
   else
@@ -155,13 +167,13 @@ for n in $SEL; do
   fi
   B=$R/benders
   mkdir -p $R
-  if [ -n "$(certificado $R/certificado.log)" ]; then msg "$TAG" "ya certificado, se salta: $(certificado $R/certificado.log)"; continue; fi
+  if [ -n "$(certificado $R/certificado.log)" ]; then msg "$TAG" "ya certificado, se salta: $(certificado $R/certificado.log)"; continue 2; fi
 
   # --- 0. caso base de la cola v3 ----------------------------------------------
   if [ -n "$E3" ] && [ -n "$(certificado $V3/certificado_$E3.log)" ]; then
     copiar_v3 $E3 $R
     msg "$TAG" "copiado de v3/$E3: $(certificado $R/certificado.log)"
-    resumen_final > /dev/null; continue
+    resumen_final > /dev/null; continue 2
   fi
 
   # --- 1. Benders -------------------------------------------------------------
@@ -171,7 +183,7 @@ for n in $SEL; do
     QUEDAN=$(( FIN - $(date +%s) ))
     H=$(awk -v q=$QUEDAN -v r=$RESERVA_H -v t=$H_CASO 'BEGIN{h=q/3600-r; if(h>t)h=t; printf "%.2f", h}')
     if awk -v h=$H -v m=$MIN_H 'BEGIN{exit !(h<m)}'; then
-      msg "$TAG" "SALTADO: solo quedarian $H h para Benders (minimo $MIN_H h)"; continue
+      msg "$TAG" "SALTADO: solo quedarian $H h para Benders (minimo $MIN_H h)"; continue 2
     fi
     EXTRA=""
     if [ $CORTE = 1 ]; then
@@ -193,7 +205,12 @@ for n in $SEL; do
     kill $VP 2>/dev/null; wait $VP 2>/dev/null
   fi
   read UB0 LBOP < <(leer_benders $R/benders.log)
-  if [ -z "$UB0" ] || [ ! -f $B/incumbente_respaldo.pkl ]; then msg "$TAG" "Benders sin resultado: se salta"; continue; fi
+  if [ -z "$UB0" ] || [ ! -f $B/incumbente_respaldo.pkl ]; then
+    if [ -n "$ALT" ] && [ $RONDA = 1 ]; then
+      msg "$TAG" "SIN SOLUCION FACTIBLE: se corre la alternativa $ALT"; c=$ALT; ALT=""; continue
+    fi
+    msg "$TAG" "Benders sin resultado: se salta"; break
+  fi
   msg "$TAG" "Benders: UB $UB0  LB $LBOP"
 
   # --- 2. mejorar_ub ----------------------------------------------------------
@@ -224,6 +241,8 @@ for n in $SEL; do
       --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
   msg "$TAG" "FIN: $(certificado $R/certificado.log)"
   resumen_final > /dev/null
+  break
+  done
 done
 
 resumen_final | tee -a $LOG
