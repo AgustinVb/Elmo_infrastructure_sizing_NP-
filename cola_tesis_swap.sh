@@ -34,7 +34,7 @@
 #   Para cortar un Benders a mano: crear el archivo STOP en su carpeta benders/.
 cd "$(dirname "$0")"
 PY=${PY:-~/miniconda3/envs/py310/bin/python}
-DATA=data/Tesis_final/Mina_modelo
+DATA=${DATA:-data/Tesis_final/Mina_modelo}   # DATA=data/Tesis_final/Mina_modelo_v4 para la v4
 O=output/Resultados_finales_tesis/Mina_modelo
 V=${V:-$O/casos_finales}   # V=<carpeta> para pruebas aparte (p. ej. v4)
 V3=$O/v3
