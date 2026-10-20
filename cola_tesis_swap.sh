@@ -40,6 +40,7 @@ V=${V:-$O/casos_finales}   # V=<carpeta> para pruebas aparte (p. ej. v4)
 V3=$O/v3
 RONDA=${RONDA:-1}
 HORAS=${HORAS:-10}; HORAS_R2=${HORAS_R2:-12}
+HORAS_ESCALADA_BESS=${HORAS_ESCALADA_BESS:-24}
 TOPE_H=${TOPE_H:-68}; RESERVA_H=${RESERVA_H:-3}; MIN_H=${MIN_H:-2}
 CORTE=${CORTE:-1}
 GAP=0.01; ITER=50; SIN_MEJORA=4
@@ -153,6 +154,7 @@ for n in $SEL; do
   caso=${c%%|*}; E3=""; [[ "$c" == *"|v3:"* ]] && E3=${c##*|v3:}
   D=$DATA/$caso; R1=$V/$caso; TAG="$n/${#CASOS[@]} $caso"
   INC=""; H_CASO=$HORAS
+  [ "$caso" = "Produccion_escalada20/zona_norte/05C/RED_GEN_BESS" ] && H_CASO=$HORAS_ESCALADA_BESS
   # Ronda 2 de un caso que en la ronda 1 se resolvio con su alternativa (1C).
   if [ $RONDA = 2 ] && [ -n "$ALT" ] && [ -z "$(certificado $R1/certificado.log)" ] \
      && [ -n "$(certificado $V/$ALT/certificado.log)" ]; then c=$ALT; ALT=""; continue; fi
@@ -161,6 +163,7 @@ for n in $SEL; do
     if [ -z "$G1" ]; then msg "$TAG" "sin certificado de la ronda 1: se salta"; continue 2; fi
     if awk -v g=$G1 'BEGIN{exit !(g<1.0)}'; then msg "$TAG" "ronda 1 ya cerro ($G1 %): se salta"; continue 2; fi
     R=$R1/r2; INC="--incumbente_inicial $R1/benders/incumbente_respaldo.pkl"; H_CASO=$HORAS_R2; E3=""
+    [ "$caso" = "Produccion_escalada20/zona_norte/05C/RED_GEN_BESS" ] && H_CASO=$HORAS_ESCALADA_BESS
     msg "$TAG" "ronda 1 quedo en $G1 %: se relanza desde su incumbente"
   else
     R=$R1
