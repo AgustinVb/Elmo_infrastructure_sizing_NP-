@@ -180,7 +180,7 @@ for n in $SEL; do
   fi
 
   # --- 1. Benders -------------------------------------------------------------
-  if grep -qE '^NestedBenders' $R/benders.log 2>/dev/null && [ -f $B/incumbente_respaldo.pkl ]; then
+  if grep -qE '^\[NestedBenders\] termino en' $R/benders.log 2>/dev/null && [ -f $B/incumbente_respaldo.pkl ]; then
     msg "$TAG" "Benders ya terminado, se usa $R/benders.log"
   else
     QUEDAN=$(( FIN - $(date +%s) ))
