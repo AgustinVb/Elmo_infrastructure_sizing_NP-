@@ -1,0 +1,55 @@
+
+Gurobi 10.0.0 (win64) logging started Wed Oct  7 18:16:40 2026
+
+Set parameter OutputFlag to value 1
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 300
+Set parameter MIPFocus to value 3
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 8 threads
+
+Optimize a model with 15286 rows, 20012 columns and 72262 nonzeros
+Model fingerprint: 0xcd898400
+Variable types: 9930 continuous, 10082 integer (10081 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 1e+03]
+  Objective range  [6e-01, 1e+06]
+  Bounds range     [1e+00, 5e+02]
+  RHS range        [1e+00, 2e+04]
+
+User MIP start produced solution with objective 22361.9 (0.10s)
+Loaded user MIP start with objective 22361.9
+
+Presolve removed 11906 rows and 11800 columns
+Presolve time: 0.39s
+Presolved: 3380 rows, 8212 columns, 35264 nonzeros
+Variable types: 1040 continuous, 7172 integer (7172 binary)
+Root relaxation presolve removed 40 rows and 0 columns
+Root relaxation presolved: 3340 rows, 8252 columns, 30264 nonzeros
+
+
+Root relaxation: objective 2.232703e+04, 3509 iterations, 0.27 seconds (0.12 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 22327.0280    0    5 22361.9063 22327.0280  0.16%     -    2s
+H    0     0                    22341.325365 22327.0280  0.06%     -    3s
+     0     0     cutoff    0      22341.3254 22341.3254  0.00%     -    4s
+
+Cutting planes:
+  Gomory: 3
+  MIR: 5
+  Flow cover: 8
+  GUB cover: 1
+
+Explored 1 nodes (6917 simplex iterations) in 4.63 seconds (0.75 work units)
+Thread count was 8 (of 32 available processors)
+
+Solution count 2: 22341.3 22361.9 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 2.234132536495e+04, best bound 2.234132536495e+04, gap 0.0000%
+Set parameter MIPFocus to value 0

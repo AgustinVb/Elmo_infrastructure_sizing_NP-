@@ -1,0 +1,81 @@
+
+Gurobi 10.0.0 (win64) logging started Mon Oct 19 02:46:52 2026
+
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_escalada20/zona_norte/1C/P_red/benders\op_bound_gurobi.log"
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 5400
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
+
+Optimize a model with 608961 rows, 858695 columns and 2567181 nonzeros
+Model fingerprint: 0x48e66f89
+Variable types: 858664 continuous, 31 integer (10 binary)
+Coefficient statistics:
+  Matrix range     [7e-03, 2e+03]
+  Objective range  [6e-01, 1e+06]
+  Bounds range     [1e+00, 1e+04]
+  RHS range        [1e+00, 1e+06]
+Presolve removed 510327 rows and 738998 columns
+Presolve time: 3.56s
+Presolved: 98634 rows, 119697 columns, 437758 nonzeros
+Variable types: 119677 continuous, 20 integer (9 binary)
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing first log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    2.0474261e+05   2.555587e+05   8.138263e+10      6s
+  136274    2.3075170e+05   4.546998e+01   1.137109e+08     10s
+  144698    7.9909822e+06   0.000000e+00   1.465586e+06     14s
+  148541    6.8326869e+06   0.000000e+00   3.576488e+06     15s
+  160438    5.8223549e+06   0.000000e+00   2.396509e+07     20s
+  171608    5.3004857e+06   0.000000e+00   1.453562e+06     25s
+  181352    5.0405124e+06   0.000000e+00   3.566057e+06     30s
+  189680    4.8145148e+06   0.000000e+00   1.854087e+06     35s
+Concurrent spin time: 0.00s
+
+Solved with dual simplex
+
+Root relaxation: objective 4.505160e+06, 136190 iterations, 34.86 seconds (27.68 work units)
+Total elapsed time = 40.14s
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 4505159.62    0   14          - 4505159.62      -     -   40s
+     0     0 4594906.27    0   13          - 4594906.27      -     -   48s
+     0     0 4594913.54    0   13          - 4594913.54      -     -   52s
+     0     0 4603536.22    0   12          - 4603536.22      -     -   54s
+     0     0 4603618.01    0   12          - 4603618.01      -     -   58s
+     0     0 4605204.60    0   12          - 4605204.60      -     -   60s
+     0     0 4605205.55    0   12          - 4605205.55      -     -   60s
+     0     0 4605205.55    0   12          - 4605205.55      -     -   61s
+     0     0 4605205.55    0   12          - 4605205.55      -     -   62s
+H    0     0                    8810221.0890 4605205.55  47.7%     -   63s
+     0     0 4605205.55    0   12 8810221.09 4605205.55  47.7%     -   67s
+H    0     0                    6087072.9760 4605205.55  24.3%     -   71s
+     0     2 4605205.55    0   12 6087072.98 4605205.55  24.3%     -   74s
+     1     4 4639458.61    1   11 6087072.98 4639458.61  23.8%   947   76s
+     7    14 infeasible    3      6087072.98 5110929.11  16.0%   703   80s
+    15    12 5489736.21    4    9 6087072.98 5192234.53  14.7%  1036   92s
+*   23    12               4    5345354.5691 5337266.05  0.15%  1314   92s
+
+Cutting planes:
+  Gomory: 5
+  Implied bound: 8
+  MIR: 64
+  RLT: 3
+  Relax-and-lift: 1
+
+Explored 36 nodes (218600 simplex iterations) in 94.65 seconds (77.77 work units)
+Thread count was 32 (of 32 available processors)
+
+Solution count 3: 5.34535e+06 6.08707e+06 8.81022e+06 
+No other solutions better than 5.34535e+06
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 5.345354567242e+06, best bound 5.345354567242e+06, gap 0.0000%

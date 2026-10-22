@@ -1,0 +1,42 @@
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/05C/P_red_gen/r2/benders\STOP
+[NestedBenders] tope de tiempo: 12.00 h (hasta 2026-10-20 05:59)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:4,700  2:9,400  3:17,860  4:23,500  5:23,500  6:23,500  7:23,500  8:18,800  9:9,400  10:4,700
+[NestedBenders] presolve de capacidad: anios [4], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 4  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 1.000, 5s)
+[NestedBenders] presolve capacidad  anio 4  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 5s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 4)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 10s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+Windows fatal exception: code 0xc000001d
+
+Current thread 0x000054b0 (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\functions.py", line 1038 in <listcomp>
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\functions.py", line 1038 in production
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\initializer.py", line 347 in __call__
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\constraint.py", line 720 in construct
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\block.py", line 1105 in add_component
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\block.py", line 571 in __setattr__
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\functions.py", line 1541 in build_all_constraints
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 761 in _build_monolithic_model
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 851 in _operational_bound
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1402 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 626 in main
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 792 in <module>
+Fatal Python error: Illegal instruction
+
+Current thread 0x000054b0 (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\functions.py", line 1038 in <listcomp>
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\functions.py", line 1038 in production
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\initializer.py", line 347 in __call__
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\constraint.py", line 720 in construct
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\block.py", line 1105 in add_component
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\block.py", line 571 in __setattr__
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\functions.py", line 1541 in build_all_constraints
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 761 in _build_monolithic_model
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 851 in _operational_bound
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1402 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 626 in main
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 792 in <module>
+
+Extension modules: numpy.core._multiarray_umath, numpy.core._multiarray_tests, numpy.linalg._umath_linalg, numpy.fft._pocketfft_internal, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philox, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator, pandas._libs.tslibs.np_datetime, pandas._libs.tslibs.dtypes, pandas._libs.tslibs.base, pandas._libs.tslibs.nattype, pandas._libs.tslibs.timezones, pandas._libs.tslibs.ccalendar, pandas._libs.tslibs.fields, pandas._libs.tslibs.timedeltas, pandas._libs.tslibs.tzconversion, pandas._libs.tslibs.timestamps, pandas._libs.properties, pandas._libs.tslibs.offsets, pandas._libs.tslibs.strptime, pandas._libs.tslibs.parsing, pandas._libs.tslibs.conversion, pandas._libs.tslibs.period, pandas._libs.tslibs.vectorized, pandas._libs.ops_dispatch, pandas._libs.missing, pandas._libs.hashtable, pandas._libs.algos, pandas._libs.interval, pandas._libs.lib, pandas._libs.hashing, pandas._libs.tslib, pandas._libs.ops, pandas._libs.arrays, pandas._libs.sparse, pandas._libs.reduction, pandas._libs.indexing, pandas._libs.index, pandas._libs.internals, pandas._libs.join, pandas._libs.writers, pandas._libs.window.aggregations, pandas._libs.window.indexers, pandas._libs.reshape, pandas._libs.groupby, pandas._libs.testing, pandas._libs.parsers, pandas._libs.json, numpy.linalg.lapack_lite, pyomo.common.dependencies.numpy.linalg.lapack_lite, pyomo.core.expr.numeric_expr, pyomo.core.expr.numvalue, pyomo.core.expr.logical_expr, pyomo.core.util, pyomo.repn.standard_repn, pyomo.repn.plugins.cpxlp, pyomo.repn.plugins.ampl.ampl_, pyomo.repn.plugins.baron_writer, pyomo.repn.plugins.gams_writer, PIL._imaging, gurobipy.gurobipy (total: 67)

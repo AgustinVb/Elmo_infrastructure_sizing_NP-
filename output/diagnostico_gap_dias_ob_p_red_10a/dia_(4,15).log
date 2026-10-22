@@ -1,0 +1,67 @@
+
+Gurobi 10.0.0 (win64) logging started Wed Oct  7 18:14:14 2026
+
+Set parameter OutputFlag to value 1
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 300
+Set parameter MIPFocus to value 3
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 8 threads
+
+Optimize a model with 15255 rows, 20009 columns and 72206 nonzeros
+Model fingerprint: 0xf68f0cfb
+Variable types: 9927 continuous, 10082 integer (10081 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 1e+03]
+  Objective range  [8e-01, 1e+06]
+  Bounds range     [1e+00, 5e+02]
+  RHS range        [1e+00, 2e+04]
+
+User MIP start produced solution with objective 41402.7 (0.02s)
+Loaded user MIP start with objective 41402.7
+
+Presolve removed 11641 rows and 11593 columns
+Presolve time: 0.07s
+Presolved: 3614 rows, 8416 columns, 36032 nonzeros
+Variable types: 1244 continuous, 7172 integer (7172 binary)
+Root relaxation presolve removed 40 rows and 0 columns
+Root relaxation presolved: 3574 rows, 8456 columns, 31032 nonzeros
+
+
+Root relaxation: objective 4.138704e+04, 4500 iterations, 0.17 seconds (0.27 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 41387.0411    0    5 41402.7407 41387.0411  0.04%     -    0s
+H    0     0                    41401.694042 41387.0411  0.04%     -    0s
+H    0     0                    41397.158614 41387.0411  0.02%     -    0s
+H    0     0                    41395.763098 41387.0411  0.02%     -    1s
+     0     0 41387.0411    0    1 41395.7631 41387.0411  0.02%     -    1s
+     0     0 41387.0411    0    4 41395.7631 41387.0411  0.02%     -    1s
+     0     0 41387.0411    0    5 41395.7631 41387.0411  0.02%     -    1s
+     0     0 41387.0411    0   12 41395.7631 41387.0411  0.02%     -    2s
+     0     0 41387.0411    0    3 41395.7631 41387.0411  0.02%     -    2s
+     0     2 41387.0411    0    3 41395.7631 41387.0411  0.02%     -    2s
+   145   405 41387.0411   17   40 41395.7631 41387.0411  0.02%   103    7s
+   413  1827 41387.0411   50    3 41395.7631 41387.0411  0.02%  82.9   16s
+
+Cutting planes:
+  Gomory: 3
+  Cover: 4
+  Implied bound: 2
+  Clique: 1
+  Flow cover: 2
+  GUB cover: 2
+  Zero half: 29
+
+Explored 1835 nodes (60503 simplex iterations) in 16.85 seconds (9.54 work units)
+Thread count was 8 (of 32 available processors)
+
+Solution count 4: 41395.8 41397.2 41401.7 41402.7 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 4.139576309817e+04, best bound 4.139576309817e+04, gap 0.0000%
+Set parameter MIPFocus to value 0

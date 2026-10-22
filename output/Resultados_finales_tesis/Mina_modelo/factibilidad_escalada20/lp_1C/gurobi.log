@@ -1,0 +1,72 @@
+
+Gurobi 10.0.0 (win64) logging started Mon Oct 19 00:08:26 2026
+
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/factibilidad_escalada20/lp_1C\gurobi.log"
+Set parameter Threads to value 32
+Set parameter Heuristics to value 0.5
+Set parameter MIPFocus to value 3
+Set parameter Presolve to value 2
+Set parameter FlowCoverCuts to value 2
+Set parameter TimeLimit to value 1800
+Set parameter NonConvex to value 2
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 32 threads
+
+Optimize a model with 243573 rows, 343485 columns and 1034899 nonzeros
+Model fingerprint: 0x717099b8
+Model has 3 quadratic constraints
+Coefficient statistics:
+  Matrix range     [7e-03, 1e+03]
+  QMatrix range    [1e+00, 1e+00]
+  QLMatrix range   [3e-01, 3e-01]
+  Objective range  [9e-01, 1e+06]
+  Bounds range     [1e+00, 1e+04]
+  RHS range        [1e+00, 3e+04]
+Presolve removed 159013 rows and 209741 columns
+
+Continuous model is non-convex -- solving as a MIP
+
+Presolve removed 200193 rows and 295666 columns
+Presolve time: 0.41s
+Presolved: 43392 rows, 47819 columns, 182774 nonzeros
+Presolved model has 3 bilinear constraint(s)
+Variable types: 47819 continuous, 0 integer (0 binary)
+Root relaxation presolve removed 1320 rows and 0 columns
+Root relaxation presolved: 42072 rows, 47819 columns, 179678 nonzeros
+
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing first log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   65690    2.0592991e+06   0.000000e+00   2.934816e+06      5s
+Concurrent spin time: 0.00s
+
+Solved with dual simplex
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   54565    1.9533191e+06   0.000000e+00   0.000000e+00      6s
+
+Root relaxation: objective 1.953319e+06, 54565 iterations, 5.49 seconds (14.45 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 1953319.08    0    3          - 1953319.08      -     -    6s
+     0     0 1979284.96    0    3          - 1979284.96      -     -    8s
+H    0     0                    2028688.7344 1979284.96  2.44%     -   11s
+H    0     0                    1996966.8343 1979284.96  0.89%     -   13s
+
+Explored 1 nodes (54565 simplex iterations) in 13.56 seconds (31.52 work units)
+Thread count was 32 (of 32 available processors)
+
+Solution count 2: 1.99697e+06 2.02869e+06 
+
+Optimal solution found (tolerance 1.00e-02)
+Best objective 1.996966834301e+06, best bound 1.979284959687e+06, gap 0.8854%

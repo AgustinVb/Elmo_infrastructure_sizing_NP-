@@ -1,0 +1,254 @@
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_escalada20/zona_norte/1C/P_red_gen_bat/r2/benders\STOP
+[NestedBenders] tope de tiempo: 12.00 h (hasta 2026-10-20 04:58)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:5,640  2:11,280  3:21,432  4:28,200  5:28,200  6:28,200  7:28,200  8:22,560  9:11,280  10:5,640
+[NestedBenders] presolve de capacidad: anios [4], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 4  suma: sum n_ssee_k >= 2  (dual 2.0000, primal 2.000, 6s)
+[NestedBenders] presolve capacidad  anio 4  station_1: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 6s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 2 (1,000 kW, anio 4)
+[NestedBenders] presolve de capacidad: la cota agregada (2) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 12s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_escalada20/zona_norte/1C/P_red_gen_bat/r2/benders\op_bound_gurobi.log"
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 4,662,046.72  (460,800 binarias relajadas, 1364s)
+[NestedBenders] incumbente inicial del respaldo output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_escalada20/zona_norte/1C/P_red_gen_bat/benders/incumbente_respaldo.pkl (iteracion 5): 5,258,470.12 -> UB, centro de la caja; 45 cortes de optimalidad y 0 de factibilidad rearmados
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+[DayDecomp]   y1 d15 fase1: 338,924.72  (optimal, 10s)
+[DayDecomp]   y1 d105 fase1: 340,546.89  (optimal, 11s)
+[DayDecomp]   y1 d196 fase1: 338,924.72  (optimal, 11s)
+[DayDecomp]   y1 d288 fase1: 338,924.72  (optimal, 13s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 13s
+[DayDecomp]   agregado (max entre dias): N_chargers=1  Delta_N_chargers=1  n_ssee_k=2  P_max_k=1,000  G_g=1, 0  H=0.4897  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 338,924.72  (optimal, 10s)
+[DayDecomp]   y1 d105 fase2: 340,546.89  (optimal, 11s)
+[DayDecomp]   y1 d196 fase2: 338,924.72  (optimal, 11s)
+[DayDecomp]   y1 d288 fase2: 338,924.72  (optimal, 11s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 11s
+[DayDecomp]   pulido sobre el bloque anual: 79,949 valores, 40,323 enteras fijas, LP optimo en 8s -> incumbente 3,262,530.53
+[DayDecomp] año 1: listo en 63s
+[NestedBenders] k=1 FORWARD  anio 2 (2/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+[DayDecomp]   y2 d15 fase1: 1,802.30  (optimal, 9s)
+[DayDecomp]   y2 d105 fase1: 1,802.30  (optimal, 9s)
+[DayDecomp]   y2 d196 fase1: 1,802.30  (optimal, 9s)
+[DayDecomp]   y2 d288 fase1: 1,802.30  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 10s
+[DayDecomp]   agregado (max entre dias): N_chargers=1  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=474.4
+[DayDecomp]   y2 d15 fase2: 1,802.30  (optimal, 10s)
+[DayDecomp]   y2 d105 fase2: 1,802.30  (optimal, 10s)
+[DayDecomp]   y2 d196 fase2: 1,802.30  (optimal, 11s)
+[DayDecomp]   y2 d288 fase2: 1,802.30  (optimal, 11s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 11s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 8s -> incumbente 1,769,376.49
+[DayDecomp] año 2: listo en 59s
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -467.359185 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 2,312.48  (maxTimeLimit, 123s)
+[DayDecomp]   y3 d105 fase1: 7,608.01  (maxTimeLimit, 125s)
+[DayDecomp]   y3 d196 fase1: 11,611.83  (optimal, 9s)
+[DayDecomp]   y3 d288 fase1: 4,050.33  (maxTimeLimit, 129s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 130s
+[DayDecomp]   agregado (max entre dias): N_chargers=1  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=457.8
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 2,312.18  (maxTimeLimit, 123s)
+[DayDecomp]   y3 d105 fase2: 7,608.01  (maxTimeLimit, 126s)
+[DayDecomp]   y3 d196 fase2: 11,611.83  (optimal, 10s)
+[DayDecomp]   y3 d288 fase2: 4,025.60  (maxTimeLimit, 130s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 130s
+WARNING (W1001): Setting Var 'M[LH518B_3,PEX_23,3,15,24.0]' to a value
+`-6.886785915556598e-07` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'M[LH518B_3,PEX_22,3,15,26.0]' to a value
+`-1.3869280188132355e-06` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'M[LH518B_3,PEX_27,3,15,42.0]' to a value
+`-1.3830316159104303e-06` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'M[LH518B_3,PEX_28,3,15,57.0]' to a value
+`-6.850164342932066e-07` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'M[LH518B_3,PEX_21,3,15,173.0]' to a value
+`-1.3843527474406844e-06` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 2s -> incumbente 1,772,222.52
+[DayDecomp] año 3: listo en 292s
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -3334.469074 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 4 (4/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 293,762.97  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 169,971.60  (optimal, 115s)
+[DayDecomp]   y4 d196 fase1: 307,295.53  (maxTimeLimit, 123s)
+[DayDecomp]   y4 d288 fase1: 294,204.86  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_chargers=3  Delta_N_chargers=2  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=196.2  R=0  b_bar=425.1
+[DayDecomp]   y4 d15 fase2: 298,090.19  (optimal, 10s)
+[DayDecomp]   y4 d105 fase2: 308,171.73  (optimal, 11s)
+[DayDecomp]   y4 d196 fase2: 311,622.76  (optimal, 11s)
+[DayDecomp]   y4 d288 fase2: 298,532.09  (optimal, 12s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 12s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 9s -> incumbente 2,863,957.86
+[DayDecomp] año 4: listo en 165s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=2,857,826.78  LB=2,295,142.81  gap=19.6892%
+[NestedBenders] k=1 FORWARD  anio 5 (5/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 15,903.65  (optimal, 8s)
+[DayDecomp]   y5 d105 fase1: 24,657.79  (optimal, 15s)
+[DayDecomp]   y5 d196 fase1: 28,168.51  (optimal, 3s)
+[DayDecomp]   y5 d288 fase1: 15,784.20  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_chargers=3  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=440.6
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 15,903.65  (optimal, 2s)
+[DayDecomp]   y5 d105 fase2: 24,401.66  (optimal, 23s)
+[DayDecomp]   y5 d196 fase2: 28,168.51  (optimal, 3s)
+[DayDecomp]   y5 d288 fase2: 15,738.44  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 9s -> incumbente 794,329.61
+[DayDecomp] año 5: listo en 265s
+[NestedBenders] k=1 FORWARD  anio 5  AVISO: residuo McCormick = -9063.946354 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 6 (6/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 137,529.14  (maxTimeLimit, 123s)
+[DayDecomp]   y6 d105 fase1: maxTimeLimit, sin solucion en 126s
+[DayDecomp]   y6 d196 fase1: 176,611.68  (maxTimeLimit, 129s)
+[DayDecomp]   y6 d288 fase1: 144,218.39  (maxTimeLimit, 131s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 131s
+[DayDecomp] año 6: sin MIP start (y6 d105 fase1: maxTimeLimit, sin solucion en 126s)
+[NestedBenders] k=1 FORWARD  anio 7 (7/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 13,634.26  (optimal, 18s)
+[DayDecomp]   y7 d105 fase1: 20,902.30  (optimal, 40s)
+[DayDecomp]   y7 d196 fase1: 24,319.48  (optimal, 27s)
+[DayDecomp]   y7 d288 fase1: 13,496.75  (maxTimeLimit, 130s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 130s
+[DayDecomp]   agregado (max entre dias): N_chargers=3  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=440.8
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 13,634.26  (optimal, 3s)
+[DayDecomp]   y7 d105 fase2: 20,902.30  (optimal, 3s)
+[DayDecomp]   y7 d196 fase2: 24,319.48  (optimal, 3s)
+[DayDecomp]   y7 d288 fase2: 13,491.72  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 4s -> incumbente 213,882.69
+[DayDecomp] año 7: listo en 279s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=213,826.97  LB=210,535.89  gap=1.5391%
+[NestedBenders] k=1 FORWARD  anio 7  AVISO: residuo McCormick = -9053.067607 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 8 (8/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 2,838.73  (maxTimeLimit, 123s)
+[DayDecomp]   y8 d105 fase1: 7,154.60  (optimal, 19s)
+[DayDecomp]   y8 d196 fase1: 9,459.74  (optimal, 10s)
+[DayDecomp]   y8 d288 fase1: 3,643.34  (maxTimeLimit, 130s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 130s
+[DayDecomp]   agregado (max entre dias): N_chargers=3  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=396.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 2,837.27  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 7,154.60  (optimal, 3s)
+[DayDecomp]   y8 d196 fase2: 9,459.74  (optimal, 3s)
+[DayDecomp]   y8 d288 fase2: 3,577.33  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 8s -> incumbente 677,211.12
+[DayDecomp] año 8: listo en 283s
+[NestedBenders] k=1 FORWARD  anio 9 (9/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+[DayDecomp]   y9 d15 fase1: 1,051.63  (optimal, 9s)
+[DayDecomp]   y9 d105 fase1: 1,051.63  (optimal, 10s)
+[DayDecomp]   y9 d196 fase1: 1,051.63  (optimal, 10s)
+[DayDecomp]   y9 d288 fase1: 1,051.63  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 10s
+[DayDecomp]   agregado (max entre dias): N_chargers=3  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=449.2
+[DayDecomp]   y9 d15 fase2: 1,051.63  (optimal, 10s)
+[DayDecomp]   y9 d105 fase2: 1,051.63  (optimal, 11s)
+[DayDecomp]   y9 d196 fase2: 1,051.63  (optimal, 11s)
+[DayDecomp]   y9 d288 fase2: 1,051.63  (optimal, 11s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 11s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 9s -> incumbente 8,101.42
+[DayDecomp] año 9: listo en 61s
+[NestedBenders] k=1 FORWARD  anio 9  AVISO: residuo McCormick = -3041.965736 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 10 (10/10)  [UB=5,258,470.12  LB=4,662,046.72]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+[DayDecomp]   y10 d15 fase1: 973.73  (optimal, 9s)
+[DayDecomp]   y10 d105 fase1: 973.73  (optimal, 9s)
+[DayDecomp]   y10 d196 fase1: 973.73  (optimal, 10s)
+[DayDecomp]   y10 d288 fase1: 973.73  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 10s
+[DayDecomp]   agregado (max entre dias): N_chargers=3  Delta_N_chargers=0  n_ssee_k=2  P_max_k=1,000  G_g=1.72, 0  H=0.9715  P_pot=0  R=0  b_bar=431.7
+[DayDecomp]   y10 d15 fase2: 973.73  (optimal, 10s)
+[DayDecomp]   y10 d105 fase2: 973.73  (optimal, 10s)
+[DayDecomp]   y10 d196 fase2: 973.73  (optimal, 11s)
+[DayDecomp]   y10 d288 fase2: 973.73  (optimal, 11s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 11s
+[DayDecomp]   pulido sobre el bloque anual: 79,951 valores, 40,323 enteras fijas, LP optimo en 9s -> incumbente 3,894.91
+[DayDecomp] año 10: listo en 61s
+[NestedBenders] k=1 FORWARD  anio 10  AVISO: residuo McCormick = -3087.911269 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+Windows fatal exception: access violation
+
+Current thread 0x0000212c (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\constraint.py", line 254 in _evaluate_bound
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\constraint.py", line 337 in ub
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\constraint.py", line 370 in has_ub
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\gurobi_direct.py", line 524 in _add_constraint
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_or_persistent_solver.py", line 229 in _add_block
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\gurobi_direct.py", line 492 in _add_block
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\gurobi_direct.py", line 474 in _set_instance
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 68 in _presolve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 130 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1910 in _polish_mip_start
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1849 in build_report_model
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1226 in _polish_iteration
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1482 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 626 in main
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 792 in <module>

@@ -1,0 +1,54 @@
+
+Gurobi 10.0.0 (win64) logging started Wed Oct  7 18:17:16 2026
+
+Set parameter OutputFlag to value 1
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 300
+Set parameter MIPFocus to value 3
+Gurobi Optimizer version 10.0.0 build v10.0.0rc2 (win64)
+
+CPU model: Intel(R) Core(TM) i9-14900K, instruction set [SSE2|AVX|AVX2]
+Thread count: 24 physical cores, 32 logical processors, using up to 8 threads
+
+Optimize a model with 15286 rows, 20012 columns and 72262 nonzeros
+Model fingerprint: 0xd59393e2
+Variable types: 9930 continuous, 10082 integer (10081 binary)
+Coefficient statistics:
+  Matrix range     [1e-01, 1e+03]
+  Objective range  [5e-01, 1e+06]
+  Bounds range     [1e+00, 5e+02]
+  RHS range        [1e+00, 9e+03]
+
+User MIP start produced solution with objective 9865.1 (0.09s)
+Loaded user MIP start with objective 9865.1
+
+Presolve removed 11906 rows and 11800 columns
+Presolve time: 0.21s
+Presolved: 3380 rows, 8212 columns, 35264 nonzeros
+Variable types: 1040 continuous, 7172 integer (7172 binary)
+Root relaxation presolve removed 40 rows and 0 columns
+Root relaxation presolved: 3340 rows, 8252 columns, 30264 nonzeros
+
+
+Root relaxation: objective 9.831054e+03, 2874 iterations, 0.09 seconds (0.07 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 9831.05370    0    1 9865.10407 9831.05370  0.35%     -    0s
+H    0     0                    9862.7611974 9831.05370  0.32%     -    0s
+H    0     0                    9846.0009080 9831.05370  0.15%     -    1s
+H    0     0                    9844.0512852 9831.05370  0.13%     -    1s
+
+Cutting planes:
+  Gomory: 1
+  GUB cover: 1
+
+Explored 1 nodes (4536 simplex iterations) in 1.90 seconds (0.58 work units)
+Thread count was 8 (of 32 available processors)
+
+Solution count 4: 9844.05 9846 9862.76 9865.1 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 9.844051285158e+03, best bound 9.844051285158e+03, gap 0.0000%
+Set parameter MIPFocus to value 0

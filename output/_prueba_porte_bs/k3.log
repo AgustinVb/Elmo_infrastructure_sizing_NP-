@@ -1,0 +1,68 @@
+[STOP] para cortar a mano conservando la solucion, cree: output/_prueba_porte_bs/k3\STOP
+[NestedBenders] tope de tiempo: 1.00 h (hasta 2026-10-07 18:17)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:263  2:10,246  3:9,703
+[NestedBenders] presolve de capacidad: anios [2], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 2  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 1.000, 9s)
+[NestedBenders] presolve capacidad  anio 2  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 9s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 2)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 18s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/_prueba_porte_bs/k3\op_bound_gurobi.log"
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 1,292,603.00  (85,320 binarias relajadas, 80s)
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/3)  [UB=(sin cota aun)  LB=1,292,603.00]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2 (2/3)  [UB=(sin cota aun)  LB=1,292,603.00]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -597.806267 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/3)  [UB=(sin cota aun)  LB=1,292,603.00]  resolviendo MILP...
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -109.967949 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 pulido de la solucion: 3,429,341.87 -> 3,429,341.87 (0.00% menos, 22s)
+[Estabilizacion] k=1: paso SERIO (costo 3,429,341.87 vs mejor nan) -- re-centra en esta trayectoria
+[NestedBenders] k=1: incumbente 3,429,341.87 y 0 cortes respaldados en output/_prueba_porte_bs/k3\incumbente_respaldo.pkl
+[NestedBenders] k=1 BACKWARD anio 3  [UB=3,429,341.87  LB=1,292,603.00]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=1 BACKWARD anio 3  [UB=3,429,341.87  LB=1,292,603.00]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 3  Phi^LP=159,386.91 -> Phi^LR=159,447.93 (+61.02)
+[NestedBenders] k=1 BACKWARD anio 2  [UB=3,429,341.87  LB=1,292,603.00]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=3,429,341.87  LB=1,292,603.00]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 2  Phi^LP=56,329.54 -> Phi^LR=56,357.42 (+27.88)
+[NestedBenders] k=1 BACKWARD anio 1  [UB=3,429,341.87  LB=1,292,603.00]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=3,429,341.87  LB=1,292,603.00]  MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=1 cota del backward = 1,213,479.59  (no supera LB=1,292,603.00)
+[NestedBenders] k=1  UB=3429341.8699  LB=1292603.0000  gap=62.3075%  tiempo_iteracion=50.0s
+[NestedBenders] k=1: incumbente 3,429,341.87 y 2 cortes respaldados en output/_prueba_porte_bs/k3\incumbente_respaldo.pkl
+[Estabilizacion] k=2: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=2 FORWARD  anio 1 (1/3)  [UB=3,429,341.87  LB=1,292,603.00]  resolviendo MILP...
+[NestedBenders] k=2 FORWARD  anio 2 (2/3)  [UB=3,429,341.87  LB=1,292,603.00]  resolviendo MILP...
+[NestedBenders] k=2 FORWARD  anio 2  AVISO: residuo McCormick = -2991.415193 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=2 FORWARD  anio 3 (3/3)  [UB=3,429,341.87  LB=1,292,603.00]  resolviendo MILP...
+[NestedBenders] k=2 FORWARD  anio 3  AVISO: residuo McCormick = -109.967949 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=2 pulido de la solucion: 1,319,433.17 -> 1,293,139.31 (1.99% menos, 22s)
+[Estabilizacion] k=2: paso SERIO (costo 1,293,139.31 vs mejor 3,429,341.87) -- re-centra en esta trayectoria
+[NestedBenders] k=2: incumbente 1,293,139.31 y 2 cortes respaldados en output/_prueba_porte_bs/k3\incumbente_respaldo.pkl
+[NestedBenders] k=2 BACKWARD anio 3  [UB=1,293,139.31  LB=1,292,603.00]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=2 BACKWARD anio 3  [UB=1,293,139.31  LB=1,292,603.00]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=2 BACKWARD anio 3  Phi^LP=49,405.34 -> Phi^LR=49,424.34 (+19.01)
+[NestedBenders] k=2 BACKWARD anio 2  [UB=1,293,139.31  LB=1,292,603.00]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=2 BACKWARD anio 2  [UB=1,293,139.31  LB=1,292,603.00]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=2 BACKWARD anio 2  Phi^LP=105,491.58 -> Phi^LR=105,519.46 (+27.88)
+[NestedBenders] k=2 BACKWARD anio 1  [UB=1,293,139.31  LB=1,292,603.00]  relajando LP (cota inferior LB)...
+[NestedBenders] k=2 BACKWARD anio 1  [UB=1,293,139.31  LB=1,292,603.00]  MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=2 cota del backward = 1,257,678.26  (no supera LB=1,292,603.00)
+[NestedBenders] k=2  UB=1293139.3093  LB=1292603.0000  gap=0.0415%  tiempo_iteracion=44.3s
+[NestedBenders] k=2: incumbente 1,293,139.31 y 4 cortes respaldados en output/_prueba_porte_bs/k3\incumbente_respaldo.pkl
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 1 (ajustada)
+[NestedBenders] tiempo total: 191.7s (2 iteraciones, 0 cortes de factibilidad)
+[NestedBenders] cortes fortalecidos: 4 de 4 superaron Phi^LP (promedio +33.95, maximo +61.02)
+[Estabilizacion] 2 pasos serios, 0 nulos; caja final +-1 / 25%
+NestedBenders: UB=1293139.3093  LB=1292603.0000  gap=0.0415%  iteraciones=2  tiempo_total=191.7s
+[NestedBenders] reporte: costo recomputado = 1,319,433.17 contra UB 1,319,433.17 (desvio 0.000000); incluye 203,236.11 de apertura de estaciones
+[NestedBenders] MIP start pulido (LP con enteras fijas, 75,675 fijadas, 8s): costo 1,319,433.17 -> 1,293,139.31
+[NestedBenders] residuo del MIP start por familia (max |violacion|, 6s):
+    s_def                            5.821e-10  en 3  (0 filas > 1e-6)
+    mccormick_ub1                    2.910e-11  en 2  (0 filas > 1e-6)
+    mccormick_lb2                    1.819e-12  en 1  (0 filas > 1e-6)
+    battery_soc                      5.684e-14  en ('LH518B_1', 2, 15, 36.0)  (0 filas > 1e-6)
+[NestedBenders] AVISO: 0 filas no evaluadas por variables sin valor; variables sin valor por familia: {'Z': 1020, 'StartAssign': 4320, 'EndAssign': 4320}
+JSONs, log y summary guardados en 'output/_prueba_porte_bs/k3'.

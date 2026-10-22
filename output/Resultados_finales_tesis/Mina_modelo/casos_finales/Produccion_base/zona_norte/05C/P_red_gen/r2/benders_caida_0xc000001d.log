@@ -1,0 +1,85 @@
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/05C/P_red_gen/r2/benders\STOP
+[NestedBenders] tope de tiempo: 12.00 h (hasta 2026-10-20 04:51)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:4,700  2:9,400  3:17,860  4:23,500  5:23,500  6:23,500  7:23,500  8:18,800  9:9,400  10:4,700
+[NestedBenders] presolve de capacidad: anios [4], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 4  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 1.000, 17s)
+[NestedBenders] presolve capacidad  anio 4  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 16s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 4)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 33s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/05C/P_red_gen/r2/benders\op_bound_gurobi.log"
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 2,513,260.39  (460,800 binarias relajadas, 304s)
+[NestedBenders] incumbente inicial del respaldo output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/05C/P_red_gen/benders/incumbente_respaldo.pkl (iteracion 6): 2,568,522.35 -> UB, centro de la caja; 45 cortes de optimalidad y 0 de factibilidad rearmados
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/10)  [UB=2,568,522.35  LB=2,513,260.39]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 10,083, d105: 10,083, d196: 10,083, d288: 10,083 enteras)
+Windows fatal exception: code 0xc000001d
+
+Thread 0x0000703c (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\common\collections\component_map.py", line 113 in __getitem__
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\gurobi_direct.py", line 515 in _add_constraint
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_or_persistent_solver.py", line 229 in _add_block
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\gurobi_direct.py", line 492 in _add_block
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\gurobi_direct.py", line 474 in _set_instance
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 68 in _presolve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 130 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 456 in _solve_day_con
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 427 in _solve_day
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 58 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 83 in _worker
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 953 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 1016 in _bootstrap_inner
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 973 in _bootstrap
+
+Current thread 0x00004ff4 (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 389 in _apply_solver
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 142 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 456 in _solve_day_con
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 427 in _solve_day
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 58 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 83 in _worker
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 953 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 1016 in _bootstrap_inner
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 973 in _bootstrap
+
+Thread 0x00006134 (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 391 in _apply_solver
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 142 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 456 in _solve_day_con
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 427 in _solve_day
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 58 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 83 in _worker
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 953 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 1016 in _bootstrap_inner
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 973 in _bootstrap
+
+Thread 0x00004dc4 (most recent call first):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 391 in _apply_solver
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\solvers\plugins\solvers\direct_solver.py", line 142 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 456 in _solve_day_con
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 427 in _solve_day
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 58 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\thread.py", line 83 in _worker
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 953 in run
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 1016 in _bootstrap_inner
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 973 in _bootstrap
+
+Thread 0x00006ae0 (most recent call first):
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\threading.py", line 320 in wait
+  File "C:\Users\TECNO-MASTER\anaconda3\envs\py310\lib\concurrent\futures\_base.py", line 453 in result
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 493 in <listcomp>
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 493 in _solve_days
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 556 in solve_year_by_days
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\day_blocks.py", line 681 in day_warm_start
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\passes.py", line 324 in _run_day_warm_start
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\passes.py", line 469 in _solve_year
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\passes.py", line 518 in _solve_year_stabilized
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\passes.py", line 567 in _sweep
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\passes.py", line 346 in run
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\driver.py", line 1471 in solve
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 626 in main
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\setup.py", line 792 in <module>

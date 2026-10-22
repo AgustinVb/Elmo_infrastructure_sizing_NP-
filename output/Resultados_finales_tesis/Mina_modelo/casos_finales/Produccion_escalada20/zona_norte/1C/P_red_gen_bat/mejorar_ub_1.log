@@ -1,0 +1,16 @@
+[diag] enteras sin valor (iran a 0 en el pulido): {'StartAssign': 28800, 'EndAssign': 28800}
+[diag] respaldo output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_escalada20/zona_norte/1C/P_red_gen_bat/benders/incumbente_respaldo.pkl (iteracion 5, incumbente 5,258,470.12): 799,530 valores cargados, 39 sin variable en el modelo
+Traceback (most recent call last):
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\mejorar_ub.py", line 198, in <module>
+    sys.exit(main())
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\mejorar_ub.py", line 91, in main
+    info, por_var = particion.export(om.model, os.path.join(a.out, "_mps"), mode="year_day")
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\src\optimization\decomposition\particion.py", line 104, in export
+    _, smap_id = model.write(mps, io_options={"symbolic_solver_labels": True})
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\core\base\block.py", line 1916, in write
+    (filename, smap) = problem_writer(self, filename, solver_capability, io_options)
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\repn\plugins\mps.py", line 164, in __call__
+    symbol_map = self._print_model_MPS(
+  File "C:\Users\TECNO-MASTER\Desktop\Elmo_infrastructure_sizing_NP-\.venv_elmo\lib\site-packages\pyomo\repn\plugins\mps.py", line 577, in _print_model_MPS
+    output_file.write(rhs_template % (row_label, rhs))
+TypeError: not all arguments converted during string formatting
