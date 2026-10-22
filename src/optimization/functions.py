@@ -94,6 +94,10 @@ ESCALA_UNIDADES = {"N_ciclos": 1e3, "N_total": 1e3, "w_deg": 1e3, "EnergyConsume
 # forma si las tres comparten escala.
 assert ESCALA_UNIDADES["N_ciclos"] == ESCALA_UNIDADES["N_total"] == ESCALA_UNIDADES["w_deg"]
 
+# Tramos de b_bar en el McCormick por tramos de w_deg = N_total*b_bar (ver
+# ConstraintRules.build_mccormick_degradation_block).
+N_TRAMOS_B_BAR = 8
+
 # Escala de la FILA de produccion diaria (daily_production): se divide por
 # este factor a ambos lados, en kilotoneladas. No cambia ninguna variable, solo
 # la fila. Motivo, otra vez Dantzig-Wolfe: la fila suma las toneladas de todo el
@@ -754,6 +758,12 @@ class OptParameters(OptRules):
                 model.gen_set,
                 initialize={g: gen.get_g_max(g) for g in model.gen_set},
                 mutable=False)
+            # Vida util para el valor residual (0 = sin valor residual), ver
+            # ObjectiveRules._residual_fraction.
+            model.vida_util_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_vida_util(g) for g in model.gen_set},
+                mutable=False)
             model.alpha_g = pyo.Param(
                 model.gen_set, model.years, model.days, model.time_intervals_set,
                 initialize={(g, y, d, t): self.time_series.get_alpha_g(g, d, t)
@@ -804,6 +814,10 @@ class OptParameters(OptRules):
             # Cota de unidades del cluster instalables en todo el horizonte
             # (H no tiene cota superior natural al ser entera).
             model.h_max = pyo.Param(initialize=stor.get_h_max(storage_names[0]), mutable=False)
+            model.vida_util_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_vida_util(h) for h in model.storage_set},
+                mutable=False)
 
         # Degradacion/reemplazo de baterias del pool de swap (global, solo
         # si la hoja BatteryDegradation existe)
@@ -839,6 +853,28 @@ class BoundRules(OptRules):
 
     def B(self, model, b, y, d, t):
         return (0, model.bmax_b[b])
+
+    def _energia_swap_cotas(self, model):
+        """{año: (E_min, E_max)} de EnergyConsumed en kWh (dias representativos,
+        sin escalar al año) valida para CUALQUIER solucion factible: las visitas
+        al nodo j en (y, d) estan entre las cotas de ConstraintRules.production
+        (se toma la mas ancha entre los LHD que pueden ir). E_min usa la visita
+        de menor energia (0 si va un LHD que no es de swap: su energia no
+        cuenta en EnergyConsumed); E_max, la de mayor energia entre los de swap."""
+        swap = set(model.slhd_set)
+        cand = {}
+        for (i, j, y, d, _t) in model.Y_INDEX:
+            cand.setdefault((y, d, j), set()).add(i)
+        cotas = {y: [0.0, 0.0] for y in model.years}
+        for (y, d, j), lhds in cand.items():
+            vis = [ConstraintRules.production_visit_bounds(self, model, y, j, i) for i in lhds]
+            lb = max(min(v[0] for v in vis), 0)
+            ub = max(v[1] for v in vis)
+            e = [value(model.pe_i[i, j]) * value(model.d_i[i, j]) * self.time_series.get_n_trips(j, i)
+                 for i in lhds if i in swap]
+            cotas[y][0] += lb * (min(e) if len(e) == len(lhds) else 0.0)
+            cotas[y][1] += ub * max(e, default=0.0)
+        return {y: tuple(c) for y, c in cotas.items()}
 
     def build_all_variables(self, model):
         # Y(i,j,d,t) solo si j ? Nodes_assigned_at_interval(d,t,i)
@@ -1127,6 +1163,28 @@ class BoundRules(OptRules):
             # grado del trilineal, ver nota de comparación empírica arriba.
             model.N_total = pyo.Var(model.years, domain=pyo.NonNegativeReals,
                                     bounds=(0, n_ciclos_max * NF_max / ESCALA_UNIDADES["N_total"]))
+
+            # Cotas POR AÑO (2026-10-22). Las globales de arriba (energia
+            # maxima de los cargadores, N_ciclos >= 0) dejaban la relajacion
+            # de la ec. 3 tan floja que el modelo contaba ~40% de los ciclos
+            # fisicos (ver build_mccormick_degradation_block). La energia del
+            # año queda entre las visitas minimas y maximas por nodo de
+            # production; de ahi N_total = E/b_bar y N_ciclos = N_total/flota.
+            scal = value(model.scaling_factor_op_cost)
+            s_ec = ESCALA_UNIDADES["EnergyConsumed"]
+            s_nt = ESCALA_UNIDADES["N_total"]
+            for y, (e_min, e_max) in self._energia_swap_cotas(model).items():
+                nf_l = N_min + n_elhd_by_year[y]
+                nf_u = N_max + n_elhd_by_year[y]
+                nt_l = e_min / s_ec * scal / B_U
+                nt_u = e_max / s_ec * scal / B_L
+                model.EnergyConsumed[y].setlb(e_min / s_ec)
+                model.EnergyConsumed[y].setub(min(model.EnergyConsumed[y].ub, e_max / s_ec))
+                model.N_total[y].setlb(nt_l * s_ec / s_nt)
+                model.N_total[y].setub(min(model.N_total[y].ub, nt_u * s_ec / s_nt))
+                model.N_ciclos[y].setlb(nt_l * s_ec / s_cic / nf_u)
+                if nf_l >= 1:
+                    model.N_ciclos[y].setub(min(model.N_ciclos[y].ub, nt_u * s_ec / s_cic / nf_l))
 
             # Linealización exacta (big-M) de P_bbar_zagg[i,y,d,t] = b_bar[y] *
             # z_agg (z_agg = suma de Z_swap para el LHD i en (y,d,t)) — evita
@@ -1952,77 +2010,143 @@ class ConstraintRules(OptRules):
         scaling_factor_op_cost) es un TRILINEAL reducido a DOS bilineales
         encadenados (n_total_def, n_ciclos_link -- ver comentario en
         BoundRules y ConstraintRules.energy_consumed_def). Este bloque
-        reemplaza AMBOS por su envolvente convexa de McCormick, dejando el
-        modelo MILP puro (sin necesitar Gurobi NonConvex=2, ver guard en
-        OptModel._configure_solver).
+        reemplaza el primero (N_ciclos * n_battery_fleet, entero) por una
+        desagregacion EXACTA por el valor de la flota, y el segundo
+        (N_total * b_bar, continuo) por su envolvente convexa de McCormick,
+        dejando el modelo MILP puro (sin necesitar Gurobi NonConvex=2, ver
+        guard en OptModel._configure_solver).
 
         Las cotas usadas son las YA declaradas en BoundRules para cada
-        variable (N_ciclos, n_battery_fleet, N_total, b_bar) -- N_ciclos usa
-        una cota GLOBAL (n_ciclos_max), no ajustada por año como
-        compute_n_ciclos_bounds hace en carga_ob_multiaño para el caso
-        on-board. Si el residuo de McCormick resulta grande, ajustar esa
-        cota por año (mismo principio, sec. 3.5 del documento) es el
-        siguiente paso natural."""
+        variable (N_ciclos, n_battery_fleet, N_total, b_bar), ajustadas POR
+        AÑO con la energia de production (BoundRules._energia_swap_cotas):
+        el residuo de la envolvente de N_total * b_bar depende de ellas."""
         NC_bounds = {y: (float(model.N_ciclos[y].lb), float(model.N_ciclos[y].ub)) for y in model.years}
         NF_bounds = {y: (float(model.n_battery_fleet[y].lb), float(model.n_battery_fleet[y].ub)) for y in model.years}
         NT_bounds = {y: (float(model.N_total[y].lb), float(model.N_total[y].ub)) for y in model.years}
         B_L = value(model.B_L)
         B_U = value(model.B_U)
 
-        # --- Bilineal 1 (ec. 3a): N_total[y] ~= N_ciclos[y] * n_battery_fleet[y] ---
-        def _mc_n_total_lb1(m, y):
-            NC_L, _ = NC_bounds[y]
-            NF_L, _ = NF_bounds[y]
-            return m.N_total[y] >= NC_L * m.n_battery_fleet[y] + NF_L * m.N_ciclos[y] - NC_L * NF_L
+        # --- Bilineal 1 (ec. 3a) EXACTA: N_total[y] = N_ciclos[y] * n_battery_fleet[y] ---
+        # (2026-10-22) Antes iba con su envolvente de McCormick, que permite
+        # N_ciclos = N_total/NF_U: con la flota en su valor real n el modelo
+        # contaba solo n/NF_U de los ciclos (medido: 5/12 en todos los años
+        # del caso 1C, flota 5 en [4, 12]), la bateria casi no se degradaba y
+        # se ahorraba los reemplazos. n_battery_fleet es ENTERA con pocos
+        # valores por año, asi que el producto se escribe exacto desagregando
+        # N_ciclos por el valor de la flota: u_nf[y,v] = 1 si la flota vale v
+        # y nc_nf[y,v] = N_ciclos en ese caso (0 en los demas).
+        model.nf_val_set = pyo.Set(dimen=2, initialize=[
+            (y, v) for y in model.years
+            for v in range(int(round(NF_bounds[y][0])), int(round(NF_bounds[y][1])) + 1)])
+        model.u_nf = pyo.Var(model.nf_val_set, domain=pyo.Binary)
+        model.nc_nf = pyo.Var(model.nf_val_set, domain=pyo.NonNegativeReals,
+                              bounds=lambda m, y, v: (0, NC_bounds[y][1]))
 
-        def _mc_n_total_lb2(m, y):
-            _, NC_U = NC_bounds[y]
-            _, NF_U = NF_bounds[y]
-            return m.N_total[y] >= NC_U * m.n_battery_fleet[y] + NF_U * m.N_ciclos[y] - NC_U * NF_U
+        def _vals(m, y):
+            return [v for (y2, v) in m.nf_val_set if y2 == y]
 
-        def _mc_n_total_ub1(m, y):
-            _, NC_U = NC_bounds[y]
-            NF_L, _ = NF_bounds[y]
-            return m.N_total[y] <= NC_U * m.n_battery_fleet[y] + NF_L * m.N_ciclos[y] - NC_U * NF_L
+        def _nf_unario(m, y):
+            return sum(m.u_nf[y, v] for v in _vals(m, y)) == 1
 
-        def _mc_n_total_ub2(m, y):
-            NC_L, _ = NC_bounds[y]
-            _, NF_U = NF_bounds[y]
-            return m.N_total[y] <= NC_L * m.n_battery_fleet[y] + NF_U * m.N_ciclos[y] - NC_L * NF_U
+        def _nf_valor(m, y):
+            return m.n_battery_fleet[y] == sum(v * m.u_nf[y, v] for v in _vals(m, y))
 
-        model.mc_n_total_lb1 = pyo.Constraint(model.years, rule=_mc_n_total_lb1)
-        model.mc_n_total_lb2 = pyo.Constraint(model.years, rule=_mc_n_total_lb2)
-        model.mc_n_total_ub1 = pyo.Constraint(model.years, rule=_mc_n_total_ub1)
-        model.mc_n_total_ub2 = pyo.Constraint(model.years, rule=_mc_n_total_ub2)
+        def _nc_desag(m, y):
+            return m.N_ciclos[y] == sum(m.nc_nf[y, v] for v in _vals(m, y))
+
+        def _nc_activo_ub(m, y, v):
+            return m.nc_nf[y, v] <= NC_bounds[y][1] * m.u_nf[y, v]
+
+        def _nc_activo_lb(m, y, v):
+            return m.nc_nf[y, v] >= NC_bounds[y][0] * m.u_nf[y, v]
+
+        def _n_total_exacto(m, y):
+            return m.N_total[y] == sum(v * m.nc_nf[y, v] for v in _vals(m, y))
+
+        model.nf_unario = pyo.Constraint(model.years, rule=_nf_unario)
+        model.nf_valor = pyo.Constraint(model.years, rule=_nf_valor)
+        model.nc_desag = pyo.Constraint(model.years, rule=_nc_desag)
+        model.nc_activo_ub = pyo.Constraint(model.nf_val_set, rule=_nc_activo_ub)
+        model.nc_activo_lb = pyo.Constraint(model.nf_val_set, rule=_nc_activo_lb)
+        model.n_total_exacto = pyo.Constraint(model.years, rule=_n_total_exacto)
 
         # --- Bilineal 2 (ec. 3b): w_deg[y] ~= N_total[y] * b_bar[y] == EnergyConsumed[y]*scaling ---
         # w_deg en MWh = (miles de ciclos) x kWh: sale de N_total ya escalado.
+        # (2026-10-22) McCormick POR TRAMOS de b_bar: con la envolvente sobre
+        # todo [B_L, B_U] el modelo contaba 93-96% de los ciclos fisicos
+        # (medido en los 8 casos de tesis, ya con la flota exacta). Con
+        # N_TRAMOS_B_BAR tramos, z_bb[y,s] = 1 elige el tramo de b_bar y la
+        # envolvente usa sus extremos [L_s, U_s]; nt_bb/b_bb/w_bb son N_total,
+        # b_bar y w_deg en ese tramo (0 en los demas).
         model.w_deg = pyo.Var(model.years, domain=pyo.NonNegativeReals)
+        ancho = (B_U - B_L) / N_TRAMOS_B_BAR
+        tramo = {s: (B_L + s * ancho, B_L + (s + 1) * ancho) for s in range(N_TRAMOS_B_BAR)}
+        model.bb_tramos = pyo.Set(initialize=sorted(tramo))
+        model.z_bb = pyo.Var(model.years, model.bb_tramos, domain=pyo.Binary)
+        model.b_bb = pyo.Var(model.years, model.bb_tramos, domain=pyo.NonNegativeReals,
+                             bounds=lambda m, y, s: (0, tramo[s][1]))
+        model.nt_bb = pyo.Var(model.years, model.bb_tramos, domain=pyo.NonNegativeReals,
+                              bounds=lambda m, y, s: (0, NT_bounds[y][1]))
+        model.w_bb = pyo.Var(model.years, model.bb_tramos, domain=pyo.NonNegativeReals)
 
-        def _mc_w_deg_lb1(m, y):
-            NT_L, _ = NT_bounds[y]
-            return m.w_deg[y] >= NT_L * m.b_bar[y] + B_L * m.N_total[y] - NT_L * B_L
+        def _bb_unario(m, y):
+            return sum(m.z_bb[y, s] for s in m.bb_tramos) == 1
 
-        def _mc_w_deg_lb2(m, y):
-            _, NT_U = NT_bounds[y]
-            return m.w_deg[y] >= NT_U * m.b_bar[y] + B_U * m.N_total[y] - NT_U * B_U
+        def _bb_b_bar(m, y):
+            return m.b_bar[y] == sum(m.b_bb[y, s] for s in m.bb_tramos)
 
-        def _mc_w_deg_ub1(m, y):
-            _, NT_U = NT_bounds[y]
-            return m.w_deg[y] <= NT_U * m.b_bar[y] + B_L * m.N_total[y] - NT_U * B_L
+        def _bb_n_total(m, y):
+            return m.N_total[y] == sum(m.nt_bb[y, s] for s in m.bb_tramos)
 
-        def _mc_w_deg_ub2(m, y):
-            NT_L, _ = NT_bounds[y]
-            return m.w_deg[y] <= NT_L * m.b_bar[y] + B_U * m.N_total[y] - NT_L * B_U
+        def _bb_w_deg(m, y):
+            return m.w_deg[y] == sum(m.w_bb[y, s] for s in m.bb_tramos)
+
+        def _bb_b_lb(m, y, s):
+            return m.b_bb[y, s] >= tramo[s][0] * m.z_bb[y, s]
+
+        def _bb_b_ub(m, y, s):
+            return m.b_bb[y, s] <= tramo[s][1] * m.z_bb[y, s]
+
+        def _bb_nt_lb(m, y, s):
+            return m.nt_bb[y, s] >= NT_bounds[y][0] * m.z_bb[y, s]
+
+        def _bb_nt_ub(m, y, s):
+            return m.nt_bb[y, s] <= NT_bounds[y][1] * m.z_bb[y, s]
+
+        # Envolvente del tramo s, homogeneizada con z_bb (las 4 desigualdades
+        # de McCormick con las constantes multiplicadas por z_bb[y,s]).
+        def _mc_w_deg_lb1(m, y, s):
+            NT_L, L = NT_bounds[y][0], tramo[s][0]
+            return m.w_bb[y, s] >= NT_L * m.b_bb[y, s] + L * m.nt_bb[y, s] - NT_L * L * m.z_bb[y, s]
+
+        def _mc_w_deg_lb2(m, y, s):
+            NT_U, U = NT_bounds[y][1], tramo[s][1]
+            return m.w_bb[y, s] >= NT_U * m.b_bb[y, s] + U * m.nt_bb[y, s] - NT_U * U * m.z_bb[y, s]
+
+        def _mc_w_deg_ub1(m, y, s):
+            NT_U, L = NT_bounds[y][1], tramo[s][0]
+            return m.w_bb[y, s] <= NT_U * m.b_bb[y, s] + L * m.nt_bb[y, s] - NT_U * L * m.z_bb[y, s]
+
+        def _mc_w_deg_ub2(m, y, s):
+            NT_L, U = NT_bounds[y][0], tramo[s][1]
+            return m.w_bb[y, s] <= NT_L * m.b_bb[y, s] + U * m.nt_bb[y, s] - NT_L * U * m.z_bb[y, s]
 
         def _mc_w_deg_energy(m, y):
             esc = ESCALA_UNIDADES["EnergyConsumed"] / ESCALA_UNIDADES["w_deg"]
             return m.w_deg[y] == m.EnergyConsumed[y] * m.scaling_factor_op_cost * esc
 
-        model.mc_w_deg_lb1    = pyo.Constraint(model.years, rule=_mc_w_deg_lb1)
-        model.mc_w_deg_lb2    = pyo.Constraint(model.years, rule=_mc_w_deg_lb2)
-        model.mc_w_deg_ub1    = pyo.Constraint(model.years, rule=_mc_w_deg_ub1)
-        model.mc_w_deg_ub2    = pyo.Constraint(model.years, rule=_mc_w_deg_ub2)
+        model.bb_unario = pyo.Constraint(model.years, rule=_bb_unario)
+        model.bb_b_bar = pyo.Constraint(model.years, rule=_bb_b_bar)
+        model.bb_n_total = pyo.Constraint(model.years, rule=_bb_n_total)
+        model.bb_w_deg = pyo.Constraint(model.years, rule=_bb_w_deg)
+        model.bb_b_lb = pyo.Constraint(model.years, model.bb_tramos, rule=_bb_b_lb)
+        model.bb_b_ub = pyo.Constraint(model.years, model.bb_tramos, rule=_bb_b_ub)
+        model.bb_nt_lb = pyo.Constraint(model.years, model.bb_tramos, rule=_bb_nt_lb)
+        model.bb_nt_ub = pyo.Constraint(model.years, model.bb_tramos, rule=_bb_nt_ub)
+        model.mc_w_deg_lb1    = pyo.Constraint(model.years, model.bb_tramos, rule=_mc_w_deg_lb1)
+        model.mc_w_deg_lb2    = pyo.Constraint(model.years, model.bb_tramos, rule=_mc_w_deg_lb2)
+        model.mc_w_deg_ub1    = pyo.Constraint(model.years, model.bb_tramos, rule=_mc_w_deg_ub1)
+        model.mc_w_deg_ub2    = pyo.Constraint(model.years, model.bb_tramos, rule=_mc_w_deg_ub2)
         model.mc_w_deg_energy = pyo.Constraint(model.years, rule=_mc_w_deg_energy)
 
     def d_y_fade(self, model, y):
@@ -2643,14 +2767,47 @@ class ObjectiveRules(OptRules):
         """Costo de inversión en generación: G_g[g] se decide una sola vez
         para todo el horizonte (ver BoundRules), asi que se paga una unica
         vez, descontado al primer año. Mismo guard `first_year in model.years`
-        que substation_investment_cost, y por la misma razon."""
+        que substation_investment_cost, y por la misma razon.
+
+        Si la hoja Generators trae 'vida_util', se descuenta el valor residual
+        lineal al final del horizonte (ver _net_investment_factor); va en el
+        mismo termino, asi que el guard y la descomposicion no cambian."""
         if len(list(model.gen_set)) == 0:
             return 0
         first_year = self._first_year()
         if first_year not in model.years:
             return 0
-        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set) \
-            * self._discount_factor(model, first_year)
+        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g]
+                   * self._net_investment_factor(model, model.vida_util_g[g])
+                   for g in model.gen_set)
+
+    def _residual_fraction(self, vida):
+        """Valor residual lineal (valor de desecho contable) al final del
+        horizonte, como fraccion del costo de inversion: 1 - N/vida, con N los
+        años del horizonte completo (G_g y H se compran el primer año y se usan
+        los N años). 0 si vida es 0 (columna 'vida_util' ausente o vacia) o si
+        la vida util es exactamente N.
+
+        Una vida util MENOR que N es un error: el activo seguiria operando los
+        años que le faltan sin pagar su reposicion. Si se necesitan vidas mas
+        cortas que el horizonte (sensibilidades), hay que modelar la reposicion."""
+        vida = float(pyo.value(vida))
+        if vida <= 0:
+            return 0.0
+        n = len(self.time_series.years)
+        if vida < n:
+            raise ValueError(
+                f"vida_util = {vida:g} años es menor que el horizonte ({n} años): el "
+                "modelo no cobra la reposicion del activo. Use una vida util >= horizonte.")
+        return 1.0 - n / vida
+
+    def _net_investment_factor(self, model, vida):
+        """Factor que multiplica a la inversion de G_g/H: el pago del primer año
+        menos el valor residual cobrado al final del ultimo año, ambos
+        descontados. Sin vida util se reduce al pago del primer año de antes."""
+        years = sorted(self.time_series.years)
+        return (self._discount_factor(model, years[0])
+                - self._residual_fraction(vida) * self._discount_factor(model, years[-1]))
 
     def gen_op_cost(self, model):
         """Costo de O&M anual de generación: recurre cada año del horizonte
@@ -2665,14 +2822,15 @@ class ObjectiveRules(OptRules):
     def bess_investment_cost(self, model):
         """Costo de inversión BESS: H se decide una sola vez para todo el
         horizonte, se paga una unica vez, descontado al primer año. Mismo guard
-        `first_year in model.years` que gen_investment_cost."""
+        `first_year in model.years` que gen_investment_cost. Con 'vida_util'
+        en la hoja Storage, neto del valor residual lineal."""
         if len(list(model.storage_set)) == 0:
             return 0
         first_year = self._first_year()
         if first_year not in model.years:
             return 0
-        return sum(model.H * model.c_inv_h[h] for h in model.storage_set) \
-            * self._discount_factor(model, first_year)
+        return sum(model.H * model.c_inv_h[h] * self._net_investment_factor(model, model.vida_util_h[h])
+                   for h in model.storage_set)
 
     def bess_op_cost(self, model):
         """Costo de O&M anual BESS: recurre cada año del horizonte sobre la

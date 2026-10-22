@@ -1,4 +1,6 @@
-from pandas import DataFrame
+from pandas import DataFrame, isna
+
+from src.mine.generators import aviso_sin_vida_util
 
 
 class StorageSystems(object):
@@ -37,3 +39,12 @@ class StorageSystems(object):
     def get_h_max(self, name: str) -> int:
         """Número máximo de unidades del cluster instalables en todo el horizonte."""
         return int(self.data.loc[name, 'h_max'])
+
+    def get_vida_util(self, name: str) -> float:
+        """Vida útil [años] para el valor residual lineal al final del horizonte.
+        0 (sin valor residual) si la hoja no trae la columna 'vida_util' o la
+        celda está vacía."""
+        if 'vida_util' not in self.data.columns or isna(self.data.loc[name, 'vida_util']):
+            aviso_sin_vida_util('Storage', name)
+            return 0.0
+        return float(self.data.loc[name, 'vida_util'])

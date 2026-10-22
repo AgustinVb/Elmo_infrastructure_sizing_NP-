@@ -37,7 +37,7 @@ PY=${PY:-~/miniconda3/envs/py310/bin/python}
 DATA=${DATA:-data/Tesis_final/Mina_modelo}   # DATA=data/Tesis_final/Mina_modelo_v4 para la v4
 O=output/Resultados_finales_tesis/Mina_modelo
 V=${V:-$O/casos_finales}   # V=<carpeta> para pruebas aparte (p. ej. v4)
-V3=$O/v3
+V3=${V3-$O/v3}   # V3= (vacio) no copia nada de la v3 (v4: otro modelo y otros datos)
 RONDA=${RONDA:-1}
 HORAS=${HORAS:-10}; HORAS_R2=${HORAS_R2:-12}
 HORAS_ESCALADA_BESS=${HORAS_ESCALADA_BESS:-24}
@@ -173,7 +173,7 @@ for n in $SEL; do
   if [ -n "$(certificado $R/certificado.log)" ]; then msg "$TAG" "ya certificado, se salta: $(certificado $R/certificado.log)"; continue 2; fi
 
   # --- 0. caso base de la cola v3 ----------------------------------------------
-  if [ -n "$E3" ] && [ -n "$(certificado $V3/certificado_$E3.log)" ]; then
+  if [ -n "$E3" ] && [ -n "$V3" ] && [ -n "$(certificado $V3/certificado_$E3.log)" ]; then
     copiar_v3 $E3 $R
     msg "$TAG" "copiado de v3/$E3: $(certificado $R/certificado.log)"
     resumen_final > /dev/null; continue 2

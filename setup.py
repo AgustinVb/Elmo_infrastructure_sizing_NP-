@@ -72,6 +72,7 @@ def build_mine(args):
     # con 4 caen 2 de 4 (105 y 196). La proporcion se mantiene, asi que las dos
     # configuraciones siguen siendo comparables en ese termino.
     DIAS_POR_ANIO = {
+        1: [196],                # pruebas rapidas: invierno con cobro de punta
         2: [15, 196],            # verano sin cobro + invierno con cobro
         4: [15, 105, 196, 288],  # los cuatro que GenProfiles tiene poblados
     }
@@ -321,7 +322,7 @@ def main():
     parser.add_argument('--series', default='time_series.xlsx')
     parser.add_argument('--output_folder', default='output/')
     parser.add_argument(
-        '--days_per_year', type=int, choices=[2, 4], default=4,
+        '--days_per_year', type=int, choices=[1, 2, 4], default=4,
         help='Dias representativos por anio. 4 (default): dias-del-anio 15, 105, '
              '196 y 288. 2: solo 15 y 196 (config historica de los escenarios '
              'P_red). Solo esos cuatro tienen perfil renovable '

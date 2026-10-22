@@ -91,13 +91,15 @@ SHARED_VARS = (
 # Parte de la degradacion que depende de la energia de los cuatro dias.
 ENERGY_DEGRADATION_CONSTRAINTS = (
     "energy_consumed_def", "n_total_def", "n_ciclos_link",
-    "mc_n_total_lb1", "mc_n_total_lb2", "mc_n_total_ub1", "mc_n_total_ub2",
+    "nf_unario", "nf_valor", "nc_desag", "nc_activo_ub", "nc_activo_lb", "n_total_exacto",
+    "bb_unario", "bb_b_bar", "bb_n_total", "bb_w_deg", "bb_b_lb", "bb_b_ub", "bb_nt_lb", "bb_nt_ub",
     "mc_w_deg_energy", "mc_w_deg_lb1", "mc_w_deg_lb2", "mc_w_deg_ub1",
     "mc_w_deg_ub2", "d_y_fade",
 )
 # Sus variables: se fijan en el sub-bloque para que no floten, y NO se pasan al
 # bloque anual -- ahi las determina el pulido con la energia de los 4 dias.
-ENERGY_DEGRADATION_VARS = ("EnergyConsumed", "N_ciclos", "N_total", "w_deg", "D")
+ENERGY_DEGRADATION_VARS = ("EnergyConsumed", "N_ciclos", "N_total", "w_deg", "D", "u_nf", "nc_nf",
+                           "z_bb", "b_bb", "nt_bb", "w_bb")
 
 # Nunca se trasladan del sub-bloque al anual. R (reemplazo de baterias) tampoco:
 # los dias no ven la degradacion, asi que eligen R = 0, y si la bateria heredada
