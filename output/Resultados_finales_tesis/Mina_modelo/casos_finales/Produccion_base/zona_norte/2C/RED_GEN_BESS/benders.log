@@ -1,0 +1,2153 @@
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/STOP
+[NestedBenders] tope de tiempo: 10.00 h (hasta 2026-10-21 14:50)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:4,700  2:9,400  3:17,860  4:23,500  5:23,500  6:23,500  7:23,500  8:18,800  9:9,400  10:4,700
+[NestedBenders] presolve de capacidad: anios [4], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 4  suma: sum n_ssee_k >= 2  (dual 2.0000, primal 2.000, 20s)
+[NestedBenders] presolve capacidad  anio 4  station_1: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 21s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 2 (1,000 kW, anio 4)
+[NestedBenders] presolve de capacidad: la cota agregada (2) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 41s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+[NestedBenders] corte de cargas por LHD en la cota operacional: 40 dias de output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/corte_cargas_lhd.json (suma n_nom 468, n_sinR 500)
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/op_bound_gurobi.log"
+Set parameter LogToConsole to value 0
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 2,995,018.32  (446,280 binarias relajadas, 795s)
+[NestedBenders] inversion de la cota operacional (y1): N_bays={'station_1': 1.0}, N_chargers={'station_1': 1.0}, N_batteries={'station_1': 1.0}, n_ssee_k={'station_1': 2.0}, G={'Solar_PV': 1.219065752572693, 'Wind': 0.0}, H=0.0, D=478.9157616179561
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y1 d15 fase1: 499,265.02  (optimal, 4s)
+[DayDecomp]   y1 d105 fase1: 498,992.17  (optimal, 5s)
+[DayDecomp]   y1 d196 fase1: 499,755.31  (optimal, 3s)
+[DayDecomp]   y1 d288 fase1: 501,060.47  (optimal, 7s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 7s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 499,265.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase2: 498,992.17  (optimal, 3s)
+[DayDecomp]   y1 d196 fase2: 499,755.31  (optimal, 3s)
+[DayDecomp]   y1 d288 fase2: 501,060.47  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 1,999,072.97
+[DayDecomp] año 1: listo en 40s
+[NestedBenders] k=1 FORWARD  anio 2 (2/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y2 d15 fase1: 13,194.63  (optimal, 7s)
+[DayDecomp]   y2 d105 fase1: 13,147.94  (optimal, 7s)
+[DayDecomp]   y2 d196 fase1: 13,266.25  (optimal, 6s)
+[DayDecomp]   y2 d288 fase1: 13,154.47  (optimal, 9s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 9s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=471.4
+[DayDecomp]   y2 d15 fase2: 13,194.63  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 13,147.94  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 13,266.25  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 13,154.47  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 52,763.29
+[DayDecomp] año 2: listo en 37s
+[NestedBenders] k=1 FORWARD  anio 3 (3/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 24,131.85  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase1: 24,517.62  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase1: 23,089.10  (optimal, 18s)
+[DayDecomp]   y3 d288 fase1: 22,566.09  (optimal, 85s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 122s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=464.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 22,458.54  (optimal, 22s)
+[DayDecomp]   y3 d105 fase2: 24,395.51  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase2: 23,089.10  (optimal, 4s)
+[DayDecomp]   y3 d288 fase2: 22,566.09  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 122s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 92,509.24
+[DayDecomp] año 3: listo en 268s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=92,382.66  LB=89,792.92  gap=2.8033%
+[NestedBenders] k=1 FORWARD  anio 4 (4/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y4 d15 fase1: 29,392.33  (optimal, 45s)
+[DayDecomp]   y4 d105 fase1: 29,741.57  (optimal, 75s)
+[DayDecomp]   y4 d196 fase1: 29,996.40  (optimal, 22s)
+[DayDecomp]   y4 d288 fase1: 29,405.37  (optimal, 35s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 75s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=451.9
+[DayDecomp]   y4 d15 fase2: 29,392.33  (optimal, 4s)
+[DayDecomp]   y4 d105 fase2: 29,741.57  (optimal, 5s)
+[DayDecomp]   y4 d196 fase2: 29,996.40  (optimal, 5s)
+[DayDecomp]   y4 d288 fase2: 29,405.37  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 6s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 118,535.68
+[DayDecomp] año 4: listo en 106s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=118,462.85  LB=113,286.85  gap=4.3693%
+[NestedBenders] k=1 FORWARD  anio 5 (5/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 30,138.51  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 30,480.61  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 30,752.08  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase1: 28,692.99  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=434.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 30,121.46  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase2: 29,015.34  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase2: 30,751.44  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase2: 28,634.33  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 118,522.59
+[DayDecomp] año 5: listo en 274s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=117,219.35  LB=109,111.62  gap=6.9167%
+[NestedBenders] k=1 FORWARD  anio 6 (6/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 29,321.53  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 28,423.48  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase1: 28,485.17  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase1: 29,278.14  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=417.5
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 27,978.97  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 28,230.61  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase2: 28,480.85  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase2: 27,999.57  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 112,690.00
+[DayDecomp] año 6: listo en 272s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=112,671.98  LB=105,277.34  gap=6.5630%
+[NestedBenders] k=1 FORWARD  anio 7 (7/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 27,186.52  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase1: 27,500.24  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase1: 27,654.20  (maxTimeLimit, 123s)
+[DayDecomp]   y7 d288 fase1: 27,258.28  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=400.4
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 27,183.00  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase2: 27,499.68  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase2: 27,649.64  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase2: 27,214.46  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 981,864.93
+[DayDecomp] año 7: listo en 273s
+[NestedBenders] k=1 FORWARD  anio 8 (8/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 16,498.13  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase1: 16,757.42  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase1: 16,899.02  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d288 fase1: 16,482.96  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=464.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 16,498.05  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 16,757.42  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase2: 16,898.88  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d288 fase2: 16,432.37  (optimal, 51s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+WARNING (W1001): Setting Var 'P_red[8,196,136.0]' to a value
+`-0.00017991719814842896` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'P_red[8,196,137.0]' to a value
+`-0.00017991719814842896` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 66,586.72
+[DayDecomp] año 8: listo en 273s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=66,586.72  LB=63,180.36  gap=5.1157%
+[NestedBenders] k=1 FORWARD  anio 9 (9/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y9 d15 fase1: 7,778.48  (optimal, 73s)
+[DayDecomp]   y9 d105 fase1: 7,761.85  (optimal, 12s)
+[DayDecomp]   y9 d196 fase1: 7,740.85  (optimal, 17s)
+[DayDecomp]   y9 d288 fase1: 7,774.37  (optimal, 24s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 73s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=451.3
+[DayDecomp]   y9 d15 fase2: 7,778.48  (optimal, 3s)
+[DayDecomp]   y9 d105 fase2: 7,761.85  (optimal, 3s)
+[DayDecomp]   y9 d196 fase2: 7,740.85  (optimal, 3s)
+[DayDecomp]   y9 d288 fase2: 7,774.37  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 31,055.55
+[DayDecomp] año 9: listo en 102s
+[NestedBenders] k=1 FORWARD  anio 10 (10/10)  [UB=(sin cota aun)  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y10 d15 fase1: 4,038.29  (optimal, 5s)
+[DayDecomp]   y10 d105 fase1: 4,093.92  (optimal, 5s)
+[DayDecomp]   y10 d196 fase1: 4,129.93  (optimal, 6s)
+[DayDecomp]   y10 d288 fase1: 4,036.43  (optimal, 7s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 7s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.2191, 0  H=0  P_pot=0  R=0  b_bar=444.5
+[DayDecomp]   y10 d15 fase2: 4,038.29  (optimal, 3s)
+[DayDecomp]   y10 d105 fase2: 4,093.92  (optimal, 3s)
+[DayDecomp]   y10 d196 fase2: 4,129.93  (optimal, 3s)
+[DayDecomp]   y10 d288 fase2: 4,036.43  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 16,298.57
+[DayDecomp] año 10: listo en 37s
+[NestedBenders] k=1 pulido de la solucion: 3,563,623.34 -> 3,354,443.14 (5.87% menos, 81s)
+[Estabilizacion] k=1: paso SERIO (costo 3,354,443.14 vs mejor nan, caja activa) -- re-centra en esta trayectoria
+[NestedBenders] k=1: incumbente 3,354,443.14 y 0 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[NestedBenders] k=1 BACKWARD anio 10  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 9)...
+[NestedBenders] k=1 BACKWARD anio 10  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=12,193.56  LB=2,191.63  gap=82.0263%
+[NestedBenders] k=1 BACKWARD anio 10  Phi^LP=1,328.27 -> Phi^LR=2,191.63 (+863.36)
+[NestedBenders] k=1 BACKWARD anio 9  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=1 BACKWARD anio 9  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=1 BACKWARD anio 9  el lagrangeano no supero Phi^LP=20,991.05: el corte queda como el de Benders puro
+[NestedBenders] k=1 BACKWARD anio 8  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=1 BACKWARD anio 8  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=76,779.57  LB=71,710.27  gap=6.6024%
+[NestedBenders] k=1 BACKWARD anio 8  Phi^LP=71,710.27 -> Phi^LR=71,710.27 (+0.00)
+[NestedBenders] k=1 BACKWARD anio 7  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=1 BACKWARD anio 7  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=181,184.23  LB=159,284.83  gap=12.0868%
+[NestedBenders] k=1 BACKWARD anio 7  Phi^LP=159,229.05 -> Phi^LR=159,284.83 (+55.78)
+[NestedBenders] k=1 BACKWARD anio 6  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=1 BACKWARD anio 6  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=253,586.78  LB=241,761.11  gap=4.6634%
+[NestedBenders] k=1 BACKWARD anio 6  Phi^LP=241,705.33 -> Phi^LR=241,761.11 (+55.78)
+[NestedBenders] k=1 BACKWARD anio 5  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=1 BACKWARD anio 5  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=336,882.06  LB=330,496.19  gap=1.8956%
+[NestedBenders] k=1 BACKWARD anio 5  Phi^LP=330,440.42 -> Phi^LR=330,496.19 (+55.78)
+[NestedBenders] k=1 BACKWARD anio 4  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=1 BACKWARD anio 4  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=1 BACKWARD anio 4  Phi^LP=426,753.74 -> Phi^LR=426,809.52 (+55.78)
+[NestedBenders] k=1 BACKWARD anio 3  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=1 BACKWARD anio 3  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=1 BACKWARD anio 3  Phi^LP=501,084.05 -> Phi^LR=501,123.82 (+39.77)
+[NestedBenders] k=1 BACKWARD anio 2  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 2  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=1 BACKWARD anio 2  Phi^LP=532,418.61 -> Phi^LR=532,475.83 (+57.22)
+[NestedBenders] k=1 BACKWARD anio 1  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=1 cota del backward = 1,995,019.27  (no supera LB=2,995,018.32)
+[NestedBenders] k=1  UB=3354443.1414  LB=2995018.3182  gap=10.7149%  tiempo_iteracion=4869.1s
+[NestedBenders] k=1: incumbente 3,354,443.14 y 9 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[Estabilizacion] k=2: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=2 FORWARD  anio 1 (1/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y1 d15 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   y1 d288 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d288 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 2,012,325.46
+[DayDecomp] año 1: listo en 36s
+[NestedBenders] k=2 FORWARD  anio 2 (2/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y2 d15 fase1: 13,017.89  (optimal, 3s)
+[DayDecomp]   y2 d105 fase1: 13,477.74  (optimal, 3s)
+[DayDecomp]   y2 d196 fase1: 13,528.32  (optimal, 3s)
+[DayDecomp]   y2 d288 fase1: 12,870.65  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=478.5
+[DayDecomp]   y2 d15 fase2: 13,017.89  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 13,477.74  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 13,528.32  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 12,870.65  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 105,325.83
+[DayDecomp] año 2: listo en 36s
+[NestedBenders] k=2 FORWARD  anio 3 (3/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y3 d15 fase1: 22,942.30  (optimal, 3s)
+[DayDecomp]   y3 d105 fase1: 23,308.20  (optimal, 5s)
+[DayDecomp]   y3 d196 fase1: 23,516.00  (optimal, 3s)
+[DayDecomp]   y3 d288 fase1: 23,042.10  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=471.9
+[DayDecomp]   y3 d15 fase2: 22,942.30  (optimal, 3s)
+[DayDecomp]   y3 d105 fase2: 23,308.20  (optimal, 3s)
+[DayDecomp]   y3 d196 fase2: 23,516.00  (optimal, 3s)
+[DayDecomp]   y3 d288 fase2: 23,042.10  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 137,610.38
+[DayDecomp] año 3: listo en 35s
+[NestedBenders] k=2 FORWARD  anio 4 (4/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y4 d15 fase1: 29,863.79  (optimal, 3s)
+[DayDecomp]   y4 d105 fase1: 30,239.01  (optimal, 3s)
+[DayDecomp]   y4 d196 fase1: 30,392.96  (optimal, 3s)
+[DayDecomp]   y4 d288 fase1: 29,862.01  (optimal, 6s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 6s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=459
+[DayDecomp]   y4 d15 fase2: 29,863.79  (optimal, 3s)
+[DayDecomp]   y4 d105 fase2: 30,239.01  (optimal, 3s)
+[DayDecomp]   y4 d196 fase2: 30,392.96  (optimal, 3s)
+[DayDecomp]   y4 d288 fase2: 29,862.01  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 130,899.60
+[DayDecomp] año 4: listo en 37s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=130,649.70  LB=124,925.54  gap=4.3813%
+[NestedBenders] k=2 FORWARD  anio 5 (5/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 29,248.12  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 29,561.82  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 29,738.09  (maxTimeLimit, 123s)
+[DayDecomp]   y5 d288 fase1: 29,246.47  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=441.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 29,248.13  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase2: 29,561.82  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase2: 29,738.09  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase2: 29,246.47  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 117,794.51
+[DayDecomp] año 5: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=117,794.51  LB=110,449.35  gap=6.2356%
+[NestedBenders] k=2 FORWARD  anio 6 (6/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 28,559.81  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 27,372.06  (optimal, 48s)
+[DayDecomp]   y6 d196 fase1: 29,013.48  (maxTimeLimit, 123s)
+[DayDecomp]   y6 d288 fase1: 28,558.27  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=423.2
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 28,559.81  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 27,372.06  (optimal, 5s)
+[DayDecomp]   y6 d196 fase2: 29,013.48  (maxTimeLimit, 124s)
+[DayDecomp]   y6 d288 fase2: 28,558.28  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 113,503.62
+[DayDecomp] año 6: listo en 274s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=113,503.62  LB=106,931.31  gap=5.7904%
+[NestedBenders] k=2 FORWARD  anio 7 (7/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 26,444.27  (optimal, 25s)
+[DayDecomp]   y7 d105 fase1: 28,081.92  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase1: 28,233.05  (maxTimeLimit, 124s)
+[DayDecomp]   y7 d288 fase1: 26,442.85  (optimal, 45s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=401.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 26,444.27  (optimal, 3s)
+[DayDecomp]   y7 d105 fase2: 26,713.21  (optimal, 67s)
+[DayDecomp]   y7 d196 fase2: 28,233.05  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase2: 26,442.85  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 122s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 980,151.52
+[DayDecomp] año 7: listo en 273s
+[NestedBenders] k=2 FORWARD  anio 8 (8/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y8 d15 fase1: 16,965.08  (optimal, 3s)
+[DayDecomp]   y8 d105 fase1: 17,142.52  (optimal, 3s)
+[DayDecomp]   y8 d196 fase1: 17,271.92  (optimal, 3s)
+[DayDecomp]   y8 d288 fase1: 16,885.98  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=464.8
+[DayDecomp]   y8 d15 fase2: 16,965.08  (optimal, 3s)
+[DayDecomp]   y8 d105 fase2: 17,142.52  (optimal, 3s)
+[DayDecomp]   y8 d196 fase2: 17,271.92  (optimal, 3s)
+[DayDecomp]   y8 d288 fase2: 16,880.16  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 68,259.68
+[DayDecomp] año 8: listo en 36s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=68,162.55  LB=65,171.34  gap=4.3883%
+[NestedBenders] k=2 FORWARD  anio 9 (9/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y9 d15 fase1: 7,559.66  (optimal, 4s)
+[DayDecomp]   y9 d105 fase1: 7,864.13  (optimal, 5s)
+[DayDecomp]   y9 d196 fase1: 7,776.98  (optimal, 12s)
+[DayDecomp]   y9 d288 fase1: 7,530.90  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 12s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=451.2
+[DayDecomp]   y9 d15 fase2: 7,559.66  (optimal, 3s)
+[DayDecomp]   y9 d105 fase2: 7,864.13  (optimal, 3s)
+[DayDecomp]   y9 d196 fase2: 7,776.98  (optimal, 3s)
+[DayDecomp]   y9 d288 fase2: 7,530.90  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 30,731.67
+[DayDecomp] año 9: listo en 41s
+[NestedBenders] k=2 FORWARD  anio 10 (10/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase1: 3,884.07  (maxTimeLimit, 121s)
+[DayDecomp]   y10 d105 fase1: 3,898.11  (maxTimeLimit, 122s)
+[DayDecomp]   y10 d196 fase1: 3,941.32  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d288 fase1: 3,882.23  (maxTimeLimit, 126s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 126s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.05124, 0  H=0.4956  P_pot=0  R=0  b_bar=444.4
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase2: 3,884.07  (maxTimeLimit, 122s)
+[DayDecomp]   y10 d105 fase2: 3,898.10  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d196 fase2: 3,941.32  (maxTimeLimit, 124s)
+[DayDecomp]   y10 d288 fase2: 3,882.23  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 15,605.72
+[DayDecomp] año 10: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=15,605.72  LB=12,635.40  gap=19.0335%
+[NestedBenders] k=2 pulido de la solucion: 3,593,827.24 -> 3,365,754.65 (6.35% menos, 82s)
+[Estabilizacion] k=2: paso nulo (costo 3,365,754.65 vs mejor 3,354,443.14) -- se mantiene centro y caja
+[NestedBenders] k=2 BACKWARD anio 10  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 9)...
+[NestedBenders] k=2 BACKWARD anio 10  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=14,977.26  LB=10,631.15  gap=29.0181%
+[NestedBenders] k=2 BACKWARD anio 10  Phi^LP=10,631.15 -> Phi^LR=10,631.15 (+0.00)
+[NestedBenders] k=2 BACKWARD anio 9  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=2 BACKWARD anio 9  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=2 BACKWARD anio 9  Phi^LP=40,888.00 -> Phi^LR=40,888.00 (+0.00)
+[NestedBenders] k=2 BACKWARD anio 8  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=2 BACKWARD anio 8  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=109,050.55  LB=103,981.24  gap=4.6486%
+[NestedBenders] k=2 BACKWARD anio 8  Phi^LP=103,981.24 -> Phi^LR=103,981.24 (+0.00)
+[NestedBenders] k=2 BACKWARD anio 7  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=2 BACKWARD anio 7  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=220,645.45  LB=198,746.05  gap=9.9252%
+[NestedBenders] k=2 BACKWARD anio 7  Phi^LP=198,690.27 -> Phi^LR=198,746.05 (+55.78)
+[NestedBenders] k=2 BACKWARD anio 6  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=2 BACKWARD anio 6  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=284,976.89  LB=274,604.96  gap=3.6396%
+[NestedBenders] k=2 BACKWARD anio 6  Phi^LP=274,549.19 -> Phi^LR=274,604.96 (+55.78)
+[NestedBenders] k=2 BACKWARD anio 5  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=2 BACKWARD anio 5  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=378,110.03  LB=371,724.17  gap=1.6889%
+[NestedBenders] k=2 BACKWARD anio 5  Phi^LP=371,668.39 -> Phi^LR=371,724.17 (+55.78)
+[NestedBenders] k=2 BACKWARD anio 4  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=2 BACKWARD anio 4  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=490,226.95  LB=485,042.60  gap=1.0575%
+[NestedBenders] k=2 BACKWARD anio 4  Phi^LP=484,986.83 -> Phi^LR=485,042.60 (+55.78)
+[NestedBenders] k=2 BACKWARD anio 3  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=2 BACKWARD anio 3  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=2 BACKWARD anio 3  Phi^LP=577,366.11 -> Phi^LR=577,405.88 (+39.77)
+[NestedBenders] k=2 BACKWARD anio 2  [UB=3,354,443.14  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=2 BACKWARD anio 2  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=2 BACKWARD anio 2  Phi^LP=628,755.50 -> Phi^LR=628,812.72 (+57.22)
+[NestedBenders] k=2 BACKWARD anio 1  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=2 cota del backward = 2,050,439.58  (no supera LB=2,995,018.32)
+[NestedBenders] k=2  UB=3354443.1414  LB=2995018.3182  gap=10.7149%  tiempo_iteracion=4409.4s
+[NestedBenders] k=2: incumbente 3,354,443.14 y 18 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[Estabilizacion] k=3: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=3 FORWARD  anio 1 (1/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y1 d15 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   y1 d288 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d288 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 2,066,889.60
+[DayDecomp] año 1: listo en 36s
+[NestedBenders] k=3 FORWARD  anio 2 (2/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y2 d15 fase1: 9,765.77  (optimal, 11s)
+[DayDecomp]   y2 d105 fase1: 10,269.00  (optimal, 3s)
+[DayDecomp]   y2 d196 fase1: 10,743.92  (optimal, 3s)
+[DayDecomp]   y2 d288 fase1: 9,585.13  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 11s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=478.6
+[DayDecomp]   y2 d15 fase2: 9,765.77  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 10,269.00  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 10,743.92  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 9,585.13  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 86,656.38
+[DayDecomp] año 2: listo en 42s
+[NestedBenders] k=3 FORWARD  anio 3 (3/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 17,007.61  (optimal, 4s)
+[DayDecomp]   y3 d105 fase1: 18,252.75  (optimal, 72s)
+[DayDecomp]   y3 d196 fase1: 19,526.55  (maxTimeLimit, 124s)
+[DayDecomp]   y3 d288 fase1: 16,895.86  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=472
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 17,007.61  (optimal, 5s)
+[DayDecomp]   y3 d105 fase2: 18,252.75  (optimal, 5s)
+[DayDecomp]   y3 d196 fase2: 19,118.83  (optimal, 29s)
+[DayDecomp]   y3 d288 fase2: 16,895.86  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 114,606.45
+[DayDecomp] año 3: listo en 273s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=114,478.51  LB=111,042.06  gap=3.0018%
+[NestedBenders] k=3 FORWARD  anio 4 (4/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 23,956.11  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 25,590.62  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase1: 26,623.74  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase1: 23,928.13  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=459.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase2: 23,926.81  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase2: 25,579.51  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase2: 26,623.73  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase2: 23,876.46  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 113,179.39
+[DayDecomp] año 4: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=113,148.90  LB=102,542.89  gap=9.3735%
+[NestedBenders] k=3 FORWARD  anio 5 (5/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 23,418.62  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 24,848.92  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 26,990.05  (maxTimeLimit, 123s)
+[DayDecomp]   y5 d288 fase1: 23,313.95  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=442
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 23,381.89  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase2: 24,848.92  (maxTimeLimit, 123s)
+[DayDecomp]   y5 d196 fase2: 26,990.05  (maxTimeLimit, 124s)
+[DayDecomp]   y5 d288 fase2: 23,313.95  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 98,534.81
+[DayDecomp] año 5: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=98,534.81  LB=86,474.02  gap=12.2401%
+[NestedBenders] k=3 FORWARD  anio 6 (6/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 22,841.62  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 24,013.21  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase1: 25,023.41  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase1: 22,952.19  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=424.8
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 22,815.60  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 24,013.21  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase2: 25,021.96  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase2: 22,808.98  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 94,659.74
+[DayDecomp] año 6: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=94,659.61  LB=83,680.98  gap=11.5980%
+[NestedBenders] k=3 FORWARD  anio 7 (7/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 22,288.69  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase1: 23,585.62  (maxTimeLimit, 124s)
+[DayDecomp]   y7 d196 fase1: 24,522.87  (maxTimeLimit, 124s)
+[DayDecomp]   y7 d288 fase1: 22,536.22  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=403.4
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 22,237.08  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase2: 23,582.04  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase2: 24,518.32  (maxTimeLimit, 124s)
+[DayDecomp]   y7 d288 fase2: 22,397.74  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 92,735.18
+[DayDecomp] año 7: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=92,729.98  LB=81,930.74  gap=11.6459%
+[NestedBenders] k=3 FORWARD  anio 8 (8/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 15,836.65  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase1: 17,170.10  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase1: 17,364.87  (maxTimeLimit, 124s)
+[DayDecomp]   y8 d288 fase1: 15,949.43  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=386.3
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 15,817.81  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 16,821.58  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase2: 17,361.23  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d288 fase2: 15,944.82  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 873,647.42
+[DayDecomp] año 8: listo en 277s
+[NestedBenders] k=3 FORWARD  anio 9 (9/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y9 d15 fase1: 5,643.54  (optimal, 13s)
+[DayDecomp]   y9 d105 fase1: 5,991.19  (optimal, 3s)
+[DayDecomp]   y9 d196 fase1: 6,269.46  (optimal, 4s)
+[DayDecomp]   y9 d288 fase1: 5,577.52  (optimal, 13s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 13s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=468.4
+[DayDecomp]   y9 d15 fase2: 5,643.54  (optimal, 3s)
+[DayDecomp]   y9 d105 fase2: 5,991.19  (optimal, 3s)
+[DayDecomp]   y9 d196 fase2: 6,269.46  (optimal, 3s)
+[DayDecomp]   y9 d288 fase2: 5,577.52  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 23,481.72
+[DayDecomp] año 9: listo en 47s
+[NestedBenders] k=3 FORWARD  anio 10 (10/10)  [UB=3,354,443.14  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase1: 3,090.41  (optimal, 40s)
+[DayDecomp]   y10 d105 fase1: 3,313.71  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d196 fase1: 3,458.26  (maxTimeLimit, 124s)
+[DayDecomp]   y10 d288 fase1: 3,082.95  (optimal, 7s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=0.8794, 0  H=0.02531  P_pot=0  R=0  b_bar=461.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase2: 3,090.41  (maxTimeLimit, 121s)
+[DayDecomp]   y10 d105 fase2: 3,313.71  (maxTimeLimit, 122s)
+[DayDecomp]   y10 d196 fase2: 3,458.26  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d288 fase2: 3,082.95  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 12,945.33
+[DayDecomp] año 10: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=12,945.33  LB=10,307.86  gap=20.3739%
+[NestedBenders] k=3 pulido de la solucion: 3,462,840.13 -> 3,282,673.45 (5.20% menos, 80s)
+[Estabilizacion] k=3: paso SERIO (costo 3,282,673.45 vs mejor 3,354,443.14) -- re-centra en esta trayectoria
+[NestedBenders] k=3: incumbente 3,282,673.45 y 18 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[NestedBenders] k=3 BACKWARD anio 10  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 9)...
+[NestedBenders] k=3 BACKWARD anio 10  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=3 BACKWARD anio 10  el lagrangeano no supero Phi^LP=1,357.80: el corte queda como el de Benders puro
+[NestedBenders] k=3 BACKWARD anio 9  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=3 BACKWARD anio 9  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=3 BACKWARD anio 9  Phi^LP=2,824.23 -> Phi^LR=2,824.23 (+0.00)
+[NestedBenders] k=3 BACKWARD anio 8  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=3 BACKWARD anio 8  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=79,351.25  LB=68,565.84  gap=13.5920%
+[NestedBenders] k=3 BACKWARD anio 8  Phi^LP=68,498.43 -> Phi^LR=68,565.84 (+67.41)
+[NestedBenders] k=3 BACKWARD anio 7  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=3 BACKWARD anio 7  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=130,846.47  LB=96,042.62  gap=26.5990%
+[NestedBenders] k=3 BACKWARD anio 7  Phi^LP=95,727.11 -> Phi^LR=96,042.62 (+315.51)
+[NestedBenders] k=3 BACKWARD anio 6  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=3 BACKWARD anio 6  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=124,041.77  LB=106,029.41  gap=14.5212%
+[NestedBenders] k=3 BACKWARD anio 6  Phi^LP=105,977.70 -> Phi^LR=106,029.41 (+51.71)
+[NestedBenders] k=3 BACKWARD anio 5  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=3 BACKWARD anio 5  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=145,283.94  LB=137,170.09  gap=5.5848%
+[NestedBenders] k=3 BACKWARD anio 5  Phi^LP=137,118.38 -> Phi^LR=137,170.09 (+51.71)
+[NestedBenders] k=3 BACKWARD anio 4  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=3 BACKWARD anio 4  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=174,816.17  LB=171,365.23  gap=1.9740%
+[NestedBenders] k=3 BACKWARD anio 4  Phi^LP=171,313.52 -> Phi^LR=171,365.23 (+51.71)
+[NestedBenders] k=3 BACKWARD anio 3  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=3 BACKWARD anio 3  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=187,312.79  LB=183,937.80  gap=1.8018%
+[NestedBenders] k=3 BACKWARD anio 3  Phi^LP=183,900.93 -> Phi^LR=183,937.80 (+36.87)
+[NestedBenders] k=3 BACKWARD anio 2  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=3 BACKWARD anio 2  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=3 BACKWARD anio 2  Phi^LP=185,896.48 -> Phi^LR=185,949.53 (+53.05)
+[NestedBenders] k=3 BACKWARD anio 1  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=3 cota del backward = 2,103,052.21  (no supera LB=2,995,018.32)
+[NestedBenders] k=3  UB=3282673.4488  LB=2995018.3182  gap=8.7628%  tiempo_iteracion=5010.7s
+[NestedBenders] k=3: incumbente 3,282,673.45 y 27 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[Estabilizacion] k=4: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=4 FORWARD  anio 1 (1/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y1 d15 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   y1 d288 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d288 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 2,120,126.71
+[DayDecomp] año 1: listo en 41s
+[NestedBenders] k=4 FORWARD  anio 2 (2/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y2 d15 fase1: 7,546.54  (optimal, 4s)
+[DayDecomp]   y2 d105 fase1: 8,322.57  (optimal, 5s)
+[DayDecomp]   y2 d196 fase1: 9,054.94  (optimal, 5s)
+[DayDecomp]   y2 d288 fase1: 7,267.97  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=478.6
+[DayDecomp]   y2 d15 fase2: 7,546.54  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 8,322.57  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 9,054.94  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 7,267.97  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 32,192.02
+[DayDecomp] año 2: listo en 36s
+[NestedBenders] k=4 FORWARD  anio 3 (3/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 12,951.26  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase1: 14,859.37  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase1: 16,574.87  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d288 fase1: 12,597.83  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=472
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 12,951.26  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase2: 14,859.37  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase2: 16,574.87  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d288 fase2: 12,597.83  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 60,551.53
+[DayDecomp] año 3: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=60,529.86  LB=56,519.15  gap=6.6260%
+[NestedBenders] k=4 FORWARD  anio 4 (4/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 20,331.71  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 22,908.62  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase1: 24,524.66  (maxTimeLimit, 123s)
+[DayDecomp]   y4 d288 fase1: 20,023.53  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=459.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase2: 20,331.71  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase2: 22,908.62  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase2: 24,520.42  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase2: 19,952.17  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 102,011.40
+[DayDecomp] año 4: listo en 277s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=102,008.18  LB=89,161.67  gap=12.5936%
+[NestedBenders] k=4 FORWARD  anio 5 (5/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 19,877.28  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 22,131.52  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 24,584.22  (maxTimeLimit, 123s)
+[DayDecomp]   y5 d288 fase1: 19,740.19  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=442
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 19,877.28  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase2: 22,131.52  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase2: 23,718.53  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase2: 19,737.63  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 110,197.49
+[DayDecomp] año 5: listo en 274s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=110,067.16  LB=96,731.00  gap=12.1164%
+[NestedBenders] k=4 FORWARD  anio 6 (6/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 19,358.14  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 21,266.73  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase1: 22,834.98  (maxTimeLimit, 123s)
+[DayDecomp]   y6 d288 fase1: 19,416.30  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=424.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 19,354.61  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 21,266.73  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase2: 22,298.74  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase2: 19,412.03  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 116,326.65
+[DayDecomp] año 6: listo en 274s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=116,279.50  LB=104,128.28  gap=10.4500%
+[NestedBenders] k=4 FORWARD  anio 7 (7/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 18,758.27  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase1: 21,052.64  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase1: 21,983.19  (maxTimeLimit, 123s)
+[DayDecomp]   y7 d288 fase1: 19,017.91  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=407.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 18,654.70  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase2: 21,052.64  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase2: 21,980.13  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase2: 18,892.40  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 117,914.50
+[DayDecomp] año 7: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=117,888.32  LB=105,713.61  gap=10.3273%
+[NestedBenders] k=4 FORWARD  anio 8 (8/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 13,032.84  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase1: 14,424.49  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase1: 15,292.00  (maxTimeLimit, 123s)
+[DayDecomp]   y8 d288 fase1: 12,714.38  (maxTimeLimit, 126s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 126s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=390.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 13,021.25  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 14,419.60  (maxTimeLimit, 124s)
+[DayDecomp]   y8 d196 fase2: 15,288.89  (maxTimeLimit, 124s)
+[DayDecomp]   y8 d288 fase2: 12,714.38  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 867,392.29
+[DayDecomp] año 8: listo en 277s
+[NestedBenders] k=4 FORWARD  anio 9 (9/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y9 d15 fase1: 4,313.05  (optimal, 4s)
+[DayDecomp]   y9 d105 fase1: 4,855.10  (optimal, 4s)
+[DayDecomp]   y9 d196 fase1: 5,284.23  (optimal, 5s)
+[DayDecomp]   y9 d288 fase1: 4,217.18  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=468.5
+[DayDecomp]   y9 d15 fase2: 4,313.05  (optimal, 3s)
+[DayDecomp]   y9 d105 fase2: 4,855.10  (optimal, 3s)
+[DayDecomp]   y9 d196 fase2: 5,284.23  (optimal, 3s)
+[DayDecomp]   y9 d288 fase2: 4,217.18  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 20,711.00
+[DayDecomp] año 9: listo en 36s
+[NestedBenders] k=4 FORWARD  anio 10 (10/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y10 d15 fase1: 2,440.56  (optimal, 3s)
+[DayDecomp]   y10 d105 fase1: 2,784.92  (optimal, 3s)
+[DayDecomp]   y10 d196 fase1: 3,007.84  (optimal, 3s)
+[DayDecomp]   y10 d288 fase1: 2,429.07  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.356, 0  H=0  P_pot=0  R=0  b_bar=461.7
+[DayDecomp]   y10 d15 fase2: 2,440.56  (optimal, 4s)
+[DayDecomp]   y10 d105 fase2: 2,784.92  (optimal, 5s)
+[DayDecomp]   y10 d196 fase2: 3,007.84  (optimal, 5s)
+[DayDecomp]   y10 d288 fase2: 2,429.07  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 10,662.40
+[DayDecomp] año 10: listo en 35s
+[NestedBenders] k=4 pulido de la solucion: 3,427,508.41 -> 3,284,652.50 (4.17% menos, 81s)
+[Estabilizacion] k=4: paso nulo (costo 3,284,652.50 vs mejor 3,282,673.45) -- se mantiene centro y caja
+[NestedBenders] k=4 BACKWARD anio 10  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 9)...
+[NestedBenders] k=4 BACKWARD anio 10  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=4 BACKWARD anio 10  el lagrangeano no supero Phi^LP=2,041.44: el corte queda como el de Benders puro
+[NestedBenders] k=4 BACKWARD anio 9  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=4 BACKWARD anio 9  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=4 BACKWARD anio 9  el lagrangeano no supero Phi^LP=4,246.20: el corte queda como el de Benders puro
+[NestedBenders] k=4 BACKWARD anio 8  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=4 BACKWARD anio 8  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=246,475.67  LB=46,410.90  gap=81.1702%
+[NestedBenders] k=4 BACKWARD anio 8  Phi^LP=45,874.00 -> Phi^LR=46,410.90 (+536.90)
+[NestedBenders] k=4 BACKWARD anio 7  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=4 BACKWARD anio 7  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=117,673.63  LB=64,583.54  gap=45.1164%
+[NestedBenders] k=4 BACKWARD anio 7  Phi^LP=63,398.64 -> Phi^LR=64,583.54 (+1,184.91)
+[NestedBenders] k=4 BACKWARD anio 6  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=4 BACKWARD anio 6  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=120,939.72  LB=83,170.55  gap=31.2297%
+[NestedBenders] k=4 BACKWARD anio 6  Phi^LP=81,933.82 -> Phi^LR=83,170.55 (+1,236.72)
+[NestedBenders] k=4 BACKWARD anio 5  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=4 BACKWARD anio 5  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=203,246.16  LB=102,248.27  gap=49.6924%
+[NestedBenders] k=4 BACKWARD anio 5  Phi^LP=100,810.27 -> Phi^LR=102,248.27 (+1,438.00)
+[NestedBenders] k=4 BACKWARD anio 4  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=4 BACKWARD anio 4  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=170,659.49  LB=122,194.69  gap=28.3985%
+[NestedBenders] k=4 BACKWARD anio 4  Phi^LP=120,740.80 -> Phi^LR=122,194.69 (+1,453.89)
+[NestedBenders] k=4 BACKWARD anio 3  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=4 BACKWARD anio 3  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=4 BACKWARD anio 3  Phi^LP=125,490.15 -> Phi^LR=125,531.06 (+40.91)
+[NestedBenders] k=4 BACKWARD anio 2  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=4 BACKWARD anio 2  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=4 BACKWARD anio 2  Phi^LP=128,731.37 -> Phi^LR=128,786.69 (+55.32)
+[NestedBenders] k=4 BACKWARD anio 1  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=4 cota del backward = 2,125,712.17  (no supera LB=2,995,018.32)
+[NestedBenders] k=4  UB=3282673.4488  LB=2995018.3182  gap=8.7628%  tiempo_iteracion=4436.3s
+[NestedBenders] k=4: incumbente 3,282,673.45 y 36 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[Estabilizacion] k=5: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=5 FORWARD  anio 1 (1/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y1 d15 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   y1 d288 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d288 fase2: 490,527.02  (optimal, 3s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 3s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 2,141,468.09
+[DayDecomp] año 1: listo en 36s
+[NestedBenders] k=5 FORWARD  anio 2 (2/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y2 d15 fase1: 6,799.76  (optimal, 5s)
+[DayDecomp]   y2 d105 fase1: 7,579.19  (optimal, 5s)
+[DayDecomp]   y2 d196 fase1: 8,314.77  (optimal, 5s)
+[DayDecomp]   y2 d288 fase1: 6,519.98  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=478.6
+[DayDecomp]   y2 d15 fase2: 6,799.76  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 7,579.19  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 8,314.77  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 6,519.98  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 4s -> incumbente 45,878.40
+[DayDecomp] año 2: listo en 35s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=2  TimeLimit alcanzado sin cerrar MIPGap: UB=45,477.41  LB=44,931.98  gap=1.1993%
+[NestedBenders] k=5 FORWARD  anio 3 (3/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 11,801.55  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase1: 13,855.75  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase1: 15,190.74  (maxTimeLimit, 123s)
+[DayDecomp]   y3 d288 fase1: 11,754.30  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=472
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 11,801.55  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase2: 13,712.43  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase2: 15,190.74  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d288 fase2: 11,754.30  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 84,078.96
+[DayDecomp] año 3: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=84,065.55  LB=78,913.80  gap=6.1283%
+[NestedBenders] k=5 FORWARD  anio 4 (4/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 18,679.55  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 21,091.19  (maxTimeLimit, 123s)
+[DayDecomp]   y4 d196 fase1: 22,710.96  (maxTimeLimit, 124s)
+[DayDecomp]   y4 d288 fase1: 18,456.10  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=459.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase2: 18,679.55  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase2: 21,086.82  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase2: 22,120.70  (maxTimeLimit, 124s)
+[DayDecomp]   y4 d288 fase2: 18,455.54  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 113,530.84
+[DayDecomp] año 4: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=417,436.60  LB=100,127.22  gap=76.0138%
+[NestedBenders] k=5 FORWARD  anio 5 (5/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 17,804.02  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 20,233.29  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 21,421.51  (maxTimeLimit, 123s)
+[DayDecomp]   y5 d288 fase1: 17,884.74  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=442
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 17,798.64  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase2: 20,224.52  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase2: 20,660.54  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase2: 17,878.17  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 95,982.78
+[DayDecomp] año 5: listo en 277s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=95,892.35  LB=81,747.07  gap=14.7512%
+[NestedBenders] k=5 FORWARD  anio 6 (6/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 17,015.41  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 18,880.38  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase1: 20,482.22  (maxTimeLimit, 123s)
+[DayDecomp]   y6 d288 fase1: 17,099.52  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=424.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 16,997.59  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 18,873.00  (maxTimeLimit, 123s)
+[DayDecomp]   y6 d196 fase2: 19,931.19  (maxTimeLimit, 124s)
+[DayDecomp]   y6 d288 fase2: 16,975.39  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 98,216.12
+[DayDecomp] año 6: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=98,128.03  LB=86,051.21  gap=12.3072%
+[NestedBenders] k=5 FORWARD  anio 7 (7/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 16,604.99  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase1: 18,796.66  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase1: 19,680.11  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase1: 16,634.43  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=407.8
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 16,442.52  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase2: 18,540.04  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase2: 19,643.14  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase2: 16,450.29  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 101,124.18
+[DayDecomp] año 7: listo en 276s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=101,083.45  LB=89,296.13  gap=11.6610%
+[NestedBenders] k=5 FORWARD  anio 8 (8/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 11,203.37  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase1: 12,574.01  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase1: 13,528.79  (maxTimeLimit, 123s)
+[DayDecomp]   y8 d288 fase1: 10,816.02  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=390.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 11,185.86  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 12,557.53  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase2: 13,490.59  (maxTimeLimit, 124s)
+[DayDecomp]   y8 d288 fase2: 10,723.03  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 1,022,126.58
+[DayDecomp] año 8: listo en 275s
+[NestedBenders] k=5 FORWARD  anio 9 (9/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y9 d15 fase1: 3,820.36  (optimal, 6s)
+[DayDecomp]   y9 d105 fase1: 4,421.16  (optimal, 6s)
+[DayDecomp]   y9 d196 fase1: 4,851.59  (optimal, 8s)
+[DayDecomp]   y9 d288 fase1: 3,877.11  (optimal, 9s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 9s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=468.4
+[DayDecomp]   y9 d15 fase2: 3,820.36  (optimal, 5s)
+[DayDecomp]   y9 d105 fase2: 4,421.16  (optimal, 5s)
+[DayDecomp]   y9 d196 fase2: 4,851.59  (optimal, 5s)
+[DayDecomp]   y9 d288 fase2: 3,877.11  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 19,339.05
+[DayDecomp] año 9: listo en 43s
+[NestedBenders] k=5 FORWARD  anio 10 (10/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase1: 2,244.62  (maxTimeLimit, 122s)
+[DayDecomp]   y10 d105 fase1: 2,590.49  (optimal, 17s)
+[DayDecomp]   y10 d196 fase1: 2,814.38  (maxTimeLimit, 124s)
+[DayDecomp]   y10 d288 fase1: 2,233.08  (maxTimeLimit, 126s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 126s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.362, 0  H=0.2371  P_pot=0  R=0  b_bar=461.6
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase2: 2,244.62  (maxTimeLimit, 121s)
+[DayDecomp]   y10 d105 fase2: 2,590.49  (optimal, 36s)
+[DayDecomp]   y10 d196 fase2: 2,814.38  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d288 fase2: 2,233.08  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 9,882.57
+[DayDecomp] año 10: listo en 277s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=9,882.57  LB=9,382.69  gap=5.0582%
+[NestedBenders] k=5 pulido de la solucion: 3,898,240.08 -> 3,721,103.06 (4.54% menos, 81s)
+[Estabilizacion] k=5: paso nulo (costo 3,721,103.06 vs mejor 3,282,673.45, caja activa) -- se mantiene centro y caja
+[NestedBenders] k=5 BACKWARD anio 10  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 9)...
+[NestedBenders] k=5 BACKWARD anio 10  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=5 BACKWARD anio 10  el lagrangeano no supero Phi^LP=2,368.84: el corte queda como el de Benders puro
+[NestedBenders] k=5 BACKWARD anio 9  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=5 BACKWARD anio 9  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=5 BACKWARD anio 9  Phi^LP=4,927.19 -> Phi^LR=4,927.19 (+0.00)
+[NestedBenders] k=5 BACKWARD anio 8  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=5 BACKWARD anio 8  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=5 BACKWARD anio 8  Phi^LP=45,107.69 -> Phi^LR=45,175.10 (+67.41)
+[NestedBenders] k=5 BACKWARD anio 7  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=5 BACKWARD anio 7  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=78,714.92  LB=54,210.97  gap=31.1300%
+[NestedBenders] k=5 BACKWARD anio 7  Phi^LP=53,665.32 -> Phi^LR=54,210.97 (+545.65)
+[NestedBenders] k=5 BACKWARD anio 6  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=5 BACKWARD anio 6  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=89,146.74  LB=63,498.81  gap=28.7705%
+[NestedBenders] k=5 BACKWARD anio 6  Phi^LP=62,960.94 -> Phi^LR=63,498.81 (+537.87)
+[NestedBenders] k=5 BACKWARD anio 5  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=5 BACKWARD anio 5  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=101,550.91  LB=73,309.50  gap=27.8101%
+[NestedBenders] k=5 BACKWARD anio 5  Phi^LP=72,811.81 -> Phi^LR=73,309.50 (+497.70)
+[NestedBenders] k=5 BACKWARD anio 4  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=5 BACKWARD anio 4  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=173,998.75  LB=92,622.92  gap=46.7681%
+[NestedBenders] k=5 BACKWARD anio 4  Phi^LP=90,940.73 -> Phi^LR=92,622.92 (+1,682.19)
+[NestedBenders] k=5 BACKWARD anio 3  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=5 BACKWARD anio 3  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=5 BACKWARD anio 3  Phi^LP=96,453.73 -> Phi^LR=96,491.19 (+37.46)
+[NestedBenders] k=5 BACKWARD anio 2  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=5 BACKWARD anio 2  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=5 BACKWARD anio 2  Phi^LP=100,512.85 -> Phi^LR=100,566.75 (+53.90)
+[NestedBenders] k=5 BACKWARD anio 1  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=5 cota del backward = 2,181,691.01  (no supera LB=2,995,018.32)
+[NestedBenders] k=5  UB=3282673.4488  LB=2995018.3182  gap=8.7628%  tiempo_iteracion=4569.1s
+[NestedBenders] k=5: incumbente 3,282,673.45 y 45 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[Estabilizacion] k=6: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=6 FORWARD  anio 1 (1/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y1 d15 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d105 fase1: 490,527.02  (optimal, 3s)
+[DayDecomp]   y1 d196 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   y1 d288 fase1: 490,527.02  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 490,527.02  (optimal, 4s)
+[DayDecomp]   y1 d105 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d196 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d288 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 2,203,858.98
+[DayDecomp] año 1: listo en 36s
+[NestedBenders] k=6 FORWARD  anio 2 (2/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y2 d15 fase1: 8,892.84  (optimal, 3s)
+[DayDecomp]   y2 d105 fase1: 9,498.97  (optimal, 3s)
+[DayDecomp]   y2 d196 fase1: 10,071.01  (optimal, 4s)
+[DayDecomp]   y2 d288 fase1: 8,675.26  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=478.7
+[DayDecomp]   y2 d15 fase2: 8,892.84  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 9,498.97  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 10,071.01  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 8,675.26  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 152,729.04
+[DayDecomp] año 2: listo en 41s
+[NestedBenders] k=6 FORWARD  anio 3 (3/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 15,389.10  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase1: 17,051.39  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase1: 18,092.18  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d288 fase1: 15,353.48  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=472
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 15,389.10  (optimal, 5s)
+[DayDecomp]   y3 d105 fase2: 17,051.39  (maxTimeLimit, 123s)
+[DayDecomp]   y3 d196 fase2: 18,092.18  (maxTimeLimit, 124s)
+[DayDecomp]   y3 d288 fase2: 15,353.48  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 181,090.97
+[DayDecomp] año 3: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=181,080.84  LB=177,053.94  gap=2.2238%
+[NestedBenders] k=6 FORWARD  anio 4 (4/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 22,492.42  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 24,480.50  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase1: 25,735.73  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase1: 22,386.58  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=459.2
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase2: 22,492.43  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase2: 24,477.07  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase2: 25,275.69  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase2: 22,365.29  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 191,198.05
+[DayDecomp] año 4: listo en 279s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=191,117.33  LB=180,025.16  gap=5.8039%
+[NestedBenders] k=6 FORWARD  anio 5 (5/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 21,972.74  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 23,746.52  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 25,539.53  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase1: 21,893.03  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=442.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 21,972.74  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase2: 23,746.52  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase2: 25,528.17  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d288 fase2: 21,893.03  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 171,771.67
+[DayDecomp] año 5: listo en 277s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=171,613.91  LB=158,963.16  gap=7.3716%
+[NestedBenders] k=6 FORWARD  anio 6 (6/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 21,404.26  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 22,897.85  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase1: 24,114.06  (maxTimeLimit, 123s)
+[DayDecomp]   y6 d288 fase1: 21,447.84  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=424.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 21,404.26  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 22,897.85  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase2: 24,114.06  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase2: 21,447.84  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 150,811.07
+[DayDecomp] año 6: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=150,777.16  LB=138,978.54  gap=7.8252%
+[NestedBenders] k=6 FORWARD  anio 7 (7/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 20,909.44  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase1: 22,541.33  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase1: 23,654.71  (maxTimeLimit, 123s)
+[DayDecomp]   y7 d288 fase1: 21,002.21  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=407.8
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 20,861.81  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase2: 22,541.12  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase2: 23,248.67  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase2: 20,946.52  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 132,122.86
+[DayDecomp] año 7: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=132,098.05  LB=120,397.19  gap=8.8577%
+[NestedBenders] k=6 FORWARD  anio 8 (8/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 14,748.94  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase1: 17,054.87  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase1: 16,929.15  (maxTimeLimit, 123s)
+[DayDecomp]   y8 d288 fase1: 14,423.94  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=390.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 14,742.48  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 15,841.18  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase2: 16,529.02  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d288 fase2: 14,421.77  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 872,630.08
+[DayDecomp] año 8: listo en 276s
+[NestedBenders] k=6 FORWARD  anio 9 (9/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y9 d15 fase1: 5,122.56  (optimal, 5s)
+[DayDecomp]   y9 d105 fase1: 5,541.75  (optimal, 5s)
+[DayDecomp]   y9 d196 fase1: 5,876.93  (optimal, 5s)
+[DayDecomp]   y9 d288 fase1: 5,043.49  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=468.4
+[DayDecomp]   y9 d15 fase2: 5,122.56  (optimal, 4s)
+[DayDecomp]   y9 d105 fase2: 5,541.75  (optimal, 5s)
+[DayDecomp]   y9 d196 fase2: 5,876.93  (optimal, 5s)
+[DayDecomp]   y9 d288 fase2: 5,043.49  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 23,216.29
+[DayDecomp] año 9: listo en 38s
+[NestedBenders] k=6 FORWARD  anio 10 (10/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase1: 2,835.92  (maxTimeLimit, 121s)
+[DayDecomp]   y10 d105 fase1: 3,104.89  (optimal, 5s)
+[DayDecomp]   y10 d196 fase1: 3,279.01  (maxTimeLimit, 125s)
+[DayDecomp]   y10 d288 fase1: 2,826.94  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.059, 0  H=0.02758  P_pot=0  R=0  b_bar=461.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase2: 2,835.92  (maxTimeLimit, 121s)
+[DayDecomp]   y10 d105 fase2: 3,104.89  (maxTimeLimit, 122s)
+[DayDecomp]   y10 d196 fase2: 3,279.00  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d288 fase2: 2,826.94  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+WARNING (W1001): Setting Var 'Curt_g[Solar_PV,10,15,36.0]' to a value
+`-9.032117458092398e-07` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 12,046.77
+[DayDecomp] año 10: listo en 277s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=12,046.76  LB=11,371.05  gap=5.6091%
+[NestedBenders] k=6 pulido de la solucion: 3,448,742.34 -> 3,283,548.69 (4.79% menos, 84s)
+[Estabilizacion] k=6: paso nulo (costo 3,283,548.69 vs mejor 3,282,673.45) -- se mantiene centro y caja
+[NestedBenders] k=6 BACKWARD anio 10  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 9)...
+[NestedBenders] k=6 BACKWARD anio 10  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=6 BACKWARD anio 10  el lagrangeano no supero Phi^LP=1,631.56: el corte queda como el de Benders puro
+[NestedBenders] k=6 BACKWARD anio 9  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=6 BACKWARD anio 9  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=6 BACKWARD anio 9  Phi^LP=3,393.64 -> Phi^LR=3,393.64 (+0.00)
+[NestedBenders] k=6 BACKWARD anio 8  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=6 BACKWARD anio 8  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=85,001.84  LB=45,856.99  gap=46.0518%
+[NestedBenders] k=6 BACKWARD anio 8  Phi^LP=45,434.64 -> Phi^LR=45,856.99 (+422.34)
+[NestedBenders] k=6 BACKWARD anio 7  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=6 BACKWARD anio 7  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=165,011.25  LB=67,060.00  gap=59.3603%
+[NestedBenders] k=6 BACKWARD anio 7  Phi^LP=65,638.89 -> Phi^LR=67,060.00 (+1,421.11)
+[NestedBenders] k=6 BACKWARD anio 6  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=6 BACKWARD anio 6  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=163,773.79  LB=88,865.86  gap=45.7387%
+[NestedBenders] k=6 BACKWARD anio 6  Phi^LP=87,710.52 -> Phi^LR=88,865.86 (+1,155.35)
+[NestedBenders] k=6 BACKWARD anio 5  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=6 BACKWARD anio 5  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=240,721.77  LB=111,793.56  gap=53.5590%
+[NestedBenders] k=6 BACKWARD anio 5  Phi^LP=110,559.44 -> Phi^LR=111,793.56 (+1,234.12)
+[NestedBenders] k=6 BACKWARD anio 4  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=6 BACKWARD anio 4  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=251,647.65  LB=136,258.63  gap=45.8534%
+[NestedBenders] k=6 BACKWARD anio 4  Phi^LP=135,023.39 -> Phi^LR=136,258.63 (+1,235.25)
+[NestedBenders] k=6 BACKWARD anio 3  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=6 BACKWARD anio 3  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] lagrangeano y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=160,366.08  LB=142,240.72  gap=11.3025%
+[NestedBenders] k=6 BACKWARD anio 3  Phi^LP=142,188.28 -> Phi^LR=142,240.72 (+52.44)
+[NestedBenders] k=6 BACKWARD anio 2  [UB=3,282,673.45  LB=2,995,018.32]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=6 BACKWARD anio 2  lagrangeano con integralidad (corte fortalecido)...
+[NestedBenders] k=6 BACKWARD anio 2  Phi^LP=144,693.34 -> Phi^LR=144,747.61 (+54.27)
+[NestedBenders] k=6 BACKWARD anio 1  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=6 cota del backward = 2,201,926.92  (no supera LB=2,995,018.32)
+[NestedBenders] k=6  UB=3282673.4488  LB=2995018.3182  gap=8.7628%  tiempo_iteracion=5036.4s
+[NestedBenders] k=6: incumbente 3,282,673.45 y 54 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[Estabilizacion] k=7: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=7 FORWARD  anio 1 (1/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y1 d15 fase1: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d105 fase1: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d196 fase1: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d288 fase1: 490,527.02  (optimal, 6s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 6s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=2  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d105 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d196 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   y1 d288 fase2: 490,527.02  (optimal, 5s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 5s
+[DayDecomp]   pulido sobre el bloque anual: 52,581 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 2,221,326.43
+[DayDecomp] año 1: listo en 36s
+[NestedBenders] k=7 FORWARD  anio 2 (2/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y2 d15 fase1: 7,857.30  (optimal, 3s)
+[DayDecomp]   y2 d105 fase1: 8,582.33  (optimal, 3s)
+[DayDecomp]   y2 d196 fase1: 9,266.56  (optimal, 3s)
+[DayDecomp]   y2 d288 fase1: 7,597.04  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=478.7
+[DayDecomp]   y2 d15 fase2: 7,857.30  (optimal, 3s)
+[DayDecomp]   y2 d105 fase2: 8,582.33  (optimal, 3s)
+[DayDecomp]   y2 d196 fase2: 9,266.56  (optimal, 3s)
+[DayDecomp]   y2 d288 fase2: 7,597.04  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 141,589.27
+[DayDecomp] año 2: listo en 37s
+[NestedBenders] k=7 FORWARD  anio 3 (3/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase1: 13,615.81  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase1: 15,288.50  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase1: 16,854.61  (maxTimeLimit, 123s)
+[DayDecomp]   y3 d288 fase1: 13,658.13  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=472
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y3 d15 fase2: 13,615.81  (maxTimeLimit, 121s)
+[DayDecomp]   y3 d105 fase2: 15,288.50  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d196 fase2: 16,849.49  (maxTimeLimit, 122s)
+[DayDecomp]   y3 d288 fase2: 13,658.01  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 167,685.26
+[DayDecomp] año 3: listo en 278s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=167,653.04  LB=163,147.03  gap=2.6877%
+[NestedBenders] k=7 FORWARD  anio 4 (4/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 20,776.20  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 23,148.76  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase1: 24,658.58  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase1: 20,701.21  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=459.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase2: 20,776.20  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase2: 23,139.94  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase2: 24,644.08  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d288 fase2: 20,672.62  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 180,699.14
+[DayDecomp] año 4: listo en 277s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=180,691.35  LB=168,034.57  gap=7.0046%
+[NestedBenders] k=7 FORWARD  anio 5 (5/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase1: 20,255.20  (maxTimeLimit, 121s)
+[DayDecomp]   y5 d105 fase1: 22,414.54  (maxTimeLimit, 122s)
+[DayDecomp]   y5 d196 fase1: 24,207.40  (maxTimeLimit, 125s)
+[DayDecomp]   y5 d288 fase1: 20,204.67  (maxTimeLimit, 126s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 126s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=442.1
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y5 d15 fase2: 20,255.20  (maxTimeLimit, 124s)
+[DayDecomp]   y5 d105 fase2: 21,822.21  (maxTimeLimit, 124s)
+[DayDecomp]   y5 d196 fase2: 24,207.40  (maxTimeLimit, 124s)
+[DayDecomp]   y5 d288 fase2: 20,204.67  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 161,922.42
+[DayDecomp] año 5: listo en 282s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=5  TimeLimit alcanzado sin cerrar MIPGap: UB=161,747.33  LB=149,086.82  gap=7.8273%
+[NestedBenders] k=7 FORWARD  anio 6 (6/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase1: 19,782.20  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase1: 21,544.66  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase1: 22,990.70  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase1: 19,812.85  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=424.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y6 d15 fase2: 19,723.60  (maxTimeLimit, 121s)
+[DayDecomp]   y6 d105 fase2: 21,544.66  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d196 fase2: 22,990.70  (maxTimeLimit, 122s)
+[DayDecomp]   y6 d288 fase2: 19,812.85  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+WARNING (W1001): Setting Var 'P_red[6,196,162.0]' to a value
+`-0.00036358434355813866` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'P_red[6,196,163.0]' to a value
+`-0.00036358434355813866` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 144,466.98
+[DayDecomp] año 6: listo en 278s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=6  TimeLimit alcanzado sin cerrar MIPGap: UB=144,409.15  LB=132,098.06  gap=8.5251%
+[NestedBenders] k=7 FORWARD  anio 7 (7/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 19,267.98  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase1: 21,276.65  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase1: 22,169.84  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase1: 19,294.00  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=407.8
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase2: 19,256.95  (maxTimeLimit, 121s)
+[DayDecomp]   y7 d105 fase2: 21,265.55  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d196 fase2: 22,144.40  (maxTimeLimit, 122s)
+[DayDecomp]   y7 d288 fase2: 19,287.85  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 125,796.53
+[DayDecomp] año 7: listo en 274s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=125,772.84  LB=113,686.69  gap=9.6095%
+[NestedBenders] k=7 FORWARD  anio 8 (8/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase1: 13,335.56  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase1: 14,730.58  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase1: 15,520.68  (maxTimeLimit, 123s)
+[DayDecomp]   y8 d288 fase1: 13,234.96  (maxTimeLimit, 124s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=390.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y8 d15 fase2: 13,335.56  (maxTimeLimit, 121s)
+[DayDecomp]   y8 d105 fase2: 14,712.48  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d196 fase2: 15,520.68  (maxTimeLimit, 122s)
+[DayDecomp]   y8 d288 fase2: 13,221.97  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 123s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 868,569.09
+[DayDecomp] año 8: listo en 278s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=8  TimeLimit alcanzado sin cerrar MIPGap: UB=859,585.13  LB=849,887.24  gap=1.1282%
+[NestedBenders] k=7 FORWARD  anio 9 (9/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+[DayDecomp]   y9 d15 fase1: 4,506.26  (optimal, 3s)
+[DayDecomp]   y9 d105 fase1: 5,006.74  (optimal, 3s)
+[DayDecomp]   y9 d196 fase1: 5,407.66  (optimal, 3s)
+[DayDecomp]   y9 d288 fase1: 4,410.74  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=468.4
+[DayDecomp]   y9 d15 fase2: 4,506.26  (optimal, 3s)
+[DayDecomp]   y9 d105 fase2: 5,006.74  (optimal, 3s)
+[DayDecomp]   y9 d196 fase2: 5,407.66  (optimal, 3s)
+[DayDecomp]   y9 d288 fase2: 4,410.74  (optimal, 4s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 4s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 5s -> incumbente 21,291.21
+[DayDecomp] año 9: listo en 37s
+[NestedBenders] k=7 FORWARD  anio 10 (10/10)  [UB=3,282,673.45  LB=2,995,018.32]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   fase 1 con MIP start del incumbente (d15: 9,725, d105: 9,725, d196: 9,725, d288: 9,725 enteras)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase1: 2,534.86  (optimal, 28s)
+[DayDecomp]   y10 d105 fase1: 2,856.58  (optimal, 6s)
+[DayDecomp]   y10 d196 fase1: 3,064.84  (maxTimeLimit, 123s)
+[DayDecomp]   y10 d288 fase1: 2,524.11  (maxTimeLimit, 123s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 124s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=0  n_ssee_k=2  G_g=1.267, 0  H=0.03912  P_pot=0  R=0  b_bar=461.7
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y10 d15 fase2: 2,534.85  (maxTimeLimit, 121s)
+[DayDecomp]   y10 d105 fase2: 2,856.58  (optimal, 52s)
+[DayDecomp]   y10 d196 fase2: 3,064.85  (maxTimeLimit, 124s)
+[DayDecomp]   y10 d288 fase2: 2,524.12  (maxTimeLimit, 126s)
+[DayDecomp]   4 dias en paralelo (4 x 16 hilos): 126s
+[DayDecomp]   pulido sobre el bloque anual: 52,583 valores, 38,873 enteras fijas, LP optimo en 3s -> incumbente 10,980.40
+[DayDecomp] año 10: listo en 275s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=10  TimeLimit alcanzado sin cerrar MIPGap: UB=10,980.40  LB=9,918.86  gap=9.6676%
+[NestedBenders] k=7 pulido de la solucion: 3,433,467.66 -> 3,283,339.20 (4.37% menos, 86s)
+[Estabilizacion] k=7: paso nulo (costo 3,283,339.20 vs mejor 3,282,673.45) -- se mantiene centro y caja
+[NestedBenders] k=7: tope de tiempo -- despues del backward no alcanzaria otro forward; se omite el backward y se termina.
+[NestedBenders] k=7  UB=3282673.4488  LB=2995018.3182  gap=8.7628%  tiempo_iteracion=3042.6s
+[NestedBenders] k=7: incumbente 3,282,673.45 y 54 cortes respaldados en output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders/incumbente_respaldo.pkl
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 2, elegido 2 (ajustada)
+[NestedBenders] tiempo total: 32212.0s (7 iteraciones, 0 cortes de factibilidad)
+[NestedBenders] cortes fortalecidos: 48 de 54 superaron Phi^LP (promedio +355.73, maximo +1,682.19)
+[Estabilizacion] 2 pasos serios, 5 nulos; caja final +-1 / 25%
+[NestedBenders] termino en 7 iteraciones (32212s): UB=3,282,673.45  LB=2,995,018.32  gap=8.7628%  [TOPE DE TIEMPO]
+[NestedBenders] reporte: 525,850 valores cargados; costo recomputado = 3,462,840.13 contra UB 3,462,840.13 (desvio 0.000000); incluye 203,236.11 de apertura de naves
+[NestedBenders] variables de bloque sin equivalente en el monolitico (descartadas): ['D_prev', 'N_batteries_prev', 'N_bays_prev', 'N_chargers_prev', 'alpha']
+[NestedBenders] MIP start pulido (LP con enteras fijas, 388,750 fijadas, 38s): costo 3,462,840.13 -> 3,282,673.45
+[NestedBenders] MIP start sin violaciones: max residuo 6.6e-12 < FeasibilityTol 1e-6 (9s)
+JSONs, log y summary guardados en 'output/Resultados_finales_tesis/Mina_modelo/casos_finales/Produccion_base/zona_norte/2C/RED_GEN_BESS/benders'.

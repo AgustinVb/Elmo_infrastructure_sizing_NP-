@@ -22,7 +22,7 @@ PY=~/miniconda3/envs/py310/bin/python
 O=output/Resultados_finales_tesis/Mina_modelo
 declare -A HORAS=([RED_GEN]=36 [RED]=36 [RED_GEN_BESS]=36)
 GAP=0.01
-ITER=50
+ITER=${ITER:-50}
 ESCS=${@:-"RED RED_GEN_BESS RED_GEN"}
 LOG=$O/cola_final_swap.log
 

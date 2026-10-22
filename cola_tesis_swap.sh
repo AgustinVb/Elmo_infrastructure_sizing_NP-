@@ -239,9 +239,12 @@ for n in $SEL; do
 
   # --- 3. certificado ---------------------------------------------------------
   GO=$($PY -c "g=($UB-$LBOP)/$UB; print(round(max(1e-5, min(0.005, 0.8*g)), 6))")
-  msg "$TAG" "certificar (UB $UB, gap_objetivo $GO)"
+  # Cota de capacidad del presolve de Benders (n_ssee_k >= N): el certificado la lleva por defecto en 1.
+  CAP=$(grep -ao 'cotas impuestas al anio 1: station_1: >= [0-9]*' $R/benders.log 2>/dev/null | tail -1 | grep -o '[0-9]*$')
+  CAP=${CAP:-1}
+  msg "$TAG" "certificar (UB $UB, gap_objetivo $GO, capacidad station_1>=$CAP)"
   $PY -u certificar_inversiones.py --data_folder $D --solucion $SOL --ub_esperado $UB --gap_objetivo $GO \
-      --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
+      --capacidad station_1=$CAP --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
   msg "$TAG" "FIN: $(certificado $R/certificado.log)"
   resumen_final > /dev/null
   break

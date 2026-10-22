@@ -15,6 +15,8 @@ SOL=$R/mejorar_ub_2/solucion; UB=1810947.1036117477
 LB=1669905.71   # LB certificada (la unica inversion VIVA es la del incumbente)
 msg() { echo "[cola caso7-ub3] $(date '+%F %T') $1" | tee -a $L; }
 
+[ -d $R/mejorar_ub_3 ] && { msg "mejorar_ub_3 ya existe (lanzada a mano): se salta"; exit 0; }
+
 msg "inicio: mejorar_ub pasada 3 (años 3-8, 3600 s) desde $SOL"
 
 $PY -u mejorar_ub.py --data_folder $D --solucion $SOL --ub_esperado $UB --anios 3,4,5,6,7,8 \
