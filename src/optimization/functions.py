@@ -31,7 +31,7 @@ P_SSEE_STEP = 500.0
 #     sum_{k, t < tf} X_ini[k, y, d, t]  >=  n_min[y, d]
 #               n_min[y, d] = ceil( E_min[y, d] / E_swap )
 #
-# POR QUE. Cada carga es una bateria completa (p_charger durante t_charge - 1
+# POR QUE. Cada carga es una bateria completa (p_charger durante t_charge
 # intervalos) y es TODO el costo operativo del dia. En la relajacion lineal las
 # cargas son divisibles: en Mina_modelo (año 4) el LP hace 16,35 cargas por dia
 # y el entero no menos de 17. Ni los cortes de Gurobi ni 60.000 nodos de B&B
@@ -972,7 +972,11 @@ class BoundRules(OptRules):
         #
         # Sv[k,y,d,t,a] solo puede ser distinto de 0 si "a" (inicio de carga)
         # cae dentro de la ventana de duracion de carga que termina en t:
-        # a en [max(t0, t-t_charge+1), t-1] -- fuera de esa ventana,
+        # a en [max(t0, t-t_charge+1), t] -- la carga que empieza en a ocupa
+        # el cargador y consume p_charger en a, a+1, ..., a+t_charge-1
+        # (t_charge intervalos; antes la ventana terminaba en t-1 y la carga
+        # consumia solo t_charge-1 intervalos: 95 % de la energia necesaria
+        # con 0,5C, 79 % con 1C y 63 % con 2C, 2026-10-22). Fuera de esa ventana,
         # charging_duration_rule (mas abajo) lo fija en 0 de todas formas, y
         # Sv no aparece en la funcion objetivo (solo en restricciones <= y en
         # power_balance), asi que esas combinaciones nunca tienen incentivo a
@@ -992,8 +996,7 @@ class BoundRules(OptRules):
                     for d in m.days:
                         for t in intervals:
                             lo = max(t0, t - t_charge + 1)
-                            hi = t - 1
-                            for a in range(lo, hi + 1):
+                            for a in range(lo, t + 1):
                                 yield (k, y, d, t, a)
         model.SV_INDEX = pyo.Set(dimen=5, initialize=_init_SV_INDEX)
         model.Sv = pyo.Var(model.SV_INDEX, domain=pyo.NonNegativeIntegers)
@@ -1643,7 +1646,7 @@ class ConstraintRules(OptRules):
     def _sv_a_window(self, model, t):
         """Ventana valida de 'a' (inicio de carga) para Sv[k,y,d,t,a] en el
         intervalo t -- misma formula que BoundRules.build_all_variables usa
-        para construir SV_INDEX: [max(t0, t-t_charge+1), t-1]. Fuera de esa
+        para construir SV_INDEX: [max(t0, t-t_charge+1), t]. Fuera de esa
         ventana Sv no existe como variable (ver comentario ahi), asi que las
         sumas sobre 'a' deben iterar solo esta ventana en vez de todo
         model.time_intervals_set."""
@@ -1651,8 +1654,7 @@ class ConstraintRules(OptRules):
         t0 = int(self.time_series.get_time_intervals()[0])
         t_charge = int(value(model.t_charge))
         lo = max(t0, t - t_charge + 1)
-        hi = t - 1
-        return range(lo, hi + 1)
+        return range(lo, t + 1)
 
     def charger_limit_swap(self, model, k, y, d, t):
         # Para cada estaci�n k, d�a d y intervalo t, la suma de bater�as
@@ -1745,11 +1747,19 @@ class ConstraintRules(OptRules):
     
     # Inventario de bater�as descargadas
     def inventory_discharged_batteries_rule(self, model, k, y, d, t):
+        # X_dch[t] = descargadas al FINAL de t: las que llegan con los swaps de
+        # t (W[t]) pueden empezar a cargar en t, no antes. Antes la ecuacion era
+        # X_dch[t] = X_dch[t-1] - X_ini[t-1] + W[t], que dejaba empezar a
+        # cargar en t-1 una bateria que recien llega en t (2026-10-22).
+        # X_dch[t0] es el inventario al INICIO del dia (= el del final, CI_X_dch,
+        # y S + X_dch = N_batteries, CB_general): las cargas de t0 salen de el.
         t0= self.time_series.get_time_intervals()[0]
         if t == t0:
-            return pyo.Constraint.Skip
-        else:
-            return model.X_dch[k, y, d, t] == model.X_dch[k, y, d, t-1] - model.X_ini[k, y, d, t-1] + model.W[k, y, d, t]
+            return model.X_ini[k, y, d, t0] <= model.X_dch[k, y, d, t0]
+        if t == t0 + 1:
+            return model.X_dch[k, y, d, t] == (model.X_dch[k, y, d, t0] - model.X_ini[k, y, d, t0]
+                                               - model.X_ini[k, y, d, t] + model.W[k, y, d, t])
+        return model.X_dch[k, y, d, t] == model.X_dch[k, y, d, t-1] - model.X_ini[k, y, d, t] + model.W[k, y, d, t]
 
     # Inventario de bater�as cargadas
     def inventory_charged_batteries_rule(self, model, k, y, d, t):
@@ -1766,16 +1776,15 @@ class ConstraintRules(OptRules):
     # 4. Duraci�n de la carga (L�gica interna del cargador)
     def charging_duration_rule(self, model, k, y, d, t, a):
         """(k,y,d,t,a) recorre model.SV_INDEX (ver
-        BoundRules.build_all_variables): a < t siempre (ventana valida), asi
+        BoundRules.build_all_variables): a <= t siempre (ventana valida), asi
         que solo quedan los dos casos no triviales de la version densa --
         el caso "a fuera de ventana => Sv=0" ya no hace falta porque esas
         combinaciones directamente no existen como variable."""
-        t_prev = t - 1
-        if a == t_prev:
-            # Caso 3: la carga recien empez� en t_prev (a == t_prev).
-            return model.Sv[k, y, d, t, a] == model.X_ini[k, y, d, t_prev]
-        # Caso 2: la carga sigue en proceso, se mantiene el valor anterior.
-        return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, t_prev, a]
+        if a == t:
+            # La carga empieza en t: ya consume y ocupa cargador en t.
+            return model.Sv[k, y, d, t, a] == model.X_ini[k, y, d, t]
+        # La carga sigue en proceso, se mantiene el valor anterior.
+        return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, t - 1, a]
 
     # Condiciones de inventario c�clico
     def CI_S(self, model, k, y, d, t):
