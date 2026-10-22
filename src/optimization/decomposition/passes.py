@@ -328,6 +328,9 @@ class ForwardPass(object):
             # Heuristica de arranque: si falla, se sigue como siempre.
             print(f"[DayDecomp] año {block.year}: fallo "
                   f"({type(exc).__name__}: {exc}) -- se sigue sin MIP start")
+            # Las ultimas lineas de la traza: sin ellas no hay como saber donde fallo.
+            import traceback
+            print("".join(traceback.format_exc().splitlines(keepends=True)[-12:]), end="")
             return False
         finally:
             self.day_warm_start_time += time.time() - t_dw

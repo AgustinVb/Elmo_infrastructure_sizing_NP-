@@ -289,6 +289,17 @@ class Subproblema:
         m.Params.Method = -1
         m.Params.TimeLimit = INF
         m.optimize()
+        # En puntos extremos del maestro relajado (holgura de enlaces ~1e10 en la
+        # etapa 1 del certificado) Gurobi puede terminar en NUMERIC (12): se
+        # repite con simplex dual y luego barrera, con NumericFocus alto, antes de
+        # rendirse (escalada/norte/05C/P_red_gen_bat, dia (9, 105)).
+        for metodo, foco in ((1, 2), (2, 3)):
+            if m.Status == GRB.OPTIMAL:
+                break
+            m.reset()
+            m.Params.Method, m.Params.NumericFocus = metodo, foco
+            m.optimize()
+        m.Params.Method, m.Params.NumericFocus = -1, 0
         if m.Status != GRB.OPTIMAL:
             return {"ok": False, "status": m.Status}
         pi = m.getAttr("Pi", self.enl)
@@ -819,8 +830,13 @@ class BendersDias:
             for it in range(1, max_it[0] + 1):
                 t_it = time.time()
                 L = M.resolver(entero=False)
+                # El punto del maestro se lee ANTES de regularizar, como en las
+                # etapas 2 y 3: si la barrera del nivel falla, regularizar ya
+                # modifico el modelo (quita el nivel, repone el objetivo) y X no
+                # existe (GurobiError al certificar escalada/norte/05C/P_red).
+                xm, em, _ = M.punto()
                 pt = M.regularizar(L, U1, self.alpha, fijar_enteras=False)
-                xh, eh, _ = pt if pt is not None else M.punto()
+                xh, eh, _ = pt if pt is not None else (xm, em, None)
                 res = self.cortes_lp(xh, eh)
                 U1 = min(U1, self._costo_aprox(xh, [r["valor"] for r in res]))
                 gap = (U1 - L) / abs(U1)

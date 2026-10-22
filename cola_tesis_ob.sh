@@ -25,9 +25,14 @@
 #   Para cortar un Benders a mano: crear el archivo STOP en su carpeta benders/.
 cd "$(dirname "$0")"
 PY=${PY:-.venv_elmo/Scripts/python.exe}
-DATA=data/Resultados_finales_tesis/Mina_modelo
+# DATA y V se pueden dar desde afuera para correr otra version de los datos con el
+# mismo metodo, sin tocar la v3, p. ej. la v4 (topes de generacion y BESS en 10 y perfil
+# eolico nuevo de centro, solo en el caso 6, centro/05C/P_red_gen_bat):
+#   DATA=data/Resultados_finales_tesis/Mina_modelo_v4 \
+#   V=output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4 PY=... bash cola_tesis_ob.sh 6
+DATA=${DATA:-data/Resultados_finales_tesis/Mina_modelo}
 O=output/Resultados_finales_tesis/Mina_modelo
-V=$O/casos_finales
+V=${V:-$O/casos_finales}
 RONDA=${RONDA:-1}
 HORAS=${HORAS:-6}; HORAS_R2=${HORAS_R2:-12}
 TOPE_H=${TOPE_H:-66}; RESERVA_H=${RESERVA_H:-2.5}; MIN_H=${MIN_H:-2}
@@ -35,12 +40,17 @@ GAP=0.01; ITER=50; SIN_MEJORA=4
 FLAGS="--free_charging --free_maintenance"
 
 # En orden de prioridad (relativos a $DATA). "|copia": se toma de P_red_final.
+# Casos 4 y 5: produccion escalada al 20 % (ExtractionGoal x1,20, pico 28.200 t/dia),
+# en reemplazo de Produccion_escalada (+8,9 %). Con 0,5C es infactible (la relajacion
+# lineal a 4 años ya lo es en el año 4: los LHD no alcanzan a cargar con 241 kW sin
+# quitarle tiempo a la extraccion; ver output/.../factibilidad_escalada20), asi que van
+# en 1C: cargador de 482 kW (482.000 USD) y gamma_coef 0,0273, como base/norte/1C.
 CASOS=(
   "Produccion_base/zona_norte/05C/P_red|copia"
   "Produccion_base/zona_norte/05C/P_red_gen_bat"
   "Produccion_base/zona_norte/05C/P_red_gen"
-  "Produccion_escalada/zona_norte/05C/P_red"
-  "Produccion_escalada/zona_norte/05C/P_red_gen_bat"
+  "Produccion_escalada20/zona_norte/1C/P_red"
+  "Produccion_escalada20/zona_norte/1C/P_red_gen_bat"
   "Produccion_base/zona_centro/05C/P_red_gen_bat"
   "Produccion_base/zona_norte/1C/P_red_gen_bat"
   "Produccion_base/zona_norte/2C/P_red_gen_bat"

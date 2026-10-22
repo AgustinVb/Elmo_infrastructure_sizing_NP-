@@ -575,6 +575,12 @@ class OptParameters(OptRules):
                 model.gen_set,
                 initialize={g: gen.get_g_max(g) for g in model.gen_set},
                 mutable=False)
+            # Vida util para el valor residual (0 = sin valor residual), ver
+            # ObjectiveRules._residual_fraction.
+            model.vida_util_g = pyo.Param(
+                model.gen_set,
+                initialize={g: gen.get_vida_util(g) for g in model.gen_set},
+                mutable=False)
             model.alpha_g = pyo.Param(
                 model.gen_set, model.years, model.days, model.time_intervals_set,
                 initialize={(g, y, d, t): self.time_series.get_alpha_g(g, d, t)
@@ -626,6 +632,10 @@ class OptParameters(OptRules):
             # (H no tiene cota superior natural al ser entera, a diferencia de
             # X que es binaria): ver eq. max_storage_units.
             model.h_max = pyo.Param(initialize=stor.get_h_max(storage_names[0]), mutable=False)
+            model.vida_util_h = pyo.Param(
+                model.storage_set,
+                initialize={h: stor.get_vida_util(h) for h in model.storage_set},
+                mutable=False)
 
         # Degradación de batería on-board (fleet-wide, solo si la hoja existe)
         bd = self.mine_system.battery_degradation
@@ -1541,6 +1551,7 @@ class ConstraintRules(OptRules):
         model.production            = pyo.Constraint(model.years, model.days, model.nodes_set, rule=self.production)
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, y, d, t: self.interval_extraction_M(m, i, j, y, d, t))
 
+
         # Esquema DCH (legacy), activo para el caso data/Escenarios_Gx (ver
         # meal_g1_no_travel_group1/meal_g2_no_travel_group2/maint_stop_all/
         # maint_no_charge/charge_only_meal_or_shift_change). Reemplazado por
@@ -1671,14 +1682,47 @@ class ObjectiveRules(OptRules):
         Sin este guard, CADA bloque cobraria el costo de inversion completo (no
         solo el bloque origen), sobre-contando por un factor de n_years en el
         UB/LB de la descomposicion. En el monolitico (model.years = horizonte
-        completo) el guard nunca se activa, sin cambio de comportamiento."""
+        completo) el guard nunca se activa, sin cambio de comportamiento.
+
+        Si la hoja Generators trae 'vida_util', se descuenta el valor residual
+        lineal al final del horizonte (ver _net_investment_factor); va en el
+        mismo termino, asi que el guard y la descomposicion no cambian."""
         if len(list(model.gen_set)) == 0:
             return 0
         first_year = self._first_year()
         if first_year not in model.years:
             return 0
-        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g] for g in model.gen_set) \
-            * self._discount_factor(model, first_year)
+        return sum(model.G_g[g] * model.c_inv_g[g] * model.p_max_g[g]
+                   * self._net_investment_factor(model, model.vida_util_g[g])
+                   for g in model.gen_set)
+
+    def _residual_fraction(self, vida):
+        """Valor residual lineal (valor de desecho contable) al final del
+        horizonte, como fraccion del costo de inversion: 1 - N/vida, con N los
+        años del horizonte completo (G_g y H se compran el primer año y se usan
+        los N años). 0 si vida es 0 (columna 'vida_util' ausente o vacia) o si
+        la vida util es exactamente N.
+
+        Una vida util MENOR que N es un error: el activo seguiria operando los
+        años que le faltan sin pagar su reposicion. Si se necesitan vidas mas
+        cortas que el horizonte (sensibilidades), hay que modelar la reposicion."""
+        vida = float(pyo.value(vida))
+        if vida <= 0:
+            return 0.0
+        n = len(self.time_series.years)
+        if vida < n:
+            raise ValueError(
+                f"vida_util = {vida:g} años es menor que el horizonte ({n} años): el "
+                "modelo no cobra la reposicion del activo. Use una vida util >= horizonte.")
+        return 1.0 - n / vida
+
+    def _net_investment_factor(self, model, vida):
+        """Factor que multiplica a la inversion de G_g/H: el pago del primer año
+        menos el valor residual cobrado al final del ultimo año, ambos
+        descontados. Sin vida util se reduce al pago del primer año de antes."""
+        years = sorted(self.time_series.years)
+        return (self._discount_factor(model, years[0])
+                - self._residual_fraction(vida) * self._discount_factor(model, years[-1]))
 
     def gen_op_cost(self, model):
         """Costo de O&M anual de generación: recurre cada año del horizonte
@@ -1697,14 +1741,15 @@ class ObjectiveRules(OptRules):
         """Costo de inversión BESS: H se decide una sola vez para todo el
         horizonte, se paga una unica vez, descontado al primer año. Mismo
         guard `first_year in model.years` que gen_investment_cost, y por
-        la misma razon (evitar sobre-contar en modo descompuesto)."""
+        la misma razon (evitar sobre-contar en modo descompuesto). Con
+        'vida_util' en la hoja Storage, neto del valor residual lineal."""
         if len(list(model.storage_set)) == 0:
             return 0
         first_year = self._first_year()
         if first_year not in model.years:
             return 0
-        return sum(model.H * model.c_inv_h[h] for h in model.storage_set) \
-            * self._discount_factor(model, first_year)
+        return sum(model.H * model.c_inv_h[h] * self._net_investment_factor(model, model.vida_util_h[h])
+                   for h in model.storage_set)
 
     def bess_op_cost(self, model):
         """Costo de O&M anual BESS: recurre cada año del horizonte sobre la

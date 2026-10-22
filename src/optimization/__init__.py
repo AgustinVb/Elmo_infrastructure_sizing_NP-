@@ -14,7 +14,9 @@ class OptimizationModel(object):
                  mip_focus=3,
                  free_charging=False,
                  free_maintenance=False,
-                 relax_operational=False):
+                 relax_operational=False,
+                 warm_start_only_integers=False,
+                 lb_externa=None):
 
         t0 = time.time()
 
@@ -33,8 +35,24 @@ class OptimizationModel(object):
             free_charging=free_charging,
             free_maintenance=free_maintenance,
             relax_operational=relax_operational,
+            warm_start_only_integers=warm_start_only_integers,
         )
         print('formulation time:', time.time() - t0)
+        if lb_externa is not None:
+            # Cota inferior externa (p. ej. la operacional o la certificada),
+            # igual que la fase monolitica de --mode hybrid en setup.py: la fila
+            # obj >= LB es valida (toda solucion factible cumple obj >= optimo
+            # >= LB) y hace que el BestBd de Gurobi parta en la cota real, asi
+            # que su MIPGap vuelve a medir el gap verdadero. BestObjStop corta
+            # cuando el incumbente cierra el gap contra esa cota. El margen
+            # 1e-6 relativo protege de las tolerancias de Gurobi.
+            import pyomo.environ as pyo
+            lb_cut = lb_externa - abs(lb_externa) * 1e-6
+            self.opt_model.model.lb_externa = pyo.Constraint(
+                expr=self.opt_model.model.obj.expr >= lb_cut)
+            self.opt_model.best_obj_stop = lb_externa / (1.0 - gap)
+            print(f"[monolitico] fila obj >= {lb_cut:,.2f} (cota externa) y "
+                  f"BestObjStop = {self.opt_model.best_obj_stop:,.2f}")
         self.opt_model.solve_model(gap, solver_name, timelimit=timelimit, relax_integrality=relax_integrality)
 
         if getattr(self.opt_model, 'opt_cost_result', None) is None:

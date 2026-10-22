@@ -138,6 +138,18 @@ def main():
         help='Carpeta opcional con JSONs de variables (<VarName>.json) para warm start completo'
     )
     parser.add_argument(
+        '--warm_start_solo_enteras', action='store_true',
+        help='[monolithic, con --warm_start_folder] pasa a Gurobi solo las enteras del warm '
+             'start: las continuas de un JSON pulido traen residuos ~1e-6 que vuelven '
+             'infactible el MIP start; con las enteras completas Gurobi resuelve el LP del resto.'
+    )
+    parser.add_argument(
+        '--mono_lb', type=float, default=None,
+        help='[monolithic] cota inferior externa VALIDA del mismo problema (operacional o '
+             'certificada): agrega la fila obj >= LB y BestObjStop = LB/(1-gap), como la fase '
+             'monolitica de --mode hybrid. Si el modelo da INFACTIBLE, la cota no era valida.'
+    )
+    parser.add_argument(
         '--relax_integrality',
         action='store_true',
         help='Resuelve la relajación lineal del modelo sin cambiar las variables originales'
@@ -542,6 +554,8 @@ def main():
             free_charging=args.free_charging,
             free_maintenance=args.free_maintenance,
             relax_operational=args.relax_operational,
+            warm_start_only_integers=args.warm_start_solo_enteras,
+            lb_externa=args.mono_lb,
             **({'timelimit': args.mono_timelimit} if args.mono_timelimit else {}),
         )
     else:

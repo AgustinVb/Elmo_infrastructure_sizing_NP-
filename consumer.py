@@ -783,18 +783,23 @@ def main() -> None:
                     f"{info['units']:.0f}",
                     f"{info['p_max_unit']:.0f}",
                     f"{info['power_kw']:.0f}",
+                    f"{info['inv_cost_gross']:.2f}",
+                    f"{info['residual_value']:.2f}",
                     f"{info['inv_cost']:.2f}",
                     f"{info['op_cost']:.2f}",
                 ])
             rows.append([
                 "TOTAL", "", "",
                 f"{gen_info['total_power_kw']:.0f}",
+                f"{gen_info['total_inv_cost_gross']:.2f}",
+                f"{gen_info['total_residual_value']:.2f}",
                 f"{gen_info['total_inv_cost']:.2f}",
                 f"{gen_info['total_op_cost']:.2f}",
             ])
             print(make_table(
                 "GENERACION RENOVABLE",
-                ["Generador", "Unidades", "P_max/unidad [kW]", "Potencia inst. [kW]", "Costo inv.", "Costo op. anual"],
+                ["Generador", "Unidades", "P_max/unidad [kW]", "Potencia inst. [kW]", "Inv. bruta",
+                 "Valor residual", "Inv. neta", "Costo op. anual"],
                 rows,
             ))
             print()
@@ -814,18 +819,22 @@ def main() -> None:
                     f"{info['p_max_kw']:.0f}",
                     f"{info['a_min_kwh']:.0f}",
                     f"{info['a_max_kwh']:.0f}",
+                    f"{info['inv_cost_gross']:.2f}",
+                    f"{info['residual_value']:.2f}",
                     f"{info['inv_cost']:.2f}",
                     f"{info['op_cost']:.2f}",
                 ])
             rows.append([
                 "TOTAL", "", "", "", "",
+                f"{bess_info['total_inv_cost_gross']:.2f}",
+                f"{bess_info['total_residual_value']:.2f}",
                 f"{bess_info['total_inv_cost']:.2f}",
                 f"{bess_info['total_op_cost']:.2f}",
             ])
             print(make_table(
                 "ALMACENAMIENTO BESS",
                 ["Unidad", "Unidades instaladas", "P_max [kW]", "A_min [kWh]", "A_max [kWh]",
-                 "Costo inv.", "Costo op. anual"],
+                 "Inv. bruta", "Valor residual", "Inv. neta", "Costo op. anual"],
                 rows,
             ))
             print()
@@ -938,6 +947,15 @@ def _year_discount_factor(r: float, year: int, years_sorted: List[int]) -> float
         return 1.0
     pos = years_sorted.index(int(year)) + 1 if int(year) in years_sorted else 1
     return 1.0 / (1.0 + r) ** pos
+
+
+def _residual_value_factor(vida: float, r: float, years_sorted: List[int]) -> float:
+    """Valor residual lineal descontado, por USD invertido el primer año:
+    (1 - N/vida) * discount_factor(ultimo año); 0 sin vida util. Igual que
+    _residual_fraction/_net_investment_factor en ObjectiveRules (functions.py)."""
+    if not years_sorted or vida <= 0:
+        return 0.0
+    return max(0.0, 1.0 - len(years_sorted) / vida) * _year_discount_factor(r, years_sorted[-1], years_sorted)
 
 
 def _indexed_vars_by_year(path: Optional[Path], outer_candidates: Tuple[str, ...] = ("k", "_1")) -> Dict[str, Dict[str, float]]:
@@ -1537,6 +1555,7 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
 
     Costo (idéntico a gen_investment_cost/gen_op_cost de functions.py):
       inv_cost = discount_factor(primer_año) * G_g[g] * c_inv_g[g] * p_max_g[g]  (pago unico)
+                 - valor residual lineal (1 - N/vida_util_g) descontado al ultimo año, si hay vida util
       op_cost  = sum_y discount_factor(y) * G_g[g] * c_op_g[g] * p_max_g[g]      (recurrente)
     """
     gg_path     = find_json_in_folder(root, "G_g.json")
@@ -1559,6 +1578,7 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     c_inv = _extract_param("c_inv_g")
     c_op  = _extract_param("c_op_g")
     p_max = _extract_param("p_max_g")
+    vida  = _extract_param("vida_util_g")   # vacio en soluciones sin valor residual
 
     gen_set = [str(g) for g in params_data.get("gen_set", list(gg_by_gen.keys()))]
 
@@ -1568,16 +1588,19 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
     discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
 
     gens: Dict[str, Dict[str, float]] = {}
-    total_inv = total_op = total_power = 0.0
+    total_inv = total_op = total_power = total_res = 0.0
 
     for g in gen_set:
         units = gg_by_gen.get(g, 0.0)
         power = units * p_max.get(g, 0.0)
 
-        inv = 0.0
+        inv = residual = 0.0
         if first_year is not None:
             inv = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0) \
                 * _year_discount_factor(discount_r, first_year, years_sorted)
+            residual = units * c_inv.get(g, 0.0) * p_max.get(g, 0.0) \
+                * _residual_value_factor(vida.get(g, 0.0), discount_r, years_sorted)
+            inv -= residual                      # neto, como en el objetivo
 
         op = sum(
             units * c_op.get(g, 0.0) * p_max.get(g, 0.0) * _year_discount_factor(discount_r, y, years_sorted)
@@ -1588,16 +1611,21 @@ def calculate_gen_costs(root: Path) -> Dict[str, Any]:
             "units":      units,
             "p_max_unit": p_max.get(g, 0.0),
             "power_kw":   power,
-            "inv_cost":   inv,
+            "inv_cost":   inv,                    # neta (= objetivo)
+            "inv_cost_gross": inv + residual,
+            "residual_value": residual,
             "op_cost":    op,
         }
         total_inv   += inv
+        total_res   += residual
         total_op    += op
         total_power += power
 
     return {
         "generators":      gens,
         "total_inv_cost":  total_inv,
+        "total_inv_cost_gross": total_inv + total_res,
+        "total_residual_value": total_res,
         "total_op_cost":   total_op,
         "total_power_kw":  total_power,
     }
@@ -1614,6 +1642,7 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
 
     Costo (idéntico a bess_investment_cost/bess_op_cost de functions.py):
       inv_cost = discount_factor(primer_año) * H * c_inv_h[h]  (pago unico)
+                 - valor residual lineal (1 - N/vida_util_h) descontado al ultimo año, si hay vida util
       op_cost  = sum_y discount_factor(y) * H * c_op_h[h]      (recurrente)
     """
     h_path      = find_json_in_folder(root, "H.json")
@@ -1647,12 +1676,16 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
     discount_r = _get_discount_rate(params_data) if has_degradation else 0.0
 
     units_info: Dict[str, Dict[str, float]] = {}
-    total_inv = total_op = 0.0
+    total_inv = total_op = total_res = 0.0
 
+    vida = _extract_param("vida_util_h")    # vacio en soluciones sin valor residual
     for h in stor_set:
-        inv = 0.0
+        inv = residual = 0.0
         if first_year is not None:
             inv = units_final * c_inv.get(h, 0.0) * _year_discount_factor(discount_r, first_year, years_sorted)
+            residual = units_final * c_inv.get(h, 0.0) \
+                * _residual_value_factor(vida.get(h, 0.0), discount_r, years_sorted)
+            inv -= residual                      # neto, como en el objetivo
 
         op = sum(
             units_final * c_op.get(h, 0.0) * _year_discount_factor(discount_r, y, years_sorted)
@@ -1663,15 +1696,20 @@ def calculate_bess_costs(root: Path) -> Dict[str, Any]:
             "p_max_kw":   p_max.get(h, 0.0),
             "a_max_kwh":  a_max.get(h, 0.0),
             "a_min_kwh":  a_min.get(h, 0.0),
-            "inv_cost":   inv,
+            "inv_cost":   inv,                    # neta (= objetivo)
+            "inv_cost_gross": inv + residual,
+            "residual_value": residual,
             "op_cost":    op,
         }
         total_inv += inv
+        total_res += residual
         total_op  += op
 
     return {
         "units":          units_info,
         "total_inv_cost": total_inv,
+        "total_inv_cost_gross": total_inv + total_res,
+        "total_residual_value": total_res,
         "total_op_cost":  total_op,
     }
 

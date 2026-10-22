@@ -27,7 +27,13 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False, relax_operational=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False, relax_operational=False, warm_start_only_integers=False):
+        # MIP start solo con las enteras: Gurobi fija TODO lo que trae el start
+        # para completarlo, y las continuas de un JSON pulido traen residuos de
+        # ~1e-6 que lo vuelven infactible ("User MIP start did not produce a
+        # new incumbent"). Con las enteras completas, Gurobi resuelve el LP de
+        # las continuas, igual que el pulido de mejorar_ub/certificar.
+        self.warm_start_only_integers = warm_start_only_integers
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -260,7 +266,21 @@ class OptModel(object):
                     count = 0
                     skipped = 1
 
-            print(f"OK Warm start {var_name}: {count} cargados, {skipped} omitidos")
+            # Printer.write_variables_jsons omite los ceros: si el JSON de la
+            # variable existe, sus enteras sin valor valen 0 en esa solucion.
+            # Sin esto el MIP start queda parcial y Gurobi tiene que completarlo
+            # (sub-MIP que puede no encontrar nada); con las enteras completas,
+            # Gurobi solo resuelve el LP de las continuas.
+            ceros = 0
+            for vardata in (var_comp.values() if var_comp.is_indexed() else [var_comp]):
+                entera = vardata.is_binary() or vardata.is_integer()
+                if vardata.value is None and entera:
+                    vardata.set_value(0, skip_validation=True)
+                    ceros += 1
+                elif self.warm_start_only_integers and not entera and not vardata.fixed:
+                    vardata.set_value(None, skip_validation=True)
+            print(f"OK Warm start {var_name}: {count} cargados, {skipped} omitidos"
+                  + (f", {ceros} enteras sin valor a 0" if ceros else ""))
             total_loaded += count
             total_skipped += skipped
 
