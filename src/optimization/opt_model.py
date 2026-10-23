@@ -260,6 +260,13 @@ class OptModel(object):
             "N_total":  ["y"],
             "w_deg":    ["y"],
             "P_bbar_zagg": ["i", "y", "d", "t"],
+            # Flota unaria y McCormick por tramos de b_bar (ec. 3 de degradacion)
+            "u_nf":     ["y", "v"],
+            "nc_nf":    ["y", "v"],
+            "z_bb":     ["y", "s"],
+            "b_bb":     ["y", "s"],
+            "nt_bb":    ["y", "s"],
+            "w_bb":     ["y", "s"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)
