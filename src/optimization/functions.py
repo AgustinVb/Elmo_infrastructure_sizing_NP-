@@ -47,6 +47,91 @@ def corte_cargas_activo():
     return os.environ.get("ELMO_SIN_CORTE_CARGAS", "0") not in ("1", "true", "True")
 
 
+# PIPELINE DE CARGA CICLICO (2026-10-22, decision de la usuaria; ver
+# notas_convencion_estacion.md sec. 3.3). El dia modelado va de 08:30 a 08:30 y
+# se repite: la bateria de cada LHD y el inventario de cargadas/descargadas ya
+# son ciclicos, pero las baterias EN CARGA no cruzaban el borde (pipeline vacio
+# al inicio y nada cargando en tf, que obligaba a terminar toda carga antes de
+# las 08:22: con 0,5C la ultima carga empezaba a las 06:38). Con el pipeline
+# ciclico, una carga que empieza al final del dia sigue en los primeros
+# intervalos del mismo dia (indices modulo T): las ventanas de Sv, el inventario
+# de cargadas/descargadas y el corte de cargas pasan a ser circulares. La DP de
+# la estacion (dp_estacion.py, ciclo="completo") resuelve exactamente esto.
+#
+# Desactivado por defecto: ELMO_PIPELINE_CICLICO=1 lo activa (setup.py
+# --pipeline_ciclico). Por entorno, como el corte de cargas, para que lo respeten
+# todos los constructores (monolitico, bloques anuales y diarios, procesos hijos).
+def pipeline_ciclico():
+    return os.environ.get("ELMO_PIPELINE_CICLICO", "0") in ("1", "true", "True")
+
+
+def ventana_carga(t, intervals, t_charge, ciclico=None):
+    """Inicios de carga 'a' con la bateria todavia cargando en t: la carga que
+    empieza en a ocupa a, a+1, ..., a+t_charge-1. Sin ciclo: [max(t0, t-L+1), t].
+    Con ciclo: los L inicios hacia atras modulo T (t, t-1, ..., incluyendo los
+    del final del dia anterior)."""
+    if ciclico is None:
+        ciclico = pipeline_ciclico()
+    t = int(t)
+    t0 = int(intervals[0])
+    if not ciclico:
+        return list(range(max(t0, t - t_charge + 1), t + 1))
+    T = len(intervals)
+    return [((t - j - t0) % T) + t0 for j in range(min(t_charge, T))]
+
+
+def intervalo_anterior(t, intervals, ciclico=None):
+    """t-1, o tf si t es el primero y el pipeline es ciclico (None si no)."""
+    if ciclico is None:
+        ciclico = pipeline_ciclico()
+    t, t0, tf = int(t), int(intervals[0]), int(intervals[-1])
+    if t > t0:
+        return t - 1
+    return tf if ciclico else None
+
+
+def intervalos_corte_cargas(intervals, ciclico=None):
+    """Intervalos que cuentan en el corte de cargas (sum X_ini >= n_min): sin
+    ciclo, t < tf (una carga que empieza en tf no alcanza a terminar en el dia);
+    con ciclo, todos (la carga sigue al inicio del dia)."""
+    if ciclico is None:
+        ciclico = pipeline_ciclico()
+    tf = intervals[-1]
+    return [t for t in intervals if ciclico or t < tf]
+
+
+# TOPE DE BATERIAS Y CARGADORES POR ESTACION (2026-10-22, decision de la
+# usuaria para el experimento de la DP/flujo de la estacion: las combinaciones
+# de inversion son 1 <= N_C <= N_bat <= 4). ELMO_TOPE_ESTACION=4 acota
+# N_batteries[k,y] y N_chargers[k,y] (y N_max de la degradacion); sin la
+# variable no hay tope (la cota fisica es max_bays_k * max_batteries_per_bay_k).
+def tope_estacion():
+    v = os.environ.get("ELMO_TOPE_ESTACION", "").strip()
+    return int(v) if v else None
+
+
+# RECUPERACION POR REEMPLAZO ENDURECIDA (2026-10-23). b_y_link era
+#     b_bar[y] <= D[y-1] + 0,3 * b_max * R[y]   (0,3 * 482 = 144,6 kWh)
+# y con R fraccional recuperaba capacidad barata (la relajacion LP de R
+# abarata el reemplazo 5-10x: reparacion_reemplazo/README.md). Como D esta
+# acotado por abajo en el piso B_L, el coeficiente b_max - B_L (96,4 kWh) basta
+# para que R = 1 lleve a b_bar = b_max (D + 96,4 >= 385,6 + 96,4 = 482) y con R
+# fraccional recupera solo lo que realmente falta desde el piso. Con R entera
+# las dos versiones son identicas (no cambia ninguna solucion entera, ni la
+# cota operacional, que deja R entera); cambia la relajacion LP de los bloques
+# anuales, o sea los cortes de Benders. El McCormick de D*R con D en
+# [B_L, b_max] se proyecta exactamente en esta misma desigualdad (y en
+# b_bar <= b_max, que ya esta), asi que no agrega nada mas.
+# ELMO_R_ENDURECIDO=1 (setup.py --r_endurecido) lo activa; por defecto, el 0,3.
+def r_endurecido():
+    return os.environ.get("ELMO_R_ENDURECIDO", "0") in ("1", "true", "True")
+
+
+def coef_recuperacion_reemplazo(b_max, B_L):
+    """Capacidad que un reemplazo puede sumar sobre D[y-1] en b_y_link."""
+    return (b_max - B_L) if r_endurecido() else 0.3 * b_max
+
+
 # n_min por dia calculado aparte (cortes_cargas.py --milp_s: cota dual del MILP
 # que minimiza las cargas del dia, con todo lo que el dia toma del resto libre
 # en rangos validos). ELMO_N_MIN_JSON=<json de cortes_cargas.py>: el corte usa
@@ -964,6 +1049,14 @@ class BoundRules(OptRules):
         # Cantidad de bater�as en estaci�n
         model.N_batteries       = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
         model.Delta_N_batteries = pyo.Var(model.stations_set, model.years, domain=pyo.NonNegativeIntegers)
+        # Tope opcional de baterias y cargadores por estacion (ELMO_TOPE_ESTACION,
+        # ver tope_estacion). N_chargers <= N_batteries ya esta en el modelo.
+        _tope = tope_estacion()
+        if _tope is not None:
+            for k in model.stations_set:
+                for y in model.years:
+                    model.N_batteries[k, y].setub(_tope)
+                    model.N_chargers[k, y].setub(_tope)
         # Variable que actualiza el estado de carga de la bater�a del LHD
         model.B_s = pyo.Var(model.slhd_set, model.years, model.days, model.time_intervals_set_zero, domain=pyo.NonNegativeReals)
         # N�mero de bater�as cargadas en el intervalo t en la estaci�n k
@@ -987,16 +1080,15 @@ class BoundRules(OptRules):
         # cuadratica en el numero de intervalos y dominaba el tiempo de
         # construccion del modelo. SV_INDEX solo contiene las combinaciones
         # (k,y,d,t,a) fisicamente posibles.
+        # Con ELMO_PIPELINE_CICLICO la ventana es circular (ver ventana_carga).
         def _init_SV_INDEX(m):
             intervals = sorted(int(t) for t in m.time_intervals_set)
-            t0 = intervals[0]
             t_charge = int(value(m.t_charge))
             for k in m.stations_set:
                 for y in m.years:
                     for d in m.days:
                         for t in intervals:
-                            lo = max(t0, t - t_charge + 1)
-                            for a in range(lo, t + 1):
+                            for a in ventana_carga(t, intervals, t_charge):
                                 yield (k, y, d, t, a)
         model.SV_INDEX = pyo.Set(dimen=5, initialize=_init_SV_INDEX)
         model.Sv = pyo.Var(model.SV_INDEX, domain=pyo.NonNegativeIntegers)
@@ -1091,6 +1183,8 @@ class BoundRules(OptRules):
                 int(value(model.max_bays_k[k])) * int(value(model.max_batteries_per_bay_k[k]))
                 for k in model.stations_set
             )
+            if tope_estacion() is not None:
+                N_max = min(N_max, tope_estacion() * len(model.stations_set))
 
             # N_batteries_total[y] = tamaño del pool en estación al año y
             # (suma de N_batteries[k,y] por estación) — NO es el total de
@@ -1646,15 +1740,13 @@ class ConstraintRules(OptRules):
     def _sv_a_window(self, model, t):
         """Ventana valida de 'a' (inicio de carga) para Sv[k,y,d,t,a] en el
         intervalo t -- misma formula que BoundRules.build_all_variables usa
-        para construir SV_INDEX: [max(t0, t-t_charge+1), t]. Fuera de esa
+        para construir SV_INDEX: [max(t0, t-t_charge+1), t], o circular con
+        ELMO_PIPELINE_CICLICO (ventana_carga). Fuera de esa
         ventana Sv no existe como variable (ver comentario ahi), asi que las
         sumas sobre 'a' deben iterar solo esta ventana en vez de todo
         model.time_intervals_set."""
-        t = int(t)
-        t0 = int(self.time_series.get_time_intervals()[0])
-        t_charge = int(value(model.t_charge))
-        lo = max(t0, t - t_charge + 1)
-        return range(lo, t + 1)
+        intervals = [int(v) for v in self.time_series.get_time_intervals()]
+        return ventana_carga(t, intervals, int(value(model.t_charge)))
 
     def charger_limit_swap(self, model, k, y, d, t):
         # Para cada estaci�n k, d�a d y intervalo t, la suma de bater�as
@@ -1753,6 +1845,17 @@ class ConstraintRules(OptRules):
         # cargar en t-1 una bateria que recien llega en t (2026-10-22).
         # X_dch[t0] es el inventario al INICIO del dia (= el del final, CI_X_dch,
         # y S + X_dch = N_batteries, CB_general): las cargas de t0 salen de el.
+        #
+        # Con ELMO_PIPELINE_CICLICO, t0 es un intervalo mas: X_dch[t] es el
+        # inventario al FINAL de t en todo t, con anterior(t0) = tf (la
+        # ecuacion misma es la condicion ciclica; CI_X_dch se omite). W[t0]
+        # entra al inventario como cualquier swap (un swap en t0 sigue sin
+        # reponer energia al LHD, battery_boundary_swap: solo gasta una bateria).
+        if pipeline_ciclico():
+            intervals = [int(v) for v in self.time_series.get_time_intervals()]
+            tp = intervalo_anterior(t, intervals, True)
+            return (model.X_dch[k, y, d, t] == model.X_dch[k, y, d, tp]
+                    - model.X_ini[k, y, d, t] + model.W[k, y, d, t])
         t0= self.time_series.get_time_intervals()[0]
         if t == t0:
             return model.X_ini[k, y, d, t0] <= model.X_dch[k, y, d, t0]
@@ -1763,6 +1866,18 @@ class ConstraintRules(OptRules):
 
     # Inventario de bater�as cargadas
     def inventory_charged_batteries_rule(self, model, k, y, d, t):
+        if pipeline_ciclico():
+            # S[sig(t)] = S[t] + (carga que termina al cierre de t) - W[sig(t)],
+            # con sig(tf) = t0: la carga que termina en t empezo en el inicio
+            # mas antiguo de la ventana circular de t (puede ser del final del
+            # dia, si t esta al inicio). Incluye t = tf (condicion ciclica;
+            # CI_S se omite).
+            intervals = [int(v) for v in self.time_series.get_time_intervals()]
+            L = int(value(model.t_charge))
+            tn = intervals[0] if int(t) == intervals[-1] else int(t) + 1
+            a_fin = ventana_carga(t, intervals, L, True)[-1]
+            return (model.S[k, y, d, tn] == model.S[k, y, d, t]
+                    + model.Sv[k, y, d, t, a_fin] - model.W[k, y, d, tn])
         t0= self.time_series.get_time_intervals()[0]
         tf = self.time_series.get_time_intervals()[-1]
         if t == tf: 
@@ -1783,22 +1898,38 @@ class ConstraintRules(OptRules):
         if a == t:
             # La carga empieza en t: ya consume y ocupa cargador en t.
             return model.Sv[k, y, d, t, a] == model.X_ini[k, y, d, t]
-        # La carga sigue en proceso, se mantiene el valor anterior.
+        # La carga sigue en proceso, se mantiene el valor anterior (con el
+        # pipeline ciclico, el anterior de t0 es tf).
+        if pipeline_ciclico():
+            intervals = [int(v) for v in self.time_series.get_time_intervals()]
+            return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, intervalo_anterior(t, intervals, True), a]
         return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, t - 1, a]
 
-    # Condiciones de inventario c�clico
+    # Condiciones de inventario c�clico. Con ELMO_PIPELINE_CICLICO se omiten:
+    # las ecuaciones de inventario ya cierran el ciclo tf -> t0.
     def CI_S(self, model, k, y, d, t):
+        if pipeline_ciclico():
+            return pyo.Constraint.Skip
         t0 = self.time_series.get_time_intervals()[0]
         tf = self.time_series.get_time_intervals()[-1]
         return model.S[k, y, d, t0] == model.S[k, y, d, tf]
-    
+
     def CI_X_dch(self, model, k, y, d, t):
+        if pipeline_ciclico():
+            return pyo.Constraint.Skip
         t0 = self.time_series.get_time_intervals()[0]
         tf = self.time_series.get_time_intervals()[-1]
         return model.X_dch[k, y, d, t0] == model.X_dch[k, y, d, tf]
-    
+
     def CB_general(self, model, k, y, d, t):
         t0 = self.time_series.get_time_intervals()[0]
+        if pipeline_ciclico():
+            # Conservacion al final de t0: cargadas + descargadas + en carga
+            # (las que siguen del dia anterior y las que empiezan en t0). Con
+            # el inventario ciclico, vale entonces en todo t.
+            en_carga = sum(model.Sv[k, y, d, int(t0), a] for a in self._sv_a_window(model, t0))
+            return (model.S[k, y, d, t0] + model.X_dch[k, y, d, t0] + en_carga
+                    == model.N_batteries[k, y])
         return model.S[k, y, d, t0] + model.X_dch[k, y, d, t0] == model.N_batteries[k, y]
     
 
@@ -2171,9 +2302,12 @@ class ConstraintRules(OptRules):
         el primero (B[y1]=b_max_pool fijo, ec. 5). Si se reemplaza la
         batería (R[y]=1) se recupera hasta un 30% de capacidad nominal
         adicional sobre D[y-1]; si no, la capacidad de inicio de año queda
-        acotada por la capacidad heredada del año anterior."""
+        acotada por la capacidad heredada del año anterior. Con
+        ELMO_R_ENDURECIDO el coeficiente es b_max - B_L (ver
+        coef_recuperacion_reemplazo)."""
         return model.b_bar[y] <= (
-            model.D[self._prev_year(y)] + 0.3 * value(model.b_max_pool) * model.R[y]
+            model.D[self._prev_year(y)]
+            + coef_recuperacion_reemplazo(value(model.b_max_pool), value(model.B_L)) * model.R[y]
         )
 
     # ------------------------------------------------------------------ #
@@ -2658,10 +2792,13 @@ class ConstraintRules(OptRules):
     def min_charges_cut(self, model, y, d):
         """sum_{k, t<tf} X_ini >= n_min[y, d]. Sin t = tf: X_ini[.., tf] no
         aparece en ninguna otra restriccion (la carga no alcanzaria a terminar
-        en el dia), y con ella el corte se cumpliria gratis."""
-        tf = self.time_series.get_time_intervals()[-1]
+        en el dia), y con ella el corte se cumpliria gratis. Con
+        ELMO_PIPELINE_CICLICO cuentan todos los t (intervalos_corte_cargas):
+        la carga de tf sigue al inicio del dia, y el inventario ciclico de
+        descargadas da sum_t X_ini = sum_t W, asi que el corte sigue valido."""
         return sum(model.X_ini[k, y, d, t] for k in model.stations_set
-                   for t in model.time_intervals_set if t < tf) >= self.n_min_cargas[(y, d)]
+                   for t in intervalos_corte_cargas(sorted(model.time_intervals_set))) \
+            >= self.n_min_cargas[(y, d)]
 
 class ObjectiveRules(OptRules):
 

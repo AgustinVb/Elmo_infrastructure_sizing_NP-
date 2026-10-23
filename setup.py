@@ -207,6 +207,8 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         t_origen=_T_INICIO,
         incumbente_inicial=args.incumbente_inicial,
         op_bound_gap=args.op_bound_gap,
+        evaluar_trayectoria_op=args.evaluar_trayectoria_op,
+        reparar_reemplazo=args.reparar_reemplazo,
     )
     resultado = solver.solve(verbose=True)
 
@@ -746,6 +748,41 @@ def main():
              'cota operacional 1.797.007 -> 1.824.373).'
     )
     parser.add_argument(
+        '--evaluar_trayectoria_op', action='store_true',
+        help='[--mode decomposed, con --operational_bound] antes de la iteracion 1 '
+             'evalua la inversion de la cota operacional (entera) como incumbente: '
+             'forward con la inversion fija y el reemplazo R fijo en el de la cota '
+             '(si un año no tiene solucion asi, se libera R), pulido y, si mejora, '
+             'UB, centro de la caja y respaldo. Ver NestedBenders._evaluar_trayectoria.'
+    )
+    parser.add_argument(
+        '--reparar_reemplazo', action='store_true',
+        help='[con --evaluar_trayectoria_op] si esa solucion paga reemplazo de flota, '
+             'la evalua con +1 bateria desde 4 años antes del primer reemplazo (y, si '
+             'no alcanza, +2: desde 6 y 3 años antes), bahias y cargadores ajustados '
+             'y R = 0. Ver NestedBenders._reparar_reemplazo.'
+    )
+    parser.add_argument(
+        '--r_endurecido', action='store_true',
+        help='b_y_link con coeficiente b_max - B_L (96,4 kWh) en vez de 0,3*b_max: '
+             'misma solucion entera, relajacion LP de R mas ajustada (cortes de '
+             'Benders). ELMO_R_ENDURECIDO, ver coef_recuperacion_reemplazo en functions.py.'
+    )
+    parser.add_argument(
+        '--pipeline_ciclico', action='store_true',
+        help='hace ciclico el pipeline de carga de la estacion de swap: una '
+             'carga que empieza al final del dia (08:30 a 08:30) sigue en los '
+             'primeros intervalos (ELMO_PIPELINE_CICLICO, ver pipeline_ciclico en '
+             'functions.py). Sin el flag no puede quedar ninguna bateria cargando '
+             'en tf y el pipeline parte vacio en t0.'
+    )
+    parser.add_argument(
+        '--tope_estacion', type=int, default=None,
+        help='tope de baterias y de cargadores por estacion y año '
+             '(ELMO_TOPE_ESTACION, ver tope_estacion en functions.py). Sin el flag '
+             'la cota es la fisica (max_bays_k * max_batteries_per_bay_k).'
+    )
+    parser.add_argument(
         '--incumbente_inicial', default=None,
         help='[--mode decomposed] carpeta con los JSON del reporte de una corrida '
              'anterior: su solucion (pulida) entra como UB inicial, centro de la caja '
@@ -770,6 +807,12 @@ def main():
         # Por entorno: lo leen todos los constructores del modelo y los
         # procesos hijos (ver corte_cargas_activo en functions.py).
         os.environ["ELMO_SIN_CORTE_CARGAS"] = "1"
+    if args.r_endurecido:
+        os.environ["ELMO_R_ENDURECIDO"] = "1"
+    if args.pipeline_ciclico:
+        os.environ["ELMO_PIPELINE_CICLICO"] = "1"
+    if args.tope_estacion is not None:
+        os.environ["ELMO_TOPE_ESTACION"] = str(args.tope_estacion)
     series, mine_system, time_series = build_mine(args)
 
     if args.mode in ('decomposed', 'hybrid'):

@@ -91,7 +91,8 @@ class NestedBendersSolver(object):
                  box_delta_int=1, box_frac_cont=0.25, box_min_cont=1.0,
                  box_delta_int_max=None, stab_free_every=0, level_alpha=0.5,
                  max_time_sec=None, t_origen=None, incumbente_inicial=None,
-                 op_bound_gap=None, corte_cargas_lhd=None):
+                 op_bound_gap=None, corte_cargas_lhd=None,
+                 evaluar_trayectoria_op=False, reparar_reemplazo=False):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -257,6 +258,13 @@ class NestedBendersSolver(object):
         # cota: con 1 % se pierde hasta 1 % de LB (v4: 1.997.972 contra
         # 1.999.044 con 1e-4).
         self.op_bound_gap = op_bound_gap
+        # Iteracion 0 (ver _evaluar_trayectoria / _reparar_reemplazo): evaluar
+        # la inversion de la cota operacional como incumbente y, si la solucion
+        # paga reemplazo de flota, probarla con baterias extra y R = 0.
+        self.evaluar_trayectoria_op = evaluar_trayectoria_op
+        self.reparar_reemplazo = reparar_reemplazo
+        self.tray_op = None
+        self.R_op = None
         self.parada_por_tiempo = False
         if stab_center not in ("operational", "first"):
             raise ValueError(f"stab_center debe ser 'operational' o 'first' (recibido {stab_center!r})")
@@ -553,7 +561,9 @@ class NestedBendersSolver(object):
 
         with open(ruta, encoding="utf-8") as fh:
             datos = json.load(fh)
-        tf = max(model.time_intervals_set)
+        from src.optimization.functions import intervalos_corte_cargas
+        # t < tf, o todos los t con ELMO_PIPELINE_CICLICO (ver min_charges_cut)
+        t_corte = intervalos_corte_cargas(sorted(model.time_intervals_set))
         anios = sorted(model.years)
         tiene_R = hasattr(model, "R")
         filas = []
@@ -568,7 +578,7 @@ class NestedBendersSolver(object):
         model.corte_cargas_lhd = pyo.ConstraintList()
         for y, d, n_nom, n_sinR in filas:
             cargas = sum(model.X_ini[k, y, d, t] for k in model.stations_set
-                         for t in model.time_intervals_set if t < tf)
+                         for t in t_corte)
             rhs = n_sinR
             if n_sinR > n_nom:
                 rhs = n_sinR - (n_sinR - n_nom) * sum(model.R[s] for s in anios if s <= y)
@@ -666,6 +676,12 @@ class NestedBendersSolver(object):
         try:
             model.solutions.load_from(result)
             trayectoria = self._trayectoria_desde_monolitico(model)
+            # El reemplazo R de la cota operacional (entero: es inversion), para
+            # evaluar su trayectoria como incumbente (_evaluar_trayectoria).
+            R = getattr(model, "R", None)
+            if R is not None:
+                self.R_op = {int(y): int(round(value(R[y], exception=False) or 0.0))
+                             for y in R}
         except Exception as exc:
             print(f"[NestedBenders] la cota operacional no dejo solucion para "
                   f"centrar la estabilizacion ({type(exc).__name__}: {exc})")
@@ -1294,6 +1310,125 @@ class NestedBendersSolver(object):
     #     cortes valen para cualquier estado (el paper la saca del maestro sin
     #     estabilizar, por la misma razon).
 
+    # ------------------------------------------------------------------ #
+    # Iteracion 0: trayectoria de la cota operacional y reparacion del
+    # reemplazo (2026-10-23, --evaluar_trayectoria_op / --reparar_reemplazo)
+    # ------------------------------------------------------------------ #
+    # La cota operacional decide la inversion ENTERA (con la operacion
+    # relajada) y en los casos v4 no paga reemplazo de flota, mientras que los
+    # forward del Benders si lo pagan: la relajacion LP de R en los cortes
+    # abarata el reemplazo y el año que decide comprar baterias no lo ve
+    # (reparacion_reemplazo/README.md). Caso 6 v4: Benders 3,33 M tras 4
+    # iteraciones; la solucion sin reemplazo (+1 bateria, bahia y cargador en el
+    # año 3) 2,82 M. Aca se evalua esa trayectoria antes de la iteracion 1 y, si
+    # igual termina pagando reemplazo, se repara como se hizo a mano.
+
+    @staticmethod
+    def _R_de(fwd):
+        """{año: R} de la solucion completa de un forward."""
+        out = {}
+        for y, sol in (fwd.get("full_solution") or {}).items():
+            r = sol.get("R")
+            if isinstance(r, dict):
+                for idx, v in r.items():
+                    yy = idx[-1] if isinstance(idx, tuple) else idx
+                    if int(yy) == int(y):
+                        out[int(y)] = int(round(v))
+        return out
+
+    def _evaluar_trayectoria(self, centro, R_fijo, etiqueta, verbose=True):
+        """Forward con la inversion FIJA en `centro` (caja de radio 0 en las
+        enteras y, en la practica, en G/H) y el reemplazo fijo en `R_fijo`
+        ({año: 0/1}; si un año no tiene solucion asi, el forward lo libera).
+        Pule el resultado y, si mejora, lo deja como incumbente, centro de la
+        caja y respaldo. Devuelve (costo, fwd, años con R liberado), o
+        (None, None, []) si el forward falla."""
+        inf = float("inf")
+        self.forward_pass.trust_region = {"center": centro, "delta_int": 0,
+                                          "frac_cont": 0.0, "min_cont": 1e-6}
+        self.forward_pass.fijar_R = R_fijo
+        self.forward_pass.r_liberado = []
+        self.forward_pass.incumbente = self.best_full_solution
+        t0 = time.time()
+        if verbose:
+            print(f"[NestedBenders] k=0 evaluando {etiqueta} (inversion fija, R fijo en "
+                  f"{sorted(y for y, v in (R_fijo or {}).items() if v) or 'ningun año'} = 1, "
+                  f"resto 0)...", flush=True)
+        try:
+            fwd = self.forward_pass.run(
+                iteration=0, verbose=verbose,
+                current_ub=(self.ub if self.ub != inf else None),
+                current_lb=(self.lb if self.lb != -inf else None))
+        except Exception as exc:
+            print(f"[NestedBenders] k=0 {etiqueta}: el forward fallo "
+                  f"({type(exc).__name__}: {exc}) -- se sigue sin ella")
+            return None, None, []
+        finally:
+            self.forward_pass.fijar_R = None
+            self.forward_pass.trust_region = None
+        liberados = list(self.forward_pass.r_liberado)
+        costo = fwd["ub"]
+        if self.polish_each_iter:
+            pulido = self._polish_iteration(fwd, 0, verbose=verbose)
+            if pulido is not None:
+                costo = pulido
+        reemplazos = sorted(y for y, v in self._R_de(fwd).items() if v >= 1)
+        if verbose:
+            print(f"[NestedBenders] k=0 {etiqueta}: UB {costo:,.2f} ({time.time() - t0:.0f}s); "
+                  f"reemplazo en {reemplazos or 'ningun año'}"
+                  + (f"; R liberado en {liberados}" if liberados else ""), flush=True)
+        self.ub = min(self.ub, costo)
+        if costo <= self.best_cost:
+            self.best_cost = costo
+            self.best_ub = fwd["ub"]
+            self.best_solution = fwd["x_hat"]
+            self.best_full_solution = fwd["full_solution"]
+            if self.stabilization:
+                self.stab_center = fwd["x_hat"]
+            self._guardar_respaldo(0, verbose)
+        return costo, fwd, liberados
+
+    def _reparar_reemplazo(self, fwd, verbose=True):
+        """Si la solucion de `fwd` paga reemplazo, la evalua con baterias extra
+        y R = 0: primero +1 bateria desde 4 años antes del primer reemplazo y,
+        si con eso algun año todavia necesita reemplazo, +2 (desde 6 y 3 años
+        antes). Las bahias y los cargadores se suben lo justo para que quepan
+        (max_batteries_per_bay por bahia, al menos un cargador por bahia)."""
+        import copy
+        R = self._R_de(fwd)
+        años_R = sorted(y for y, v in R.items() if v >= 1)
+        if not años_R:
+            return
+        yR = años_R[0]
+        años = sorted(fwd["x_hat"])
+        y_min = años[1] if len(años) > 1 else años[0]
+        m0 = self.blocks[0].model
+        intentos = [((4,), "+1 bateria"), ((6, 3), "+2 baterias")]
+        for adelantos, nombre in intentos:
+            centro = copy.deepcopy(fwd["x_hat"])
+            desde = [max(y_min, yR - a) for a in adelantos]
+            for y in años:
+                extra = sum(1 for a in desde if y >= a)
+                if not extra:
+                    continue
+                est = centro[y]
+                for k in list(est.get("N_batteries", {})):
+                    nb = int(round(est["N_batteries"][k])) + extra
+                    est["N_batteries"][k] = nb
+                    por_bahia = int(value(m0.max_batteries_per_bay_k[k]))
+                    if "N_bays" in est:
+                        est["N_bays"][k] = max(int(round(est["N_bays"][k])),
+                                               math.ceil(nb / max(por_bahia, 1)))
+                    if "N_chargers" in est and "N_bays" in est:
+                        est["N_chargers"][k] = max(int(round(est["N_chargers"][k])),
+                                                   est["N_bays"][k])
+            etiqueta = (f"reparacion del reemplazo del año {yR} ({nombre} desde "
+                        f"{', '.join(str(a) for a in desde)}, R = 0)")
+            _costo, fwd2, liberados = self._evaluar_trayectoria(
+                centro, {y: 0 for y in años}, etiqueta, verbose=verbose)
+            if fwd2 is not None and not liberados:
+                return
+
     def _trust_region_for(self, k, verbose=True):
         """Caja para el forward de la iteracion k, o None si va sin caja."""
         if not self.stabilization:
@@ -1444,6 +1579,7 @@ class NestedBendersSolver(object):
             t_ob = time.time()
             try:
                 self.lb_operational, relajadas, tray_op = self._operational_bound()
+                self.tray_op = tray_op
                 self.lb = max(self.lb, self.lb_operational)
                 if (self.stabilization and self.stab_center_mode == "operational"
                         and tray_op is not None):
@@ -1489,6 +1625,17 @@ class NestedBendersSolver(object):
             if verbose:
                 print(f"[NestedBenders] cota inicial externa (--lb_inicial) = "
                       f"{self.lb_inicial:,.2f}  -> LB = {self.lb:,.2f}")
+
+        if self.evaluar_trayectoria_op:
+            if getattr(self, "tray_op", None) is None:
+                print("[NestedBenders] --evaluar_trayectoria_op: no hay trayectoria de la cota "
+                      "operacional (falta --operational_bound o no dejo solucion)")
+            else:
+                _c0, fwd0, _lib0 = self._evaluar_trayectoria(
+                    self.tray_op, getattr(self, "R_op", None) or {},
+                    "trayectoria de la cota operacional", verbose=verbose)
+                if self.reparar_reemplazo and fwd0 is not None:
+                    self._reparar_reemplazo(fwd0, verbose=verbose)
 
         if self.warm_start_cuts:
             if trayectoria_warm is None:

@@ -57,6 +57,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", default="data/Tesis_final/Mina_modelo/RED_GEN")
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--days_per_year", type=int, choices=[1, 2, 4], default=4,
+                    help="los mismos dias representativos que la corrida de Benders: cap_sinR "
+                         "depende de la energia anual, que cambia con los dias")
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--out", required=True, help="JSON de salida")
     ap.add_argument("--tmp", default=None, help="carpeta para el MPS (default: junto al --out)")
@@ -66,7 +69,7 @@ def main():
 
     ns = Namespace(data_folder=a.data_folder, model="elmo_data.xlsx", series="time_series.xlsx",
                    consumption_model="wp1", wp2_consumption_json=None, n_years=a.n_years,
-                   days_per_year=4)
+                   days_per_year=a.days_per_year)
     _s, ms, ts = build_mine(ns)
     om = OptModel(ms, ts, os.path.join(tmp, "_monolitico"),
                   mccormick_degradation=True, free_charging=True, free_maintenance=True)

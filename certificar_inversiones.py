@@ -40,6 +40,7 @@ from setup import build_mine                                             # noqa:
 from src.optimization.decomposition import gcg_block as gb               # noqa: E402
 from src.optimization.decomposition.benders_dias import BendersDias      # noqa: E402
 from src.optimization.opt_model import OptModel                          # noqa: E402
+from src.optimization.functions import intervalos_corte_cargas            # noqa: E402
 
 
 def lb_fijo(bd, clave, alpha, max_rondas, tol):
@@ -149,13 +150,14 @@ def main():
     cols_bb = {int(P.nombre[j][len("b_bar("):-1]): j for j in P.maestro_vars
                if P.nombre[j].startswith("b_bar(")}
     cap_pool = value(om.model.b_max_pool)
-    tf = max(om.model.time_intervals_set)
+    # t < tf, o todos los t con ELMO_PIPELINE_CICLICO (ver min_charges_cut)
+    t_corte = set(intervalos_corte_cargas(sorted(om.model.time_intervals_set)))
     fila_corte = {}
     for b, s in enumerate(bd.subs):
         kx = []
         for k, j in enumerate(s.loc):
             vd = por_var.get(P.nombre[j])
-            if vd is not None and vd.parent_component().name == "X_ini" and vd.index()[-1] < tf:
+            if vd is not None and vd.parent_component().name == "X_ini" and vd.index()[-1] in t_corte:
                 kx.append(k)
         fila_corte[b] = s.m.addLConstr(gp.quicksum(s.vloc[k] for k in kx), GRB.GREATER_EQUAL, 0.0)
         s.m.update()

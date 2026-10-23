@@ -247,6 +247,12 @@ class ForwardPass(object):
         # frac_cont y min_cont -- ver YearBlockBuilder.set_trust_region. Lo
         # fija el driver antes de cada run().
         self.trust_region = None
+        # Reemplazo de flota FIJO por año, {año: 0/1} o None (lo fija el driver
+        # para evaluar una trayectoria dada, p.ej. la de la cota operacional:
+        # ver NestedBenders._evaluar_trayectoria). Si el año queda sin solucion
+        # con R fijo, se repite con R libre (r_liberado lo registra).
+        self.fijar_R = None
+        self.r_liberado = []
         # Mejor trayectoria conocida, {año: extract_full_solution()}, o None.
         # Sus enteras son el MIP start de la fase 1 de cada dia en el start por
         # dias (ver day_blocks.solve_year_by_days). Lo fija el driver.
@@ -492,6 +498,31 @@ class ForwardPass(object):
                     raise exc
 
     def _solve_year_stabilized(self, block, heritage, iteration, verbose):
+        """_solve_year_stabilized_caja con el reemplazo R del año fijo, si el
+        driver lo pidio (fijar_R). Si con R fijo el año no tiene solucion (p.ej.
+        la flota cae bajo el piso sin reemplazo), se repite con R libre."""
+        r_fijo = (self.fijar_R or {}).get(block.year)
+        R = getattr(block.model, "R", None)
+        if r_fijo is None or R is None or block.year not in R:
+            return self._solve_year_stabilized_caja(block, heritage, iteration, verbose)
+        vR = R[block.year]
+        lb0, ub0 = vR.lb, vR.ub
+        vR.setlb(r_fijo)
+        vR.setub(r_fijo)
+        try:
+            return self._solve_year_stabilized_caja(block, heritage, iteration, verbose)
+        except (SubproblemInfeasible, SubproblemNoIncumbent) as exc:
+            print(f"[NestedBenders] año {block.year}: sin solucion con R fijo en {r_fijo} "
+                  f"({type(exc).__name__}) -- se repite con R libre")
+            vR.setlb(lb0)
+            vR.setub(ub0)
+            self.r_liberado.append(block.year)
+            return self._solve_year_stabilized_caja(block, heritage, iteration, verbose)
+        finally:
+            vR.setlb(lb0)
+            vR.setub(ub0)
+
+    def _solve_year_stabilized_caja(self, block, heritage, iteration, verbose):
         """_solve_year dentro de la caja del forward estabilizado, si la hay.
         Devuelve True si la caja termino ACTIVA (la solucion toca un borde).
 
