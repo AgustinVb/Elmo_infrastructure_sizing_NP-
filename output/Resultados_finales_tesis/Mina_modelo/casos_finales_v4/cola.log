@@ -41,3 +41,15 @@
 8. Produccion_base/zona_norte/2C/RED_GEN_BESS     sin certificado
 [cola r1 fin] 2026-10-23 09:48:06 (llevo 14.4 h, quedan 53.6 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/resumen.txt
 [cola r1 fin] 2026-10-23 09:48:06 (llevo 14.4 h, quedan 53.6 h) hay casos >= 1 %: relanzarlos con  RONDA=2 bash cola_tesis_swap.sh
+[cola r1 inicio] 2026-10-22 19:33:26 (llevo 0.0 h, quedan 68.0 h) casos 3 | Benders 10 h por caso, tope global 68 h (hasta 2026-10-25 15:33:26), corte de cargas si
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-22 19:36:40 (llevo 0.1 h, quedan 67.9 h) Nested Benders (max 10.00 h, gap 0.01, corte tras 4 iteraciones sin mejora, corte de cargas)
+[cola r1 corte manual] 2026-10-22 22:39:07 caso 3 detenido a pedido de la usuaria en el forward de k=3; respaldo de k=2 (UB 3.289.542,58, 18 cortes) en benders/incumbente_respaldo_k2.pkl
+[cola r1 inicio] 2026-10-23 02:43:36 (llevo 7.2 h, quedan 60.8 h) casos 2 | Benders 10 h por caso, tope global 68 h (hasta 2026-10-25 15:33:26), corte de cargas si
+[cola r1 2/8 Produccion_base/zona_norte/05C/RED_GEN_BESS] 2026-10-23 02:45:43 (llevo 7.2 h, quedan 60.8 h) Nested Benders (max 10.00 h, gap 0.01, corte tras 4 iteraciones sin mejora, corte de cargas)
+[caso2 equipo2] 2026-10-23 02:45:43 Nested Benders (cola v4, caso 2/8 Produccion_base/zona_norte/05C/RED_GEN_BESS): cota operacional 2.387.721,18 (2356 s); k=1 UB 3.085.163,22 (gap 22,61 %)
+[caso2 equipo2] 2026-10-23 05:13 Benders cortado a mano tras k=1 (respaldo en benders/incumbente_respaldo.pkl): la LB no cambia y el UB pagaba la flota; se sigue reparando la solucion de la v3
+[caso2 equipo2] 2026-10-23 05:12 solucion v3 reparada (reparacion_reemplazo/reparar_inversion.py; estacion 1,1,2,3,4 baterias, 2o cargador en el año 3, 2a bahia en el año 4, R = 0): UB 2.752.158,51 (reparacion_v3e/solucion)
+[caso2 equipo2] 2026-10-23 05:50 mejorar_ub pasada 1 (años 1-10, 600 s): UB 2.706.425,04 (mejorar_ub_rep1/solucion)
+[caso2 equipo2] 2026-10-23 06:42 mejorar_ub pasada 2 (años 3-9, 900 s): UB 2.703.610,27 (mejorar_ub_rep2/solucion); gap 11,68 % contra la cota operacional; sin certificado
+[caso2 equipo2] 2026-10-26 12:04:03 certificar (UB 2.664.497,51 de fijarR/mejorar_ub_1/solucion, gap_objetivo 0.005, capacidad station_1>=1)
+[caso2 equipo2] 2026-10-26 12:08:00 certificado detenido: 5000 candidatas bajo el umbral 2.651.175 (pool incompleto, no certifica; gap 11 % demasiado grande para enumerar)

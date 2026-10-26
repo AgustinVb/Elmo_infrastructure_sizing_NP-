@@ -3,7 +3,7 @@
 # <caso>/solucion_reparada (+1 bateria/bahia/cargador en el año 3, sin reemplazo):
 # mejorar_ub pasadas 1 y 2, consumer y certificado.
 cd "$(dirname "$0")"
-PY=~/miniconda3/envs/py310/bin/python
+PY=${PY:-~/miniconda3/envs/py310/bin/python}   # en Windows: PY=.venv_elmo/Scripts/python.exe
 
 D=data/Tesis_final/Mina_modelo_v4/Produccion_base/zona_centro/05C/RED_GEN_BESS
 R=output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_centro/05C/RED_GEN_BESS
