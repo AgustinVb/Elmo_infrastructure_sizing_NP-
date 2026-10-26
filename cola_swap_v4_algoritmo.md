@@ -10,7 +10,7 @@ equipo (usuaria o sesión de Claude Code).
 | # | Caso (`data/Tesis_final/Mina_modelo_v4/...`) | UB | LB | Gap | Estado |
 |---|---|---:|---:|---:|---|
 | 1 | Produccion_base/zona_norte/05C/RED | 3.338.990 | 3.206.386 (op.) | 3,97 % | reparado sin reemplazo; certificado no terminó (644 candidatas) |
-| 2 | Produccion_base/zona_norte/05C/RED_GEN_BESS | 2.664.498 | 2.387.721 (op.) | 10,39 % | `--fijar_R 0` + `mejorar_ub`; certificado inviable (pool de 5.000 lleno) |
+| 2 | Produccion_base/zona_norte/05C/RED_GEN_BESS | **2.521.834** | 2.387.721 (op.) | **5,32 %** | iteración 0 = trayectoria de la cota operacional **reparada con la DP** (§8), en 33 min; antes 2.664.498 (10,39 %). Benders siguiendo con caja ±2 (`dp_it0/`) |
 | 3 | Produccion_base/zona_norte/05C/RED_GEN | 3.289.543 | 2.424.994 (op.) | 26,3 % | Benders detenido en k=2, paga reemplazo → **en la cola** |
 | 4 | Produccion_escalada20/zona_norte/05C/RED | — | 3.831.682 (op.) | — | el año 4 no tuvo solución (120 s y 1.200 s) → **al final de la cola** |
 | 5 | Produccion_escalada20/zona_norte/05C/RED_GEN_BESS | — | — | — | **en la cola** |
@@ -81,6 +81,10 @@ filtrando con la degradación predicha.
 - **Equipo 2: prueba SIN estabilización en el caso 2,** desde su mejor solución (2.664.498)
   con `--fijar_R 0`, hasta 10 h. Se compara con la corrida de ±1 del mismo caso (`fijarR/`:
   6 iteraciones, −0,8 %). Salida en `.../05C/RED_GEN_BESS/sincaja/`.
+  **Resultado: descartado.** Sin caja, el forward de la iteración 1 es miope (no ve el
+  desgaste futuro). No compró baterías en los años 5 y 6 y cayó en una cascada de cortes de
+  factibilidad: 4 reinicios desde el año 1 en ~3 h, sin terminar la iteración 1. Se detuvo a
+  mano. **No usar `ESTAB=""`.** Lo que sí funcionó fue reparar la iteración 0 con la DP (§8).
 
 Con los dos resultados se decide qué estabilización usar en las corridas siguientes. Lo que
 sigue describe el criterio de oscilación, que sirve para evaluar ambas.
@@ -166,3 +170,72 @@ por variable.
   commit:** sin él, `BENDERS_EXTRA="--fijar_R op"` falla. `--evaluar_trayectoria_op`,
   `--reparar_reemplazo` y `--r_endurecido` ya estaban en el commit 31f72835d (detalle en
   `reparacion_reemplazo/README.md`).
+
+## 8. Nuevo (2026-10-26): reparación de la iteración 0 con la DP de degradación
+
+**Qué resuelve.** La inversión de la cota operacional es muy buena, pero su batería llega al
+año 10 justo en el piso del 80 % con la operación relajada. Con la operación entera le faltan
+~1,5 kWh: el año 10 queda infactible o compra 5 baterías de golpe (caso 2: UB 3,73 M en la
+corrida `it0`). La DP de degradación (`src/optimization/decomposition/degradacion_dp.py`)
+calcula el ajuste más barato: agregar o adelantar compras de baterías, bahías y cargadores,
+o reemplazar la flota. Nunca quita lo que la trayectoria ya decidió. La flota queda
+`--dp_margen` kWh sobre el piso.
+
+**Resultado en el caso 2:** la reparación adelantó la 3ª batería y la 2ª bahía del año 5 al
+4. La evaluación (iteración 0, 33 min) dio un **UB de 2.521.834 (gap 5,32 %)**, contra
+2.664.498 (10,39 %) que había costado una reparación manual más 6 iteraciones de Benders.
+
+**Flags nuevos** (`setup.py`, `--mode decomposed`):
+- `--reparar_dp`: con `--evaluar_trayectoria_op`, repara la trayectoria de la cota antes
+  de evaluarla. Usa la energía del incumbente (`--incumbente_inicial`) o, sin incumbente,
+  la nominal del plan de producción, que queda 0,3–2 % más alta (conservadora).
+- `--dp_margen` (default 0,5 kWh).
+- `--tray_op_archivo <tray_op.pkl>`: la cota operacional ahora guarda su trayectoria en
+  `<benders>/tray_op.pkl`. Con este flag se reusa sin recalcularla; la LB se pasa con
+  `--lb_inicial`.
+
+**En la cola** (casos que todavía no corrieron), agregar los flags a `BENDERS_EXTRA`:
+
+    ESTAB="--stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3" \
+      BENDERS_EXTRA="--fijar_R op --evaluar_trayectoria_op --reparar_dp" TOPE_H=90 \
+      nohup bash cola_tesis_swap_v4.sh <casos> > $V/cola_r2.out 2>&1 &
+
+Si la cola ya está corriendo con el código anterior, dejar terminar el caso en curso,
+detenerla y relanzarla con los casos que faltan.
+
+**Para un caso que ya corrió con el código anterior** (no tiene `tray_op.pkl`), relanzar el
+Benders recalculando la cota (~45 min), con iteración 0 reparada y desde su mejor solución:
+
+    python -u setup.py --data_folder data/Tesis_final/Mina_modelo_v4/<caso> --solver gurobi \
+      --days_per_year 4 --free_charging --free_maintenance --block_build_jobs 1 \
+      --output_folder <V>/<caso>/dp_it0/benders --mode decomposed --n_years 10 --gap_tol 0.01 \
+      --max_iter 50 --max_hours 10 --no_monolithic_lp_bound --operational_bound \
+      --corte_cargas_lhd <V>/<caso>/corte_cargas_lhd.json \
+      --cut_type strengthened --strengthened_timelimit 300 --block_mip_focus 1 \
+      --solve_timelimit 120 --day_warm_start always --day_timelimit 120 --day_gap 0.05 \
+      --day_jobs 4 --polish_each_iter --skip_last_backward --fijar_R op \
+      --incumbente_inicial <V>/<caso>/benders/incumbente_respaldo.pkl \
+      --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5 \
+      --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3 \
+      > <V>/<caso>/dp_it0/benders.log 2>&1
+
+Con `tray_op.pkl` ya guardado, cambiar `--operational_bound --corte_cargas_lhd …` por
+`--tray_op_archivo <…>/tray_op.pkl --lb_inicial <cota operacional>`.
+
+**Qué mirar en el log:**
+- `--reparar_dp (energia …, margen …): y4 baterias 2->3, …; capacidad final … kWh`;
+- `k=0 trayectoria de la cota operacional reparada con la DP: UB …`.
+
+Si la DP elige reemplazar, el log lo dice (`yN REEMPLAZO`) y vuelve a fijar R en los bloques
+según ese plan.
+
+**Diagnóstico sin correr nada** (2 s): `python dp_degradacion.py --data_folder <datos> --solucion
+<carpeta de JSON> --reparar` valida la DP contra la solución y entrega el plan óptimo de
+degradación, el valor de estados dados (`--estado año,pool,naves,D`) y la reparación del plan.
+
+**Tests:** `python tests/test_degradacion_dp.py`. La DP coincide con la enumeración
+exhaustiva de planes en un caso sintético.
+
+**Pendiente (propuesto, no implementado):** usar la DP también dentro del Benders, como parte
+exacta del costo futuro (θ = V_degradación + θ_resto con cortes). Así cada forward vería el
+costo de dejar la batería corta, y se podría quitar `--fijar_R`.

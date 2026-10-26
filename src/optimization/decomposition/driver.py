@@ -92,7 +92,8 @@ class NestedBendersSolver(object):
                  box_delta_int_max=None, stab_free_every=0, level_alpha=0.5,
                  max_time_sec=None, t_origen=None, incumbente_inicial=None,
                  op_bound_gap=None, corte_cargas_lhd=None,
-                 evaluar_trayectoria_op=False, reparar_reemplazo=False, fijar_R=None):
+                 evaluar_trayectoria_op=False, reparar_reemplazo=False, fijar_R=None,
+                 reparar_dp=False, dp_margen=0.5, tray_op_archivo=None):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -265,6 +266,15 @@ class NestedBendersSolver(object):
         self.reparar_reemplazo = reparar_reemplazo
         self.tray_op = None
         self.R_op = None
+        # --reparar_dp (2026-10-26, ver _reparar_con_dp): antes de evaluar la
+        # trayectoria de la cota operacional, ajusta su plan de baterias/bahias/
+        # cargadores (y reemplazo) con la DP de degradacion para que la flota
+        # llegue al final del horizonte dp_margen kWh sobre el piso.
+        # tray_op_archivo: tray_op.pkl de una corrida anterior (lo escribe
+        # _operational_bound) para no recalcular la cota (~40 min a 10 años).
+        self.reparar_dp = reparar_dp
+        self.dp_margen = dp_margen
+        self.tray_op_archivo = tray_op_archivo
         # --fijar_R ('op' o '0'): reemplazo fijo en todos los bloques (forward y
         # backward); ver _fijar_R_en_bloques. R_fijado != None => la cota del
         # backward es del problema restringido y no entra a la LB.
@@ -1343,7 +1353,7 @@ class NestedBendersSolver(object):
                         out[int(y)] = int(round(v))
         return out
 
-    def _fijar_R_en_bloques(self, verbose=True):
+    def _fijar_R_en_bloques(self, verbose=True, R=None):
         """--fijar_R: fija el reemplazo R[y] en todos los bloques anuales, para
         el forward Y el backward. 'op' = el de la cota operacional (que decide
         la inversion entera y en los casos v4 no reemplaza); '0' = sin
@@ -1355,8 +1365,13 @@ class NestedBendersSolver(object):
         la LB (queda la cota operacional, calculada antes con R libre, o
         --lb_inicial). Fijar R tambien en el backward es lo que hace que los
         cortes vean que llegar con poca capacidad cuesta (baterias), en vez de
-        un reemplazo relajado barato."""
-        if self.fijar_R_modo == "op":
+        un reemplazo relajado barato. Con R explicito ({año: 0/1}, el del plan
+        de --reparar_dp) se fija ese."""
+        origen = self.fijar_R_modo
+        if R is not None:
+            R = {int(y): int(v) for y, v in R.items()}
+            origen = "dp"
+        elif self.fijar_R_modo == "op":
             if self.R_op is None:
                 print("[NestedBenders] --fijar_R op: la cota operacional no dejo R "
                       "(falta --operational_bound o no tuvo solucion) -- no se fija R")
@@ -1375,7 +1390,7 @@ class NestedBendersSolver(object):
             n += 1
         self.R_fijado = R
         if verbose:
-            print(f"[NestedBenders] --fijar_R {self.fijar_R_modo}: R fijo en {n} bloques "
+            print(f"[NestedBenders] --fijar_R {origen}: R fijo en {n} bloques "
                   f"(reemplazo en {sorted(y for y, v in R.items() if v) or 'ningun año'}); "
                   f"la cota del backward no entra a la LB", flush=True)
 
@@ -1471,6 +1486,123 @@ class NestedBendersSolver(object):
                 centro, {y: 0 for y in años}, etiqueta, verbose=verbose)
             if fwd2 is not None and not liberados:
                 return
+
+    # ------------------------------------------------------------------ #
+    # Reparacion con la DP de degradacion (2026-10-26, --reparar_dp)
+    # ------------------------------------------------------------------ #
+    # Caso 2 v4: la trayectoria de la cota operacional llegaba al año 10 justo
+    # en el piso con su operacion relajada y 1,5 kWh bajo el con la operacion
+    # entera, asi que su evaluacion (k=0) tuvo que comprar 5 baterias en el año
+    # 10 (UB 3,73 M). La DP de degradacion (degradacion_dp.py) la arregla
+    # adelantando un año la 3a bateria y la 2a bahia. A diferencia de
+    # _reparar_reemplazo (regla fija: +1/+2 baterias antes del reemplazo), la DP
+    # elige lo mas barato entre comprar antes, comprar mas o reemplazar.
+
+    def _guardar_tray_op(self, verbose=True):
+        """<output_folder>/tray_op.pkl: inversion y R de la cota operacional y su
+        valor, para reusarlos con --tray_op_archivo sin recalcular la cota."""
+        if not self.output_folder or self.tray_op is None:
+            return
+        import pickle
+        ruta = os.path.join(self.output_folder, "tray_op.pkl")
+        try:
+            with open(ruta, "wb") as f:
+                pickle.dump({"tray_op": self.tray_op, "R_op": self.R_op,
+                             "lb_operational": getattr(self, "lb_operational", None)},
+                            f, protocol=pickle.HIGHEST_PROTOCOL)
+            if verbose:
+                print(f"[NestedBenders] trayectoria de la cota operacional guardada en {ruta}")
+        except Exception as exc:
+            print(f"[NestedBenders] no se pudo guardar la trayectoria de la cota "
+                  f"({type(exc).__name__}: {exc})")
+
+    def _cargar_tray_op(self, ruta, verbose=True):
+        """--tray_op_archivo: carga tray_op.pkl. Solo la trayectoria y R: la cota
+        no entra a la LB por aca (para eso, --lb_inicial)."""
+        import pickle
+        with open(ruta, "rb") as f:
+            r = pickle.load(f)
+        self.tray_op = {int(y): v for y, v in r["tray_op"].items()}
+        self.R_op = r.get("R_op")
+        if (self.stabilization and self.stab_center_mode == "operational"
+                and self.stab_center is None):
+            self.stab_center = self.tray_op
+        if verbose:
+            print(f"[NestedBenders] trayectoria de la cota operacional de {ruta} "
+                  f"(cota {r.get('lb_operational') or float('nan'):,.2f}, no entra a la LB)")
+
+    def _energia_por_año(self):
+        """({año: kWh}, fuente) de energia consumida para la DP: la del
+        incumbente si lo hay (operacion entera), si no la nominal del plan de
+        produccion (en el caso 2 v4, 0,3-2 % sobre la de las soluciones)."""
+        from src.optimization.decomposition.degradacion_dp import energia_nominal
+        from src.optimization.functions import ESCALA_UNIDADES
+        E = {}
+        for y, sol in (self.best_full_solution or {}).items():
+            ec = (sol or {}).get("EnergyConsumed")
+            if not isinstance(ec, dict):
+                continue
+            for idx, v in ec.items():
+                yy = idx[-1] if isinstance(idx, tuple) else idx
+                if int(yy) == int(y) and v is not None:
+                    E[int(y)] = float(v) * ESCALA_UNIDADES["EnergyConsumed"]
+        if all(int(y) in E for y in self.years):
+            return E, "incumbente"
+        return energia_nominal(self.mine_system, self.time_series), "nominal"
+
+    def _reparar_con_dp(self, centro, verbose=True):
+        """Ajusta el plan de estacion de `centro` (trayectoria por año, formato
+        extract_state) con la DP de degradacion: agrega o adelanta baterias,
+        bahias y cargadores --nunca quita lo que la trayectoria decidio por la
+        operacion-- o reemplaza la flota, lo que sea mas barato, para que la
+        capacidad termine el horizonte dp_margen kWh sobre el piso. Lo agregado
+        va a la primera estacion (los casos de tesis tienen una). Devuelve
+        (centro reparado, {año: R}) o (None, None) si no se pudo."""
+        import copy
+        from src.optimization.decomposition.degradacion_dp import parametros_desde, reparar_plan
+        try:
+            P = parametros_desde(self.mine_system, self.time_series)
+        except ValueError as exc:
+            print(f"[NestedBenders] --reparar_dp: {exc} -- se evalua sin reparar")
+            return None, None
+        años = sorted(centro)
+
+        def total(y, fam):
+            v = centro[y].get(fam)
+            return int(round(sum(v.values()) if isinstance(v, dict) else (v or 0)))
+
+        pool = {y: total(y, "N_batteries") for y in años}
+        naves = {y: total(y, "N_bays") for y in años}
+        carg = {y: total(y, "N_chargers") for y in años}
+        E, fuente = self._energia_por_año()
+        res = reparar_plan(P, E, pool, naves, carg, margen=self.dp_margen)
+        if res is None:
+            print("[NestedBenders] --reparar_dp: la DP no encontro plan factible "
+                  "-- se evalua sin reparar")
+            return None, None
+        costo, por_año, D_fin = res
+        k0 = P["estaciones"][0]
+        rep = copy.deepcopy(centro)
+        cambios = []
+        for y in años:
+            p2, nb2, c2, R = por_año[y]
+            if (p2, nb2, c2) != (pool[y], naves[y], carg[y]):
+                cambios.append(f"y{y} baterias {pool[y]}->{p2}, bahias {naves[y]}->{nb2}, "
+                               f"cargadores {carg[y]}->{c2}")
+            if R:
+                cambios.append(f"y{y} REEMPLAZO")
+            for fam, nuevo, viejo in (("N_batteries", p2, pool[y]), ("N_bays", nb2, naves[y]),
+                                      ("N_chargers", c2, carg[y])):
+                est = rep[y].get(fam)
+                if isinstance(est, dict) and k0 in est:
+                    est[k0] = float(int(round(est[k0])) + nuevo - viejo)
+        if verbose:
+            print(f"[NestedBenders] --reparar_dp (energia {fuente}, margen {self.dp_margen} kWh): "
+                  f"{'; '.join(cambios) if cambios else 'el plan ya llega'}; capacidad final "
+                  f"{D_fin:.2f} kWh (piso {P['B_L']:.1f}); costo DP del plan {costo:,.0f}"
+                  + (f"; {len(P['estaciones'])} estaciones: lo agregado va a {k0}"
+                     if len(P["estaciones"]) > 1 else ""), flush=True)
+        return rep, {y: int(por_año[y][3]) for y in años}
 
     def _trust_region_for(self, k, verbose=True):
         """Caja para el forward de la iteracion k, o None si va sin caja."""
@@ -1623,6 +1755,7 @@ class NestedBendersSolver(object):
             try:
                 self.lb_operational, relajadas, tray_op = self._operational_bound()
                 self.tray_op = tray_op
+                self._guardar_tray_op(verbose=verbose)
                 self.lb = max(self.lb, self.lb_operational)
                 if (self.stabilization and self.stab_center_mode == "operational"
                         and tray_op is not None):
@@ -1646,6 +1779,9 @@ class NestedBendersSolver(object):
                 # memoria, se sigue con la del backward y la del LP.
                 print(f"[NestedBenders] sin cota por relajacion operacional "
                       f"({type(exc).__name__}: {exc}) -- se sigue sin ella.")
+
+        if self.tray_op is None and self.tray_op_archivo:
+            self._cargar_tray_op(self.tray_op_archivo, verbose=verbose)
 
         if (self.stabilization and self.stab_center_mode == "operational"
                 and self.stab_center is None):
@@ -1677,9 +1813,21 @@ class NestedBendersSolver(object):
                 print("[NestedBenders] --evaluar_trayectoria_op: no hay trayectoria de la cota "
                       "operacional (falta --operational_bound o no dejo solucion)")
             else:
+                centro0 = self.tray_op
+                R0 = getattr(self, "R_op", None) or {}
+                etiqueta = "trayectoria de la cota operacional"
+                if self.reparar_dp:
+                    rep, R_dp = self._reparar_con_dp(centro0, verbose=verbose)
+                    if rep is not None:
+                        centro0, R0 = rep, R_dp
+                        etiqueta += " reparada con la DP"
+                        # Si la DP elige reemplazar donde --fijar_R no lo hacia,
+                        # los bloques tienen que admitirlo (forward y backward).
+                        if self.R_fijado is not None and any(
+                                int(v) != int(self.R_fijado.get(y, 0)) for y, v in R_dp.items()):
+                            self._fijar_R_en_bloques(verbose=verbose, R=R_dp)
                 _c0, fwd0, _lib0 = self._evaluar_trayectoria(
-                    self.tray_op, getattr(self, "R_op", None) or {},
-                    "trayectoria de la cota operacional", verbose=verbose)
+                    centro0, R0, etiqueta, verbose=verbose)
                 if self.reparar_reemplazo and fwd0 is not None:
                     self._reparar_reemplazo(fwd0, verbose=verbose)
 

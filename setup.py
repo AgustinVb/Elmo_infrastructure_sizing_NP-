@@ -210,6 +210,9 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         evaluar_trayectoria_op=args.evaluar_trayectoria_op,
         reparar_reemplazo=args.reparar_reemplazo,
         fijar_R=args.fijar_R,
+        reparar_dp=args.reparar_dp,
+        dp_margen=args.dp_margen,
+        tray_op_archivo=args.tray_op_archivo,
     )
     resultado = solver.solve(verbose=True)
 
@@ -762,6 +765,28 @@ def main():
              'la evalua con +1 bateria desde 4 años antes del primer reemplazo (y, si '
              'no alcanza, +2: desde 6 y 3 años antes), bahias y cargadores ajustados '
              'y R = 0. Ver NestedBenders._reparar_reemplazo.'
+    )
+    parser.add_argument(
+        '--reparar_dp', action='store_true',
+        help='[con --evaluar_trayectoria_op] antes de evaluarla, ajusta el plan de '
+             'baterias/bahias/cargadores (y reemplazo) de la trayectoria de la cota '
+             'operacional con la DP de degradacion (degradacion_dp.py): agrega o '
+             'adelanta compras, o reemplaza, lo mas barato, para que la flota termine '
+             'el horizonte --dp_margen kWh sobre el piso. Energia: la del incumbente '
+             '(--incumbente_inicial) o la nominal del plan de produccion. Ver '
+             'NestedBenders._reparar_con_dp.'
+    )
+    parser.add_argument(
+        '--dp_margen', type=float, default=0.5,
+        help='[--reparar_dp] kWh sobre el piso B_L con que la flota debe terminar '
+             'el horizonte (default 0.5).'
+    )
+    parser.add_argument(
+        '--tray_op_archivo', default=None,
+        help='[--mode decomposed] tray_op.pkl de una corrida anterior (lo escribe la '
+             'cota operacional en --output_folder): trayectoria y R de la cota sin '
+             'recalcularla, para --evaluar_trayectoria_op / --fijar_R op. Su valor no '
+             'entra a la LB (usar --lb_inicial).'
     )
     parser.add_argument(
         '--fijar_R', choices=('op', '0'), default=None,
