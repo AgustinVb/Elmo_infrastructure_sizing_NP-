@@ -69,9 +69,22 @@ toma la que deja `mejorar_ub`, así que conviene lanzarlos a mano para ese caso)
 inversión: mover las compras de baterías, cargadores y bahías un año antes o después,
 filtrando con la degradación predicha.
 
-## 4. Estabilización: primero sin caja; si oscila, caja grande con iteraciones libres
+## 4. Estabilización
 
-**Fase A, por defecto en esta cola: SIN estabilización** (`ESTAB=""`).
+**Cambio de plan de la usuaria (2026-10-26), las dos variantes en paralelo:**
+- **Otro equipo, la cola (casos 3, 7, 8, 5 y 4):** caja **relajada de ±2** con **una
+  iteración sin caja cada 3** (es la "fase B" de abajo, aplicada desde el inicio):
+
+      ESTAB="--stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3"
+
+- **Equipo 2: prueba SIN estabilización en el caso 2,** desde su mejor solución (2.664.498)
+  con `--fijar_R 0`, hasta 10 h. Se compara con la corrida de ±1 del mismo caso (`fijarR/`:
+  6 iteraciones, −0,8 %). Salida en `.../05C/RED_GEN_BESS/sincaja/`.
+
+Con los dos resultados se decide qué estabilización usar en las corridas siguientes. Lo que
+sigue describe el criterio de oscilación, que sirve para evaluar ambas.
+
+**Fase A: SIN estabilización** (`ESTAB=""`).
 
 **Criterio de "demasiadas oscilaciones":** mirar `benders.log` después de la iteración 4.
 Hay oscilación si se cumplen las dos condiciones:
@@ -116,7 +129,9 @@ por variable.
     git pull                                   # trae este documento, la cola y los flags nuevos
     V=output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4
     rm -f $V/.inicio_r1                        # si no, el tope global de 68 h corre desde la cola anterior
-    ESTAB="" BENDERS_EXTRA="--fijar_R op" nohup bash cola_tesis_swap_v4.sh 3 7 8 5 4 > $V/cola_r1.out 2>&1 &
+    ESTAB="--stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3" \
+      BENDERS_EXTRA="--fijar_R op" TOPE_H=90 \
+      nohup bash cola_tesis_swap_v4.sh 3 7 8 5 4 > $V/cola_r1.out 2>&1 &
 
 - Los casos corren **en el orden dado** (3, 7, 8, 5, 4). Benders con hasta `HORAS` = 10 h
   por caso (el 5, escalada con BESS, hasta `HORAS_ESCALADA_BESS` = 24 h); tope global
