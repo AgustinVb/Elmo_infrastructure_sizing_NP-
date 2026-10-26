@@ -4,15 +4,15 @@
 Battery swapping contra carga on-board, casos finales v4 de Mina_modelo: costo
 total del horizonte desagregado y degradacion de las baterias por año.
 
-PARES (misma produccion, zona, cargador y recursos), los dos en ZONA CENTRO:
-  solo_red  Base, centro, 0,5C, solo red          swap RED          / OB P_red
+PARES (misma produccion, zona, cargador y recursos):
+  solo_red  Base, norte, 0,5C, solo red           swap RED          / OB P_red
   gen_bess  Base, centro, 0,5C, red + gen + BESS  swap RED_GEN_BESS / OB P_red_gen_bat
 
-El caso solo red se corrio con la carpeta de zona_norte, pero vale para el
-centro: los datos de las dos zonas son identicos salvo GenProfiles (perfiles
+Los dos pares se pueden comparar en una sola figura aunque sean de zonas
+distintas: los datos de norte y centro son identicos salvo GenProfiles (perfiles
 solar y eolico; verificado hoja por hoja en Mina_modelo_v4), que sin generacion
-no entra en el modelo. Asi los dos pares son el mismo sistema con y sin recursos
-propios, y sus costos se pueden comparar en una sola figura.
+no entra en el modelo. El caso solo red de norte es el mismo problema que el de
+centro, asi que los dos pares son el mismo sistema con y sin recursos propios.
 
 FUENTES. Swap se lee del disco (esta rama); on-board de git, sin cambiar de rama
 (`git show <ref>:<ruta>`, por defecto origin/carga_ob_multiaño: hacer `git fetch`
@@ -64,8 +64,8 @@ V4 = "output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_ba
 DATOS_OB = "data/Resultados_finales_tesis/Mina_modelo_v4/Produccion_base"
 
 PARES = {
-    "solo_red": {           # carpeta zona_norte: datos identicos a centro sin generacion
-        "titulo": "Base, centro, 0,5C, solo red",
+    "solo_red": {           # sin generacion, norte y centro son el mismo problema
+        "titulo": "Base, norte, 0,5C, solo red",
         "swap": {"sol": V4 + "/zona_norte/05C/RED/reparar_reemplazo/solucion",
                  "consumer": V4 + "/zona_norte/05C/RED/consumer.log",
                  "ub": 3338990.308513049},

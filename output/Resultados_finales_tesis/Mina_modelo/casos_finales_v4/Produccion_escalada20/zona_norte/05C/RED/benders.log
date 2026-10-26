@@ -1,0 +1,149 @@
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/benders\STOP
+[NestedBenders] tope de tiempo: 10.00 h (hasta 2026-10-23 18:26)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:5,640  2:11,280  3:21,432  4:28,200  5:28,200  6:28,200  7:28,200  8:22,560  9:11,280  10:5,640
+[NestedBenders] presolve de capacidad: anios [4], modulos de 500 kW
+[NestedBenders] presolve capacidad y=4 suma  TimeLimit alcanzado sin cerrar MIPGap: UB=2.00  LB=1.00  gap=50.0000%
+[NestedBenders] presolve capacidad  anio 4  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 2.000, 129s)
+[NestedBenders] presolve capacidad y=4 station_1  TimeLimit sin incumbente (solo cota dual 1.00)
+[NestedBenders] presolve capacidad  anio 4  station_1: n_ssee_k >= 1  (dual 1.0000, primal inf, 129s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 4)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 258s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+[NestedBenders] corte de cargas por LHD en la cota operacional: 40 dias de output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/corte_cargas_lhd.json (suma n_nom 544, n_sinR 580)
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/benders\op_bound_gurobi.log"
+Set parameter LogToConsole to value 0
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 3,831,681.54  (522,480 binarias relajadas, 1179s)
+[NestedBenders] inversion de la cota operacional (y1): N_bays={'station_1': 1.0}, N_chargers={'station_1': 1.0}, N_batteries={'station_1': 1.0}, n_ssee_k={'station_1': 1.0}, G={'Solar_PV': 0.0, 'Wind': 0.0}, H=0.0, D=478.2464017537645
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/10)  [UB=(sin cota aun)  LB=3,831,681.54]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y1 d15 fase1: 300,701.06  (optimal, 9s)
+[DayDecomp]   y1 d105 fase1: 307,395.51  (optimal, 9s)
+[DayDecomp]   y1 d196 fase1: 307,395.51  (optimal, 9s)
+[DayDecomp]   y1 d288 fase1: 304,230.52  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 10s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=1  G_g=0, 0  H=0  P_pot=241  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 307,395.51  (optimal, 8s)
+[DayDecomp]   y1 d105 fase2: 307,395.51  (optimal, 8s)
+[DayDecomp]   y1 d196 fase2: 307,395.51  (optimal, 9s)
+[DayDecomp]   y1 d288 fase2: 310,924.97  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 10s
+[DayDecomp]   pulido sobre el bloque anual: 60,205 valores, 46,497 enteras fijas, LP optimo en 7s -> incumbente 1,233,111.50
+[DayDecomp] año 1: listo en 60s
+[NestedBenders] k=1 FORWARD  anio 2 (2/10)  [UB=(sin cota aun)  LB=3,831,681.54]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y2 d15 fase1: 99,279.06  (optimal, 10s)
+[DayDecomp]   y2 d105 fase1: 99,279.06  (optimal, 9s)
+[DayDecomp]   y2 d196 fase1: 99,279.06  (optimal, 9s)
+[DayDecomp]   y2 d288 fase1: 99,279.06  (optimal, 11s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 11s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=2  Delta_N_bays=0  Delta_N_chargers=0  Delta_N_batteries=1  n_ssee_k=1  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=477.9
+[DayDecomp]   y2 d15 fase2: 99,279.06  (optimal, 8s)
+[DayDecomp]   y2 d105 fase2: 99,279.06  (optimal, 8s)
+[DayDecomp]   y2 d196 fase2: 99,279.06  (optimal, 8s)
+[DayDecomp]   y2 d288 fase2: 99,279.06  (optimal, 8s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 8s
+[DayDecomp]   pulido sobre el bloque anual: 60,207 valores, 46,497 enteras fijas, LP optimo en 6s -> incumbente 397,116.26
+[DayDecomp] año 2: listo en 57s
+[NestedBenders] k=1 FORWARD  anio 3 (3/10)  [UB=(sin cota aun)  LB=3,831,681.54]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y3 d15 fase1: 220,586.29  (optimal, 18s)
+[DayDecomp]   y3 d105 fase1: 220,586.29  (optimal, 27s)
+[DayDecomp]   y3 d196 fase1: 223,299.76  (optimal, 24s)
+[DayDecomp]   y3 d288 fase1: 214,534.41  (optimal, 32s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 32s
+[DayDecomp]   agregado (max entre dias): N_bays=2  N_chargers=2  N_batteries=3  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=1  G_g=0, 0  H=0  P_pot=241  R=0  b_bar=471
+[DayDecomp]   y3 d15 fase2: 226,325.70  (optimal, 10s)
+[DayDecomp]   y3 d105 fase2: 226,325.70  (optimal, 10s)
+[DayDecomp]   y3 d196 fase2: 223,299.76  (optimal, 10s)
+[DayDecomp]   y3 d288 fase2: 220,273.81  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 10s
+[DayDecomp]   pulido sobre el bloque anual: 60,207 valores, 46,497 enteras fijas, LP optimo en 9s -> incumbente 896,224.97
+[DayDecomp] año 3: listo en 85s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=861,163.57  LB=848,878.00  gap=1.4266%
+[NestedBenders] k=1 FORWARD  anio 4 (4/10)  [UB=(sin cota aun)  LB=3,831,681.54]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y4 d15 fase1: maxTimeLimit, sin solucion en 122s
+[DayDecomp]   y4 d105 fase1: maxTimeLimit, sin solucion en 124s
+[DayDecomp]   y4 d196 fase1: maxTimeLimit, sin solucion en 126s
+[DayDecomp]   y4 d288 fase1: maxTimeLimit, sin solucion en 129s
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 129s
+[DayDecomp] año 4: sin MIP start (y4 d15 fase1: maxTimeLimit, sin solucion en 122s)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] año 4: sin incumbente -- reintento con 1200s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[Estabilizacion] año 4: sin solucion dentro de la caja (SubproblemNoIncumbent) -- se repite sin caja
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: maxTimeLimit, sin solucion en 123s
+[DayDecomp]   y4 d105 fase1: maxTimeLimit, sin solucion en 127s
+[DayDecomp]   y4 d196 fase1: maxTimeLimit, sin solucion en 130s
+[DayDecomp]   y4 d288 fase1: 61,639.58  (maxTimeLimit, 134s)
+[DayDecomp]   4 dias en paralelo (4 x 2 hilos): 134s
+[DayDecomp] año 4: sin MIP start (y4 d15 fase1: maxTimeLimit, sin solucion en 123s)
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] año 4: sin incumbente -- reintento con 1200s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+Traceback (most recent call last):
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 458, in _solve_year
+    self._solve_block(block, f"forward y={block.year}", warm, iteration)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 260, in _solve_block
+    return _solve(block.model, label=label, warmstart=warm, **self.solver_kwargs)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 159, in _solve
+    raise SubproblemNoIncumbent(
+src.optimization.decomposition.passes.SubproblemNoIncumbent: forward y=4: TimeLimit (120s) alcanzado SIN ninguna solucion factible (cota dual 224,143.92). El bloque queda con variables sin valor y el forward no puede continuar. Subir --solve_timelimit, usar --block_mip_focus 1 para que Gurobi priorice encontrar incumbentes, o --day_warm_start para armarle un MIP start por dias.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 525, in _solve_year_stabilized
+    self._solve_year(block, heritage, iteration, verbose)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 489, in _solve_year
+    _solve(block.model, label=f"forward y={block.year} (reintento)",
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 159, in _solve
+    raise SubproblemNoIncumbent(
+src.optimization.decomposition.passes.SubproblemNoIncumbent: forward y=4 (reintento): TimeLimit (1200s) alcanzado SIN ninguna solucion factible (cota dual 231,054.84). El bloque queda con variables sin valor y el forward no puede continuar. Subir --solve_timelimit, usar --block_mip_focus 1 para que Gurobi priorice encontrar incumbentes, o --day_warm_start para armarle un MIP start por dias.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 458, in _solve_year
+    self._solve_block(block, f"forward y={block.year}", warm, iteration)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 260, in _solve_block
+    return _solve(block.model, label=label, warmstart=warm, **self.solver_kwargs)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 159, in _solve
+    raise SubproblemNoIncumbent(
+src.optimization.decomposition.passes.SubproblemNoIncumbent: forward y=4: TimeLimit (120s) alcanzado SIN ninguna solucion factible (cota dual 224,143.92). El bloque queda con variables sin valor y el forward no puede continuar. Subir --solve_timelimit, usar --block_mip_focus 1 para que Gurobi priorice encontrar incumbentes, o --day_warm_start para armarle un MIP start por dias.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\setup.py", line 823, in <module>
+    main()
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\setup.py", line 794, in main
+    run_decomposed(args, mine_system, time_series, hybrid=(args.mode == 'hybrid'))
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\setup.py", line 224, in run_decomposed
+    resultado = solver.solve(verbose=True)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\driver.py", line 1528, in solve
+    fwd = self.forward_pass.run(
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 327, in run
+    return self._sweep(iteration, verbose, current_ub, current_lb)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 556, in _sweep
+    caja_activa[block.year] = self._solve_year_stabilized(
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 531, in _solve_year_stabilized
+    self._solve_year(block, heritage, iteration, verbose)
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 489, in _solve_year
+    _solve(block.model, label=f"forward y={block.year} (reintento)",
+  File "C:\Users\Agustin\Desktop\Elmo_infrastructure_NP\src\optimization\decomposition\passes.py", line 159, in _solve
+    raise SubproblemNoIncumbent(
+src.optimization.decomposition.passes.SubproblemNoIncumbent: forward y=4 (reintento): TimeLimit (1200s) alcanzado SIN ninguna solucion factible (cota dual 229,712.12). El bloque queda con variables sin valor y el forward no puede continuar. Subir --solve_timelimit, usar --block_mip_focus 1 para que Gurobi priorice encontrar incumbentes, o --day_warm_start para armarle un MIP start por dias.
