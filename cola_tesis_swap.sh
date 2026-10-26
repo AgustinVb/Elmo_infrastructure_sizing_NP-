@@ -43,8 +43,15 @@ HORAS=${HORAS:-10}; HORAS_R2=${HORAS_R2:-12}
 HORAS_ESCALADA_BESS=${HORAS_ESCALADA_BESS:-24}
 TOPE_H=${TOPE_H:-68}; RESERVA_H=${RESERVA_H:-3}; MIN_H=${MIN_H:-2}
 CORTE=${CORTE:-1}
-GAP=0.01; ITER=50; SIN_MEJORA=4
+GAP=0.01; ITER=50; SIN_MEJORA=${SIN_MEJORA:-4}
 FLAGS="--free_charging --free_maintenance"
+# Estabilizacion del forward y flags extra del Benders (2026-10-26, ver
+# cola_swap_v4_algoritmo.md). Por defecto, lo de siempre (caja +-1 centrada en la
+# cota operacional). ESTAB="" corre SIN estabilizacion; por ejemplo
+#   ESTAB="--stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3"
+# BENDERS_EXTRA se agrega al comando de setup.py (p. ej. "--fijar_R op").
+ESTAB=${ESTAB---stabilization box --stab_center operational --box_delta_int 1}
+BENDERS_EXTRA=${BENDERS_EXTRA:-}
 
 # En orden de prioridad (relativos a $DATA). "|v3:<ESC>": se copia de la cola v3 si
 # esta certificado ahi. "|alt:<caso>": si Benders no encuentra solucion factible
@@ -195,16 +202,16 @@ for n in $SEL; do
       if [ -f $R/corte_cargas_lhd.json ]; then EXTRA="--corte_cargas_lhd $R/corte_cargas_lhd.json"; rm -rf $R/_corte_cargas_op
       else msg "$TAG" "corte_cargas_op fallo (ver corte_cargas_op.log): Benders sin el corte"; fi
     fi
-    msg "$TAG" "Nested Benders (max $H h, gap $GAP, corte tras $SIN_MEJORA iteraciones sin mejora${EXTRA:+, corte de cargas})"
+    msg "$TAG" "Nested Benders (max $H h, gap $GAP, corte tras $SIN_MEJORA iteraciones sin mejora${EXTRA:+, corte de cargas}; estabilizacion: ${ESTAB:-ninguna}${BENDERS_EXTRA:+; $BENDERS_EXTRA})"
     mkdir -p $B; rm -f $B/STOP
     vigia $R/benders.log $B/STOP "$TAG" & VP=$!
     $PY -u setup.py --data_folder $D --solver gurobi --days_per_year 4 $FLAGS \
         --block_build_jobs 1 --output_folder $B --mode decomposed --n_years 10 --gap_tol $GAP --max_iter $ITER \
         --max_hours $H --operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400 \
-        --no_monolithic_lp_bound --stabilization box --stab_center operational --box_delta_int 1 \
+        --no_monolithic_lp_bound $ESTAB \
         --cut_type strengthened --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 \
         --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 \
-        --polish_each_iter --skip_last_backward $EXTRA $INC 2>&1 | tee $R/benders.log
+        --polish_each_iter --skip_last_backward $EXTRA $INC $BENDERS_EXTRA 2>&1 | tee $R/benders.log
     kill $VP 2>/dev/null; wait $VP 2>/dev/null
   fi
   read UB0 LBOP < <(leer_benders $R/benders.log)
@@ -244,7 +251,7 @@ for n in $SEL; do
   CAP=${CAP:-1}
   msg "$TAG" "certificar (UB $UB, gap_objetivo $GO, capacidad station_1>=$CAP)"
   $PY -u certificar_inversiones.py --data_folder $D --solucion $SOL --ub_esperado $UB --gap_objetivo $GO \
-      --capacidad station_1=$CAP --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
+      --capacidad station_1=$CAP --max_pool ${MAX_POOL:-5000} --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
   msg "$TAG" "FIN: $(certificado $R/certificado.log)"
   resumen_final > /dev/null
   break

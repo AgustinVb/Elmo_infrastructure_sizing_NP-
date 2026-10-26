@@ -88,6 +88,8 @@ def main():
     ap.add_argument("--tol", type=float, default=1e-5)
     ap.add_argument("--alpha", type=float, default=0.5)
     ap.add_argument("--capacidad", default="station_1=1")
+    ap.add_argument("--evaluar_incompleto", action="store_true",
+                    help="evaluar las candidatas aunque el pool quede incompleto (no certifica)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t0 = time.time()
@@ -140,6 +142,18 @@ def main():
     M.m.Params.PoolSearchMode = 0
     print(f"[cert] {n_sol} candidatas bajo el umbral "
           f"({'pool COMPLETO' if completo_pool else 'POOL INCOMPLETO: no certifica'})", flush=True)
+    if not completo_pool and not a.evaluar_incompleto:
+        # Con el pool incompleto no hay LB certificada (podria haber candidatas
+        # fuera del pool con cota menor): evaluar las max_pool candidatas toma
+        # horas para nada. Caso 2 swap v4 (gap 11 %): 5.000 candidatas, ~15 h.
+        print("[cert] pool incompleto: se termina sin evaluar las candidatas "
+              "(--evaluar_incompleto para evaluarlas igual; o bajar el gap / subir --max_pool)",
+              flush=True)
+        with open(os.path.join(a.out, "certificado.json"), "w", encoding="utf-8") as fh:
+            json.dump({"UB": UB, "cota_operacional": cota_op, "umbral": umbral,
+                       "pool_completo": False, "candidatas_en_pool": n_sol,
+                       "max_pool": a.max_pool}, fh, indent=2)
+        return 0
 
     # Rango de energia de cada dia (valido para cualquier inversion) y piezas
     # fijas: columnas b_bar del maestro y X_ini (t < tf) de cada dia.

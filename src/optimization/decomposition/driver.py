@@ -92,7 +92,7 @@ class NestedBendersSolver(object):
                  box_delta_int_max=None, stab_free_every=0, level_alpha=0.5,
                  max_time_sec=None, t_origen=None, incumbente_inicial=None,
                  op_bound_gap=None, corte_cargas_lhd=None,
-                 evaluar_trayectoria_op=False, reparar_reemplazo=False):
+                 evaluar_trayectoria_op=False, reparar_reemplazo=False, fijar_R=None):
         """
         :param capacity_presolve: "peak" (default), "all" u "off". Presolve de
             capacidad de subestacion (ver _capacity_presolve): antes de
@@ -265,6 +265,13 @@ class NestedBendersSolver(object):
         self.reparar_reemplazo = reparar_reemplazo
         self.tray_op = None
         self.R_op = None
+        # --fijar_R ('op' o '0'): reemplazo fijo en todos los bloques (forward y
+        # backward); ver _fijar_R_en_bloques. R_fijado != None => la cota del
+        # backward es del problema restringido y no entra a la LB.
+        if fijar_R not in (None, "op", "0"):
+            raise ValueError(f"fijar_R debe ser 'op' o '0' (recibido {fijar_R!r})")
+        self.fijar_R_modo = fijar_R
+        self.R_fijado = None
         self.parada_por_tiempo = False
         if stab_center not in ("operational", "first"):
             raise ValueError(f"stab_center debe ser 'operational' o 'first' (recibido {stab_center!r})")
@@ -1336,6 +1343,42 @@ class NestedBendersSolver(object):
                         out[int(y)] = int(round(v))
         return out
 
+    def _fijar_R_en_bloques(self, verbose=True):
+        """--fijar_R: fija el reemplazo R[y] en todos los bloques anuales, para
+        el forward Y el backward. 'op' = el de la cota operacional (que decide
+        la inversion entera y en los casos v4 no reemplaza); '0' = sin
+        reemplazo en ningun año.
+
+        Se resuelve entonces el problema RESTRINGIDO: su UB es valido para el
+        original (una solucion sin reemplazo es factible), pero la cota del
+        backward es del restringido y NO acota al original, asi que no entra a
+        la LB (queda la cota operacional, calculada antes con R libre, o
+        --lb_inicial). Fijar R tambien en el backward es lo que hace que los
+        cortes vean que llegar con poca capacidad cuesta (baterias), en vez de
+        un reemplazo relajado barato."""
+        if self.fijar_R_modo == "op":
+            if self.R_op is None:
+                print("[NestedBenders] --fijar_R op: la cota operacional no dejo R "
+                      "(falta --operational_bound o no tuvo solucion) -- no se fija R")
+                return
+            R = dict(self.R_op)
+        else:
+            R = {int(y): 0 for y in self.years}
+        n = 0
+        for blk in self.blocks:
+            Rv = getattr(blk.model, "R", None)
+            if Rv is None or blk.year not in Rv:
+                continue
+            val = int(R.get(int(blk.year), 0))
+            Rv[blk.year].setlb(val)
+            Rv[blk.year].setub(val)
+            n += 1
+        self.R_fijado = R
+        if verbose:
+            print(f"[NestedBenders] --fijar_R {self.fijar_R_modo}: R fijo en {n} bloques "
+                  f"(reemplazo en {sorted(y for y, v in R.items() if v) or 'ningun año'}); "
+                  f"la cota del backward no entra a la LB", flush=True)
+
     def _evaluar_trayectoria(self, centro, R_fijo, etiqueta, verbose=True):
         """Forward con la inversion FIJA en `centro` (caja de radio 0 en las
         enteras y, en la practica, en G/H) y el reemplazo fijo en `R_fijo`
@@ -1610,6 +1653,9 @@ class NestedBendersSolver(object):
                   "--operational_bound o no dejo solucion): la primera iteracion va "
                   "sin caja y su trayectoria sera el centro.")
 
+        if self.fijar_R_modo is not None:
+            self._fijar_R_en_bloques(verbose=verbose)
+
         if self.incumbente_inicial:
             if str(self.incumbente_inicial).endswith(".pkl"):
                 self._cargar_respaldo(self.incumbente_inicial, verbose=verbose)
@@ -1737,9 +1783,13 @@ class NestedBendersSolver(object):
                         # Se imprime SIEMPRE, tambien cuando pierde contra otra
                         # cota (operacional, LP, --lb_inicial): si no, no hay forma
                         # de ver si los cortes estan acercandose.
-                        manda = "manda" if lb_k >= self.lb else f"no supera LB={self.lb:,.2f}"
+                        if self.R_fijado is not None:
+                            manda = "problema con R fijo: no entra a la LB del original"
+                        else:
+                            manda = "manda" if lb_k >= self.lb else f"no supera LB={self.lb:,.2f}"
                         print(f"[NestedBenders] k={k} cota del backward = {lb_k:,.2f}  ({manda})")
-                self.lb = max(self.lb, lb_k)
+                if self.R_fijado is None:
+                    self.lb = max(self.lb, lb_k)
 
                 gap = ((self.ub - self.lb) / abs(self.ub)
                        if self.ub not in (0, float("inf")) else float("inf"))

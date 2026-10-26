@@ -209,6 +209,7 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         op_bound_gap=args.op_bound_gap,
         evaluar_trayectoria_op=args.evaluar_trayectoria_op,
         reparar_reemplazo=args.reparar_reemplazo,
+        fijar_R=args.fijar_R,
     )
     resultado = solver.solve(verbose=True)
 
@@ -761,6 +762,15 @@ def main():
              'la evalua con +1 bateria desde 4 años antes del primer reemplazo (y, si '
              'no alcanza, +2: desde 6 y 3 años antes), bahias y cargadores ajustados '
              'y R = 0. Ver NestedBenders._reparar_reemplazo.'
+    )
+    parser.add_argument(
+        '--fijar_R', choices=('op', '0'), default=None,
+        help='[--mode decomposed] fija el reemplazo de flota R en todos los bloques '
+             'anuales (forward y backward): "op" = el de la cota operacional (requiere '
+             '--operational_bound), "0" = sin reemplazo. Resuelve el problema '
+             'restringido: su UB vale para el original, la cota del backward no (no entra '
+             'a la LB, que queda en la operacional o --lb_inicial). Ver '
+             'NestedBenders._fijar_R_en_bloques.'
     )
     parser.add_argument(
         '--r_endurecido', action='store_true',
