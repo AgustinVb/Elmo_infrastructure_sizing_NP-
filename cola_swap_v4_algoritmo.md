@@ -44,7 +44,8 @@ topes de la v4, sin copiar los de OB.
    gaps de 15–40 %. `mejorar_ub`, con 600–900 s por día, recupera entre 0,7 % y 1,7 %.
 5. **La caja de estabilización de ±1 por variable y año resultó restrictiva:** quedó
    activa en las 6 iteraciones del caso 2, y los años 9–10 tuvieron que resolverse sin
-   ella 7 veces. Por eso esta cola prueba primero **sin estabilización** (ver §4).
+   ella 7 veces. Por eso esta cola corre con una caja **relajada (±2, libre cada 3)** y en
+   paralelo se prueba **sin estabilización** en el caso 2 (ver §4).
 
 ## 3. Algoritmo por caso
 
