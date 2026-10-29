@@ -5,18 +5,29 @@ equipo (usuaria o sesión de Claude Code).
 
 **Objetivo:** dejar todos los casos de swap v4 bajo **5 % de gap**, idealmente cerca de **1 %**.
 
-## 1. Estado al 2026-10-26
+## 1. Estado al 2026-10-29
 
-| # | Caso (`data/Tesis_final/Mina_modelo_v4/...`) | UB | LB | Gap | Estado |
+Todos los casos con LB **certificada** (`certificar_inversiones.py`, pool completo). La
+carpeta es la de la solución final (`<caso>/<carpeta>/mejorar_ub_N/solucion`).
+
+| # | Caso (`data/Tesis_final/Mina_modelo_v4/...`) | UB | LB (cert.) | Gap | Carpeta y cómo se llegó |
 |---|---|---:|---:|---:|---|
-| 1 | Produccion_base/zona_norte/05C/RED | 3.338.990 | 3.206.386 (op.) | 3,97 % | reparado sin reemplazo; certificado no terminó (644 candidatas) |
-| 2 | Produccion_base/zona_norte/05C/RED_GEN_BESS | **2.521.834** | 2.387.721 (op.) | **5,32 %** | iteración 0 = trayectoria de la cota operacional **reparada con la DP** (§8), en 33 min; antes 2.664.498 (10,39 %). Benders siguiendo con caja ±2 (`dp_it0/`) |
-| 3 | Produccion_base/zona_norte/05C/RED_GEN | 3.289.543 | 2.424.994 (op.) | 26,3 % | Benders detenido en k=2, paga reemplazo → **en la cola** |
-| 4 | Produccion_escalada20/zona_norte/05C/RED | — | 3.831.682 (op.) | — | el año 4 no tuvo solución (120 s y 1.200 s) → **al final de la cola** |
-| 5 | Produccion_escalada20/zona_norte/05C/RED_GEN_BESS | — | — | — | **en la cola** |
-| 6 | Produccion_base/zona_centro/05C/RED_GEN_BESS | 2.786.794 | 2.695.861 (cert.) | 3,26 % | cerrado |
-| 7 | Produccion_base/zona_norte/1C/RED_GEN_BESS | — | — | — | **en la cola** |
-| 8 | Produccion_base/zona_norte/2C/RED_GEN_BESS | — | — | — | **en la cola** |
+| 1 | Produccion_base/zona_norte/05C/RED | 3.294.144 | 3.263.609 | **0,93 %** | `dp_real/`: esquema completo de §8 con dos vueltas de DP (k=0 3.338.409 en `dp_nom/` → 3.304.776) → `mejorar_ub` p1; certificado de 264 candidatas, cerró al segundo intento |
+| 2 | Produccion_base/zona_norte/05C/RED_GEN_BESS | 2.493.040 | 2.440.748 | **2,10 %** | `dp_it0/`: k=0 reparada con la DP 2.521.834 (33 min; antes 2.664.498, 10,39 %) → `mejorar_ub` en 2 pasadas; 241 candidatas |
+| 3 | Produccion_base/zona_norte/05C/RED_GEN | 2.550.278 | 2.482.036 | **2,68 %** | `dp_real_b/`: segunda vuelta de DP con la energía de la k=0 de `dp_it0/` (2.615.019 → 2.585.380) → `mejorar_ub` p1. La LB es la del certificado de `dp_it0/`, que no depende del UB; el de `dp_real_b/` cayó por *access violation* sin cerrar. `dp_real/` se descartó porque comparaba contra un incumbente de otra etapa |
+| 4 | Produccion_escalada20/zona_norte/05C/RED | 4.090.093 | 3.884.866 | **5,02 %** | `dp_real/`: segunda vuelta de DP con la energía de `dp_it0/` (k=0 4.503.513 → 4.120.261; la energía nominal compraba una 5ª batería en el año 7) → `mejorar_ub` p1; p2 sin mejora. Faltan ~760 USD de UB para bajar de 5 % |
+| 5 | Produccion_escalada20/zona_norte/05C/RED_GEN_BESS | 3.098.875 | 2.983.269 | **3,73 %** | otro equipo, `milp_sinR/it0_energia_sol/` (commit a47d69dcb). En este equipo `dp_it0/` no encontró solución factible (UB=inf) |
+| 6 | Produccion_base/zona_centro/05C/RED_GEN_BESS | 2.767.909 | 2.695.860 | **2,60 %** | `dp_real_t/`: dos vueltas de DP (k=0 2.811.552 en `dp_nom/` → 2.790.394) → `mejorar_ub` p1. La cota op. recalculada en `dp_real/` no cerró en 5.400 s; `dp_real_t/` reusa la trayectoria de `dp_nom/` (`--tray_op_archivo`) |
+| 7 | Produccion_base/zona_norte/1C/RED_GEN_BESS | 2.743.895 | 2.636.528 | **3,91 %** | `dp_it0/`: k=0 2.768.936 (reemplazo en el año 6) → `mejorar_ub` en 2 pasadas |
+| 8 | Produccion_base/zona_norte/2C/RED_GEN_BESS | 4.949.250 | 4.703.215 | **4,97 %** | `dp_it0/`: k=0 4.987.039 (reemplazo en los años 5 y 7) → `mejorar_ub` en 3 pasadas (la 3ª: años 4–8, 1.200 s) |
+
+Los certificados de los casos 3, 4 y 8 cayeron por *access violation* (CPU inestable, ver
+memoria del equipo 2), pero quedaron cerrados: la LB mínima de las candidatas evaluadas es
+menor que la cota operacional de las que faltaban (están ordenadas por esa cota).
+
+La segunda vuelta de DP no se corrió en los casos 2, 7 y 8. El caso 2 ya usaba la energía
+del incumbente. En los casos 7 y 8, la DP con la energía real da el mismo plan que con la
+nominal (chequeo con la DP sola, sin correr el modelo).
 
 Las alternativas 1C de "escalada 20 %" (casos 4 y 5) **no tienen datos v4**. Si 0,5C no
 tiene solución, hay que armarlos aplicando a los datos de swap solo los `GenProfiles` y los
@@ -54,7 +65,7 @@ topes de la v4, sin copiar los de OB.
 | 0 | Corte de cargas por LHD | `corte_cargas_op.py` | sí |
 | 1 | Cota operacional (LB) + Nested Benders sin reemplazo | `setup.py ... --operational_bound --corte_cargas_lhd <json> --fijar_R op` + estabilización según §4; se corta tras `SIN_MEJORA` = 4 iteraciones sin mejora o al tope de `HORAS` | sí (`BENDERS_EXTRA="--fijar_R op"`) |
 | 2 | Reparación de la inversión | `reparar_reemplazo.py --respaldo <benders>/incumbente_respaldo.pkl --out <caso>/reparar_reemplazo` | **no, manual** (ver abajo) |
-| 3 | Mejorar la operación | `mejorar_ub.py` pasada 1 (años 1–10, 600 s) y pasada 2 (años 3–9, 900 s) | sí |
+| 3 | Mejorar la operación | `mejorar_ub.py` pasada 1 (años 1–10, 600 s) y pasada 2 (años 3–9, 900 s). Con `PASADA2=umbral`, la pasada 2 solo corre si tras la pasada 1 el gap queda a ≤ 0,3 puntos **sobre** 1 % o 5 % (`UMBRALES_P2`, `MARGEN_P2`): en los casos 2, 3 y 7 bajó el UB solo 0,13–0,31 % y tardó 1,1–1,6 h | sí |
 | 4 | Certificado | `certificar_inversiones.py`. Si el pool queda incompleto, **ahora termina de inmediato** sin evaluar candidatas (antes perdía horas); `MAX_POOL` sube el tope | sí |
 
 **Cuándo hacer el paso 2 (a mano, entre el Benders y `mejorar_ub`):**
@@ -194,11 +205,26 @@ o reemplazar la flota. Nunca quita lo que la trayectoria ya decidió. La flota q
   `<benders>/tray_op.pkl`. Con este flag se reusa sin recalcularla; la LB se pasa con
   `--lb_inicial`.
 
-**En la cola** (casos que todavía no corrieron), agregar los flags a `BENDERS_EXTRA`:
+**En la cola** (casos que todavía no corrieron), el esquema completo que se usó en los casos
+3, 7, 8, 5 y 4 (2026-10-26/27): sin iteraciones de Benders (`ITER=0`: solo la iteración 0
+reparada), resultados en `<caso>/dp_it0/` (`SUB`) y pasada 2 solo si puede cruzar un umbral
+(`PASADA2=umbral`, §3). En Windows agregar `PY=.venv_elmo/Scripts/python.exe`.
 
-    ESTAB="--stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3" \
-      BENDERS_EXTRA="--fijar_R op --evaluar_trayectoria_op --reparar_dp" TOPE_H=90 \
+    ITER=0 SUB=dp_it0 PASADA2=umbral \
+      ESTAB="--stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3" \
+      BENDERS_EXTRA="--fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5" TOPE_H=90 \
       nohup bash cola_tesis_swap_v4.sh <casos> > $V/cola_r2.out 2>&1 &
+
+Las iteraciones de Benders no aportaron en swap: el forward de k=1 es miope frente a la
+degradación (pospone baterías) y en el caso 2 se detuvo sin mejorar la iteración 0.
+
+**No editar `cola_tesis_swap.sh` mientras corre una cola:** bash lee el script a medida
+que avanza y un cambio en el lugar desordena lo que queda (probado). Si hay que cambiarlo,
+escribir una copia y reemplazarlo con `mv`: la cola en curso sigue con la versión antigua.
+
+Hasta el 2026-10-27 la cola lanzaba los certificados en Windows con `--gap_objetivo` vacío
+(el `\r` de python quedaba pegado a la LB leída del log) y fallaban al instante; ya está
+corregido. Los de la cola dp_it0 se corren aparte al terminar.
 
 Si la cola ya está corriendo con el código anterior, dejar terminar el caso en curso,
 detenerla y relanzarla con los casos que faltan.
@@ -221,6 +247,42 @@ Benders recalculando la cota (~45 min), con iteración 0 reparada y desde su mej
 
 Con `tray_op.pkl` ya guardado, cambiar `--operational_bound --corte_cargas_lhd …` por
 `--tray_op_archivo <…>/tray_op.pkl --lb_inicial <cota operacional>`.
+
+### Segunda vuelta de DP (2026-10-28): el mejor esquema
+
+El esquema que dio los mejores resultados (casos 1, 3, 4 y 6):
+
+    cota operacional (R libre) → R óptimo (--fijar_R op) → DP con la energía nominal → iteración 0
+      → DP con la energía de esa solución → iteración 0 → mejorar_ub → certificado
+
+La energía nominal del plan de producción queda 0,3–2 % sobre la real. Con planes justo
+sobre el piso de degradación, eso basta para que la DP compre de más o antes. En el caso 4
+agregaba una 5ª batería, una 3ª bahía y un 3er cargador en el año 7. Con la energía real
+de la k=0, el UB bajó de 4.503.513 a 4.120.261.
+
+No hace falta código nuevo. `--incumbente_inicial <benders de la primera vuelta>` hace que la
+DP use la energía de esa solución. Para no recalcular la cota (en el caso 6 la segunda cota no
+cerró en 5.400 s), se reusa la trayectoria de la primera vuelta:
+
+    python -u setup.py ... --output_folder <V>/<caso>/dp_real/benders --max_iter 0 \
+      --tray_op_archivo <V>/<caso>/dp_nom/benders/tray_op.pkl --lb_inicial <cota operacional> \
+      --fijar_R 0 --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5 \
+      --incumbente_inicial <V>/<caso>/dp_nom/benders   # resto de flags como arriba
+
+Con eso termina el Benders. Después se lanza la cola sobre la misma carpeta:
+`CASOS_ENV="<caso>" SUB=dp_real ITER=0 PASADA2=umbral bash cola_tesis_swap_v4.sh 1`. La cola
+ve el Benders terminado y sigue con `mejorar_ub` y el certificado.
+
+`--fijar_R 0` corresponde a cuando la cota no tuvo reemplazo; si lo tuvo, fijar el de la cota.
+
+**Ojo:** el driver guarda la k=0 solo si mejora al incumbente. El incumbente tiene que ser la
+k=0 de la primera vuelta y no la solución después de `mejorar_ub`, que es de otra etapa. Si
+no, la segunda vuelta se descarta aunque mejore la k=0 (pasó en el caso 3, `dp_real/`).
+
+**Idea sin probar para bajar los gaps de los casos base 05C (1, 2, 3 y 6).** La candidata que
+fija la LB del certificado compra la 3ª batería y la 2ª bahía en el **año 5** y termina
+0,46 kWh sobre el piso. La DP, con margen 0,5, las compra en el año 4. Con `--dp_margen 0.3`,
+que todavía cubre la holgura de McCormick (~0,2 kWh), se podría elegir ese plan.
 
 **Qué mirar en el log:**
 - `--reparar_dp (energia …, margen …): y4 baterias 2->3, …; capacidad final … kWh`;

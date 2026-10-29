@@ -180,7 +180,8 @@ def energia_justa_swap(root, red_modelo):
     esto swap aparece consumiendo 16-20 % mas energia que on-board.
 
     El sobrante se ubica intervalo a intervalo y se descuenta en orden de merito
-    (red -> descarga BESS -> generacion), ver ajuste_energia_swap.py. El costo de
+    (red -> descarga BESS -> generacion); si un swap pide mas que su bloque (1C y
+    2C), el deficit se compra a la red, ver ajuste_energia_swap.py. El costo de
     red ajustado es el del modelo por la razon de energias de red descontadas
     (precio plano). Con solo red tiene que coincidir con real_grid_energy_cost
     del consumer: se verifica."""

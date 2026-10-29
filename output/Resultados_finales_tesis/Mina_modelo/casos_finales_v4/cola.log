@@ -57,3 +57,158 @@
 [caso2 equipo2] 2026-10-26 15:40 sin caja detenido a mano en k=1 (~3 h): forward miope, no compra baterias en años 5-6 y cae en cascada de factibilidad (cortes en años 8, 7, 9; 4 reinicios desde el año 1; años 7 y 8 sin incumbente a 120 s); dp_degradacion.py confirma que desde el estado del año 6 no hay salida barata sin reemplazo
 [caso2 equipo2] 2026-10-26 15:41 Benders con iteracion 0 = trayectoria de la cota operacional (tray_op_it0.pkl, reconstruida de it0) reparada con la DP de degradacion (--reparar_dp, margen 0,5 kWh, energia del incumbente), --fijar_R 0, caja +-2 libre cada 3, desde fijarR/mejorar_ub_1/solucion (dp_it0/)
 [caso2 equipo2] 2026-10-26 16:27 k=0 trayectoria de la cota operacional reparada con la DP (3a bateria + 2a bahia adelantadas al año 4; solar 1,97, BESS 0,97, 3 baterias, sin reemplazo): UB 2.521.834,33 (2007 s; antes del pulido 2.535.993) -> gap 5,32 % contra la cota operacional (antes 10,39 %); respaldo en dp_it0/benders/incumbente_respaldo.pkl
+[caso2 equipo2] 2026-10-26 16:36 Benders dp_it0 detenido a mano en k=1 (forward miope otra vez, postergando baterias y sacando el BESS dentro de la caja +-2); se sigue con mejorar_ub sobre k=0 (2.521.834,33)
+[caso2 equipo2] 2026-10-26 16:36 mejorar_ub pasada 1 (años 1-10, 600 s) sobre dp_it0 k=0 (UB 2521834.3275117236)
+[caso2 equipo2] 2026-10-26 17:29 tras pasada 1: UB 2497533.5404300583 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN_BESS/dp_it0/mejorar_ub_1/solucion)
+ (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN_BESS/dp_it0/mejorar_ub_1/solucion)
+[caso2 equipo2] 2026-10-26 17:29 mejorar_ub pasada 2 (años 3-9, 900 s)
+[caso2 equipo2] 2026-10-26 17:30 pasada 2 abortada al partir: la ruta de la solucion de la pasada 1 se leyo sin la barra invertida (read sin -r); se relanza
+[caso2 equipo2] 2026-10-26 17:30 mejorar_ub pasada 2 (años 3-9, 900 s) sobre mejorar_ub_1/solucion (UB 2.497.533,54)
+[caso2 equipo2] 2026-10-26 18:53 tras pasada 2: UB 2493040.1556020295 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN_BESS/dp_it0/mejorar_ub_2/solucion)
+[caso2 equipo2] 2026-10-26 18:55 certificar (UB 2.493.040,16 de dp_it0/mejorar_ub_2/solucion, gap_objetivo 0.005, capacidad station_1>=1, max_pool 5000)
+[caso2 equipo2] 2026-10-26 19:31 certificado: [cert] LB CERTIFICADA 2,440,748.17  ->  gap 2.098%
+[cola r1 inicio] 2026-10-26 22:29:50 (llevo 0.0 h, quedan 90.0 h) casos 3 7 8 5 4 | Benders 10 h por caso, tope global 90 h (hasta 2026-10-30 16:29:50), corte de cargas si
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-26 22:29:50 (llevo 0.0 h, quedan 90.0 h) Nested Benders (max 10.00 h, gap 0.01, solo la iteracion 0, corte de cargas; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5)
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-26 23:39:18 (llevo 1.2 h, quedan 88.8 h) Benders: UB 2615018.70  LB 2424993.82
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-26 23:39:18 (llevo 1.2 h, quedan 88.8 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-27 00:53:00 (llevo 2.4 h, quedan 87.6 h) tras pasada 1: UB 2594700.319981895 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_it0/mejorar_ub_1\solucion)
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-27 00:53:00 (llevo 2.4 h, quedan 87.6 h) mejorar_ub pasada 2 (años 3-9, 900 s)
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-27 02:31:02 (llevo 4.0 h, quedan 86.0 h) tras pasada 2: UB 2586601.8623365257 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_it0/mejorar_ub_2\solucion)
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-27 02:32:39 (llevo 4.0 h, quedan 86.0 h) certificar (UB 2586601.8623365257, gap_objetivo , capacidad station_1>=1)
+[cola r1 3/8 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-27 02:32:40 (llevo 4.0 h, quedan 86.0 h) FIN: 
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 02:39:19 (llevo 4.2 h, quedan 85.8 h) Nested Benders (max 10.00 h, gap 0.01, solo la iteracion 0, corte de cargas; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5)
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 04:28:33 (llevo 6.0 h, quedan 84.0 h) Benders: UB 2768936.06  LB 2606419.59
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 04:28:33 (llevo 6.0 h, quedan 84.0 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 05:15:55 (llevo 6.8 h, quedan 83.2 h) tras pasada 1: UB 2747369.985712638 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/1C/RED_GEN_BESS/dp_it0/mejorar_ub_1\solucion)
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 05:15:55 (llevo 6.8 h, quedan 83.2 h) mejorar_ub pasada 2 (años 3-9, 900 s)
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 06:23:16 (llevo 7.9 h, quedan 82.1 h) tras pasada 2: UB 2743895.0411102045 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/1C/RED_GEN_BESS/dp_it0/mejorar_ub_2\solucion)
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 06:24:53 (llevo 7.9 h, quedan 82.1 h) certificar (UB 2743895.0411102045, gap_objetivo , capacidad station_1>=1)
+[cola r1 7/8 Produccion_base/zona_norte/1C/RED_GEN_BESS] 2026-10-27 06:24:54 (llevo 7.9 h, quedan 82.1 h) FIN: 
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 06:31:23 (llevo 8.0 h, quedan 82.0 h) Nested Benders (max 10.00 h, gap 0.01, solo la iteracion 0, corte de cargas; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5)
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 08:43:08 (llevo 10.2 h, quedan 79.8 h) Benders: UB 4987039.18  LB 4692518.49
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 08:43:08 (llevo 10.2 h, quedan 79.8 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 09:50:19 (llevo 11.3 h, quedan 78.7 h) tras pasada 1: UB 4958089.617549942 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/2C/RED_GEN_BESS/dp_it0/mejorar_ub_1\solucion)
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 09:50:19 (llevo 11.3 h, quedan 78.7 h) mejorar_ub pasada 2 (años 3-9, 900 s)
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 11:27:34 (llevo 13.0 h, quedan 77.0 h) tras pasada 2: UB 4951050.922968141 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/2C/RED_GEN_BESS/dp_it0/mejorar_ub_2\solucion)
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 11:29:05 (llevo 13.0 h, quedan 77.0 h) certificar (UB 4951050.922968141, gap_objetivo , capacidad station_1>=2)
+[cola r1 8/8 Produccion_base/zona_norte/2C/RED_GEN_BESS] 2026-10-27 11:29:06 (llevo 13.0 h, quedan 77.0 h) FIN: 
+[cola r1 5/8 Produccion_escalada20/zona_norte/05C/RED_GEN_BESS] 2026-10-27 11:36:18 (llevo 13.1 h, quedan 76.9 h) Nested Benders (max 24.00 h, gap 0.01, solo la iteracion 0, corte de cargas; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5)
+[cola r1 5/8 Produccion_escalada20/zona_norte/05C/RED_GEN_BESS] 2026-10-27 14:57:48 (llevo 16.5 h, quedan 73.5 h) SIN SOLUCION FACTIBLE: se corre la alternativa Produccion_escalada20/zona_norte/1C/RED_GEN_BESS
+[cola r1 5/8 Produccion_escalada20/zona_norte/1C/RED_GEN_BESS] 2026-10-27 14:57:49 (llevo 16.5 h, quedan 73.5 h) corte_cargas_op fallo (ver corte_cargas_op.log): Benders sin el corte
+[cola r1 5/8 Produccion_escalada20/zona_norte/1C/RED_GEN_BESS] 2026-10-27 14:57:50 (llevo 16.5 h, quedan 73.5 h) Nested Benders (max 10.00 h, gap 0.01, solo la iteracion 0; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5)
+[cola r1 5/8 Produccion_escalada20/zona_norte/1C/RED_GEN_BESS] 2026-10-27 14:57:50 (llevo 16.5 h, quedan 73.5 h) Benders sin resultado: se salta
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 14:57:51 (llevo 16.5 h, quedan 73.5 h) Nested Benders (max 10.00 h, gap 0.01, solo la iteracion 0, corte de cargas; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5)
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 17:06:17 (llevo 18.6 h, quedan 71.4 h) Benders: UB 4503512.67  LB 3831681.54
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 17:06:17 (llevo 18.6 h, quedan 71.4 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 18:09:42 (llevo 19.7 h, quedan 70.3 h) tras pasada 1: UB 4491114.369137677 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_it0/mejorar_ub_1\solucion)
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 18:09:42 (llevo 19.7 h, quedan 70.3 h) mejorar_ub pasada 2 (años 3-9, 900 s)
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 18:10:41 (llevo 19.7 h, quedan 70.3 h) tras pasada 2: UB 4491114.369137677 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_it0/mejorar_ub_1\solucion)
+[caso4 equipo2] 2026-10-27 18:10 mejorar_ub pasada 2 cortada a mano a pedido de la usuaria (gap 14,7 % tras la pasada 1, lejos de 1 % y 5 %: regla PASADA2=umbral); se sigue con la solucion de la pasada 1 (UB 4.491.114,37)
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 18:11:34 (llevo 19.7 h, quedan 70.3 h) certificar (UB 4491114.369137677, gap_objetivo , capacidad station_1>=1)
+[cola r1 4/8 Produccion_escalada20/zona_norte/05C/RED] 2026-10-27 18:11:34 (llevo 19.7 h, quedan 70.3 h) FIN: 
+== Resumen (2026-10-27 18:11:35)
+1. Produccion_base/zona_norte/05C/RED             sin certificado
+2. Produccion_base/zona_norte/05C/RED_GEN_BESS    r1 NO cierra 1% LB CERTIFICADA 2,440,748.17  ->  gap 2.098%
+3. Produccion_base/zona_norte/05C/RED_GEN         sin certificado
+4. Produccion_escalada20/zona_norte/05C/RED       sin certificado
+5. Produccion_escalada20/zona_norte/05C/RED_GEN_BESS  sin certificado
+6. Produccion_base/zona_centro/05C/RED_GEN_BESS   sin certificado
+7. Produccion_base/zona_norte/1C/RED_GEN_BESS     sin certificado
+8. Produccion_base/zona_norte/2C/RED_GEN_BESS     sin certificado
+[cola r1 fin] 2026-10-27 18:11:36 (llevo 19.7 h, quedan 70.3 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/resumen.txt
+[cola r1 fin] 2026-10-27 18:11:36 (llevo 19.7 h, quedan 70.3 h) hay casos >= 1 %: relanzarlos con  RONDA=2 bash cola_tesis_swap.sh
+[cert dp_it0 equipo2] 2026-10-27 18:12:29 Produccion_base/zona_norte/05C/RED_GEN: certificar (UB 2586601.8623365257, LB op. 2424993.82, gap 6.25 %, gap_objetivo 0.005, capacidad station_1>=1, output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_it0/mejorar_ub_2/solucion)
+[cert dp_it0 equipo2] 2026-10-27 18:47:47 Produccion_base/zona_norte/05C/RED_GEN: 
+[cert dp_it0 equipo2] 2026-10-27 18:47:47 Produccion_base/zona_norte/1C/RED_GEN_BESS: certificar (UB 2743895.0411102045, LB op. 2606419.59, gap 5.01 %, gap_objetivo 0.005, capacidad station_1>=1, output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/1C/RED_GEN_BESS/dp_it0/mejorar_ub_2/solucion)
+[cert dp_it0 equipo2] 2026-10-27 18:47 Produccion_base/zona_norte/05C/RED_GEN: el certificado cayo por access violation en la candidata 456/1100 (pool completo, ordenado por cota operacional), pero ya queda cerrado: min LB de las 455 evaluadas 2.482.036,20 < cota operacional de las no evaluadas (>= 2.539.886,97) -> LB CERTIFICADA 2,482,036.20  ->  gap 4.043% (certificado/certificado.json)
+[cert dp_it0 equipo2] 2026-10-27 18:52:35 Produccion_base/zona_norte/1C/RED_GEN_BESS: [cert] LB CERTIFICADA 2,636,527.63  ->  gap 3.913%
+[cert dp_it0 equipo2] 2026-10-27 18:52:35 Produccion_base/zona_norte/2C/RED_GEN_BESS: certificar (UB 4951050.922968141, LB op. 4692518.49, gap 5.22 %, gap_objetivo 0.005, capacidad station_1>=2, output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/2C/RED_GEN_BESS/dp_it0/mejorar_ub_2/solucion)
+[cert dp_it0 equipo2] 2026-10-27 19:01:32 Produccion_base/zona_norte/2C/RED_GEN_BESS: 
+[cert dp_it0 equipo2] 2026-10-27 19:01:32 Produccion_escalada20/zona_norte/05C/RED_GEN_BESS: sin resultado del Benders, no se certifica
+[cert dp_it0 equipo2] 2026-10-27 19:01:33 Produccion_escalada20/zona_norte/05C/RED: certificar (UB 4491114.369137677, LB op. 3831681.54, gap 14.68 %, gap_objetivo 0.005, capacidad station_1>=1, output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_it0/mejorar_ub_1/solucion)
+[cert dp_it0 equipo2] 2026-10-27 19:01 Produccion_base/zona_norte/2C/RED_GEN_BESS: el certificado cayo (Windows fatal exception 0xc000001d) en la candidata 98/384 (pool completo, ordenado), pero queda cerrado: min LB de las 98 evaluadas 4.703.215,25 < cota operacional de las no evaluadas (>= 4.738.016,74) -> LB CERTIFICADA 4,703,215.25  ->  gap 5.006% (certificado/certificado.json)
+[cert dp_it0 equipo2] 2026-10-27 19:05:12 Produccion_escalada20/zona_norte/05C/RED: [cert] pool incompleto: se termina sin evaluar las candidatas (--evaluar_incompleto para evaluarlas igual; o bajar el gap / subir --max_pool)
+[cert dp_it0 equipo2] 2026-10-27 19:05:12 certificados terminados
+[cola r1 inicio] 2026-10-28 00:48:34 (llevo 26.3 h, quedan 63.7 h) casos 1 | Benders 10 h por caso, tope global 90 h (hasta 2026-10-30 16:29:50), corte de cargas si
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 00:48:34 (llevo 26.3 h, quedan 63.7 h) Nested Benders (max 10.00 h, gap 0.01, solo la iteracion 0, corte de cargas; estabilizacion: --stabilization box --stab_center operational --box_delta_int 2 --stab_free_every 3; --fijar_R op --evaluar_trayectoria_op --reparar_dp --dp_margen 0.5 --incumbente_inicial output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_it0/mejorar_ub_1/solucion)
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 02:28:54 (llevo 28.0 h, quedan 62.0 h) Benders: UB 4120260.87  LB 3831681.54
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 02:28:54 (llevo 28.0 h, quedan 62.0 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 03:40:39 (llevo 29.2 h, quedan 60.8 h) tras pasada 1: UB 4090093.054588234 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_real/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 03:40:39 (llevo 29.2 h, quedan 60.8 h) pasada 2 omitida (PASADA2=umbral): gap 6.318 % tras la pasada 1, no queda a <= 0.3 puntos sobre 1 5 %
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 03:40:39 (llevo 29.2 h, quedan 60.8 h) tras pasada 2: UB 4090093.054588234 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_real/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 03:42:16 (llevo 29.2 h, quedan 60.8 h) certificar (UB 4090093.054588234, gap_objetivo 0.005, capacidad station_1>=1)
+[cola r1 1/1 Produccion_escalada20/zona_norte/05C/RED] 2026-10-28 04:01:40 (llevo 29.5 h, quedan 60.5 h) FIN: 
+== Resumen (2026-10-28 04:01:41)
+1. Produccion_escalada20/zona_norte/05C/RED       sin certificado
+[cola r1 fin] 2026-10-28 04:01:41 (llevo 29.5 h, quedan 60.5 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/resumen.txt
+[cert dp_real equipo2] 2026-10-28 04:01 Produccion_escalada20/zona_norte/05C/RED: reparacion DP con la energia del incumbente (dp_real/): k=0 UB 4.120.260,87 (plan 3,4,4.. baterias, 2 bahias, sin reemplazo) -> mejorar_ub pasada 1 4.090.093,05; el certificado cayo por access violation en la candidata 102/633 (pool completo, ordenado), pero queda cerrado: min LB de las 60 VIVAS 3.884.865,90 < cota operacional de las no evaluadas (>= 3.945.485,95) -> LB CERTIFICADA 3,884,865.90 -> gap 5.018%
+[mejorar_ub 4y8 equipo2] 2026-10-28 10:21:14 Produccion_escalada20/zona_norte/05C/RED: mejorar_ub_2 (años 3,4,5,6,7,8,9, 900 s) desde UB 4090093.054588234, LB certificada 3884865.8964054957
+[mejorar_ub 4y8 equipo2] 2026-10-28 11:53:39 Produccion_escalada20/zona_norte/05C/RED: mejorar_ub_2 fallo (ver output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_escalada20/zona_norte/05C/RED/dp_real/mejorar_ub_2.log)
+[mejorar_ub 4y8 equipo2] 2026-10-28 11:53:39 Produccion_base/zona_norte/2C/RED_GEN_BESS: mejorar_ub_3 (años 4,5,6,7,8, 1200 s) desde UB 4951050.922968141, LB certificada 4703215.253150308
+[mejorar_ub 4y8 equipo2] 2026-10-28 12:40 Produccion_escalada20/zona_norte/05C/RED: correccion de la linea anterior: mejorar_ub_2 NO fallo, ningun dia mejoro (sin resumen.json); el UB queda 4.090.093,05 y el gap certificado 5,018 %
+[mejorar_ub 4y8 equipo2] 2026-10-28 13:40:56 Produccion_base/zona_norte/2C/RED_GEN_BESS: UB 4951050.922968141 -> 4949249.553883356 ; gap contra la LB certificada 4.971 %
+[mejorar_ub 4y8 equipo2] 2026-10-28 13:42:27 terminado
+[caso5 enum R r640-01] 2026-10-27 21:54:47 FIN enumeracion: optimo de la relajacion operacional con R libre = 2.947.604,66 (SIN reemplazo; solar 2,27, BESS 1,67), cerrado; año 7 3.193.203 (optimo), año 6 3.267.825 (optimo, el plan de la DP: +10,9 %); 2,3,4,5,8,9,10 y 2+ descartados por BestBdStop (cotas 3,24-3,99 M). LB valida del MILP con R libre: 2.947.604,66. Detalle en relajado/enum/resumen.tsv
+[caso5 grafo r640-01] 2026-10-28 00:07:56 grafo v2 (con b_bar) CERRADO: R libre, optimo 2.947.604,66 (sin reemplazo, igual que la enumeracion), 5.402 s Gurobi / 4.691 work units / 444 nodos, con CPU compartida con el MILP; raiz 2.466.733 (+1,8 % sobre sin grafo): el grafo ayuda en el branching, no en la raiz. MILP sin reemplazo: k=0 UB 3.502.426,05 (gap 15,8 %), cortado en k=1 porque el año 7 no hallo solucion factible en 120 s ni 1.200 s (CPU compartida)
+[caso5 MILP r640-01] 2026-10-28 14:25:23 iteracion 0 con la DP reparada con la energia de la solucion (3 baterias y 2 bahias desde el año 1, 4 baterias desde el año 2, sin reemplazo): UB 3.107.280,58 (antes 3.495.012,84, -11,1 %), gap 5,14 % contra LB 2.947.604,66; en milp_sinR/it0_energia_sol/benders
+[caso5 MILP r640-01] 2026-10-28 17:48:57 tras pasada 2: UB 3.098.875,18 (gap 4,88 % contra la cota operacional) en milp_sinR/it0_energia_sol/mejorar_ub_2/solucion
+[caso5 MILP r640-01] 2026-10-28 18:16:33 certificado: 354 candidatas bajo el umbral (pool COMPLETO); LB CERTIFICADA 2.983.268,87 -> gap 3,731 %
+[segunda vuelta DP equipo2] 2026-10-28 15:29:54 caso 3 Produccion_base/zona_norte/05C/RED_GEN: segunda vuelta (DP con la energia de output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_it0/mejorar_ub_2/solucion) en dp_real/
+[segunda vuelta DP equipo2] 2026-10-28 17:10:31 caso 3: la iteracion 0 de dp_real no supero a la solucion ya mejorada (sin respaldo): se relanza la cadena v2 (caso 3 en dp_real_b contra la iteracion 0 de la primera vuelta)
+[segunda vuelta DP equipo2] 2026-10-28 17:10:31 caso 3 Produccion_base/zona_norte/05C/RED_GEN: segunda vuelta (DP con la energia de output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_it0/benders) en dp_real_b/
+[segunda vuelta DP equipo2] 2026-10-28 18:41:40 caso 3: segunda vuelta: [NestedBenders] --reparar_dp (energia incumbente, margen 0.5 kWh): y4 baterias 2->3, bahias 1->2, cargadores 2->2; capacidad final 386.70 kWh (piso 385.6); costo DP del plan 1,665,312 [NestedBenders] termino en 0 iteraciones (5169s): UB=2,585,379.86  LB=2,424,993.82  gap=6.2036% 
+[cola r1 inicio] 2026-10-28 18:41:40 (llevo 44.2 h, quedan 455.8 h) casos 1 | Benders 10 h por caso, tope global 500 h (hasta 2026-11-16 18:29:50), corte de cargas si
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 18:41:40 (llevo 44.2 h, quedan 455.8 h) Benders ya terminado, se usa output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_real_b/benders.log
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 18:41:40 (llevo 44.2 h, quedan 455.8 h) Benders: UB 2585379.86  LB 2424993.82
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 18:41:40 (llevo 44.2 h, quedan 455.8 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 19:51:03 (llevo 45.4 h, quedan 454.6 h) tras pasada 1: UB 2550277.5439307033 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_real_b/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 19:51:03 (llevo 45.4 h, quedan 454.6 h) pasada 2 omitida (PASADA2=umbral): gap 4.913 % tras la pasada 1, no queda a <= 0.3 puntos sobre 1 5 %
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 19:51:03 (llevo 45.4 h, quedan 454.6 h) tras pasada 2: UB 2550277.5439307033 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED_GEN/dp_real_b/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 19:51:38 (llevo 45.4 h, quedan 454.6 h) certificar (UB 2550277.5439307033, gap_objetivo 0.005, capacidad station_1>=1)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED_GEN] 2026-10-28 20:00:47 (llevo 45.5 h, quedan 454.5 h) FIN: 
+== Resumen (2026-10-28 20:00:47)
+1. Produccion_base/zona_norte/05C/RED_GEN         sin certificado
+[cola r1 fin] 2026-10-28 20:00:47 (llevo 45.5 h, quedan 454.5 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/resumen.txt
+[segunda vuelta DP equipo2] 2026-10-28 20:00:47 caso 3: 
+[segunda vuelta DP equipo2] 2026-10-28 20:00:47 caso 1 Produccion_base/zona_norte/05C/RED: primera vuelta (DP con energia nominal) en dp_nom/
+[segunda vuelta DP equipo2] 2026-10-28 20:05 Produccion_base/zona_norte/05C/RED_GEN: segunda vuelta en dp_real_b/: k=0 UB 2.585.379,86 (plan 3a bateria y 2a bahia en el año 4) -> mejorar_ub pasada 1 2.550.277,54 (pasada 2 omitida, 4,91 % contra la cota op); el certificado nuevo cayo por access violation en 157/433 sin cerrar (min LB 2.482.036,18 > cota de la ultima evaluada 2.473.519,63), pero vale la LB CERTIFICADA de dp_it0 (2.482.036,18, umbral 2.573.669 > LB: no depende del UB) -> gap 2,676 %
+[segunda vuelta DP equipo2] 2026-10-28 20:49:28 caso 1: primera vuelta: [NestedBenders] --reparar_dp (energia nominal, margen 0.5 kWh): y3 baterias 2->3, bahias 1->2, cargadores 2->2; y4 baterias 2->3, bahias 1->2, cargadores 2->2; capacidad final 386.57 kWh (piso 385.6); costo DP del plan 1,698,290 [NestedBenders] termino en 0 iteraciones (2832s): UB=3,338,409.36  LB=3,206,385.57  gap=3.9547% 
+[segunda vuelta DP equipo2] 2026-10-28 20:49:28 caso 1 Produccion_base/zona_norte/05C/RED: segunda vuelta (DP con la energia de output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED/dp_nom/benders) en dp_real/
+[segunda vuelta DP equipo2] 2026-10-28 21:36:51 caso 1: segunda vuelta: [NestedBenders] --reparar_dp (energia incumbente, margen 0.5 kWh): y4 baterias 2->3, bahias 1->2, cargadores 2->2; capacidad final 386.15 kWh (piso 385.6); costo DP del plan 1,665,312 [NestedBenders] termino en 0 iteraciones (2755s): UB=3,304,775.86  LB=3,206,385.57  gap=2.9772% 
+[cola r1 inicio] 2026-10-28 21:36:51 (llevo 47.1 h, quedan 452.9 h) casos 1 | Benders 10 h por caso, tope global 500 h (hasta 2026-11-16 18:29:50), corte de cargas si
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 21:36:51 (llevo 47.1 h, quedan 452.9 h) Benders ya terminado, se usa output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED/dp_real/benders.log
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 21:36:52 (llevo 47.1 h, quedan 452.9 h) Benders: UB 3304775.86  LB 3206385.57
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 21:36:52 (llevo 47.1 h, quedan 452.9 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 22:49:22 (llevo 48.3 h, quedan 451.7 h) tras pasada 1: UB 3294143.9406231567 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED/dp_real/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 22:49:23 (llevo 48.3 h, quedan 451.7 h) pasada 2 omitida (PASADA2=umbral): gap 2.664 % tras la pasada 1, no queda a <= 0.3 puntos sobre 1 5 %
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 22:49:23 (llevo 48.3 h, quedan 451.7 h) tras pasada 2: UB 3294143.9406231567 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED/dp_real/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 22:50:08 (llevo 48.3 h, quedan 451.7 h) certificar (UB 3294143.9406231567, gap_objetivo 0.005, capacidad station_1>=1)
+[cola r1 1/1 Produccion_base/zona_norte/05C/RED] 2026-10-28 22:54:22 (llevo 48.4 h, quedan 451.6 h) FIN: 
+== Resumen (2026-10-28 22:54:22)
+1. Produccion_base/zona_norte/05C/RED             sin certificado
+[cola r1 fin] 2026-10-28 22:54:23 (llevo 48.4 h, quedan 451.6 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/resumen.txt
+[segunda vuelta DP equipo2] 2026-10-28 22:54:23 caso 1: 
+[segunda vuelta DP equipo2] 2026-10-28 22:54:23 caso 6 Produccion_base/zona_centro/05C/RED_GEN_BESS: primera vuelta (DP con energia nominal) en dp_nom/
+[segunda vuelta DP equipo2] 2026-10-29 00:40:12 caso 6: primera vuelta: [NestedBenders] --reparar_dp (energia nominal, margen 0.5 kWh): y3 baterias 2->3, bahias 1->2, cargadores 2->2; y4 baterias 2->3, bahias 1->2, cargadores 2->2; capacidad final 386.57 kWh (piso 385.6); costo DP del plan 1,698,290 [NestedBenders] termino en 0 iteraciones (6089s): UB=2,811,551.96  LB=2,639,629.45  gap=6.1149% 
+[segunda vuelta DP equipo2] 2026-10-29 00:40:12 caso 6 Produccion_base/zona_centro/05C/RED_GEN_BESS: segunda vuelta (DP con la energia de output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_centro/05C/RED_GEN_BESS/dp_nom/benders) en dp_real/
+[segunda vuelta DP equipo2] 2026-10-29 02:20:43 caso 6: la segunda vuelta en dp_real recalculo la cota operacional y llego al tope (5589 s, mejor solucion 4.134.430, cota 2.403.404; en dp_nom cerro en 2.639.629): se corta la cadena v2 y se repite la segunda vuelta en dp_real_t con la trayectoria y la cota de dp_nom (cierre_caso6_y_certificados.sh, que tambien reintenta los certificados de los casos 1 y 6)
+[segunda vuelta DP equipo2] 2026-10-29 02:20:44 caso 6: segunda vuelta repetida en dp_real_t con la trayectoria y la cota de dp_nom (cota 2639629.45), sin recalcular la cota operacional (en dp_real llego al tope sin cerrar)
+[segunda vuelta DP equipo2] 2026-10-29 03:47:19 caso 6: segunda vuelta: [NestedBenders] --reparar_dp (energia incumbente, margen 0.5 kWh): y4 baterias 2->3, bahias 1->2, cargadores 2->2; capacidad final 386.27 kWh (piso 385.6); costo DP del plan 1,665,312 [NestedBenders] termino en 0 iteraciones (4896s): UB=2,790,393.82  LB=2,639,629.45  gap=5.4030% 
+[cola r1 inicio] 2026-10-29 03:47:19 (llevo 53.3 h, quedan 446.7 h) casos 1 | Benders 10 h por caso, tope global 500 h (hasta 2026-11-16 18:29:50), corte de cargas si
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 03:47:19 (llevo 53.3 h, quedan 446.7 h) Benders ya terminado, se usa output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_centro/05C/RED_GEN_BESS/dp_real_t/benders.log
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 03:47:19 (llevo 53.3 h, quedan 446.7 h) Benders: UB 2790393.82  LB 2639629.45
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 03:47:20 (llevo 53.3 h, quedan 446.7 h) mejorar_ub pasada 1 (años 1-10, 600 s)
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 04:56:43 (llevo 54.4 h, quedan 445.6 h) tras pasada 1: UB 2767909.361434111 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_centro/05C/RED_GEN_BESS/dp_real_t/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 04:56:43 (llevo 54.4 h, quedan 445.6 h) pasada 2 omitida (PASADA2=umbral): gap 4.635 % tras la pasada 1, no queda a <= 0.3 puntos sobre 1 5 %
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 04:56:44 (llevo 54.4 h, quedan 445.6 h) tras pasada 2: UB 2767909.361434111 (output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_centro/05C/RED_GEN_BESS/dp_real_t/mejorar_ub_1\solucion)
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 04:58:20 (llevo 54.5 h, quedan 445.5 h) certificar (UB 2767909.361434111, gap_objetivo 0.005, capacidad station_1>=1)
+[cola r1 1/1 Produccion_base/zona_centro/05C/RED_GEN_BESS] 2026-10-29 05:48:02 (llevo 55.3 h, quedan 444.7 h) FIN: LB CERTIFICADA 2,695,859.54  ->  gap 2.603%
+== Resumen (2026-10-29 05:48:02)
+1. Produccion_base/zona_centro/05C/RED_GEN_BESS   r1 NO cierra 1% LB CERTIFICADA 2,695,859.54  ->  gap 2.603%
+[cola r1 fin] 2026-10-29 05:48:02 (llevo 55.3 h, quedan 444.7 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/resumen.txt
+[cola r1 fin] 2026-10-29 05:48:02 (llevo 55.3 h, quedan 444.7 h) hay casos >= 1 %: relanzarlos con  RONDA=2 bash cola_tesis_swap.sh
+[segunda vuelta DP equipo2] 2026-10-29 05:48:02 caso 6: [cert] LB CERTIFICADA 2,695,859.54  ->  gap 2.603%
+[reintento cert equipo2] 2026-10-29 05:48:03 Produccion_base/zona_norte/05C/RED: certificado intento 1 (UB 3294143.9406231567, gap_objetivo 0.005, capacidad station_1>=1, output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/05C/RED/dp_real/mejorar_ub_1/solucion)
+[reintento cert equipo2] 2026-10-29 06:14:58 Produccion_base/zona_norte/05C/RED: certificado CERRADO, LB 3263609.06 -> gap 0.927 % (UB 3294143.9406231567)
+[reintento cert equipo2] 2026-10-29 06:14:59 Produccion_base/zona_centro/05C/RED_GEN_BESS: certificado CERRADO, LB 2695859.54 -> gap 2.603 % (UB 2767909.361434111)
+[reintento cert equipo2] 2026-10-29 06:14:59 terminado

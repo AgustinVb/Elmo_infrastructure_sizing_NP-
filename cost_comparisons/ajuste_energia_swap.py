@@ -25,7 +25,16 @@ LA CORRECCION, sin re-optimizar:
      al final la generacion (quedaria vertida). Nadie verteria solar para seguir
      comprando red, asi que es lo que haria un operador con el mismo plan.
 
-VERIFICACION. La energia sobrante total tiene que ser sum(bloques) - sum(real):
+DEFICIT. Si la energia real de un swap supera su bloque, la carga se alarga a
+p_charger los intervalos que falten, justo despues del bloque, y esa energia se
+compra a la red (no se sabe si quedaba generacion disponible: es lo
+conservador). Pasa a 1C y 2C: el bloque es 385,6 kWh (80 % de 482 sin perdidas)
+y una bateria casi nueva que llega al minimo pide 385,6 / eta_charge = 406 kWh
+(caso 7 v4: 81 de 546 swaps, 905 kWh en los dias muestreados). A 0,5C el bloque
+se redondea a 13 intervalos (417,7 kWh) y no hay deficit. En cada intervalo el
+deficit se compensa primero con el sobrante de otros swaps.
+
+VERIFICACION. sum(sobrante) - sum(deficit) tiene que ser sum(bloques) - sum(real):
 con solo red el resultado reproduce exactamente la energia real del consumer.
 """
 import json
@@ -65,7 +74,7 @@ def _serie(data, y, d, T, externo=None):
 
 def ajustar(root):
     """Devuelve {(y, d): dict(red, gen, bat, dem, red_aj, gen_aj, bat_aj, dem_aj,
-    sobrante)} en kW por intervalo, mas un resumen con las verificaciones."""
+    sobrante, deficit)} en kW por intervalo, mas un resumen con las verificaciones."""
     root = Path(root)
     params = c.load_json(c.find_json_in_folder(root, "parameters.json"))
     dt = float(params["delta_t"])
@@ -84,12 +93,13 @@ def ajustar(root):
     T = max(int(float(k)) for y in _rama(red, "y").values() for d in _rama(y, "d").values()
             for k in _rama(d, "t"))
     out, sobrante_total, bloque_total, real_total, sin_pareja = {}, 0.0, 0.0, 0.0, 0
+    deficit_total, con_deficit = 0.0, 0
     estaciones = list(_rama(sv, "k"))
     years = sorted(int(y) for y in _rama(red, "y"))
     e_int = p_ch * dt                                   # kWh de red por intervalo de carga
     for y in years:
         for d in DIAS:
-            sobr = np.zeros(T)
+            sobr, falta = np.zeros(T), np.zeros(T)
             for k in estaciones:
                 # Inicios de carga: X_ini[a] = Sv[k,y,d,a,a].
                 filas = _rama(sv, "k", k, "y", str(y), "d", str(d), "t")
@@ -133,12 +143,25 @@ def ajustar(root):
                             if t > T:                       # el bloque cruza el fin del dia
                                 t -= T
                             sobr[t - 1] += frac_sobra * p_ch
+                        # Deficit: la carga sigue a p_ch despues del bloque.
+                        extra = n_nec - t_charge
+                        if extra > 1e-12:
+                            con_deficit += 1
+                            j = 0
+                            while extra - j > 1e-12:
+                                t = (a + t_charge + j - 1) % T + 1
+                                falta[t - 1] += min(1.0, extra - j) * p_ch
+                                j += 1
             r, g = _serie(red, y, d, T), _serie(gen, y, d, T, "g")
             b = _serie(bat, y, d, T, "h")
             dem = r + g + b
+            # El deficit se compensa primero con el sobrante del mismo intervalo;
+            # lo que queda de deficit se compra a la red.
+            neto = sobr - falta
+            sobr_neto, falta_neta = np.maximum(neto, 0.0), np.maximum(-neto, 0.0)
             # Orden de merito: red -> descarga BESS -> generacion.
-            quita_r = np.minimum(r, sobr)
-            resto = sobr - quita_r
+            quita_r = np.minimum(r, sobr_neto)
+            resto = sobr_neto - quita_r
             quita_b = np.minimum(np.maximum(b, 0.0), resto)
             resto -= quita_b
             quita_g = np.minimum(g, resto)
@@ -147,14 +170,19 @@ def ajustar(root):
                 raise SystemExit("y{} d{}: sobrante mayor que el consumo ({:.3f} kW)".format(
                     y, d, float(np.max(resto))))
             sobrante_total += float(np.sum(sobr) * dt)
+            deficit_total += float(np.sum(falta) * dt)
             out[(y, d)] = {"red": r, "gen": g, "bat": b, "dem": dem, "sobrante": sobr,
-                           "red_aj": r - quita_r, "gen_aj": g - quita_g, "bat_aj": b - quita_b,
-                           "dem_aj": dem - sobr}
-    resumen = {"sobrante_kwh_dias": sobrante_total, "bloques_menos_real_kwh_dias": bloque_total - real_total,
+                           "deficit": falta, "red_aj": r - quita_r + falta_neta,
+                           "gen_aj": g - quita_g, "bat_aj": b - quita_b,
+                           "dem_aj": dem - sobr + falta}
+    resumen = {"sobrante_kwh_dias": sobrante_total, "deficit_kwh_dias": deficit_total,
+               "swaps_con_deficit": con_deficit,
+               "bloques_menos_real_kwh_dias": bloque_total - real_total,
                "swaps_sin_pareja": sin_pareja, "dt": dt,
                "escala": float(params.get("scaling_factor_op_cost", 1.0)),
                "tasa": c._get_discount_rate(params) if c._has_degradation_data(params) else 0.0}
-    if sin_pareja or abs(sobrante_total - (bloque_total - real_total)) > 1e-6 * max(1.0, bloque_total):
+    if sin_pareja or abs(sobrante_total - deficit_total - (bloque_total - real_total)) \
+            > 1e-6 * max(1.0, bloque_total):
         raise SystemExit("ajuste inconsistente: {}".format(resumen))
     return out, resumen
 

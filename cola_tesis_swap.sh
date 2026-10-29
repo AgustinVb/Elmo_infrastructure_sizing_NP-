@@ -43,7 +43,10 @@ HORAS=${HORAS:-10}; HORAS_R2=${HORAS_R2:-12}
 HORAS_ESCALADA_BESS=${HORAS_ESCALADA_BESS:-24}
 TOPE_H=${TOPE_H:-68}; RESERVA_H=${RESERVA_H:-3}; MIN_H=${MIN_H:-2}
 CORTE=${CORTE:-1}
-GAP=0.01; ITER=50; SIN_MEJORA=${SIN_MEJORA:-4}
+# ITER=0 deja solo la iteracion 0 (con --evaluar_trayectoria_op --reparar_dp: la
+# trayectoria de la cota operacional reparada con la DP) y sigue con mejorar_ub y
+# el certificado, el esquema del caso 2 de la v4 (cola_swap_v4_algoritmo.md, §8).
+GAP=0.01; ITER=${ITER:-50}; SIN_MEJORA=${SIN_MEJORA:-4}
 FLAGS="--free_charging --free_maintenance"
 # Estabilizacion del forward y flags extra del Benders (2026-10-26, ver
 # cola_swap_v4_algoritmo.md). Por defecto, lo de siempre (caja +-1 centrada en la
@@ -52,6 +55,14 @@ FLAGS="--free_charging --free_maintenance"
 # BENDERS_EXTRA se agrega al comando de setup.py (p. ej. "--fijar_R op").
 ESTAB=${ESTAB---stabilization box --stab_center operational --box_delta_int 1}
 BENDERS_EXTRA=${BENDERS_EXTRA:-}
+# SUB=<carpeta>: los resultados de cada caso van en $V/<caso>/<carpeta> (p. ej.
+# SUB=dp_it0, como el caso 2) sin pisar los de corridas anteriores.
+SUB=${SUB:-}
+# PASADA2=umbral: la pasada 2 de mejorar_ub (años 3-9, 900 s) solo corre si tras la
+# pasada 1 el gap contra la cota operacional queda a <= MARGEN_P2 puntos SOBRE alguno
+# de UMBRALES_P2 (%), o sea si puede cruzarlo. En los casos v4 (2026-10-27) la pasada
+# 2 bajo el UB solo 0,13-0,31 % y tardo 1,3-1,6 h. Por defecto corre siempre.
+PASADA2=${PASADA2:-siempre}; UMBRALES_P2=${UMBRALES_P2:-1 5}; MARGEN_P2=${MARGEN_P2:-0.3}
 
 # En orden de prioridad (relativos a $DATA). "|v3:<ESC>": se copia de la cola v3 si
 # esta certificado ahi. "|alt:<caso>": si Benders no encuentra solucion factible
@@ -105,11 +116,16 @@ leer_benders() {  # "UB LB" de la linea final o de la ultima iteracion cerrada
   $PY -c "
 import re;t=open('$1',encoding='utf-8',errors='replace').read()
 m=re.findall(r'NestedBenders[^\n]*: UB=([\d.]+)\s+LB=([\d.]+)',t) or re.findall(r'k=\d+  UB=([\d.]+)\s+LB=([\d.]+)',t)
-print(*(m[-1] if m else ('','')))"
+# Sin iteraciones cerradas (ITER=0): la linea final, con separador de miles.
+m=m or re.findall(r'termino en[^\n]*: UB=([\d,.]+)\s+LB=([\d,.]+)',t)
+print(*([x.replace(',','') for x in m[-1]] if m else ('','')))" | tr -d '\r'
 }
+# tr -d '\r': en Windows python termina las lineas en \r\n y el \r quedaba pegado al
+# ultimo campo (LBOP, UB): el calculo de GO fallaba y el certificado partia con
+# --gap_objetivo vacio (cola v4 dp_it0, 2026-10-27).
 ub_resumen() {  # "solucion ub_final" de un resumen.json de mejorar_ub, o "- -"
   [ -f $1 ] && $PY -c "
-import json;r=json.load(open('$1')); print(r.get('solucion') or '-', repr(r['ub_final']))" || echo "- -"
+import json;r=json.load(open('$1')); print(r.get('solucion') or '-', repr(r['ub_final']))" | tr -d '\r' || echo "- -"
 }
 certificado() { grep -E 'LB CERTIFICADA' $1 2>/dev/null | tail -1 | sed 's/^\[cert\] //'; }
 gap_de() { certificado $1 | sed -E 's/.*gap ([0-9.]+)%.*/\1/'; }
@@ -137,10 +153,10 @@ resumen_final() {
     echo "== Resumen ($(date '+%F %T'))"
     local i=0
     for c in "${CASOS[@]}"; do
-      i=$((i+1)); local caso=${c%%|*} R=$V/${c%%|*} r=r1
+      i=$((i+1)); local caso=${c%%|*} R=$V/${c%%|*}${SUB:+/$SUB} r=r1
       if [[ "$c" == *"|alt:"* ]] && [ -z "$(certificado $R/certificado.log)" ] \
-         && [ -n "$(certificado $V/${c##*|alt:}/certificado.log)" ]; then
-        caso=${c##*|alt:}; R=$V/$caso
+         && [ -n "$(certificado $V/${c##*|alt:}${SUB:+/$SUB}/certificado.log)" ]; then
+        caso=${c##*|alt:}; R=$V/$caso${SUB:+/$SUB}
       fi
       local f=$R/certificado.log
       [ -n "$(certificado $R/r2/certificado.log)" ] && { f=$R/r2/certificado.log; r=r2; }
@@ -159,12 +175,12 @@ for n in $SEL; do
   ALT=""; [[ "$c" == *"|alt:"* ]] && ALT=${c##*|alt:}
   while :; do
   caso=${c%%|*}; E3=""; [[ "$c" == *"|v3:"* ]] && E3=${c##*|v3:}
-  D=$DATA/$caso; R1=$V/$caso; TAG="$n/${#CASOS[@]} $caso"
+  D=$DATA/$caso; R1=$V/$caso${SUB:+/$SUB}; TAG="$n/${#CASOS[@]} $caso"
   INC=""; H_CASO=$HORAS
   [ "$caso" = "Produccion_escalada20/zona_norte/05C/RED_GEN_BESS" ] && H_CASO=$HORAS_ESCALADA_BESS
   # Ronda 2 de un caso que en la ronda 1 se resolvio con su alternativa (1C).
   if [ $RONDA = 2 ] && [ -n "$ALT" ] && [ -z "$(certificado $R1/certificado.log)" ] \
-     && [ -n "$(certificado $V/$ALT/certificado.log)" ]; then c=$ALT; ALT=""; continue; fi
+     && [ -n "$(certificado $V/$ALT${SUB:+/$SUB}/certificado.log)" ]; then c=$ALT; ALT=""; continue; fi
   if [ $RONDA = 2 ]; then
     G1=$(gap_de $R1/certificado.log)
     if [ -z "$G1" ]; then msg "$TAG" "sin certificado de la ronda 1: se salta"; continue 2; fi
@@ -202,7 +218,7 @@ for n in $SEL; do
       if [ -f $R/corte_cargas_lhd.json ]; then EXTRA="--corte_cargas_lhd $R/corte_cargas_lhd.json"; rm -rf $R/_corte_cargas_op
       else msg "$TAG" "corte_cargas_op fallo (ver corte_cargas_op.log): Benders sin el corte"; fi
     fi
-    msg "$TAG" "Nested Benders (max $H h, gap $GAP, corte tras $SIN_MEJORA iteraciones sin mejora${EXTRA:+, corte de cargas}; estabilizacion: ${ESTAB:-ninguna}${BENDERS_EXTRA:+; $BENDERS_EXTRA})"
+    msg "$TAG" "Nested Benders (max $H h, gap $GAP, $([ $ITER = 0 ] && echo 'solo la iteracion 0' || echo "corte tras $SIN_MEJORA iteraciones sin mejora")${EXTRA:+, corte de cargas}; estabilizacion: ${ESTAB:-ninguna}${BENDERS_EXTRA:+; $BENDERS_EXTRA})"
     mkdir -p $B; rm -f $B/STOP
     vigia $R/benders.log $B/STOP "$TAG" & VP=$!
     $PY -u setup.py --data_folder $D --solver gurobi --days_per_year 4 $FLAGS \
@@ -229,23 +245,31 @@ for n in $SEL; do
     $PY -u mejorar_ub.py --data_folder $D --respaldo $B/incumbente_respaldo.pkl --ub_esperado $UB0 \
         --anios 1,2,3,4,5,6,7,8,9,10 --timelimit 600 --jobs 4 --out $R/mejorar_ub_1 2>&1 | tee $R/mejorar_ub_1.log
   fi
-  read SOL UB < <(ub_resumen $R/mejorar_ub_1/resumen.json)
+  read -r SOL UB < <(ub_resumen $R/mejorar_ub_1/resumen.json)
   [ "$SOL" = "-" ] && { SOL=$B; UB=$UB0; }     # sin mejora: los JSON de Benders
   msg "$TAG" "tras pasada 1: UB $UB ($SOL)"
 
-  if [ ! -f $R/mejorar_ub_2/resumen.json ]; then
+  P2=1
+  if [ "$PASADA2" = umbral ] && [ ! -f $R/mejorar_ub_2/resumen.json ]; then
+    G1=$($PY -c "print(round(100*($UB-$LBOP)/$UB, 3))" | tr -d '\r')
+    if ! awk -v g=$G1 -v m=$MARGEN_P2 -v u="$UMBRALES_P2" \
+        'BEGIN{n=split(u,a," "); for(i=1;i<=n;i++) if (g>a[i] && g<=a[i]+m) exit 0; exit 1}'; then
+      P2=0; msg "$TAG" "pasada 2 omitida (PASADA2=umbral): gap $G1 % tras la pasada 1, no queda a <= $MARGEN_P2 puntos sobre $UMBRALES_P2 %"
+    fi
+  fi
+  if [ $P2 = 1 ] && [ ! -f $R/mejorar_ub_2/resumen.json ]; then
     msg "$TAG" "mejorar_ub pasada 2 (años 3-9, 900 s)"
     $PY -u mejorar_ub.py --data_folder $D --solucion $SOL --ub_esperado $UB --anios 3,4,5,6,7,8,9 \
         --timelimit 900 --jobs 4 --out $R/mejorar_ub_2 2>&1 | tee $R/mejorar_ub_2.log
   fi
-  read SOL2 UB2 < <(ub_resumen $R/mejorar_ub_2/resumen.json)
+  read -r SOL2 UB2 < <(ub_resumen $R/mejorar_ub_2/resumen.json)
   if [ "$SOL2" != "-" ]; then SOL=$SOL2; UB=$UB2; fi
   msg "$TAG" "tras pasada 2: UB $UB ($SOL)"
   $PY -u escribir_parameters.py $D $SOL 2>&1 | tee $R/consumer.log
   $PY consumer.py $SOL 2>&1 | tee -a $R/consumer.log
 
   # --- 3. certificado ---------------------------------------------------------
-  GO=$($PY -c "g=($UB-$LBOP)/$UB; print(round(max(1e-5, min(0.005, 0.8*g)), 6))")
+  GO=$($PY -c "g=($UB-$LBOP)/$UB; print(round(max(1e-5, min(0.005, 0.8*g)), 6))" | tr -d '\r')
   # Cota de capacidad del presolve de Benders (n_ssee_k >= N): el certificado la lleva por defecto en 1.
   CAP=$(grep -ao 'cotas impuestas al anio 1: station_1: >= [0-9]*' $R/benders.log 2>/dev/null | tail -1 | grep -o '[0-9]*$')
   CAP=${CAP:-1}
