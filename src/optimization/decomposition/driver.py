@@ -52,13 +52,15 @@ _worker_state = {}
 
 
 def _init_year_block_worker(mine_system, time_series, autonomous_mode,
-                            free_charging=False, free_maintenance=False):
+                            free_charging=False, free_maintenance=False,
+                            pause_scheme='det'):
     sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
     _worker_state["mine_system"] = mine_system
     _worker_state["time_series"] = time_series
     _worker_state["autonomous_mode"] = autonomous_mode
     _worker_state["free_charging"] = free_charging
     _worker_state["free_maintenance"] = free_maintenance
+    _worker_state["pause_scheme"] = pause_scheme
 
 
 def _build_year_block_task(payload):
@@ -69,6 +71,7 @@ def _build_year_block_task(payload):
         autonomous_mode=_worker_state["autonomous_mode"],
         free_charging=_worker_state["free_charging"],
         free_maintenance=_worker_state["free_maintenance"],
+        pause_scheme=_worker_state["pause_scheme"],
     )
 
 
@@ -102,6 +105,7 @@ class NestedBendersSolver(object):
                  block_build_jobs=None, macroblock_forward=False,
                  monolithic_lp_bound=True, capacity_presolve="peak",
                  free_charging=False, free_maintenance=False,
+                 pause_scheme='det',
                  strengthen_max_iter=1, accelerate=False, accel_pool_size=5,
                  accel_timelimit=None, history_path=None,
                  operational_bound=False, op_bound_timelimit=None,
@@ -286,6 +290,7 @@ class NestedBendersSolver(object):
         # la descomposicion resolveria un problema distinto al monolitico.
         self.free_charging = free_charging
         self.free_maintenance = free_maintenance
+        self.pause_scheme = pause_scheme
 
         self.blocks = self._build_blocks(block_build_jobs)
 
@@ -407,6 +412,7 @@ class NestedBendersSolver(object):
                     autonomous_mode=self.autonomous_mode,
                     free_charging=self.free_charging,
                     free_maintenance=self.free_maintenance,
+                    pause_scheme=self.pause_scheme,
                 )
                 for year, is_last_year, exogenous_stations in tasks
             ]
@@ -421,7 +427,8 @@ class NestedBendersSolver(object):
         with multiprocess.Pool(
             processes=n_jobs, initializer=_init_year_block_worker,
             initargs=(self.mine_system, self.time_series, self.autonomous_mode,
-                      self.free_charging, self.free_maintenance),
+                      self.free_charging, self.free_maintenance,
+                      self.pause_scheme),
         ) as pool:
             return pool.map(_build_year_block_task, tasks)
 
@@ -474,6 +481,7 @@ class NestedBendersSolver(object):
                     autonomous_mode=self.autonomous_mode,
                     free_charging=self.free_charging,
                     free_maintenance=self.free_maintenance,
+                    pause_scheme=self.pause_scheme,
                     macroblock={
                         "station": station,
                         "lhds": mb["lhds"],
@@ -758,6 +766,7 @@ class NestedBendersSolver(object):
                         mccormick_degradation=True,
                         free_charging=self.free_charging,
                         free_maintenance=self.free_maintenance,
+                        pause_scheme=self.pause_scheme,
                         **common).build_all_constraints(model)
         model.obj = pyo.Objective(
             rule=ObjectiveRules(self.mine_system, self.time_series, **common).total_cost,
@@ -1169,7 +1178,8 @@ class NestedBendersSolver(object):
         om = OptModel(self.mine_system, self.time_series, destino,
                       init_solution_folder=carpeta, autonomous_mode=self.autonomous_mode,
                       mccormick_degradation=True, free_charging=self.free_charging,
-                      free_maintenance=self.free_maintenance)
+                      free_maintenance=self.free_maintenance,
+                      pause_scheme=self.pause_scheme)
         m = om.model
         usadas = set()
         for c in m.component_data_objects(pyo.Constraint, active=True):
@@ -1693,7 +1703,8 @@ class NestedBendersSolver(object):
                       autonomous_mode=self.autonomous_mode,
                       mccormick_degradation=True,
                       free_charging=self.free_charging,
-                      free_maintenance=self.free_maintenance)
+                      free_maintenance=self.free_maintenance,
+                      pause_scheme=self.pause_scheme)
         model = om.model
         om.opt_cost_result = ub_ref
         om.informe = {}

@@ -159,6 +159,7 @@ def build_day_block(year_block, day, heritage=None, fixed_shared=None):
         free_charging=year_block.free_charging,
         free_maintenance=year_block.free_maintenance,
         days_override=[day],
+        pause_scheme=year_block.pause_scheme,
     )
     if heritage is not None:
         blk.set_heritage(heritage)

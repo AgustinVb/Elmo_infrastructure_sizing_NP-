@@ -16,7 +16,8 @@ class OptimizationModel(object):
                  free_maintenance=False,
                  relax_operational=False,
                  warm_start_only_integers=False,
-                 lb_externa=None):
+                 lb_externa=None,
+                 pause_scheme='det'):
 
         t0 = time.time()
 
@@ -36,6 +37,7 @@ class OptimizationModel(object):
             free_maintenance=free_maintenance,
             relax_operational=relax_operational,
             warm_start_only_integers=warm_start_only_integers,
+            pause_scheme=pause_scheme,
         )
         print('formulation time:', time.time() - t0)
         if lb_externa is not None:

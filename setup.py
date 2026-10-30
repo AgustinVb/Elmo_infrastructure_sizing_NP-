@@ -215,6 +215,15 @@ def main():
              'prohibida. Ver OptSets.build_sets en functions.py.'
     )
     parser.add_argument(
+        '--pause_scheme', choices=['det', 'dch'], default='det',
+        help='[monolithic|decomposed|hybrid] esquema de detenciones. det (default): '
+             'esquema DET (det_stop_all, ventanas DET). dch: esquema DCH del modelo '
+             'anual de carga_on_board (--pause_scheme dch de run_descomposicion.py): '
+             'mantenciones sin operar ni cargar, colacion por grupos de LHD y entre '
+             'turnos de la hoja Shifts. Con dch, --free_charging equivale a '
+             '--charge_window libre y --free_maintenance no aplica.'
+    )
+    parser.add_argument(
         '--mode', choices=['monolithic', 'decomposed', 'hybrid'], default='monolithic',
         help='monolithic (default): resuelve el modelo completo de una vez. '
              'decomposed: descomposicion Nested Benders por año (ver '
@@ -553,6 +562,7 @@ def main():
             mip_focus=args.mip_focus,
             free_charging=args.free_charging,
             free_maintenance=args.free_maintenance,
+            pause_scheme=args.pause_scheme,
             relax_operational=args.relax_operational,
             warm_start_only_integers=args.warm_start_solo_enteras,
             lb_externa=args.mono_lb,
@@ -617,6 +627,7 @@ def main():
             capacity_presolve=args.capacity_presolve,
             free_charging=args.free_charging,
             free_maintenance=args.free_maintenance,
+            pause_scheme=args.pause_scheme,
             strengthened_timelimit=args.strengthened_timelimit,
             op_bound_gap=args.op_bound_gap,
             polish_each_iter=args.polish_each_iter,

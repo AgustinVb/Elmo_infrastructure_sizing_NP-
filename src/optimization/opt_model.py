@@ -27,7 +27,7 @@ from src.optimization.functions import (
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False, relax_operational=False, warm_start_only_integers=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False, relax_operational=False, warm_start_only_integers=False, pause_scheme='det'):
         # MIP start solo con las enteras: Gurobi fija TODO lo que trae el start
         # para completarlo, y las continuas de un JSON pulido traen residuos de
         # ~1e-6 que lo vuelven infactible ("User MIP start did not produce a
@@ -64,6 +64,8 @@ class OptModel(object):
         self.free_charging = free_charging
         # Mantenimiento liberado: ver OptRules.__init__ / OptSets.build_sets.
         self.free_maintenance = free_maintenance
+        # Esquema de detenciones: ver OptRules.__init__.
+        self.pause_scheme = pause_scheme
         # Relajacion PARCIAL: solo las binarias operacionales (ver
         # OPERATIONAL_BINARY_VARS en functions.py). Deja enteras las de
         # inversion, asi que el modelo sigue siendo un MILP -- con decenas de
@@ -84,7 +86,7 @@ class OptModel(object):
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode, free_maintenance=free_maintenance)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series, mccormick_degradation=mccormick_degradation)
-        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation, free_charging=free_charging, free_maintenance=free_maintenance)
+        self.constraint_rules = ConstraintRules(mine_system, time_series, mccormick_degradation=mccormick_degradation, free_charging=free_charging, free_maintenance=free_maintenance, pause_scheme=pause_scheme)
         self.objective_rules  = ObjectiveRules(mine_system, time_series)
         self.output_manager   = OutputManager(mine_system, time_series)
         self.model            = self.build_model()

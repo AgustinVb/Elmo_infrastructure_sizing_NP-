@@ -94,6 +94,8 @@ def main():
                     help="mismo regimen que la corrida que dio el incumbente")
     ap.add_argument("--free_maintenance", action="store_true",
                     help="mismo regimen que la corrida que dio el incumbente")
+    ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det",
+                    help="mismo regimen que la corrida que dio el incumbente")
     ap.add_argument("--solucion", default=None, help="carpeta con los JSON del incumbente")
     ap.add_argument("--respaldo", default=None, help="incumbente_respaldo.pkl (alternativa)")
     ap.add_argument("--ub_esperado", type=float, default=None,
@@ -126,7 +128,8 @@ def main():
     _s, ms, ts = build_mine(ns)
     om = OptModel(ms, ts, os.path.join(a.out, "_monolitico"), init_solution_folder=a.solucion,
                   mccormick_degradation=True, free_charging=a.free_charging,
-                  free_maintenance=a.free_maintenance)
+                  free_maintenance=a.free_maintenance,
+                  pause_scheme=a.pause_scheme)
     esperado = a.ub_esperado
     if a.respaldo:
         esperado = cargar_respaldo(om, ms, ts, a.respaldo)["best_cost"]

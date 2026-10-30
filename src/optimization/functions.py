@@ -41,9 +41,22 @@ class OptRules(object):
     def __init__(self, mine_system, time_series, autonomous_mode=False,
                  years_override=None, exogenous_stations=None,
                  mccormick_degradation=False, macroblock=None,
-                 free_charging=False, free_maintenance=False, days_override=None):
+                 free_charging=False, free_maintenance=False, days_override=None,
+                 pause_scheme='det'):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Esquema de detenciones (--pause_scheme). 'det' (default) = esquema DET
+        # (det_stop_all + ventanas DET). 'dch' = esquema DCH legacy, el mismo
+        # del modelo anual de carga_on_board (run_descomposicion.py
+        # --pause_scheme dch): mantenciones forzadas sin operar ni cargar
+        # (maint_stop_all + maint_no_charge), colacion por grupos de LHD
+        # (meal_g1/meal_g2_no_travel) y entre turnos del calendario de Shifts.
+        # Con 'dch', --free_charging equivale a --charge_window libre (sin
+        # charge_only_meal_or_shift_change) y --free_maintenance no aplica (solo
+        # toca las ventanas DET).
+        if pause_scheme not in ('det', 'dch'):
+            raise ValueError(f"pause_scheme debe ser 'det' o 'dch', no {pause_scheme!r}")
+        self.pause_scheme = pause_scheme
         # Descomposicion por DIA dentro de un año (decomposition/day_blocks.py,
         # portado de battery_swapping_multiaño): acota model.days a un
         # subconjunto -- tipicamente un solo dia representativo -- sin tocar
@@ -1216,8 +1229,16 @@ class ConstraintRules(OptRules):
         # actualizar la indexacion antes de usarla.
         return sum(model.X[k] for k in model.stations_set) == 1
 
+    def _opera_en_colacion(self, y):
+        """Años en que la colacion DCH no detiene la operacion (columna
+        opcional opera_en_colacion de FleetByYear). Pensado para un año cuya
+        meta no cabe con la colacion DCH; hoy ningun caso la activa (DCH la
+        deja en 0: 1C y 2C son factibles sin operar en colacion)."""
+        fleet = self.mine_system.fleet_by_year
+        return fleet is not None and fleet.opera_en_colacion(y)
+
     def meal_g1_no_travel_group1(self, model, i, y, d, t):
-        if t not in model.time_intervals_meal_g1_set:
+        if t not in model.time_intervals_meal_g1_set or self._opera_en_colacion(y):
             return pyo.Constraint.Skip
         if i not in model.meal_group1_set:
             return pyo.Constraint.Skip
@@ -1227,7 +1248,7 @@ class ConstraintRules(OptRules):
         return sum(model.Y[i,j,y,d,t] for j in nodes) == 0
 
     def meal_g2_no_travel_group2(self, model, i, y, d, t):
-        if t not in model.time_intervals_meal_g2_set:
+        if t not in model.time_intervals_meal_g2_set or self._opera_en_colacion(y):
             return pyo.Constraint.Skip
         if i not in model.meal_group2_set:
             return pyo.Constraint.Skip
@@ -1461,10 +1482,12 @@ class ConstraintRules(OptRules):
 
     def build_all_constraints(self, model):
         model.state_unique_elhd         = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.state_unique_elhd)
-        # Esquema DET activo: usa el set de entre-turnos especifico DET
-        # (time_intervals_between_shifts_det_set), alineado con
-        # det_stop_all / charge_only_meal_or_between_shifts_det.
-        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_between_shifts_det_set, rule=self.between_shifts_elhd)
+        # Entre turnos: bajo DET el set especifico DET (alineado con
+        # det_stop_all / charge_only_meal_or_between_shifts_det); bajo DCH el
+        # set del calendario de Shifts, como carga_on_board con --pause_scheme dch.
+        between_shifts_set = (model.time_intervals_between_shifts_set if self.pause_scheme == 'dch'
+                              else model.time_intervals_between_shifts_det_set)
+        model.between_shifts_elhd       = pyo.Constraint(model.elhd_set, model.years, model.days, between_shifts_set, rule=self.between_shifts_elhd)
 
         model.battery_soc               = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_soc)
         model.battery_lower             = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.battery_lower)
@@ -1552,15 +1575,18 @@ class ConstraintRules(OptRules):
         model.interval_extraction_M = pyo.Constraint(model.Y_INDEX, rule=lambda m, i, j, y, d, t: self.interval_extraction_M(m, i, j, y, d, t))
 
 
-        # Esquema DCH (legacy), activo para el caso data/Escenarios_Gx (ver
-        # meal_g1_no_travel_group1/meal_g2_no_travel_group2/maint_stop_all/
-        # maint_no_charge/charge_only_meal_or_shift_change). Reemplazado por
-        # el esquema DET de abajo para el caso carga_ob_multiaño.
-        #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
-        #model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
-        #model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
-        #model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
-        #model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
+        if self.pause_scheme == 'dch':
+            # Esquema DCH (legacy, --pause_scheme dch): el mismo que
+            # carga_on_board registra con pause_scheme == 'dch'. --free_charging
+            # hace de --charge_window libre: maint_stop_all/maint_no_charge
+            # siguen prohibiendo operar y cargar en mantencion.
+            model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+            model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+            model.maintenance_stop_all     = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+            model.maint_no_charge          = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.maint_no_charge)
+            if not self.free_charging:
+                model.charge_only_meal_or_shift_change = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.charge_only_meal_or_shift_change)
+            return
 
         # Esquema DET (redefinido, con base_hour y modo autonomo): activo
         # para carga_ob_multiaño (ver det_stop_all /

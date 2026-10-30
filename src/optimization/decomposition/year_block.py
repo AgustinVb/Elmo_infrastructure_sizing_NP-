@@ -64,7 +64,8 @@ class YearBlockBuilder(object):
 
     def __init__(self, mine_system, time_series, year, is_last_year,
                  exogenous_stations, autonomous_mode=False, macroblock=None,
-                 free_charging=False, free_maintenance=False, days_override=None):
+                 free_charging=False, free_maintenance=False, days_override=None,
+                 pause_scheme='det'):
         """
         :param year: año de este bloque (debe pertenecer a time_series.years).
         :param is_last_year: True si `year` es el ultimo año del horizonte
@@ -95,6 +96,7 @@ class YearBlockBuilder(object):
         self.autonomous_mode = autonomous_mode
         self.free_charging = free_charging
         self.free_maintenance = free_maintenance
+        self.pause_scheme = pause_scheme
         # days_override=[d]: sub-bloque de UN dia representativo (ver
         # OptRules.model_days y day_blocks.build_day_block).
         self.days_override = days_override
@@ -129,6 +131,7 @@ class YearBlockBuilder(object):
             exogenous_stations=self._exogenous_stations_for_rules,
             macroblock=macroblock,
             free_charging=free_charging, free_maintenance=free_maintenance, **dias,
+            pause_scheme=pause_scheme,
         )
         self.objective_rules = ObjectiveRules(
             mine_system, time_series, years_override=[year],

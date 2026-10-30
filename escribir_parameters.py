@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--wp2_consumption_json", default=None)
     ap.add_argument("--free_charging", action="store_true")
     ap.add_argument("--free_maintenance", action="store_true")
+    ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det")
     a = ap.parse_args()
 
     pendientes = [c for c in a.carpetas
@@ -57,7 +58,8 @@ def main():
     _s, ms, ts = build_mine(ns)
     om = OptModel(ms, ts, os.path.join(tempfile.gettempdir(), "escribir_parameters"),
                   mccormick_degradation=True, free_charging=a.free_charging,
-                  free_maintenance=a.free_maintenance)
+                  free_maintenance=a.free_maintenance,
+                  pause_scheme=a.pause_scheme)
     for carpeta in pendientes:
         Printer(om, carpeta, ts, ms).write_parameters_json()
         destino = os.path.join(carpeta, "parameters.json")
