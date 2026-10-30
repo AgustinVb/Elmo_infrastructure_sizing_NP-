@@ -295,11 +295,17 @@ class Subproblema:
         m.optimize()
         return m.ObjVal if m.Status == GRB.OPTIMAL else None
 
-    def ub(self, xhat, timelimit, gap, mip_focus=1):
-        """Operacion MILP del dia con la inversion `xhat` fija."""
+    def ub(self, xhat, timelimit, gap, mip_focus=1, subir=None):
+        """Operacion MILP del dia con la inversion `xhat` fija. `subir` =
+        {posicion en self.cop: costo}: copias que pueden quedar SOBRE xhat
+        pagando ese costo por unidad (la holgura s- del enlace)."""
         m = self.m
         self._entera(True)
         self._enlaces(self.M, 0.0, 0.0, INF)
+        if subir:
+            sm = [self.sm[k] for k in subir]
+            m.setAttr("UB", sm, [INF] * len(sm))
+            m.setAttr("Obj", sm, list(subir.values()))
         self._copias()
         self._rhs(xhat, np.zeros(max(self.pres, default=-1) + 1))
         if self.start is not None:
@@ -315,7 +321,7 @@ class Subproblema:
         x = m.getAttr("X", self.vloc)
         self.start = [round(x[k]) for k in self.ent_loc]
         return {"ok": True, "valor": m.ObjVal, "x": x, "t": time.time() - t0,
-                "gap": m.MIPGap}
+                "gap": m.MIPGap, "cop": m.getAttr("X", self.vcop)}
 
     def rango_presupuestos(self):
         """[min, max] de cada presupuesto (energia del dia) con la inversion
@@ -585,10 +591,10 @@ class Maestro:
 class BendersDias:
 
     def __init__(self, info, model, por_var, M=1e6, jobs=8, alpha=0.5,
-                 cotas_capacidad=None, out=None, verbose=True):
+                 cotas_capacidad=None, out=None, verbose=True, cpu=None):
         self.verbose = verbose
         self.out = out
-        cpu = os.cpu_count() or 8
+        cpu = cpu or os.cpu_count() or 8
         self.jobs = jobs
         self.env_F = _env(cpu)
         t0 = time.time()
@@ -886,7 +892,7 @@ class BendersDias:
     def _registrar(self, etapa, it, L, U, gap, t_it, res, extra=None):
         holg = sum(r.get("holgura", 0.0) for r in res)
         fila = {"etapa": etapa, "it": it, "L": L, "U_etapa": U, "gap_etapa": gap,
-                "UB": self.UB, "gap_UB": (self.UB - L) / abs(self.UB) if math.isfinite(self.UB) else None,
+                "UB": self.UB, "gap_UB": (self.UB - L) / abs(self.UB) if self.UB < 1e20 else None,
                 "t_iter": time.time() - t_it, "t_total": time.time() - self.t0,
                 "cortes": self.maestro.n_cortes, "holgura_enlaces": holg}
         if extra:

@@ -46,8 +46,10 @@ from setup import build_mine                                             # noqa:
 from src.optimization.opt_model import OptModel                          # noqa: E402
 
 
-def cota_dia(om, y, d, cap):
-    """(cota por LHD, cota agregada de min_charges_n con la misma cap, detalle)."""
+def _mip_dia(om, y, d):
+    """El MIP de la cota por LHD del dia, sin la capacidad: la fila de energia
+    del LHD i lleva coeficiente 1 en s_i y _capacidad pone U = (1 - bmin) * cap.
+    Devuelve (modelo, v, s, filas de energia, datos del dia)."""
     model, rules = om.model, om.constraint_rules
     ts = rules.time_series
     slhd = set(model.slhd_set)
@@ -75,12 +77,38 @@ def cota_dia(om, y, d, cap):
         m.addLConstr(gp.quicksum(v[o] for o in disp if o[1] == j), GRB.LESS_EQUAL, ub)
     m.addLConstr(gp.quicksum(prod[o] * v[o] for o in disp), GRB.GREATER_EQUAL, meta)
     s = {i: m.addVar(vtype=GRB.INTEGER, lb=0) for i in slhd}
-    for i in slhd:
-        U = (1 - bmin[i]) * cap
-        m.addLConstr(U * s[i] - gp.quicksum(ener[o] * v[o] for o in disp if o[0] == i),
-                     GRB.GREATER_EQUAL, 0.0)
+    fila = {i: m.addLConstr(s[i] - gp.quicksum(ener[o] * v[o] for o in disp if o[0] == i),
+                            GRB.GREATER_EQUAL, 0.0) for i in slhd}
     m.setObjective(gp.quicksum(s.values()), GRB.MINIMIZE)
     m.Params.MIPGap = 0
+    datos = {"model": model, "rules": rules, "slhd": slhd, "bmin": bmin, "disp": disp,
+             "i_rep": i_rep, "prod": prod, "ener": ener, "meta": meta}
+    return m, v, s, fila, datos
+
+
+def _capacidad(m, s, fila, bmin, cap):
+    for i, f in fila.items():
+        m.chgCoeff(f, s[i], (1 - bmin[i]) * cap)
+
+
+def evaluador_dia(om, y, d):
+    """Funcion cap -> cota por LHD del dia (None si el MIP no cierra). Arma el
+    MIP una vez y solo cambia U: sirve para evaluar muchas capacidades."""
+    m, _v, s, fila, dd = _mip_dia(om, y, d)
+
+    def n(cap):
+        _capacidad(m, s, fila, dd["bmin"], cap)
+        m.optimize()
+        return round(m.ObjVal) if m.Status == GRB.OPTIMAL else None
+    return n
+
+
+def cota_dia(om, y, d, cap):
+    """(cota por LHD, cota agregada de min_charges_n con la misma cap, detalle)."""
+    m, v, s, fila, dd = _mip_dia(om, y, d)
+    model, rules, slhd, bmin = dd["model"], dd["rules"], dd["slhd"], dd["bmin"]
+    disp, i_rep, prod, ener, meta = dd["disp"], dd["i_rep"], dd["prod"], dd["ener"], dd["meta"]
+    _capacidad(m, s, fila, bmin, cap)
     m.optimize()
     if m.Status != GRB.OPTIMAL:
         return None, None, {"status": m.Status}
