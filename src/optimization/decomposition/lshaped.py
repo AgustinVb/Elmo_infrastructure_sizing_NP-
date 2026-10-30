@@ -58,11 +58,17 @@ class LShaped:
 
     def __init__(self, bd, om, por_var, alfas=(0.1, 0.01, 0.0), t_inicial=120.0,
                  t_max_dia=1920.0, ub_timelimit=120.0, ub_gap=0.01, tol=1e-6, out=None,
-                 ub_timelimit_inicial=300.0, pasadas_dp=4, p_ssee_max=1500.0):
+                 ub_timelimit_inicial=300.0, pasadas_dp=4, p_ssee_max=1500.0, tol_lp=1e-5):
         self.bd, self.om, self.por_var = bd, om, por_var
         self.P, self.M = bd.P, bd.maestro
         self.alfas, self.t_inicial, self.t_max_dia = list(alfas), t_inicial, t_max_dia
         self.ub_timelimit, self.ub_gap, self.tol = ub_timelimit, ub_gap, tol
+        # Violacion minima (absoluta, tol_lp * objetivo del maestro) para que un
+        # corte cuente como separador. Gurobi no hace cumplir violaciones chicas
+        # en filas con coeficientes grandes (duales de hasta 1e6): en el caso 7
+        # acepto una solucion con un corte violado en 0,26 (2e-4 del costo de su
+        # dia) y el arbol cerro en la cota LP sin un corte entero.
+        self.tol_lp = tol_lp
         self.ub_timelimit_inicial, self.pasadas_dp = ub_timelimit_inicial, pasadas_dp
         self.p_ssee_max = p_ssee_max
         # La UB del callback (BendersDias.evaluar_ub) tambien con el pulido flexible.
@@ -80,6 +86,8 @@ class LShaped:
         self.n_silenciosas = 0      # incumbentes de Gurobi que el callback si habia cortado
         self.obj_bst = INF
         self.tiempo_max = INF
+        self.lazy = []              # (expr, rhs) de los cortes lazy, para reiniciar el arbol
+        self.vistas = {}            # objetivo de cada solucion de MIPSOL -> numero de cb
 
     def _log(self, s):
         print(f"[LS] {s}", flush=True)
@@ -774,6 +782,7 @@ class LShaped:
         self.n_cb += 1
         P, M, bd = self.P, self.M, self.bd
         obj = model.cbGet(GRB.Callback.MIPSOL_OBJ)
+        self.vistas[round(obj, 2)] = self.n_cb
         if self._restante() <= 0:
             # Sin cortes Gurobi la acepta; la cota del arbol sigue valida.
             self.aceptadas.append(obj)
@@ -801,23 +810,29 @@ class LShaped:
         res = [r for r, _rn in self.cache_lp[clave]]
         resn = [rn if rn is not None and rn["ok"] else None for _r, rn in self.cache_lp[clave]]
         n_lp = n_niv = 0
+        tol_abs = self.tol_lp * max(1.0, abs(obj))
+        viol = 0.0                  # mayor violacion (absoluta) de los cortes agregados
         for b, r in enumerate(res):
             if not r["ok"]:
                 continue
             if r["valor"] > ths[b] + self.tol * max(1.0, abs(r["valor"])):
                 ic, expr = self._expr_lp(b, r, xhat, ehat)
-                model.cbLazy(expr >= ic)
+                self._lazy(model, expr, ic)
                 n_lp += 1
+                viol = max(viol, r["valor"] - ths[b])
             rn = resn[b]
             if rn is not None and rn["valor"] > max(ths[b], r["valor"]) + self.tol * max(1.0, abs(rn["valor"])):
                 c = self._expr_nivel(b, rn, xhat, ehat, lv[b])
                 if c is not None:
-                    model.cbLazy(c[0] >= c[1])
+                    self._lazy(model, c[0], c[1])
                     n_niv += 1
+                    viol = max(viol, rn["valor"] - ths[b])
         self.n_lp += n_lp
         self.n_niv += n_niv
-        if n_lp or n_niv:
-            self._registrar("lp", bnd, n_lp + n_niv, 0, xhat, nivel)
+        # Con violacion bajo tol_abs los cortes se agregan igual, pero se sigue
+        # con los enteros (ver tol_lp).
+        if (n_lp or n_niv) and viol > tol_abs:
+            self._registrar("lp", bnd, n_lp + n_niv, 0, xhat, nivel, viol)
             return
         # 2) UB de esta inversion (afuera de Gurobi), si promete
         costo_m = float(np.dot(P.obj[P.maestro_vars], xs) + P.objcon + sum(ths))
@@ -845,10 +860,10 @@ class LShaped:
                 return False
             c = max(st["cortes"], key=lambda c: valor(b, c))
             v = valor(b, c)
-            if v > ths[b] + self.tol * max(1.0, abs(v)):
+            if v > ths[b] + max(tol_abs, self.tol * max(1.0, abs(v))):
                 loc = self._expr_local(b, c[0], {"pi": c[1], "lam": c[2]}, xhat, lv[b])
                 if loc is not None:
-                    model.cbLazy(loc[0] >= loc[1])
+                    self._lazy(model, loc[0], loc[1])
                     return True
             return False
 
@@ -922,7 +937,11 @@ class LShaped:
         self.n_ent += n_ent
         if not n_ent:
             self.aceptadas.append(obj)
-        self._registrar("entero" if n_ent else "acepta", bnd, 0, n_ent, xhat, nivel)
+        self._registrar("entero" if n_ent else "acepta", bnd, n_lp + n_niv, n_ent, xhat, nivel, viol)
+
+    def _lazy(self, model, expr, rhs):
+        model.cbLazy(expr >= rhs)
+        self.lazy.append((expr, float(rhs)))
 
     def _restante(self):
         return self.tiempo_max - (time.time() - self.t0)
@@ -943,12 +962,12 @@ class LShaped:
                   f"{obst:,.2f}, una solucion a la que el callback le agrego cortes que no la "
                   f"violaban mas que la tolerancia")
 
-    def _registrar(self, tipo, bnd, n_lp, n_ent, xhat, nivel=None):
+    def _registrar(self, tipo, bnd, n_lp, n_ent, xhat, nivel=None, viol=0.0):
         fila = {"t": time.time() - self.t0, "tipo": tipo, "LB": bnd, "UB": self.bd.UB,
                 "cortes_lp": self.n_lp, "cortes_nivel": self.n_niv,
                 "cortes_enteros": self.n_ent, "nuevos_lp": n_lp,
                 "nuevos_ent": n_ent, "callbacks": self.n_cb, "t_lp": self.t_lp,
-                "t_milp": self.t_milp, "inversion": self.bd.inversion(xhat),
+                "t_milp": self.t_milp, "viol_lp": viol, "inversion": self.bd.inversion(xhat),
                 "nivel_B": {y: round(self.niv[y][0][l], 1) for y, l in (nivel or {}).items()}}
         self.historia.append(fila)
         gap = (self.bd.UB - bnd) / self.bd.UB if (self.bd.UB < 1e20 and abs(bnd) < 1e20) else float("nan")
@@ -960,7 +979,7 @@ class LShaped:
             self._log(f"ALERTA COTA INVALIDA: LB {bnd:,.2f} supera una solucion factible conocida "
                       f"({ref:,.2f})")
         self._log(f"cb {self.n_cb:>4} {tipo:7s} LB {num(bnd)}  UB {num(self.bd.UB)} ({gap:.3%})  "
-                  f"cortes LP {self.n_lp} + nivel {self.n_niv} (+{n_lp}) enteros {self.n_ent} (+{n_ent})  "
+                  f"cortes LP {self.n_lp} + nivel {self.n_niv} (+{n_lp}, viol {viol:.2g}) enteros {self.n_ent} (+{n_ent})  "
                   f"LP {self.t_lp:.0f}s MILP {self.t_milp:.0f}s  [{fila['inversion']}]  B<= "
                   + " ".join(f"{v:.0f}" for _y, v in sorted(fila["nivel_B"].items())))
         if self.out:
@@ -983,10 +1002,37 @@ class LShaped:
         m.Params.OutputFlag = 1
         if self.out:
             m.Params.LogFile = os.path.join(self.out, "maestro_bc.log")
-        self.obj_bst = INF
-        m.optimize(self._callback)
-        if m.SolCount:
+        # Si el arbol termina con un incumbente que el callback no acepto (Gurobi
+        # lo tomo aunque se le agregaron cortes: casos 7 y 8, el arbol cerraba en
+        # la cota LP sin cortes enteros), los cortes lazy pasan a restricciones
+        # del maestro, que ya no admite esa solucion, y se reoptimiza.
+        n_duras = 0
+        while True:
+            self.obj_bst = INF
+            m.optimize(self._callback)
+            if not m.SolCount:
+                break
             self._vigilar_incumbente(m.ObjVal)
+            obj = m.ObjVal
+            if m.Status != GRB.OPTIMAL or any(abs(obj - v) <= 1e-7 * max(1.0, abs(v))
+                                              for v in self.aceptadas):
+                break
+            viol = max((rhs - e.getValue() for e, rhs in self.lazy), default=0.0)
+            xs = m.getAttr("X", m.getVars())
+            vt = m.getAttr("VType", m.getVars())
+            frac = max((abs(x - round(x)) for x, t in zip(xs, vt) if t != "C"), default=0.0)
+            cb = self.vistas.get(round(obj, 2))
+            self._log(f"incumbente final {obj:,.2f} no aceptado por el callback "
+                      f"({f'visto en el cb {cb}' if cb else 'no paso por MIPSOL'}): violacion maxima de "
+                      f"los {len(self.lazy)} cortes lazy {viol:.3g}, entera mas fraccionaria {frac:.1e}")
+            if self._restante() <= 1.0 or viol <= self.tol_lp * max(1.0, abs(obj)):
+                break           # sin tiempo, o los cortes no la excluyen
+            for e, rhs in self.lazy:
+                m.addLConstr(e, GRB.GREATER_EQUAL, rhs)
+            n_duras += len(self.lazy)
+            self.lazy = []
+            m.Params.TimeLimit = max(1.0, self._restante())
+            self._log(f"reinicio del arbol con {n_duras} cortes como restricciones del maestro")
         try:
             lb = m.ObjBound
         except gp.GurobiError:

@@ -11,12 +11,24 @@
 #             con 1).
 #   Cada solucion nueva se valida en el monolitico (--solo_validar).
 #
+# 17:15: en lshaped_A3 el arbol del caso 8 cerro por aceptaciones silenciosas en
+# 4.703.144, bajo la LB certificada, sin un solo corte entero: los cortes con
+# violacion chica en absoluto (0,26 en el caso 7) "cortaban" para el callback pero
+# Gurobi no los hace cumplir. Con el umbral tol_lp (1e-5 del objetivo, absoluto) y
+# el reinicio del arbol con los cortes como restricciones se relanzan los casos 7
+# y 8 en lshaped_A4/. Pruebas previas del caso 7: lshaped_A4_intfeastol/
+# (IntFeasTol 1e-9), lshaped_A4_tol_lp/ (1e-4 del costo del dia),
+# lshaped_A4_reinicio/ (diagnostico: enteras exactas, violacion 0,259):
+#   RANURAS=b SUB_B=lshaped_A4 bash cola_lshaped_mejora.sh
+#
 #   nohup bash cola_lshaped_mejora.sh > $V/cola_lshaped_mejora.out 2>&1 &
 PY=${PY:-~/miniconda3/envs/py310/bin/python}
 V=output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4
 D=data/Tesis_final/Mina_modelo_v4
 CPU=${CPU:-28}
 MEJORA=${MEJORA:-600,900}
+RANURAS=${RANURAS:-"a b"}
+SUB_B=${SUB_B:-lshaped_A3}
 cd "$(dirname "$0")"
 
 msg() { echo "[lshaped mejora r640-01] $(date '+%F %T') $*" | tee -a $V/cola.log; }
@@ -57,14 +69,14 @@ ranura_a() {
 ranura_b() {
   LISTA_A="" LISTA_B="Produccion_base/zona_norte/1C/RED_GEN_BESS 2743895.04 2636527.63
 Produccion_base/zona_norte/2C/RED_GEN_BESS 4949249.55 4703215" \
-    HORAS=${HORAS:-5} CPU=$CPU SUB=lshaped_A3 bash cola_lshaped.sh
+    HORAS=${HORAS:-5} CPU=$CPU SUB=$SUB_B bash cola_lshaped.sh
   for c in Produccion_base/zona_norte/1C/RED_GEN_BESS Produccion_base/zona_norte/2C/RED_GEN_BESS; do
-    [ -d $V/$c/lshaped_A3/solucion ] && validar $V/$c/lshaped_A3 $c
+    [ -d $V/$c/$SUB_B/solucion ] && validar $V/$c/$SUB_B $c
   done
 }
 
-msg "inicio cola de mejora (ranura A: solo mejorar UB sobre lshaped_A2; ranura B: casos 7 y 8 en lshaped_A3)"
-ranura_a &
-ranura_b &
+msg "inicio cola de mejora (ranuras $RANURAS; A: solo mejorar UB sobre lshaped_A2; B: casos 7 y 8 en $SUB_B)"
+[[ $RANURAS == *a* ]] && ranura_a &
+[[ $RANURAS == *b* ]] && ranura_b &
 wait
 msg "cola de mejora terminada"
