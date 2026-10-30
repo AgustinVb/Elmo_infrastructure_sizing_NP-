@@ -150,6 +150,9 @@ def main():
     ap.add_argument("--rondas_dive", type=int, default=15)
     ap.add_argument("--gap_bp", type=float, default=1e-4, help="gap (UB-LB)/UB para podar/parar")
     ap.add_argument("--sin_acotar_por_costo", action="store_true")
+    ap.add_argument("--lag_entera", type=float, default=None, metavar="SEG",
+                    help="cota lagrangiana con el maestro como MIP (inversion entera, filas "
+                         "solo del maestro sin dualizar), con este tope por ronda")
     ap.add_argument("--max_rondas", type=int, default=10_000)
     ap.add_argument("--parar_en_operacional", action="store_true",
                     help="para cuando la LB supera --cota_operacional")
@@ -180,6 +183,7 @@ def main():
     cg = GeneracionColumnas(E, jobs=a.jobs, hilos=a.hilos, out=a.out, M_art=a.M_art)
     cg.t_inicio = T_INICIO
     cg.tl_heur_max = a.tl_heur_max
+    cg.tl_lag_entera = a.lag_entera
     if not a.sin_gemelos:
         t0 = time.time()
         cg.gemelos = gemelos_por_anio(E, om.model, por_var)

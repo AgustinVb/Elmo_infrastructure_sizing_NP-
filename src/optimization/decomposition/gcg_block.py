@@ -123,10 +123,18 @@ def classify(model, mode="day"):
                          1.445 de las 22.096 filas que "vehicle_day" deja en el
                          maestro; las otras 20.651 no tocan ninguna variable de
                          LHD.
+    mode="year_vehicle_station_day": "vehicle_station_day" para el MONOLITICO
+                         de varios años: claves (LHD, (año, dia)) y
+                         ("estacion", (año, dia)). Lo que ata vehiculos de un
+                         dia (swaps contra el inventario de la estacion,
+                         extraccion) y lo que ata años va al maestro.
     """
-    modos = ("day", "vehicle_day", "vehicle_station_day", "year_day")
+    modos = ("day", "vehicle_day", "vehicle_station_day", "year_day",
+             "year_vehicle_station_day")
     if mode not in modos:
         raise ValueError(f"mode tiene que ser uno de {modos}")
+    if mode == "year_vehicle_station_day":
+        return _classify_year_vehicle_station_day(model)
     por_vehiculo = mode in ("vehicle_day", "vehicle_station_day")
     dias = set(model.days)
     pos_d = _positions(model, dias)
@@ -157,6 +165,36 @@ def classify(model, mode="day"):
                              for v in vs)
             ok = len(con_i) == 1 and None not in next(iter(con_i)) and not compartida
             asignacion[cd] = next(iter(con_i)) if ok else MASTER
+    return asignacion
+
+
+def _classify_year_vehicle_station_day(model):
+    """Ver classify. Una fila va al bloque (LHD, (año, dia)) si todas sus
+    variables con LHD son de ese LHD, año y dia y no tiene variables
+    compartidas del dia (con dia y sin LHD); al bloque ("estacion", (año,
+    dia)) si no tiene variables con LHD y todas las del dia son de ese (año,
+    dia); si no, al maestro. Las variables anuales (sin dia) son de enlace."""
+    pos_d = _positions(model, set(model.days))
+    pos_i = _positions(model, set(model.slhd_set))
+    pos_y = _positions(model, set(model.years)) if len(model.years) > 1 else {}
+
+    def yd(v):
+        d = _key(v, pos_d)
+        if d is None:
+            return None
+        return (_key(v, pos_y) if pos_y else None, d)
+
+    asignacion = {}
+    for cd in model.component_data_objects(pyo.Constraint, active=True):
+        vs = list(identify_variables(cd.body, include_fixed=False))
+        con_i = {(_key(v, pos_i), yd(v)) for v in vs if _key(v, pos_i) is not None}
+        dias = {yd(v) for v in vs} - {None}
+        if not con_i:
+            asignacion[cd] = ("estacion", next(iter(dias))) if len(dias) == 1 else MASTER
+            continue
+        compartida = any(_key(v, pos_i) is None and yd(v) is not None for v in vs)
+        ok = len(con_i) == 1 and None not in next(iter(con_i)) and not compartida
+        asignacion[cd] = next(iter(con_i)) if ok else MASTER
     return asignacion
 
 

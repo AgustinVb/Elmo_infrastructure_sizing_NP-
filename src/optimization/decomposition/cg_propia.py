@@ -114,11 +114,15 @@ def _env(threads=0):
 
 
 def _clave_bloque(clave):
-    """'(4, 105)' -> (4, 105); '105' -> (None, 105)."""
+    """'(4, 105)' -> (4, 105); '105' -> (None, 105); "('LH1', (4, 105))" o
+    "('estacion', (4, 105))" (year_vehicle_station_day) -> (4, 105)."""
     try:
         v = ast.literal_eval(clave)
     except (ValueError, SyntaxError):
         return None, clave
+    if isinstance(v, tuple) and len(v) == 2 and isinstance(v[1], tuple):
+        y, d = v[1]
+        return (None if y is None else int(y)), d
     if isinstance(v, tuple) and len(v) == 2:
         return (None if v[0] is None else int(v[0])), v[1]
     return None, v
@@ -421,19 +425,25 @@ class EstructuraDW:
         return [(r, float(np.dot(c, z[p]))) for r, p, c in self.bloques[b]["partes"]]
 
 
-def gemelos_por_anio(E, model, por_var):
+def gemelos_por_anio(E, model, por_var, vehiculo=False):
     """{b: [(b2, perm)]}: bloques del MISMO dia de años distintos cuyas filas y
     cotas son identicas salvo el costo (p.ej. años con la misma meta), con
     perm[k] = posicion en b2 de la posicion k de b. Una columna de b es entonces
     una columna valida de b2 (re-costeada con el costo de b2). La identificacion
     se hace sobre el modelo de Pyomo: el año de cada variable se reemplaza por su
     desfase respecto del año del bloque (D(y-1) en el bloque y -> D(-1)) y las
-    copias sv_copia por la capacidad que copian."""
+    copias sv_copia por la capacidad que copian.
+    vehiculo=True (bloques por vehiculo): el LHD tambien se reemplaza por un
+    comodin, asi los vehiculos IDENTICOS de un mismo dia (y de otros años) son
+    gemelos: la columna de uno vale para los demas (DW con subproblemas
+    identicos, sin la simetria entre vehiculos)."""
     from src.optimization.decomposition.gcg_block import _positions
     anios = set(model.years)
-    if len(anios) < 2:
+    if len(anios) < 2 and not vehiculo:
         return {}
-    pos_y = _positions(model, anios)
+    pos_y = _positions(model, anios) if len(anios) > 1 else {}
+    lhds = set(model.slhd_set) if vehiculo else set()
+    pos_i = _positions(model, lhds) if vehiculo else {}
     orig = getattr(model, "_sv_originales", None)
 
     def clave(j, y):
@@ -449,6 +459,9 @@ def gemelos_por_anio(E, model, por_var):
         p = pos_y.get(comp)
         if p is not None and p < len(idx) and idx[p] in anios:
             idx = idx[:p] + (("dA", idx[p] - y),) + idx[p + 1:]
+        p = pos_i.get(comp)
+        if p is not None and p < len(idx) and idx[p] in lhds:
+            idx = idx[:p] + ("LHD",) + idx[p + 1:]
         return repr((tag, comp, idx))
 
     firmas = {}
@@ -856,6 +869,40 @@ class GeneracionColumnas:
         self._guardar_vector(f"relajacion_{modo}.npz", x)
         self._punto(f"relajacion {modo}", self.LB_ext)
         return {"LB": lb, "t": time.time() - t0, "modo": modo}
+
+    def relajacion_nodo(self, timelimit=1800.0):
+        """Relajacion LP del monolitico con las cotas del NODO actual (p.ej. la
+        inversion de una candidata fija). Devuelve (cota, duales extendidos) o
+        (None, None). Con la inversion fija sus duales son los del LP de ese
+        nodo, y por dualidad L(pi) >= z_LP(nodo): el centro natural para la DW
+        del nodo (los de la LP global dan una L mas floja)."""
+        E, F = self.E, self.E.F
+        F.update()
+        R = F.relax()
+        rv = R.getVars()
+        sel = [rv[int(j)] for j in E.mvars]
+        R.setAttr("LB", sel, [float(v) for v in self.lb_nodo])
+        R.setAttr("UB", sel, [float(v) for v in self.ub_nodo])
+        R.Params.Method, R.Params.Crossover, R.Params.TimeLimit = 2, 0, timelimit
+        t0 = time.time()
+        R.optimize()
+        for metodo, cross in ((2, -1), (1, -1)):
+            if R.Status in (GRB.OPTIMAL, GRB.INFEASIBLE, GRB.INF_OR_UNBD):
+                break
+            R.reset()
+            R.Params.Method, R.Params.Crossover = metodo, cross
+            R.optimize()
+        st = R.Status
+        if st != GRB.OPTIMAL:
+            R.dispose()
+            self._log(f"relajacion LP del nodo sin optimo (status {st})")
+            return (INF, None) if st == GRB.INFEASIBLE else (None, None)
+        lb = R.ObjVal - 1e-6 * abs(R.ObjVal)
+        Pi = np.array(R.getAttr("Pi", R.getConstrs()))
+        self.x_nodo = np.array(R.getAttr("X", rv))[E.mvars]   # punto del maestro (heuristicas)
+        R.dispose()
+        self._log(f"relajacion LP del nodo: {lb:,.2f} en {time.time() - t0:.0f}s")
+        return lb, self._proyectar(self._duales_ext(Pi))
 
     def _duales_ext(self, Pi):
         """Duales del monolitico -> duales de las filas extendidas. Las del
@@ -1613,13 +1660,50 @@ class GeneracionColumnas:
     # ------------------------------------------------------------------ #
     def lagrangiano(self, pi, bounds, xm_rmp):
         """Cota lagrangiana en pi (con las cotas del nodo) y la x* del maestro
-        que la realiza."""
+        que la realiza. Con self.tl_lag_entera, ademas la del maestro entero
+        (ver _lag_maestro_entero) y queda la mayor."""
+        E = self.E
+        self._L_partes = {"pi_b": float(np.dot(pi, E.rhs_ext)) + E.objcon, "maestro": None,
+                          "bloques": None, "pi_max": float(np.abs(pi).max()) if len(pi) else 0.0,
+                          "bloque_min": None, "L_caja": -INF, "L_entera": None}
+        sb = self._suma_bloques(bounds)
+        if sb <= -INF:
+            return -INF, None
+        Lc, xs = self._lag_caja(pi, xm_rmp)
+        if Lc > -INF:
+            Lc += sb
+        self._L_partes["L_caja"] = Lc
+        if getattr(self, "tl_lag_entera", None) is None:
+            return Lc, xs
+        Le, xe = self._lag_maestro_entero(pi, xm_rmp)
+        if Le > -INF:
+            Le += sb
+        self._L_partes["L_entera"] = Le
+        return (Le, xe) if Le > Lc else (Lc, xs)
+
+    def _suma_bloques(self, bounds):
+        """sum_b min_z (c_b - pi A_b) z: las cotas duales de los pricing."""
+        tot = 0.0
+        for b, bnd in enumerate(bounds):
+            if bnd <= -INF:
+                return -INF
+            tot += min(bnd, self.maestro.M_art)
+            bm = self._L_partes["bloque_min"]
+            if bm is None or bnd < bm[1]:
+                self._L_partes["bloque_min"] = (str(self.E.claves[b]), float(bnd))
+        self._L_partes["bloques"] = tot
+        return tot
+
+    def _lag_caja(self, pi, xm_rmp):
+        """pi'b + min_{x en la caja del nodo} (c_M - A_M' pi) x: todas las filas
+        extendidas dualizadas."""
         E = self.E
         rc = E.obj[E.mvars] - E.A_M.T @ pi
         lb, ub = self.lb_nodo, self.ub_nodo
         tol = 1e-7 * np.maximum(1.0, np.abs(E.obj[E.mvars]))
         xs = xm_rmp.copy()
         total = float(np.dot(pi, E.rhs_ext)) + E.objcon
+        term = 0.0
         for k in range(len(rc)):
             if rc[k] > tol[k]:
                 if lb[k] <= -INF:
@@ -1631,12 +1715,79 @@ class GeneracionColumnas:
                 xs[k] = ub[k]
             else:
                 continue
-            total += rc[k] * xs[k]
-        for bnd in bounds:
-            if bnd <= -INF:
-                return -INF, None
-            total += min(bnd, self.maestro.M_art)
-        return total, xs
+            term += rc[k] * xs[k]
+        self._L_partes["maestro"] = term
+        return total + term, xs
+
+    def _lag_maestro_entero(self, pi, xm_rmp):
+        """Lagrangiana con el maestro como subproblema ENTERO: se dualizan solo
+        las filas extendidas que tocan bloques (D: enlace y filas mixtas) y las
+        filas SOLO del maestro (S: inversion, degradacion, ...) quedan como
+        restricciones, con la integralidad de la inversion:
+
+            L_ent(pi) = pi_D'b_D + min_{x in X_M} (c_M - A_DM' pi_D) x
+                        + sum_b min_{z in X_b} (c_b - pi_D A_Db) z,
+            X_M = {x entera donde corresponde, caja del nodo, A_SM x ~ b_S}.
+
+        Valida: para (x, z) factible y pi_D con el signo correcto,
+        pi_D'(b_D - A_D(x,z)) <= 0. Las filas S no tienen partes de bloque, asi
+        que los pricing (resueltos con el pi completo) ya son los de pi_D. Y
+        L_ent(pi_D) >= L_caja(pi) para todo pi_S: sobre X_M,
+        pi_S'(b_S - A_SM x) <= 0, y X_M esta en la caja. Su dual lagrangiano es
+        la DW con el maestro convexificado sobre conv(X_M) en vez de su LP.
+        Se usa el ObjBound del MIP (valido aunque se corte por tiempo)."""
+        E = self.E
+        Q = self._mip_maestro()
+        piD = pi.copy()
+        piD[self._filas_S] = 0.0
+        c = E.obj[E.mvars] - E.A_M.T @ piD
+        Q.setAttr("Obj", self._qx, c.tolist())
+        Q.setAttr("LB", self._qx, [float(v) for v in self.lb_nodo])
+        Q.setAttr("UB", self._qx, [float(v) for v in self.ub_nodo])
+        Q.Params.TimeLimit = max(1.0, self.tl_lag_entera)
+        t0 = time.time()
+        Q.optimize()
+        st = Q.Status
+        self._L_partes["t_entera"] = time.time() - t0
+        if st in (GRB.INFEASIBLE, GRB.UNBOUNDED, GRB.INF_OR_UNBD):
+            self._L_partes["st_entera"] = st
+            return -INF, None
+        try:
+            bnd = Q.ObjBound
+        except gp.GurobiError:
+            return -INF, None
+        self._L_partes["maestro_entero"] = bnd
+        self._L_partes["gap_entera"] = Q.MIPGap if Q.SolCount else None
+        xs = np.array(Q.getAttr("X", self._qx)) if Q.SolCount else xm_rmp.copy()
+        return float(np.dot(piD, E.rhs_ext)) + E.objcon + bnd, xs
+
+    def _mip_maestro(self):
+        """MIP persistente del maestro: sus variables (con su tipo) y las filas
+        extendidas solo del maestro."""
+        if getattr(self, "_Q", None) is not None:
+            return self._Q
+        E = self.E
+        Q = gp.Model(env=_env(os.cpu_count() or 8))
+        mv = E.mvars
+        x = Q.addVars(len(mv), lb=[float(v) for v in self.lb_nodo],
+                      ub=[float(v) for v in self.ub_nodo],
+                      vtype=[E.vtype[j] for j in mv])
+        Q.update()
+        self._qx = [x[k] for k in range(len(mv))]
+        S = []
+        for r, f in enumerate(E.ext):
+            if f.get("solo_maestro"):
+                S.append(r)
+                Q.addLConstr(gp.LinExpr(f["m_coef"].tolist(), [self._qx[k] for k in f["m_pos"]]),
+                             f["sense"], f["rhs"])
+        self._filas_S = np.array(S, int)
+        Q.Params.MIPGap = 1e-4
+        Q.update()
+        self._Q = Q
+        n_ent = sum(1 for j in mv if E.vtype[j] != "C")
+        self._log(f"maestro entero para la lagrangiana: {len(mv)} variables ({n_ent} enteras), "
+                  f"{len(S)} filas solo del maestro de {E.n_ext} extendidas")
+        return Q
 
     def _subgradiente(self, xs, zs):
         E = self.E
@@ -1807,7 +1958,15 @@ class GeneracionColumnas:
                 tl = min(tl, max(1.0, deadline - time.time()))
             nuevas, mejores, L, xs_L, pi_L, t_pr, res = 0, {}, -INF, None, None, 0.0, {}
             for _intento in range(2):
-                pi = alpha * pi_c + (1 - alpha) * pi_rmp if usar_w else pi_rmp
+                # Mientras no haya una lagrangiana evaluada, se pricea en el centro
+                # puro: con pi_c = duales de la relajacion LP, L(pi_c) >= z_LP. Si
+                # se mezclara con pi_rmp (con pocas columnas, duales del orden de
+                # M_art en las filas de enlace) el primer L finito, aunque sea
+                # -1e9, contaba como paso serio y el centro se perdia.
+                if usar_w and L_best <= -INF:
+                    pi = pi_c.copy()
+                else:
+                    pi = alpha * pi_c + (1 - alpha) * pi_rmp if usar_w else pi_rmp
                 objs = {b: self.pricing[b].objetivo(pi) for b in bloques}
                 tp = time.time()
                 res = dict(self.pool.map(
@@ -1824,6 +1983,18 @@ class GeneracionColumnas:
                         self.pricing[b].start = r["sols"][0]
                 if len(bloques) == E.nb:
                     Li, xs = self.lagrangiano(pi, [res[b]["bound"] for b in range(E.nb)], xm)
+                    p = self._L_partes
+                    _f = lambda v: "-" if v is None else ("-inf" if v <= -INF else f"{v:,.2f}")
+                    txt_e = ""
+                    if p.get("L_entera") is not None or "st_entera" in p:
+                        txt_e = (f", L_entera {_f(p.get('L_entera'))} (maestro entero "
+                                 f"{_f(p.get('maestro_entero'))}, gap MIP "
+                                 f"{p.get('gap_entera')}, {p.get('t_entera', 0):.0f}s"
+                                 f"{', status ' + str(p['st_entera']) if 'st_entera' in p else ''})")
+                    self._log(f"   L_caja {_f(p['L_caja'])}{txt_e}: pi'b {_f(p['pi_b'])}, "
+                              f"maestro {_f(p['maestro'])}, bloques {_f(p['bloques'])} "
+                              f"(peor {p['bloque_min']}), |pi|max {p['pi_max']:.3g}, "
+                              f"|pi_rmp|max {float(np.abs(pi_rmp).max()):.3g}")
                     if Li > L:
                         L, xs_L, pi_L = Li, xs, pi.copy()
                 if usar_w and nuevas == 0 and nuevas_pool == 0:
