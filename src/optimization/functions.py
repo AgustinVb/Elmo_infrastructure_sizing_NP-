@@ -65,6 +65,48 @@ def pipeline_ciclico():
     return os.environ.get("ELMO_PIPELINE_CICLICO", "0") in ("1", "true", "True")
 
 
+# VERSION 5 DE LOS RESULTADOS (2026-10-31, decision de la usuaria; salidas en
+# casos_finales_v5/). Dos cambios de la operacion de swap, apagados por defecto
+# (la version 4 no cambia). Motivo: el modelo cobra cada carga como el bloque
+# nominal bmin -> 100 % de una bateria NUEVA, y en v4 eso es un 15-21 % mas que
+# la energia real (9 % por degradacion: la bateria del año tiene b_bar[y] < bmax;
+# 3 % por redondeo del bloque; el resto por swaps que llegan sobre bmin), y
+# ademas ocupa el cargador de mas.
+#
+#   ELMO_SWAP_SOC_MAX=0.25: el LHD solo hace swap si llega con SOC <= 25 % de la
+#     capacidad del año (swap_soc_limit_30, ahora con umbral configurable).
+#   ELMO_CARGA_CAPACIDAD_REAL=1: la carga dura los intervalos que pide la
+#     capacidad del año y no la nominal (niveles_carga): binarias u_tc[y,d,l],
+#     una duracion l por dia, con b_bar[y] <= cap_l y los ultimos intervalos de
+#     la ventana condicionados a l (charging_tail_*); la bateria queda cargada
+#     cuando su carga termina (inventario de cargadas).
+# Por entorno, como el pipeline ciclico, para que lo respeten todos los
+# constructores y los procesos hijos.
+def swap_soc_max():
+    v = os.environ.get("ELMO_SWAP_SOC_MAX", "").strip()
+    return float(v) if v else None
+
+
+def carga_capacidad_real():
+    return os.environ.get("ELMO_CARGA_CAPACIDAD_REAL", "0") in ("1", "true", "True")
+
+
+def niveles_carga(model, cap_min, cap_max):
+    """{l: capacidad que llena una carga de l intervalos} para las duraciones
+    posibles con la capacidad del año en [cap_min, cap_max]: desde la menor que
+    llena cap_min hasta t_charge (la de v4, sin tope: cap = cap_max). Con
+    p_charger durante l intervalos entran l * p_charger * delta_t * eta, y llenar
+    desde bmin pide (1 - bmin) * cap (el peor LHD)."""
+    L = int(value(model.t_charge))
+    e_int = value(model.p_charger) * value(model.delta_t)
+    k = min(value(model.eta_charge_i[i]) / (1 - value(model.bmin_b[i])) for i in model.slhd_set)
+    cap = {l: l * e_int * k for l in range(1, L + 1)}
+    l_min = min((l for l, c in cap.items() if c >= cap_min - 1e-9), default=L)
+    niveles = {l: cap[l] for l in range(l_min, L + 1)}
+    niveles[L] = max(cap_max, cap[L])
+    return niveles
+
+
 def ventana_carga(t, intervals, t_charge, ciclico=None):
     """Inicios de carga 'a' con la bateria todavia cargando en t: la carga que
     empieza en a ocupa a, a+1, ..., a+t_charge-1. Sin ciclo: [max(t0, t-L+1), t].
@@ -1239,6 +1281,14 @@ class BoundRules(OptRules):
             model.R        = pyo.Var(model.years, domain=pyo.Binary)
             model.b_bar    = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
             model.D        = pyo.Var(model.years, domain=pyo.NonNegativeReals, bounds=(B_L, B_U))
+            # Version 5 (ELMO_CARGA_CAPACIDAD_REAL): duracion de la carga del dia
+            # segun la capacidad del año, ver niveles_carga y charging_tail_*.
+            # Indexada por dia para que quede local al subproblema (y, d).
+            if carga_capacidad_real():
+                niveles = niveles_carga(model, B_L, B_U)
+                model.niveles_carga = pyo.Set(initialize=sorted(niveles))
+                model.cap_carga = pyo.Param(model.niveles_carga, initialize=niveles, mutable=False)
+                model.u_tc = pyo.Var(model.years, model.days, model.niveles_carga, domain=pyo.Binary)
 
             # Energía CONSUMIDA por los LHD (descarga real, misma expresión
             # que el término "discharge" de battery_soc_swap) en el año y --
@@ -1533,16 +1583,19 @@ class ConstraintRules(OptRules):
         if not valid_k_list:
             return pyo.Constraint.Skip
 
-        # Tight Big-M: if swap_flag=1 => B <= 0.30*U; if swap_flag=0 => B <= U.
-        # This uses M = U-0.30*U = 0.70*U (stronger than M = U in LP relaxation).
+        # Tight Big-M: if swap_flag=1 => B <= tope*U; if swap_flag=0 => B <= U.
+        # This uses M = U-tope*U (stronger than M = U in LP relaxation).
         # Si hay degradación, U=b_bar[y] es variable: U*swap_flag se
-        # linealiza vía P_bbar_zagg (ver p_bbar_zagg_*).
+        # linealiza vía P_bbar_zagg (ver p_bbar_zagg_*). tope =
+        # ELMO_SWAP_SOC_MAX (version 5), 0,30 si no se da.
+        tope = swap_soc_max()
+        m_tope = 1.0 - (0.30 if tope is None else tope)
         if self.mine_system.battery_degradation is not None:
-            return model.B[i, y, d, t-1] <= model.b_bar[y] - 0.70 * model.P_bbar_zagg[i, y, d, t]
+            return model.B[i, y, d, t-1] <= model.b_bar[y] - m_tope * model.P_bbar_zagg[i, y, d, t]
         else:
             U = model.bmax_b[i]
             swap_flag = self._z_agg_swap(model, i, y, d, t)
-            return model.B[i, y, d, t-1] <= U - 0.70 * U * swap_flag
+            return model.B[i, y, d, t-1] <= U - m_tope * U * swap_flag
 
     # L�mite inferior de SOC bater�a
     def battery_lower(self, model, i, y, d, t):
@@ -1866,6 +1919,8 @@ class ConstraintRules(OptRules):
 
     # Inventario de bater�as cargadas
     def inventory_charged_batteries_rule(self, model, k, y, d, t):
+        if hasattr(model, "u_tc"):
+            return self._inventario_cargadas_variable(model, k, y, d, t)
         if pipeline_ciclico():
             # S[sig(t)] = S[t] + (carga que termina al cierre de t) - W[sig(t)],
             # con sig(tf) = t0: la carga que termina en t empezo en el inicio
@@ -1898,12 +1953,82 @@ class ConstraintRules(OptRules):
         if a == t:
             # La carga empieza en t: ya consume y ocupa cargador en t.
             return model.Sv[k, y, d, t, a] == model.X_ini[k, y, d, t]
+        if self._cola_carga(model, k, y, d, t, a) is not None:
+            return pyo.Constraint.Skip      # cola de la carga: charging_tail_*
         # La carga sigue en proceso, se mantiene el valor anterior (con el
         # pipeline ciclico, el anterior de t0 es tf).
         if pipeline_ciclico():
             intervals = [int(v) for v in self.time_series.get_time_intervals()]
             return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, intervalo_anterior(t, intervals, True), a]
         return model.Sv[k, y, d, t, a] == model.Sv[k, y, d, t - 1, a]
+
+    # --- Version 5 (ELMO_CARGA_CAPACIDAD_REAL): duracion variable de la carga.
+    # La carga que empieza en a sigue en el intervalo j = t - a de su ventana
+    # (modulo T con el pipeline ciclico) mientras la duracion del dia l cumpla
+    # l > j. Los intervalos j < l_min estan siempre (charging_duration_rule); en
+    # la cola (j >= l_min), con on_j = sum_{l > j} u_tc[y,d,l]:
+    #   Sv[t,a] <= Sv[t-1,a]                       (charging_tail_dec)
+    #   Sv[t,a] <= M * on_j                        (charging_tail_on)
+    #   Sv[t,a] >= Sv[t-1,a] - M * (1 - on_j)      (charging_tail_keep)
+    # con M = max_bays_k * max_chargers_per_bay_k (tope de Sv por charger_limit).
+    def _pos_carga(self, t, a):
+        if pipeline_ciclico():
+            return (int(t) - int(a)) % len(self.time_series.get_time_intervals())
+        return int(t) - int(a)
+
+    def _cola_carga(self, model, k, y, d, t, a):
+        """(Sv del intervalo anterior, on_j, M) si (t, a) es un intervalo de la
+        cola de la carga con duracion variable; None si no."""
+        if not hasattr(model, "u_tc") or int(t) == int(a):
+            return None
+        j = self._pos_carga(t, a)
+        if j < min(model.niveles_carga):
+            return None
+        intervals = [int(v) for v in self.time_series.get_time_intervals()]
+        tp = intervalo_anterior(t, intervals, True) if pipeline_ciclico() else int(t) - 1
+        on = sum(model.u_tc[y, d, l] for l in model.niveles_carga if l > j)
+        M = value(model.max_bays_k[k]) * value(model.max_chargers_per_bay_k[k])
+        return model.Sv[k, y, d, tp, a], on, M
+
+    def charging_tail_dec(self, model, k, y, d, t, a):
+        c = self._cola_carga(model, k, y, d, t, a)
+        return pyo.Constraint.Skip if c is None else model.Sv[k, y, d, t, a] <= c[0]
+
+    def charging_tail_on(self, model, k, y, d, t, a):
+        c = self._cola_carga(model, k, y, d, t, a)
+        return pyo.Constraint.Skip if c is None else model.Sv[k, y, d, t, a] <= c[2] * c[1]
+
+    def charging_tail_keep(self, model, k, y, d, t, a):
+        c = self._cola_carga(model, k, y, d, t, a)
+        return pyo.Constraint.Skip if c is None else model.Sv[k, y, d, t, a] >= c[0] - c[2] * (1 - c[1])
+
+    def carga_un_nivel(self, model, y, d):
+        return sum(model.u_tc[y, d, l] for l in model.niveles_carga) == 1
+
+    def carga_capacidad(self, model, y, d):
+        """La duracion del dia tiene que llenar la bateria del año."""
+        return model.b_bar[y] <= sum(model.cap_carga[l] * model.u_tc[y, d, l] for l in model.niveles_carga)
+
+    def _inventario_cargadas_variable(self, model, k, y, d, t):
+        """S[sig(t)] = S[t] + (cargas que terminan al cierre de t) - W[sig(t)]:
+        con duracion variable, las de cada inicio a de la ventana de t con
+        Sv[t,a] > Sv[sig(t),a] (y todas las del ultimo intervalo de la ventana)."""
+        intervals = [int(v) for v in self.time_series.get_time_intervals()]
+        t, L, l_min = int(t), int(value(model.t_charge)), min(model.niveles_carga)
+        ciclico = pipeline_ciclico()
+        if t == intervals[-1]:
+            if not ciclico:
+                return pyo.Constraint.Skip
+            tn = intervals[0]
+        else:
+            tn = t + 1
+        fin = 0
+        for a in ventana_carga(t, intervals, L, ciclico):
+            j = self._pos_carga(t, a)
+            if j < l_min - 1:
+                continue
+            fin += model.Sv[k, y, d, t, a] - (model.Sv[k, y, d, tn, a] if j < L - 1 else 0)
+        return model.S[k, y, d, tn] == model.S[k, y, d, t] + fin - model.W[k, y, d, tn]
 
     # Condiciones de inventario c�clico. Con ELMO_PIPELINE_CICLICO se omiten:
     # las ecuaciones de inventario ya cierran el ciclo tf -> t0.
@@ -2396,12 +2521,16 @@ class ConstraintRules(OptRules):
             model.time_intervals_set,
             rule=self.battery_soc_swap_update_4,
         )
-        #model.swap_soc_limit_30 = pyo.Constraint(
-        #    model.slhd_set,
-        #    model.days,
-        #    model.time_intervals_set,
-        #    rule=self.swap_soc_limit_30,
-        #)
+        # Desactivada desde 2026-05-07; la version 5 la activa con
+        # ELMO_SWAP_SOC_MAX (umbral), ahora con el indice de año.
+        if swap_soc_max() is not None:
+            model.swap_soc_limit_30 = pyo.Constraint(
+                model.slhd_set,
+                model.years,
+                model.days,
+                model.time_intervals_set,
+                rule=self.swap_soc_limit_30,
+            )
         model.battery_lower = pyo.Constraint(
             model.slhd_set,
             model.years,
@@ -2567,6 +2696,12 @@ class ConstraintRules(OptRules):
             model.SV_INDEX,
             rule=self.charging_duration_rule,
         )
+        if hasattr(model, "u_tc"):
+            model.charging_tail_dec = pyo.Constraint(model.SV_INDEX, rule=self.charging_tail_dec)
+            model.charging_tail_on = pyo.Constraint(model.SV_INDEX, rule=self.charging_tail_on)
+            model.charging_tail_keep = pyo.Constraint(model.SV_INDEX, rule=self.charging_tail_keep)
+            model.carga_un_nivel = pyo.Constraint(model.years, model.days, rule=self.carga_un_nivel)
+            model.carga_capacidad = pyo.Constraint(model.years, model.days, rule=self.carga_capacidad)
         model.CI_S = pyo.Constraint(
             model.stations_set,
             model.years,

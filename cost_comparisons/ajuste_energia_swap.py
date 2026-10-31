@@ -104,10 +104,18 @@ def ajustar(root):
                 # Inicios de carga: X_ini[a] = Sv[k,y,d,a,a].
                 filas = _rama(sv, "k", k, "y", str(y), "d", str(d), "t")
                 inicios = []
+                # Duracion de la carga que empieza en a: intervalos con Sv[.,a] >
+                # 0. En v4 es siempre t_charge; en v5 (ELMO_CARGA_CAPACIDAD_REAL)
+                # depende de la capacidad del año (11-13 intervalos a 0,5C).
+                dur = {}
                 for t_txt, sub in filas.items():
                     t = int(float(t_txt))
                     n = float(_rama(sub, "a").get(str(t), _rama(sub, "a").get("{}.0".format(t), 0)))
                     inicios += [t] * int(round(n))
+                    for a_txt, v in _rama(sub, "a").items():
+                        if float(v) > 0.5:
+                            a_i = int(float(a_txt))
+                            dur[a_i] = dur.get(a_i, 0) + 1
                 inicios.sort()
                 evs = sorted(por_dia.get((k, y, d), []), key=lambda e: e["t"])
                 if len(inicios) != len(evs):
@@ -131,11 +139,16 @@ def ajustar(root):
                             if vuelta == 1:
                                 pareja.setdefault(t, []).append(ev)
                 for a, lista in pareja.items():
+                    # Una carga cortada por el fin del dia (sin pipeline ciclico)
+                    # se cuenta con el bloque completo, como antes.
+                    L_a = dur.get(a) or t_charge
+                    if a + L_a - 1 >= T:
+                        L_a = t_charge
                     for ev in lista:
                         n_nec = float(ev["real_event_grid_kwh"]) / e_int
                         real_total += float(ev["real_event_grid_kwh"])
-                        bloque_total += t_charge * e_int
-                        for j in range(t_charge):
+                        bloque_total += L_a * e_int
+                        for j in range(L_a):
                             frac_sobra = min(1.0, max(0.0, (j + 1) - n_nec))
                             if frac_sobra <= 0:
                                 continue
@@ -144,12 +157,12 @@ def ajustar(root):
                                 t -= T
                             sobr[t - 1] += frac_sobra * p_ch
                         # Deficit: la carga sigue a p_ch despues del bloque.
-                        extra = n_nec - t_charge
+                        extra = n_nec - L_a
                         if extra > 1e-12:
                             con_deficit += 1
                             j = 0
                             while extra - j > 1e-12:
-                                t = (a + t_charge + j - 1) % T + 1
+                                t = (a + L_a + j - 1) % T + 1
                                 falta[t - 1] += min(1.0, extra - j) * p_ch
                                 j += 1
             r, g = _serie(red, y, d, T), _serie(gen, y, d, T, "g")
