@@ -4,7 +4,7 @@ Entregable de `lshaped_entero_swap.md` §7. Código: `lshaped.py` (runner) y
 `src/optimization/decomposition/lshaped.py` (clase `LShaped`), sobre el Benders por
 (año, día) de `BendersDias`. Colas: `cola_lshaped.sh`, `cola_lshaped_cierre.sh`,
 `cola_lshaped_mejora.sh`. Salidas: `output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/<caso>/lshaped_A2/`
-(y `lshaped_A2/mejora/`, `lshaped_A3/`).
+(y `lshaped_A2/mejora/`, `lshaped_A3/`, `lshaped_A4/`).
 
 ---
 
@@ -72,47 +72,55 @@ NB + DP + `mejorar_ub` + certificado (`cola_swap_v4_algoritmo.md` §1).
 
 ---
 
-## 3. Paso final de mejora (cola del 30-oct, `cola_lshaped_mejora.sh`)
+## 3. Versión final: paso de mejora y umbral de corte (cola del 30-31 oct)
 
-_Parcial al 30-oct 19:50 UTC; la cola sigue (casos 3, 6, 1 y 8 de la ranura A, y
-casos 7 y 8 completos en `lshaped_A4/`)._
+`cola_lshaped_mejora.sh`. Dos cosas cambiaron respecto del §2:
 
-`--solo_mejorar` sobre la solución de `lshaped_A2/` (600 s por día; 900 s en la
-segunda pasada si la primera mejoró), salvo el caso 7, que es la corrida completa de
-`lshaped_A3/` (branch-and-cut + mejora). Todas validadas en el monolítico.
+- **Paso final de mejora** (`--mejora 600,900`): con la inversión de la mejor UB fija,
+  los 40 días MILP a 600 s (y a 900 s si la primera pasada mejoró), y pulido. En los
+  casos 1–6 se aplicó a la solución de `lshaped_A2/` (`--solo_mejorar`, en
+  `lshaped_A2/mejora/`); los casos 7 y 8 se corrieron completos con el código final.
+- **Cortes que Gurobi no hace cumplir.** En los casos 7 y 8 el árbol cerraba en la
+  cota LP con 0 cortes enteros. Diagnóstico (caso 7): el incumbente final pasó por el
+  callback, con las enteras exactas, y viola un corte en 0,26 en absoluto (2e-4 del
+  costo de su día); Gurobi no hace cumplir esa violación en filas con coeficientes de
+  hasta 1e6 (duales de la penalidad elástica), el callback "cortaba" y nunca pasaba a
+  los cortes enteros. No era la tolerancia de integralidad (`IntFeasTol` 1e-9 no
+  cambia nada). Arreglo: un corte cuenta como separador solo si viola más de
+  `tol_lp` = 1e-5 del objetivo del maestro (≈ 26 en el caso 7); si no, se agrega igual
+  y se sigue con los cortes enteros. De respaldo, si el árbol termina con un incumbente
+  que el callback no aceptó, los cortes lazy pasan a restricciones y se reoptimiza.
+  Con eso el caso 7 genera 86 cortes enteros (LB +11.790 sobre la certificada) y el 8,
+  74 (+36.624). La cota puede quedar hasta ~40 × `tol_lp` × objetivo bajo la exacta
+  (~0,04 %).
 
-| Caso | UB antes de la mejora | UB final | Mejora | Mejor conocida antes | Gap combinado |
-|---|---|---|---|---|---|
-| 2 | 2.492.783,69 | 2.483.322,02 | −0,38 % | 2.493.040,16 | 1,70 % (2,10) |
-| 3 | 2.548.510,39 | 2.541.928,08 ¹ | −0,26 % | 2.550.277,54 | 2,09 % (2,68) |
-| 4 | 4.009.428,23 | 4.006.626,43 | −0,07 % | 4.090.093,05 | 3,04 % (5,02) |
-| 5 | 3.114.708,43 | 3.098.666,35 | −0,52 % | 3.098.875,18 | 3,72 % (3,73) |
-| 7 (A3) | 2.761.098,79 | 2.737.234,87 | −0,86 % | 2.743.895,04 | 3,68 % (3,91) |
+Resultado final (todas las UB validadas en el monolítico):
 
-¹ Primera pasada; la segunda está en curso y la solución aún no está validada.
+| Caso | UB | LB | Gap | Gap antes | Δ UB | Δ LB | Origen |
+|---|---|---|---|---|---|---|---|
+| 1 base/norte/0,5C/RED | 3.294.143,94 | 3.263.609,06 | 0,93 % | 0,93 % | 0 | 0 | A2 (la mejora no encontró nada) |
+| 2 base/norte/0,5C/RED_GEN_BESS | 2.483.322,02 | 2.441.084,20 | 1,70 % | 2,10 % | −9.718 | +336 | A2 + mejora |
+| 3 base/norte/0,5C/RED_GEN | 2.538.590,51 | 2.488.853,10 | 1,96 % | 2,68 % | −11.687 | +6.817 | A2 + mejora |
+| 4 escalada20/norte/0,5C/RED | 4.006.626,43 | 3.884.865,90 | 3,04 % | 5,02 % | −83.467 | 0 | A2 + mejora |
+| 5 escalada20/norte/0,5C/RED_GEN_BESS | 3.098.666,35 | 2.983.268,87 | 3,72 % | 3,73 % | −209 | 0 | A2 + mejora |
+| 6 base/centro/0,5C/RED_GEN_BESS | 2.745.492,65 | 2.697.625,61 | 1,74 % | 2,60 % | −22.417 | +1.766 | A2 + mejora |
+| 7 base/norte/1C/RED_GEN_BESS | 2.737.234,87 | 2.648.318,12 | 3,25 % | 3,91 % | −6.660 | +11.790 | UB de A3, LB de A4 |
+| 8 base/norte/2C/RED_GEN_BESS | 4.932.977,72 | 4.739.838,52 | 3,92 % | 4,97 % | −16.272 | +36.624 | A4 (2 módulos) |
 
-Con esto los casos 5 y 7, que quedaban sobre la mejor conocida, la mejoran. Gap
-combinado promedio de los 8 casos: 3,24 % → 2,70 % (casos 1, 6 y 8 todavía sin el paso
-de mejora).
-
-**Cortes que Gurobi no hace cumplir.** Al relanzar el caso 8 con 2 módulos
-(`lshaped_A3/`) el árbol cerró a los 65 min en 4.703.144, bajo la LB certificada, con
-0 cortes enteros; lo mismo el caso 7 (A2 y A3, 36 min). Diagnóstico (caso 7): el
-incumbente final pasó por el callback, con las enteras exactas, y viola un corte en
-0,26 en absoluto (2e-4 del costo de su día). Gurobi no hace cumplir esa violación en
-filas con coeficientes de hasta 1e6 (duales de la penalidad elástica), así que el
-callback "cortaba", nunca pasaba a los cortes enteros, y Gurobi aceptaba. No era la
-tolerancia de integralidad (`IntFeasTol` 1e-9 no cambia nada). Arreglo, en prueba en
-`lshaped_A4/`: un corte cuenta como separador solo si viola más de `tol_lp` = 1e-5
-del objetivo del maestro (≈ 26 en el caso 7); si no, se agrega igual y se sigue con
-los cortes enteros. De respaldo, si el árbol termina con un incumbente que el callback
-no aceptó, los cortes lazy pasan a restricciones del maestro y se reoptimiza.
+Gap promedio: 3,24 % → **2,53 %**. La UB mejora en 7 casos y la LB en 5, sin enumerar
+inversiones ni certificado aparte.
 
 ---
 
 ## 4. Conclusión
 
-_Pendiente: se completa al terminar la cola._
+El L-shaped entero queda como algoritmo definitivo para los casos swap: en una sola
+corrida de ~5–7 h por caso da UB y LB que igualan o mejoran las del esquema anterior
+(NB + DP + `mejorar_ub` + certificado) en los 8 casos, con gap promedio 2,53 % (antes
+3,24 %). La UB viene sobre todo de la DP inicial y del paso final de mejora; la LB, del
+corte de cargas en la Fase 1 y de los cortes enteros locales. Lo que queda del gap es
+el de dualidad de las copias continuas (§5) y el gap de los MILP del día. Los casos 1,
+4 y 5 no movieron la LB certificada.
 
 ---
 
