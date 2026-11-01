@@ -315,11 +315,17 @@ class Subproblema:
         m.optimize()
         return m.ObjVal if m.Status == GRB.OPTIMAL else None
 
-    def ub(self, xhat, timelimit, gap, mip_focus=1):
-        """Operacion MILP del dia con la inversion `xhat` fija."""
+    def ub(self, xhat, timelimit, gap, mip_focus=1, subir=None):
+        """Operacion MILP del dia con la inversion `xhat` fija. `subir` =
+        {posicion en self.cop: costo}: copias que pueden quedar SOBRE xhat
+        pagando ese costo por unidad (la holgura s- del enlace)."""
         m = self.m
         self._entera(True)
         self._enlaces(self.M, 0.0, 0.0, INF)
+        if subir:
+            sm = [self.sm[k] for k in subir]
+            m.setAttr("UB", sm, [INF] * len(sm))
+            m.setAttr("Obj", sm, list(subir.values()))
         self._copias()
         self._rhs(xhat, np.zeros(max(self.pres, default=-1) + 1))
         if self.start is not None:
@@ -335,7 +341,7 @@ class Subproblema:
         x = m.getAttr("X", self.vloc)
         self.start = [round(x[k]) for k in self.ent_loc]
         return {"ok": True, "valor": m.ObjVal, "x": x, "t": time.time() - t0,
-                "gap": m.MIPGap}
+                "gap": m.MIPGap, "cop": m.getAttr("X", self.vcop)}
 
     def rango_presupuestos(self):
         """[min, max] de cada presupuesto (energia del dia) con la inversion
@@ -412,6 +418,54 @@ class Subproblema:
             return {"ok": False, "status": st, "t": time.time() - t0}
         return {"ok": True, "R": cota, "t": time.time() - t0, "status": st,
                 "gap": m.MIPGap if m.SolCount else None}
+
+    def piso(self, xhat, k, rangos_cont, timelimit):
+        """Menor valor de la copia continua k (posicion en self.cop) con las
+        copias ENTERAS fijas en xhat, las demas continuas libres dentro de sus
+        rangos, los presupuestos libres y la operacion entera (sin costo):
+
+            phi_k = min { c_k : operacion entera, c_I = xhat_I, c_C en rangos }
+
+        Para TODO x factible con x_I = xhat_I, x_k >= phi_k. Cota dual de
+        Gurobi: vale aunque corte por tiempo. Devuelve {"ok", "phi", "status"};
+        ok False si no hay cota finita (infactible: lo cubre el corte local)."""
+        m, P = self.m, self.P
+        self._entera(True)
+        n, npres = self.n_cop, len(self.pres)
+        ent = set(self.cop_ent)
+        ubs = [0.0 if j in ent else INF for j in range(n)] + [INF] * npres
+        m.setAttr("Obj", self.slacks, [0.0] * len(self.slacks))
+        m.setAttr("UB", self.slacks, ubs * 2)
+        lbs = [P.lb[j] for j in self.cop]
+        ubs_c = [P.ub[j] for j in self.cop]
+        for kk, (lo, hi) in zip(self.cop_cont, rangos_cont):
+            lbs[kk], ubs_c[kk] = lo, hi
+        c_obj = [0.0] * n
+        c_obj[k] = 1.0
+        self._copias(c_obj, lbs, ubs_c)
+        m.setAttr("Obj", self.vloc, [0.0] * len(self.vloc))
+        self._rhs(xhat, np.zeros(max(self.pres, default=-1) + 1))
+        if self.start is not None:
+            m.setAttr("Start", [self.vloc[kk] for kk in self.ent_loc], self.start)
+        m.Params.TimeLimit = timelimit
+        m.Params.MIPGap = 1e-6
+        m.Params.MIPFocus = 3
+        t0 = time.time()
+        try:
+            m.optimize()
+            try:
+                cota = m.ObjBound
+            except gp.GurobiError:
+                cota = None
+            st = m.Status
+        finally:
+            m.Params.MIPFocus = 0
+            m.setAttr("Obj", self.vloc, [float(P.obj[j]) for j in self.loc])
+            self._copias()
+        if st in (GRB.INF_OR_UNBD, GRB.UNBOUNDED, GRB.INFEASIBLE) or cota is None \
+                or not math.isfinite(cota) or abs(cota) >= 1e20:
+            return {"ok": False, "status": st, "t": time.time() - t0}
+        return {"ok": True, "phi": cota, "status": st, "t": time.time() - t0}
 
     def lagr(self, pi, lam, rangos, timelimit, gap):
         """R(pi) = min { opex - pi.copia - lam.presupuesto } con la operacion
@@ -605,10 +659,10 @@ class Maestro:
 class BendersDias:
 
     def __init__(self, info, model, por_var, M=1e6, jobs=8, alpha=0.5,
-                 cotas_capacidad=None, out=None, verbose=True):
+                 cotas_capacidad=None, out=None, verbose=True, cpu=None):
         self.verbose = verbose
         self.out = out
-        cpu = os.cpu_count() or 8
+        cpu = cpu or os.cpu_count() or 8
         self.jobs = jobs
         self.env_F = _env(cpu)
         t0 = time.time()
