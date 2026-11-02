@@ -267,6 +267,8 @@ class OptModel(object):
             "b_bb":     ["y", "s"],
             "nt_bb":    ["y", "s"],
             "w_bb":     ["y", "s"],
+            # Nivel de duracion de la carga (ELMO_CARGA_CAPACIDAD_REAL)
+            "u_tc":     ["y", "d", "l"],
         }
         if self.init_solution_folder:
             self._load_solution_warmstart_folder(self.init_solution_folder)

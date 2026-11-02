@@ -139,6 +139,70 @@ el de dualidad de las copias continuas (§5) y el gap de los MILP del día. Los 
 - **Capacidad de la subestación.** Sin la cota del presolve (`--capacidad`) el maestro
   propone un módulo y los días de los casos 2C salen infactibles.
 
+---
+
+## 6. Versión 5 de la operación del swap (sensibilidad, casos 1–3)
+
+Dos cambios de la operación, por entorno y apagados por defecto (`functions.py`), que
+dejan intacta la v4:
+
+- `ELMO_SWAP_SOC_MAX=0.30`: el LHD solo hace swap si llega con SOC ≤ 30 %.
+- `ELMO_CARGA_CAPACIDAD_REAL=1`: la carga dura lo que pide la capacidad del año (índice
+  de nivel `u_tc`).
+
+Con cualquiera de los dos, `carga_parcial()` quita `b_y_link_lower` (b̄_y ≤ D_{y−1} en vez
+de la igualdad): los dos acotan b̄ por arriba para una operación fija y, con la
+igualdad, la UB salía infactible casi siempre (RED cerró con 31 % de gap). Cambios del
+L-shaped para la v5 (`cola_lshaped_v5.sh`, tercera vuelta, salidas en
+`casos_finales_v5/<caso>/lshaped_r/`):
+
+- **Energía mínima entera en el maestro.** `rango_presupuestos(entero_tl=120)` acota cada
+  presupuesto de energía con la cota del MILP del día, no solo con su LP.
+- **Reparación de las inversiones aceptadas.** Si la UB de una inversión sale infactible
+  porque su flota no alcanza con la energía real de los días, `LShaped._reparar_v5` la
+  repara con la DP de degradación y evalúa la inversión reparada.
+- **Cotas restauradas.** `update()` después de cada restauración de cotas en el maestro de
+  capacidad y en `Maestro.regularizar`/`rangos`: Gurobi no actualiza los atributos hasta
+  `update()`, y la vuelta anterior de RED_GEN y RED_GEN_BESS corrió con cotas corruptas.
+
+Resultados (21 núcleos, los tres en paralelo; todas las UB validadas en el monolítico):
+
+| Caso | UB v5 | LB v5 | Gap v5 | Gap v4 (§3) | LB Fase 1 | Cortes LP / nivel / enteros | Tiempo |
+|---|---|---|---|---|---|---|---|
+| 1 base/norte/0,5C/RED ¹ | 3.217.236,44 | 3.151.372,49 | 2,05 % | 0,93 % | 3.015.885 | 4 / 52 / 100 | 1,7 h |
+| 2 base/norte/0,5C/RED_GEN_BESS | 2.460.277,29 | 2.349.865,64 | 4,49 % | 1,70 % | 2.280.747 | 119 / 224 / 76 | 8,4 h (tope) |
+| 3 base/norte/0,5C/RED_GEN | 2.511.592,69 | 2.378.166,92 | 5,31 % | 1,96 % | 2.292.026 | 127 / 236 / 164 | 7,5 h (tope) |
+
+¹ Parte de la solución de la segunda vuelta (UB 3.244.652,50) y cierra el árbol a la 1,7 h.
+
+Comparación con on-board (`cost_comparisons/comparar_swap_ob_v5.py --sub lshaped_r`,
+`swap_vs_ob_v5_casos.csv`). El swap se ajusta a la energía real de los días y se
+redimensiona, igual que en v4:
+
+| Caso | Swap modelo | Swap redimensionado | OB | Swap vs OB v5 | Swap vs OB v4 |
+|---|---|---|---|---|---|
+| 1 RED | 3.217.236 | 3.110.048 | 3.083.536 | +0,86 % | +0,65 % |
+| 2 RED_GEN_BESS | 2.460.277 | 2.428.859 | 2.383.673 | +1,90 % | +1,63 % |
+| 3 RED_GEN | 2.511.593 | 2.483.186 | 2.487.888 | −0,19 % | +0,19 % |
+
+- **El patrón contra OB es el mismo que en v4.** Swap y OB quedan dentro de ±2 % en los
+  tres casos. RED_GEN es el caso más favorable al swap, el único donde gana en v5, y
+  RED_GEN_BESS el menos favorable. La BESS le sirve más a OB (−104.215 entre RED_GEN y
+  RED_GEN_BESS) que al swap (−54.327), que ya tiene baterías en la estación.
+- **Los gaps de la v5 son mayores.**
+  - La LB de la Fase 1 queda 6–9 % bajo la UB, contra 2–4 % en v4: sin
+    `b_y_link_lower` la relajación es más débil.
+  - El maestro subestima la energía de los días: los MILP de energía mínima no cierran
+    y los días resueltos a costo mínimo gastan ~1 % más que su mínimo.
+  - Por eso casi toda inversión entera aceptada cruza el piso B_L y sale infactible.
+    La reparación le agrega baterías y su costo real queda 6–12 % sobre lo que estimaba
+    el maestro.
+  - Cada callback entero cuesta ~20 min y sube la LB unos miles; RED_GEN y RED_GEN_BESS
+    terminaron por tiempo con la LB todavía subiendo.
+- **Uso en la tesis.** La v5 queda como análisis de sensibilidad de la operación del
+  swap, y las cifras principales salen de la v4. Con gaps de 4,5–5,3 %, el signo de la
+  diferencia contra OB en RED_GEN y RED_GEN_BESS no está certificado.
+
 ## Referencias
 
 Ver `lshaped_entero_swap.md`; además Zou, J., Ahmed, S. y Sun, X. A. (2019).

@@ -121,6 +121,9 @@ def main():
                  pasadas_dp=a.pasadas_dp, p_ssee_max=a.p_ssee_max)
     ls.t0 = t0
     ls.ub_referencia = a.mejor_ub      # solo para detectar una LB invalida
+    if ms.battery_degradation is not None:
+        from src.optimization.decomposition.degradacion_dp import parametros_desde
+        ls.P_dp = parametros_desde(ms, ts)     # reparacion de inversiones en la version 5
     if a.solo_mejorar:
         ls.mejorar_ub([float(x) for x in a.mejora.split(",")])
         resumen = {"ub_inicial": costo0, "ub_final": bd.UB, "tiempo_total_s": time.time() - t0,

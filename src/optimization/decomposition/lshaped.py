@@ -70,6 +70,7 @@ class LShaped:
         # dia) y el arbol cerro en la cota LP sin un corte entero.
         self.tol_lp = tol_lp
         self.ub_timelimit_inicial, self.pasadas_dp = ub_timelimit_inicial, pasadas_dp
+        self.P_dp = None            # parametros de la DP de degradacion (_reparar_v5)
         self.p_ssee_max = p_ssee_max
         # La UB del callback (BendersDias.evaluar_ub) tambien con el pulido flexible.
         bd.pulir = self.pulir_flexible
@@ -275,10 +276,11 @@ class LShaped:
         mc.setObjective(gp.quicksum(self._mcap_x[j] for j in cbb.values()), GRB.MAXIMIZE)
         mc.update()
 
-    def _b_bar_real(self, x, vec):
+    def _b_bar_real(self, x, vec, factor=1.0, tope=None):
         """{año: b_bar} con la inversion de x fija y los presupuestos en la
         energia REAL de los dias (vec): la trayectoria de capacidad maxima
-        (conjunta) que permite la degradacion. None si no hay."""
+        (conjunta) que permite la degradacion. None si no hay. factor escala
+        la energia y tope ({año: cota}) acota b_bar (version 5, _dias_ub)."""
         P = self.P
         self._preparar_capacidad()
         mc = self._mcap
@@ -291,7 +293,12 @@ class LShaped:
             # Mismo signo que el presupuesto del maestro (la fila resta la
             # energia del dia; los presupuestos salen negativos).
             guard.append((v, v.LB, v.UB))
-            v.LB = v.UB = -abs(float(P.energia(vec, k)))
+            v.LB = v.UB = -abs(float(P.energia(vec, k))) * factor
+        for y, j in self._cols("b_bar").items():
+            if tope is not None and y in tope:
+                v = self._mcap_x[j]
+                guard.append((v, v.LB, v.UB))
+                v.UB = max(v.LB, tope[y])
         try:
             mc.optimize()
             if mc.SolCount == 0:
@@ -299,8 +306,13 @@ class LShaped:
                 return None
             return {y: self._mcap_x[j].X for y, j in self._cols("b_bar").items()}
         finally:
+            # Con update: Gurobi actualiza perezosamente y la siguiente llamada
+            # leeria como cotas originales las fijas de esta (paso hasta el
+            # 1-nov: la copia quedaba con la inversion y el tope de b_bar de
+            # una evaluacion anterior).
             for v, lo, hi in guard:
                 v.LB, v.UB = lo, hi
+            mc.update()
 
     SUBIR_UB = ("P_pot(",)
 
@@ -329,9 +341,13 @@ class LShaped:
         hacia arriba, pagando su costo, y el doble de tiempo; P_pot[y] sube al
         maximo que pidan sus dias (el pulido la vuelve a optimizar). Devuelve
         (vec o None, resultados)."""
+        from src.optimization.functions import carga_parcial
         P, bd = self.P, self.bd
         cbb = self._cols("b_bar")
         xx = x.copy()
+        rho = self.RHO_V5
+        if carga_parcial():
+            vueltas += 2
         for vuelta in range(vueltas):
             res = bd._paralelo(lambda b: bd.subs[b].ub(xx, timelimit, gap))
             malos = [b for b, r in enumerate(res) if not r["ok"]]
@@ -363,6 +379,11 @@ class LShaped:
             vec = xx.copy()
             for b, r in enumerate(res):
                 vec[bd.subs[b].loc] = r["x"]
+            if carga_parcial():
+                listo, rho = self._b_bar_v5(x, xx, vec, vuelta, rho)
+                if listo:
+                    return vec, res
+                continue
             real = self._b_bar_real(xx, vec)
             if real is None:
                 self._log("   la energia real de los dias no admite ninguna capacidad en el maestro")
@@ -376,9 +397,49 @@ class LShaped:
                 xx[cbb[y]] = br - holgura
         return vec, res
 
-    def evaluar_inversion(self, xhat, timelimit, gap):
+    RHO_V5 = 0.005
+
+    def _b_bar_v5(self, x, xx, vec, vuelta, rho):
+        """Capacidad de los dias en la version 5 (carga_parcial): el tope de
+        SOC y u_tc acotan b_bar por ARRIBA para una operacion fija y el piso
+        de SOC por abajo, asi que el pulido necesita casi exactamente el b_bar
+        con que se resolvieron los dias, y esa trayectoria tiene que cumplir
+        la cadena de degradacion con la energia que gastaron (la capacidad
+        real - holgura de v4 no la cumple: medido en RED, 1-nov). Sin
+        b_y_link_lower la cadena es monotona en la energia: si la de los dias
+        no cabe, se toma la maxima que cabe bajo ella con la energia inflada
+        en rho (o sin inflar, si inflada no hay), y se vuelve a resolver.
+        Con menos capacidad los dias gastan mas (mas swaps): no se infla a
+        ciegas, la energia de la mina deja la bateria cerca del piso B_L.
+        Devuelve (listo, rho); si no esta listo deja en xx el b_bar nuevo."""
+        cbb = self._cols("b_bar")
+        actual = {y: xx[j] for y, j in cbb.items()}
+        cabe = self._b_bar_real(xx, vec, tope=actual)
+        if cabe is not None and all(cabe[y] >= actual[y] - 1e-4 for y in actual):
+            return True, rho
+        # Bajo la de los dias puede no caber ninguna (el maestro declara b_bar
+        # bajo cuando le conviene y con la energia real la bateria cruza el
+        # piso B_L): entonces la maxima sin tope, como en v4.
+        tope, que = (actual, "bajo la de los dias") if cabe is not None else (None, "sin tope")
+        nueva, f = self._b_bar_real(xx, vec, factor=1.0 + rho, tope=tope), rho
+        if nueva is None:
+            nueva, f = cabe if cabe is not None else self._b_bar_real(xx, vec), 0.0
+        if nueva is None:
+            self._log("   v5: ninguna capacidad cabe en la degradacion con la energia de los "
+                      "dias (la inversion necesita reemplazo o mas baterias)")
+            return True, rho
+        self._log(f"   v5: b_bar de los dias fuera de la degradacion (vuelta {vuelta + 1}); "
+                  f"maxima {que} con energia +{f:.1%}: " + ", ".join(
+                      f"{y}:{actual[y]:.2f}->{nueva[y]:.2f}" for y in sorted(actual)
+                      if abs(nueva[y] - actual[y]) > 1e-3))
+        for y, j in cbb.items():
+            xx[j] = nueva[y]
+        return False, 2 * rho
+
+    def evaluar_inversion(self, xhat, timelimit, gap, reparar=True):
         """Dias MILP con la inversion fija (b_bar corregido, _dias_ub) +
-        pulido flexible. Devuelve (costo o None, vector de los dias): la
+        pulido flexible; en la version 5, si el pulido falla, la inversion
+        reparada con la DP (_reparar_v5). Devuelve (costo o None, vector de los dias): la
         energia de los dias sirve para la siguiente pasada de la DP aunque el
         pulido falle. Cachea por la parte entera de la inversion."""
         P, bd = self.P, self.bd
@@ -399,7 +460,87 @@ class LShaped:
         if costo is not None and costo < bd.UB:
             bd.UB, bd.mejor_vec = costo, completo
             self._log(f"   *** nueva UB {costo:,.2f}")
+        if costo is None and reparar and self.P_dp is not None:
+            from src.optimization.functions import carga_parcial
+            if carga_parcial():
+                self._reparar_v5(x, vec, timelimit, gap)
         return costo, vec
+
+    def _reparar_v5(self, x, vec, timelimit, gap):
+        """Version 5: el maestro acepta inversiones que con la energia real
+        de los dias no caben en la degradacion. Su energia sale de la cota de
+        los MILP de energia minima, que no cierran (~1,5 % bajo la mejor
+        operacion), y los dias gastan ~1 % mas, asi que la bateria cruza el
+        piso B_L (RED, 1-nov: el arbol cerro en una solucion aceptada sin UB,
+        gap 3,5 %). Se repara como la UB inicial: la DP de degradacion con la
+        energia real agrega o adelanta baterias, bahias y cargadores (o
+        reemplaza), la copia de capacidad del maestro completa la inversion y
+        se evalua sin volver a reparar."""
+        from src.optimization.decomposition.degradacion_dp import reparar_plan
+        P, bd = self.P, self.bd
+        cols = {f: self._cols(f) for f in ("N_batteries", "N_bays", "N_chargers", "R")}
+        val = {f: {y: int(round(x[j])) for y, j in c.items()} for f, c in cols.items()}
+        E = self._energia_por_año(vec=vec)
+        res = reparar_plan(self.P_dp, E, val["N_batteries"], val["N_bays"], val["N_chargers"],
+                           margen=0.5, permitir_reemplazo=True)
+        if res is None:
+            self._log("   v5: la DP no repara la inversion")
+            return None
+        _c, plan, D_fin = res
+        x2 = self._plan_en_maestro(x, vec, plan)
+        if x2 is None:
+            return None
+        ent_m = [j for j in P.maestro_vars if P.vtype[j] != "C"]
+        if tuple(int(round(x2[j])) for j in ent_m) in bd.ub_por_inversion:
+            self._log(f"   v5: inversion reparada (D final {D_fin:.1f}) ya evaluada: [{bd.inversion(x2)}]")
+            return None
+        self._log(f"   v5: inversion reparada con la DP (D final {D_fin:.1f}): [{bd.inversion(x2)}] R "
+                  f"{[y for y, p in sorted(plan.items()) if p[3]]}")
+        return self.evaluar_inversion(x2, timelimit, gap, reparar=False)
+
+    def _plan_en_maestro(self, x, vec, plan):
+        """Inversion del maestro con baterias, bahias, cargadores y R del plan
+        ({año: (pool, naves, carg, R)}), estacion y subestacion de x y la
+        energia real de vec, en la copia de capacidad (desde el callback no se
+        puede optimizar el maestro): las demas enteras (compras, totales) al
+        menor costo; las copias continuas quedan las de x (b_bar lo corrige
+        _dias_ub). None si el maestro no admite el plan."""
+        P = self.P
+        self._preparar_capacidad()
+        mc = self._mcap
+        fijo = {}
+        for f, i in (("N_batteries", 0), ("N_bays", 1), ("N_chargers", 2), ("R", 3)):
+            for y, j in self._cols(f).items():
+                if y in plan:
+                    fijo[j] = float(plan[y][i])
+        guard = []
+        for j, v in self._mcap_x.items():
+            if P.vtype[j] == "C" or P.nombre[j].startswith(self.AUX_DEGRADACION):
+                continue
+            if j in fijo or P.nombre[j].startswith(("X(", "n_ssee_k(")):
+                guard.append((v, v.LB, v.UB))
+                v.LB = v.UB = fijo.get(j, float(round(x[j])))
+        for k, v in enumerate(self._mcap_e):
+            guard.append((v, v.LB, v.UB))
+            v.LB = v.UB = -abs(float(P.energia(vec, k)))
+        obj = mc.getObjective()
+        mc.setObjective(gp.quicksum(float(P.obj[j]) * v for j, v in self._mcap_x.items()
+                                    if P.obj[j] != 0.0), GRB.MINIMIZE)
+        try:
+            mc.optimize()
+            if mc.SolCount == 0:
+                self._log(f"   v5: el maestro no admite el plan reparado (status {mc.Status})")
+                return None
+            x2 = x.copy()
+            for j, v in self._mcap_x.items():
+                if P.vtype[j] != "C":
+                    x2[j] = round(v.X)
+            return x2
+        finally:
+            mc.setObjective(obj, GRB.MAXIMIZE)
+            for v, lo, hi in guard:
+                v.LB, v.UB = lo, hi
+            mc.update()
 
     def _evaluar_plan(self, plan, etiqueta):
         """Fija en el maestro baterias, bahias, cargadores y R del plan
@@ -422,7 +563,8 @@ class LShaped:
         finally:
             for v, lo, hi in fijas:
                 v.LB, v.UB = lo, hi
-        costo, vec = self.evaluar_inversion(xm, self.ub_timelimit_inicial, self.ub_gap)
+            M.m.update()
+        costo, vec = self.evaluar_inversion(xm, self.ub_timelimit_inicial, self.ub_gap, reparar=False)
         self._log(f"{etiqueta}: [{bd.inversion(xm)}] R {[y for y, p in sorted(plan.items()) if p[3]]} "
                   f"-> {'sin solucion' if costo is None else f'{costo:,.2f}'}")
         return costo, vec
@@ -526,6 +668,8 @@ class LShaped:
             self._log(f"   *** nueva UB {costo:,.2f}")
 
     # ------------------------------------------------ indicadores -- #
+    T_ENERGIA_MIN = 120.0
+
     def preparar_maestro(self):
         """Rangos de copias y presupuestos (validos), cota de theta, one-hot de
         las copias enteras y parametros del branch-and-cut."""
@@ -536,14 +680,21 @@ class LShaped:
         self._log(f"rangos de {len(copiadas)} copias en {time.time() - t:.0f}s")
         self._acotar_copias()
         self._preparar_capacidad()
+        from src.optimization.functions import carga_parcial
         t = time.time()
         self.rpres = {}
-        por_bloque = bd._paralelo(lambda b: bd.subs[b].rango_presupuestos())
+        # En la version 5 la energia minima de cada dia sale del MILP (ver
+        # Subproblema.rango_presupuestos y _dias_ub).
+        tl = self.T_ENERGIA_MIN if carga_parcial() else None
+        por_bloque = bd._paralelo(lambda b: bd.subs[b].rango_presupuestos(entero_tl=tl))
         for b, rs in enumerate(por_bloque):
             for kk, (lo, hi) in zip(bd.subs[b].pres, rs):
                 self.rpres[kk] = (lo, hi)
                 M.e[kk].LB, M.e[kk].UB = lo, hi
-        self._log(f"rangos de {len(self.rpres)} presupuestos en {time.time() - t:.0f}s")
+        self._log(f"rangos de {len(self.rpres)} presupuestos en {time.time() - t:.0f}s"
+                  + ("" if tl is None else "; energia minima entera por año (kWh) " + ", ".join(
+                      f"{y}:{v:,.0f}" for y, v in sorted(self._energia_por_año(
+                          ehat=np.array([self.rpres[k][1] for k in range(len(self.rpres))])).items()))))
         # Codificacion BINARIA de las copias enteras: x = lo + sum_i 2^i beta_i.
         # La distancia de Hamming en los bits es >= 1 si x != xhat (el corte de
         # Laporte y Louveaux sobre la codificacion binaria). Un one-hot por

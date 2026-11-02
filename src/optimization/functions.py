@@ -91,6 +91,18 @@ def carga_capacidad_real():
     return os.environ.get("ELMO_CARGA_CAPACIDAD_REAL", "0") in ("1", "true", "True")
 
 
+def carga_parcial():
+    """Con cualquiera de los dos cambios de la version 5 se quita
+    b_y_link_lower: b_bar[y] <= D[y-1] (cargar bajo la capacidad que quedo) en
+    vez de la igualdad. Los dos acotan b_bar POR ARRIBA para una operacion fija
+    (con el tope, la llegada al swap siguiente: b_bar - consumo <= tope*b_bar;
+    con u_tc, b_bar <= cap_l), y con la igualdad la UB del L-shaped (dias con
+    b_bar = capacidad real - holgura, pulido con b_bar = D[y-1]) salia
+    infactible casi siempre (medido 2026-11-01: RED v5, 31 % de gap; con el
+    modelo v4 la misma inversion cuesta 3.321.560)."""
+    return swap_soc_max() is not None or carga_capacidad_real()
+
+
 def niveles_carga(model, cap_min, cap_max):
     """{l: capacidad que llena una carga de l intervalos} para las duraciones
     posibles con la capacidad del año en [cap_min, cap_max]: desde la menor que
@@ -2447,6 +2459,7 @@ class ConstraintRules(OptRules):
     # Con estas dos, junto con b_y_link y b_bar <= B_U = b_max_pool:
     #     R[y] = 0  ->  b_bar[y] = D[y-1]      (la que quedo)
     #     R[y] = 1  ->  b_bar[y] = b_max_pool  (bateria nueva)
+    # En la version 5 b_y_link_lower no se agrega (ver carga_parcial).
     # ------------------------------------------------------------------ #
 
     def b_y_link_lower(self, model, y):
@@ -2809,8 +2822,10 @@ class ConstraintRules(OptRules):
                 # solo año: ahi la arma YearBlockBuilder como b_y_link_local,
                 # escrita sobre la copia local D_prev del estado heredado.
                 model.b_y_link = pyo.Constraint(model.later_years_set, rule=self.b_y_link)
-                # Capacidad fisicamente consistente (ver b_y_link_lower).
-                model.b_y_link_lower = pyo.Constraint(model.later_years_set, rule=self.b_y_link_lower)
+                # Capacidad fisicamente consistente (ver b_y_link_lower); en
+                # la version 5 se permite cargar bajo D[y-1] (carga_parcial).
+                if not carga_parcial():
+                    model.b_y_link_lower = pyo.Constraint(model.later_years_set, rule=self.b_y_link_lower)
                 model.b_y_replace = pyo.Constraint(model.later_years_set, rule=self.b_y_replace)
 
             model.z_repl_upper1 = pyo.Constraint(model.years, rule=self.z_repl_upper1)
