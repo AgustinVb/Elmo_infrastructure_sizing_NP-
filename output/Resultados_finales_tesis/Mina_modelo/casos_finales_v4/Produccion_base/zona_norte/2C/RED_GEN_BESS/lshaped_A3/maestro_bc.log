@@ -1,0 +1,92 @@
+
+Gurobi 13.0.2 (linux64) logging started Fri Oct 30 17:12:28 2026
+
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4/Produccion_base/zona_norte/2C/RED_GEN_BESS/lshaped_A3/maestro_bc.log"
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+Cutoff  4.9582241083284393e+06
+TimeLimit  1.4135383961439133e+04
+MIPGap  0
+Threads  8
+LazyConstraints  1
+
+Optimize a model with 2347 rows, 921 columns and 7651 nonzeros (Min)
+Model fingerprint: 0x8b0cbd4d
+Model has 104 linear objective coefficients
+Variable types: 492 continuous, 429 integer (348 binary)
+Coefficient statistics:
+  Matrix range     [1e-09, 1e+06]
+  Objective range  [1e+00, 9e+05]
+  Bounds range     [1e-06, 3e+03]
+  RHS range        [2e-12, 8e+06]
+Warning: Model contains large matrix coefficient range
+         Consider reformulating model or setting NumericFocus parameter
+         to avoid numerical issues.
+
+Processing MIP start from previous solve: 0 nodes explored in subMIP, total elapsed time 20s
+MIP start from previous solve did not produce a new incumbent solution
+Processed MIP start in 19.84 seconds (0.00 work units)
+
+Presolve removed 1091 rows and 193 columns
+Presolve time: 0.08s
+Presolved: 1256 rows, 728 columns, 6780 nonzeros
+Variable types: 394 continuous, 334 integer (277 binary)
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    2.7962963e+05   8.363383e+04   0.000000e+00     20s
+    1439    3.3852452e+06   0.000000e+00   0.000000e+00     20s
+
+Root relaxation: objective 3.385245e+06, 1439 iterations, 0.05 seconds (0.04 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 3385245.20    0  120          - 3385245.20      -     -   19s
+     0     0 3579434.52    0  153          - 3579434.52      -     -   20s
+     0     0 3582662.32    0  154          - 3582662.32      -     -   20s
+     0     0 3583756.36    0  156          - 3583756.36      -     -   20s
+     0     0 3583794.42    0  167          - 3583794.42      -     -   20s
+     0     0 3630346.98    0  127          - 3630346.98      -     -   20s
+     0     0 3631298.14    0  128          - 3631298.14      -     -   20s
+     0     0 3632589.63    0   78          - 3632589.63      -     -   20s
+     0     0 3633090.21    0   84          - 3633090.21      -     -   20s
+     0     0 3633090.21    0   85          - 3633090.21      -     -   20s
+     0     0 3633090.21    0   86          - 3633090.21      -     -   20s
+     0     0 3633090.21    0   94          - 3633090.21      -     -   20s
+     0     0 3633222.62    0   94          - 3633222.62      -     -   20s
+     0     0 3633222.62    0   94          - 3633222.62      -     -   20s
+     0     0 3633222.62    0   92          - 3633222.62      -     -   20s
+     0     2 3633284.73    0   90          - 3633284.73      -     -   20s
+    95    19 4716390.66   16    8          - 4697057.81      -  48.4   26s
+   182    28 4716530.81   23    8          - 4702805.22      -  37.7   33s
+   227    22 4703007.74   16    -          - 4702968.05      -  33.7   35s
+*  363     0              16    4703144.2804 4703144.21  0.00%  24.9   49s
+
+Cutting planes:
+  Cover: 74
+  Implied bound: 51
+  Clique: 11
+  MIR: 23
+  Flow cover: 24
+  GUB cover: 3
+  Zero half: 32
+  RLT: 20
+  Relax-and-lift: 34
+  BQP: 6
+  PSD: 2
+
+Explored 386 nodes (11499 simplex iterations) in 49.57 seconds (0.52 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 1: 4.70314e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 4.703144280447e+06, best bound 4.703144280447e+06, gap 0.0000%
+
+User-callback calls 1717, time in user-callback 48.69 sec
