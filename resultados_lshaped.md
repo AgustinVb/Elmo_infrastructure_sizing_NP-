@@ -181,13 +181,15 @@ redimensiona, igual que en v4:
 
 | Caso | Swap modelo | Swap redimensionado | OB | Swap vs OB v5 | Swap vs OB v4 |
 |---|---|---|---|---|---|
-| 1 RED | 3.217.236 | 3.110.048 | 3.083.536 | +0,86 % | +0,65 % |
-| 2 RED_GEN_BESS | 2.460.277 | 2.428.859 | 2.383.673 | +1,90 % | +1,63 % |
-| 3 RED_GEN | 2.511.593 | 2.483.186 | 2.487.888 | −0,19 % | +0,19 % |
+| 1 RED | 3.217.236 | 3.110.048 | 3.083.536 | +0,86 % | +0,58 % |
+| 2 RED_GEN_BESS | 2.460.277 | 2.428.859 | 2.383.673 | +1,90 % | +1,50 % |
+| 3 RED_GEN | 2.511.593 | 2.483.186 | 2.487.888 | −0,19 % | −0,06 % |
+
+La columna v4 es la de las soluciones finales del §3 (`comparar_swap_ob_v4.py`).
 
 - **El patrón contra OB es el mismo que en v4.** Swap y OB quedan dentro de ±2 % en los
-  tres casos. RED_GEN es el caso más favorable al swap, el único donde gana en v5, y
-  RED_GEN_BESS el menos favorable. La BESS le sirve más a OB (−104.215 entre RED_GEN y
+  tres casos. RED_GEN es el caso más favorable al swap, el único donde gana (en v5 y en
+  v4), y RED_GEN_BESS el menos favorable. La BESS le sirve más a OB (−104.215 entre RED_GEN y
   RED_GEN_BESS) que al swap (−54.327), que ya tiene baterías en la estación.
 - **Los gaps de la v5 son mayores.**
   - La LB de la Fase 1 queda 6–9 % bajo la UB, contra 2–4 % en v4: sin
