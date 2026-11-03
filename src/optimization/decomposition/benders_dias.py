@@ -323,9 +323,13 @@ class Subproblema:
         return {"ok": True, "valor": m.ObjVal, "x": x, "t": time.time() - t0,
                 "gap": m.MIPGap, "cop": m.getAttr("X", self.vcop)}
 
-    def rango_presupuestos(self):
+    def rango_presupuestos(self, entero_tl=None):
         """[min, max] de cada presupuesto (energia del dia) con la inversion
-        libre, relajado: cualquier punto factible del original cae adentro."""
+        libre, relajado: cualquier punto factible del original cae adentro.
+        Con `entero_tl` el max (la energia MINIMA, el presupuesto es -energia)
+        sale ademas del MILP del dia, con su cota (valida aunque corte por
+        tiempo): el relajado queda bajo el minimo entero y el maestro declara
+        presupuestos que ninguna operacion entera alcanza (version 5)."""
         m = self.m
         self._entera(False)
         self._enlaces(0.0, INF, 0.0, INF)
@@ -342,9 +346,19 @@ class Subproblema:
                     r.append(m.ObjVal if m.Status == GRB.OPTIMAL
                              else (-INF if sentido == GRB.MINIMIZE else INF))
                 salida.append(tuple(r))
+            if entero_tl is not None:
+                self._entera(True)
+                m.Params.TimeLimit = entero_tl
+                m.Params.MIPGap = 1e-4
+                for i, e in enumerate(self.vpres):
+                    m.setObjective(gp.LinExpr(e), GRB.MAXIMIZE)
+                    m.optimize()
+                    if m.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT):
+                        salida[i] = (salida[i][0], min(salida[i][1], m.ObjBound))
         finally:
             m.setAttr("Obj", todas, objs)
             m.ModelSense = GRB.MINIMIZE
+            m.Params.TimeLimit = INF
         return salida
 
     def local(self, xhat, pi, lam, rangos_cont, timelimit, gap, callback=None):
@@ -514,6 +528,7 @@ class Maestro:
                 ents = [self.x[k] for k in self.ent]
                 m.setAttr("LB", ents, guard[0])
                 m.setAttr("UB", ents, guard[1])
+            m.update()
         return pt
 
     def corte(self, b, intercepto, pi, lam, cop, pres, tol=1e-9):
@@ -581,6 +596,7 @@ class Maestro:
             for t, (lo, hi) in zip(self.th, guard):
                 t.LB, t.UB = lo, hi
             m.setObjective(self.obj_expr, GRB.MINIMIZE)
+            m.update()
         return salida
 
 

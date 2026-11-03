@@ -45,8 +45,11 @@ RECONCILIACION OBLIGATORIA, el script aborta si algo no cuadra:
   - el COSTO TOTAL es el UB de la solucion final (swap: el dado aqui; OB: la
     linea "[cert] UB" del certificado, o el consumer si el caso no tiene
     certificado: OB 1C base y escalado, marcado en la tabla).
-Swap necesita el parameters.json de cada solucion (no se versiona: se regenera
-con escribir_parameters.py). El LP de OB usa el de swap: los parametros que
+Swap usa la solucion final del L-shaped (resultados_lshaped.md, §3), que no se
+versiona: hay que correr el script en el equipo donde estan las carpetas
+lshaped_A*/. Esas soluciones traen solo los JSON de variables; si les falta
+parameters.json o consumer.log, se generan con escribir_parameters.py y
+consumer.py. El LP de OB usa el parameters.json de swap: los parametros que
 entran (precio, perfiles, costos de G y BESS, punta) son identicos.
 
 Descuento: year_position es 1-INDEXADA, df(y) = 1/(1+r)^y con y = 1..10.
@@ -80,45 +83,45 @@ from redimensionar_gen_bess import (TERMINOS, carga_de_solucion,   # noqa: E402
                                     redimensionar)
 
 V4 = "output/Resultados_finales_tesis/Mina_modelo/casos_finales_v4"
+DATOS_SWAP = "data/Tesis_final/Mina_modelo_v4"
 DATOS_OB = "data/Resultados_finales_tesis/Mina_modelo_v4"
 
 
-def _caso(titulo, swap_dir, swap_sol, ub, ob_caso, ob_sol, consumer="consumer.log"):
+def _caso(titulo, swap_caso, swap_sub, ub, ob_caso, ob_sol):
+    d = "{}/{}/{}".format(V4, swap_caso, swap_sub)
     return {"titulo": titulo,
-            "swap": {"sol": "{}/{}/{}/solucion".format(V4, swap_dir, swap_sol),
-                     "consumer": "{}/{}/{}".format(V4, swap_dir, consumer), "ub": ub},
+            "swap": {"sol": d + "/solucion", "consumer": d + "/consumer.log", "ub": ub,
+                     "datos": "{}/{}".format(DATOS_SWAP, swap_caso)},
             "ob": {"caso": "{}/{}".format(V4, ob_caso), "sol": ob_sol,
                    "datos": "{}/{}/elmo_data.xlsx".format(DATOS_OB, ob_caso)}}
 
 
 B, E = "Produccion_base", "Produccion_escalada20"
-# Solucion final de cada caso (cola_swap_v4_algoritmo.md, §1) y su UB.
+# Solucion final de cada caso, la del L-shaped (resultados_lshaped.md, §3), y su UB.
 CASOS = {
-    "1": _caso("Base, norte, 0,5C, solo red", B + "/zona_norte/05C/RED/dp_real",
-               "mejorar_ub_1", 3294143.9406231567, B + "/zona_norte/05C/P_red",
-               "mejorar_ub_1/solucion"),
-    "2": _caso("Base, norte, 0,5C, red + generación + BESS",
-               B + "/zona_norte/05C/RED_GEN_BESS/dp_it0", "mejorar_ub_2", 2493040.1556020295,
-               B + "/zona_norte/05C/P_red_gen_bat", "mejorar_ub_2/solucion"),
-    "3": _caso("Base, norte, 0,5C, red + generación", B + "/zona_norte/05C/RED_GEN/dp_real_b",
-               "mejorar_ub_1", 2550277.5439307033, B + "/zona_norte/05C/P_red_gen",
+    "1": _caso("Base, norte, 0,5C, solo red", B + "/zona_norte/05C/RED", "lshaped_A2",
+               3294143.94, B + "/zona_norte/05C/P_red", "mejorar_ub_1/solucion"),
+    "2": _caso("Base, norte, 0,5C, red + generación + BESS", B + "/zona_norte/05C/RED_GEN_BESS",
+               "lshaped_A2/mejora", 2483322.02, B + "/zona_norte/05C/P_red_gen_bat",
                "mejorar_ub_2/solucion"),
-    "4": _caso("Escalada, norte, solo red (swap 0,5C, OB 1C)", E + "/zona_norte/05C/RED/dp_real",
-               "mejorar_ub_1", 4090093.054588234, E + "/zona_norte/1C/P_red",
+    "3": _caso("Base, norte, 0,5C, red + generación", B + "/zona_norte/05C/RED_GEN",
+               "lshaped_A2/mejora", 2538590.51, B + "/zona_norte/05C/P_red_gen",
+               "mejorar_ub_2/solucion"),
+    "4": _caso("Escalada, norte, solo red (swap 0,5C, OB 1C)", E + "/zona_norte/05C/RED",
+               "lshaped_A2/mejora", 4006626.43, E + "/zona_norte/1C/P_red",
                "mejorar_ub_2/solucion"),
     "5": _caso("Escalada, norte, red + generación + BESS (swap 0,5C, OB 1C)",
-               E + "/zona_norte/05C/RED_GEN_BESS/milp_sinR/it0_energia_sol", "mejorar_ub_2",
-               3098875.18, E + "/zona_norte/1C/P_red_gen_bat", "benders"),
-    "6": _caso("Base, centro, 0,5C, red + generación + BESS",
-               B + "/zona_centro/05C/RED_GEN_BESS/dp_real_t", "mejorar_ub_1", 2767909.361434111,
-               B + "/zona_centro/05C/P_red_gen_bat", "mejorar_ub_2/solucion"),
-    "7": _caso("Base, norte, 1C, red + generación + BESS",
-               B + "/zona_norte/1C/RED_GEN_BESS/dp_it0", "mejorar_ub_2", 2743895.0411102045,
-               B + "/zona_norte/1C/P_red_gen_bat", "mejorar_ub_1/solucion"),
-    "8": _caso("Base, norte, 2C, red + generación + BESS",
-               B + "/zona_norte/2C/RED_GEN_BESS/dp_it0", "mejorar_ub_3", 4949249.553883356,
-               B + "/zona_norte/2C/P_red_gen_bat", "mejorar_ub_2/solucion",
-               consumer="consumer_mejorar_ub_3.log"),
+               E + "/zona_norte/05C/RED_GEN_BESS", "lshaped_A2/mejora", 3098666.35,
+               E + "/zona_norte/1C/P_red_gen_bat", "benders"),
+    "6": _caso("Base, centro, 0,5C, red + generación + BESS", B + "/zona_centro/05C/RED_GEN_BESS",
+               "lshaped_A2/mejora", 2745492.65, B + "/zona_centro/05C/P_red_gen_bat",
+               "mejorar_ub_2/solucion"),
+    "7": _caso("Base, norte, 1C, red + generación + BESS", B + "/zona_norte/1C/RED_GEN_BESS",
+               "lshaped_A3", 2737234.87, B + "/zona_norte/1C/P_red_gen_bat",
+               "mejorar_ub_1/solucion"),
+    "8": _caso("Base, norte, 2C, red + generación + BESS", B + "/zona_norte/2C/RED_GEN_BESS",
+               "lshaped_A4", 4932977.72, B + "/zona_norte/2C/P_red_gen_bat",
+               "mejorar_ub_2/solucion"),
 }
 # Pares de las figuras (y de plot_despacho_swap_vs_ob_v4.py): sin generacion,
 # norte y centro son el mismo problema.
@@ -203,7 +206,23 @@ def parametro(hoja, columna):
     return float(hoja[columna].iloc[1])
 
 
+def preparar_swap(cfg):
+    """parameters.json y consumer.log de la solucion, si le faltan (las del L-shaped
+    traen solo los JSON de variables)."""
+    if not (REPO_ROOT / cfg["sol"]).is_dir():
+        raise SystemExit("falta {}: correr en el equipo donde corrio el L-shaped".format(cfg["sol"]))
+    if not (REPO_ROOT / cfg["sol"] / "parameters.json").exists():
+        subprocess.run([sys.executable, "-u", "escribir_parameters.py", cfg["datos"], cfg["sol"]],
+                       cwd=REPO_ROOT, check=True, stdout=subprocess.DEVNULL)
+    if not (REPO_ROOT / cfg["consumer"]).exists():
+        with open(REPO_ROOT / cfg["consumer"], "w", encoding="utf-8") as f:
+            subprocess.run([sys.executable, "consumer.py", cfg["sol"]], cwd=REPO_ROOT, check=True,
+                           stdout=f, stderr=subprocess.STDOUT)
+
+
 def lado_swap(cfg):
+    if "datos" in cfg:
+        preparar_swap(cfg)
     texto = (REPO_ROOT / cfg["consumer"]).read_text(encoding="utf-8", errors="replace")
     costos = costos_consumer(texto, cfg["consumer"])
     inv = investment_breakdown(REPO_ROOT / cfg["sol"])

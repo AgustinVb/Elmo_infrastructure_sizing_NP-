@@ -272,16 +272,18 @@ class YearBlockBuilder(object):
         # reemplazo, igual que alla.
         # Con ELMO_R_ENDURECIDO el coeficiente es b_max - B_L (ver
         # functions.coef_recuperacion_reemplazo).
-        from src.optimization.functions import coef_recuperacion_reemplazo
+        from src.optimization.functions import carga_parcial, coef_recuperacion_reemplazo
         model.b_y_link_local = pyo.Constraint(expr=(
             model.b_bar[y] <= model.D_prev
             + coef_recuperacion_reemplazo(value(model.b_max_pool), value(model.B_L)) * model.R[y]
         ))
         # Capacidad fisicamente consistente (ConstraintRules.b_y_link_lower /
         # b_y_replace): sin reemplazo b_bar_y = D_prev, con reemplazo b_max.
-        model.b_y_link_lower_local = pyo.Constraint(expr=(
-            model.b_bar[y] >= model.D_prev - B_U * model.R[y]
-        ))
+        # En la version 5 solo b_bar_y <= D_prev (carga_parcial).
+        if not carga_parcial():
+            model.b_y_link_lower_local = pyo.Constraint(expr=(
+                model.b_bar[y] >= model.D_prev - B_U * model.R[y]
+            ))
         model.b_y_replace_local = pyo.Constraint(expr=(
             model.b_bar[y] >= value(model.b_max_pool) * model.R[y]
         ))
