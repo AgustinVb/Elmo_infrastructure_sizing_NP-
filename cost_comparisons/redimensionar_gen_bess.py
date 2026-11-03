@@ -70,11 +70,12 @@ def carga_de_solucion(leer, years, T):
             for y in years for d in DIAS}
 
 
-def redimensionar(p, carga):
+def redimensionar(p, carga, series=False):
     """LP de generacion + BESS + red para la carga {(y, d): array kW}.
 
     p: parameters.json (dict). Devuelve los seis TERMINOS en USD (VP), su "suma",
-    la potencia instalada por tecnologia "G_kw" y las unidades de BESS "H"."""
+    la potencia instalada por tecnologia "G_kw" y las unidades de BESS "H"; con
+    series=True tambien el despacho de cada dia ("series") y "P_pot" por año."""
     T = len(next(iter(carga.values())))
     dt, esc = float(p["delta_t"]), float(p["scaling_factor_op_cost"])
     years = sorted(int(y) for y in p["years"])
@@ -96,16 +97,19 @@ def redimensionar(p, carga):
     H = m.addVar(ub=float(p.get("h_max", 10))) if stor else None
     P_pot = {y: m.addVar() for y in years}
     c_red = gp.LinExpr()
+    despacho = {}   # (y, d) -> variables del dia, para devolver las series
     for y in years:
         for d in DIAS:
             pr = _por_intervalo(_u(precio)[str(y)]["_2"][str(d)]["_3"], T)
             P_red = m.addVars(T, ub=float(p["p_peak"]))
             oferta = {t: P_red[t] for t in range(T)}
+            despacho[(y, d)] = {"red": P_red, "gen": {}}
             for g in gens:
                 a = _por_intervalo(_u(p["alpha_g"])[g]["_2"][str(y)]["_3"][str(d)]["_4"], T)
                 P_gen = m.addVars(T)
                 cap = G[g] * float(_u(p["p_max_g"])[g])
                 m.addConstrs(P_gen[t] <= cap * a[t] for t in range(T))
+                despacho[(y, d)]["gen"][g] = P_gen
                 for t in range(T):
                     oferta[t] += P_gen[t]
             if stor:
@@ -120,6 +124,7 @@ def redimensionar(p, carga):
                 m.addConstr(A[0] == -P_bat[0] / eta * dt)                  # A[t=0] = 0
                 m.addConstrs(A[t] == A[t - 1] - P_bat[t] / eta * dt for t in range(1, T))
                 m.addConstr(A[0] == A[T - 1])                              # ciclico
+                despacho[(y, d)].update(bat=P_bat, soc=A)
                 for t in range(T):
                     oferta[t] += P_bat[t]
             m.addConstrs(oferta[t] == float(carga[(y, d)][t]) for t in range(T))
@@ -146,6 +151,16 @@ def redimensionar(p, carga):
     out["suma"] = sum(out[k] for k in TERMINOS)
     out["G_kw"] = {g: G[g].X * float(_u(p["p_max_g"])[g]) for g in gens}
     out["H"] = H.X if H is not None else 0.0
+    if not series:
+        return out
+    # Despacho del LP por dia (kW; P_bat > 0 descargando, soc en kWh) y P_pot por año.
+    X = lambda vs: np.array([vs[t].X for t in range(T)])
+    out["series"] = {k: {"red": X(v["red"]), "gen": {g: X(pg) for g, pg in v["gen"].items()},
+                         "bat": X(v["bat"]) if "bat" in v else np.zeros(T),
+                         "soc": X(v["soc"]) if "soc" in v else np.zeros(T),
+                         "carga": np.asarray(carga[k], dtype=float)}
+                     for k, v in despacho.items()}
+    out["P_pot"] = {y: P_pot[y].X for y in years}
     return out
 
 

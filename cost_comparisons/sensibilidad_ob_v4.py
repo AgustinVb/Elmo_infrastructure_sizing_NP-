@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
@@ -170,10 +171,10 @@ def main():
             raise SystemExit("caso {} sin UB en resumen.txt".format(n))
         costos[n] = caso(n, ruta, ubs[n], a.ob_ref)
         print("caso {} ({}): reconcilia, {:,.2f}".format(n, ruta, costos[n]["total_cost"]))
-    (HERE / "sensibilidad_ob_v4.json").write_text(
+    (HIST / "sensibilidad_ob_v4.json").write_text(
         json.dumps({str(n): {"ruta": CASOS[n], **v} for n, v in costos.items()}, indent=2,
                    ensure_ascii=False), encoding="utf-8")
-    out = HERE / "sensibilidad_ob_v4.png"
+    out = HIST / "sensibilidad_ob_v4.png"
     figura(costos, out)
     print("ok ->", out)
 

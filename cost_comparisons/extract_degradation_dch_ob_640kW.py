@@ -115,7 +115,7 @@ def main():
         },
     }
 
-    out_path = Path(__file__).resolve().parent / OUT_NAME
+    out_path = Path(__file__).resolve().parent / "historico" / OUT_NAME
     out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(json.dumps({k: v for k, v in result.items()

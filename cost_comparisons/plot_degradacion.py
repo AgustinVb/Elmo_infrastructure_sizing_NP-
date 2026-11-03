@@ -32,6 +32,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 
 # Año 1 del horizonte del modelo. MCHS parte en 2035 (json_plotter.py usa
 # 2033, que es el año base del caso BDR/DET).
@@ -63,7 +64,7 @@ TECHS = [
 
 
 def load(filename):
-    with open(HERE / filename, "r", encoding="utf-8") as f:
+    with open(HIST / filename, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -102,7 +103,7 @@ def plot_single(tech):
     ax.legend(loc="lower left", fontsize=9, framealpha=0.85)
 
     fig.tight_layout()
-    out_png = HERE / tech["out_png"]
+    out_png = HIST / tech["out_png"]
     fig.savefig(out_png, dpi=300, bbox_inches="tight")
     plt.close(fig)
 

@@ -50,6 +50,7 @@ sys.path.insert(0, str(REPO_ROOT))
 import consumer as c
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 BASE = REPO_ROOT / "output" / "Resultados_finales_tesis" / "DET"
 
 ANIO_BASE = 2035
@@ -292,7 +293,7 @@ def main():
              ha="center", fontsize=10.5, color="#444444")
 
     fig.tight_layout(rect=[0, 0.02, 1, 0.95])
-    out = HERE / "despacho_det_tesis_y{}_d{}.png".format(args.anio, args.dia)
+    out = HIST / "despacho_det_tesis_y{}_d{}.png".format(args.anio, args.dia)
     fig.savefig(out, dpi=200, bbox_inches="tight")
     print("ok ->", out)
     for titulo, pico_dia, pico_ventana, e_dem, e_red in resumen:

@@ -13,13 +13,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 
 # Año 1 del horizonte del modelo corresponde al año calendario 2033.
 BASE_CALENDAR_YEAR = 2033
 
 
 def load_scenario(filename: str) -> dict:
-    with open(HERE / filename, "r", encoding="utf-8") as f:
+    with open(HIST / filename, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -72,7 +73,7 @@ def main():
 
     plt.tight_layout()
 
-    out_png = HERE / "potencia_peak_por_anno_bs_vs_ob.png"
+    out_png = HIST / "potencia_peak_por_anno_bs_vs_ob.png"
     fig.savefig(out_png, dpi=300, bbox_inches="tight")
     print("ok ->", out_png)
 

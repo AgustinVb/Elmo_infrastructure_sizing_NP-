@@ -26,7 +26,7 @@ import json
 
 import pandas as pd
 
-from comparar_swap_ob_v4 import (CASOS as CASOS_V4, HERE, con_lp, lado_ob, lado_swap,
+from comparar_swap_ob_v4 import (CASOS as CASOS_V4, HERE, HIST, con_lp, lado_ob, lado_swap,
                                  reconciliar, redimensionado_ob)
 
 V5 = "output/Resultados_finales_tesis/Mina_modelo/casos_finales_v5/Produccion_base/zona_norte/05C"
@@ -51,7 +51,7 @@ def main():
     a = ap.parse_args()
     CASOS = {c: _caso(c, a.sub) for c in a.casos.split(",")}
 
-    v4 = pd.read_csv(HERE / "swap_vs_ob_v4_casos.csv", dtype={"caso": str}).set_index("caso")
+    v4 = pd.read_csv(HIST / "swap_vs_ob_v4_casos.csv", dtype={"caso": str}).set_index("caso")
     res, filas = {}, []
     for clave, caso in CASOS.items():
         c_s, inv_s, deg_s, ub_s, flota, aj, redim, params = lado_swap(caso["swap"])
@@ -98,9 +98,9 @@ def main():
             fila["{}_kw_ob".format(g)] = lo["G_kw"].get(g, 0.0)
         filas.append(fila)
 
-    (HERE / "swap_vs_ob_v5.json").write_text(
+    (HIST / "swap_vs_ob_v5.json").write_text(
         json.dumps(res, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    csv = HERE / "swap_vs_ob_v5_casos.csv"
+    csv = HIST / "swap_vs_ob_v5_casos.csv"
     pd.DataFrame(filas).to_csv(csv, index=False, float_format="%.2f")
     print("ok ->", csv)
 

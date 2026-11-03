@@ -133,7 +133,7 @@ def main():
         "total_cost": total_cost,
     }
 
-    out_path = Path(__file__).resolve().parent / "ob_960kW_costs.json"
+    out_path = Path(__file__).resolve().parent / "historico" / "ob_960kW_costs.json"
     out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"\nGuardado en {out_path}")

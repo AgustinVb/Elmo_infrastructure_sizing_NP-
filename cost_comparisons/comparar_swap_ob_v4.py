@@ -71,6 +71,7 @@ import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 REPO_ROOT = HERE.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(HERE))
@@ -547,17 +548,17 @@ def main():
                          "{}_kw_ob".format(g): lo["G_kw"].get(g, 0.0)})
         filas.append(fila)
 
-    (HERE / "swap_vs_ob_v4.json").write_text(
+    (HIST / "swap_vs_ob_v4.json").write_text(
         json.dumps(res, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    csv = HERE / "swap_vs_ob_v4_casos.csv"
+    csv = HIST / "swap_vs_ob_v4_casos.csv"
     pd.DataFrame(filas).to_csv(csv, index=False, float_format="%.2f")
     print("ok ->", csv)
     pares = {clave: res[next(k for k, c in CASOS.items() if c is par)] for clave, par in PARES.items()}
-    png = HERE / "costo_total_swap_vs_ob_v4.png"
+    png = HIST / "costo_total_swap_vs_ob_v4.png"
     figura_costos(pares, png)
     print("ok ->", png)
     for clave in pares:
-        png = HERE / "degradacion_swap_vs_ob_v4_{}.png".format(clave)
+        png = HIST / "degradacion_swap_vs_ob_v4_{}.png".format(clave)
         figura_degradacion(clave, pares[clave], png)
         print("ok ->", png)
 

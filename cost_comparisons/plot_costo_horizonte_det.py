@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 BAR_WIDTH = 0.45
 
 ARCHIVOS = ["det_tesis_p_red_costs.json", "det_tesis_gen_bat_costs.json"]
@@ -60,7 +61,7 @@ STACK_ORDER = [
 
 
 def main():
-    escenarios = [json.loads((HERE / f).read_text(encoding="utf-8")) for f in ARCHIVOS]
+    escenarios = [json.loads((HIST / f).read_text(encoding="utf-8")) for f in ARCHIVOS]
 
     series = {}
     for claves, _color, etiqueta, _tramo in STACK_ORDER:
@@ -159,7 +160,7 @@ def main():
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.09), ncol=3,
               frameon=True, framealpha=0.95, fancybox=False, edgecolor="gray")
 
-    fig.savefig(HERE / OUT_PNG, dpi=150, bbox_inches="tight")
+    fig.savefig(HIST / OUT_PNG, dpi=150, bbox_inches="tight")
     print("ok ->", HERE / OUT_PNG)
     for etiqueta, tot, vis in zip(ETIQUETAS, total_k, visible):
         print("  {:34s} {:>15,.2f} USD{}".format(

@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 DEFAULT_REPO = HERE.parent
 DEFAULT_RUN = "output/DCH_640kW_11anios"
 OUT_NAME = "dch_ob_640kW_costs.json"
@@ -170,7 +171,7 @@ def main():
         "total_cost": total_cost,
     }
 
-    out_path = HERE / OUT_NAME
+    out_path = HIST / OUT_NAME
     out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"\nGuardado en {out_path}")

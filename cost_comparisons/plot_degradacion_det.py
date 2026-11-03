@@ -32,6 +32,7 @@ from matplotlib.patches import Patch
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 ANIO_BASE = 2035
 
 # Paleta de carga_ob_multiaño.
@@ -53,7 +54,7 @@ ESCENARIOS = {
 
 def plot_escenario(clave):
     cfg = ESCENARIOS[clave]
-    d = json.loads((HERE / cfg["json"]).read_text(encoding="utf-8"))
+    d = json.loads((HIST / cfg["json"]).read_text(encoding="utf-8"))
 
     anios = [int(y) for y in d["anios"]]
     etiquetas = [str(ANIO_BASE + y - 1) for y in anios]
@@ -116,7 +117,7 @@ def plot_escenario(clave):
               ncol=len(handles), frameon=True, framealpha=0.95, fancybox=False,
               edgecolor="gray")
 
-    out = HERE / cfg["png"]
+    out = HIST / cfg["png"]
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print("ok -> {}  ({:.1f} -> {:.1f} kWh, {:.1%} retenido, reemplazos: {})".format(

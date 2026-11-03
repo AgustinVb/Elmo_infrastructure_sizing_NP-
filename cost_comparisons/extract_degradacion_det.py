@@ -27,6 +27,7 @@ sys.path.insert(0, str(REPO_ROOT))
 import consumer as c
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 BASE = REPO_ROOT / "output" / "Resultados_finales_tesis" / "DET"
 
 ESCENARIOS = {
@@ -126,7 +127,7 @@ def main():
             "retencion_final": d_end[anios[-1]] / b_max if b_max else 0.0,
         }
 
-        out = HERE / ("det_tesis_" + clave + "_degradation.json")
+        out = HIST / ("det_tesis_" + clave + "_degradation.json")
         out.write_text(json.dumps(resultado, indent=2, ensure_ascii=False), encoding="utf-8")
         print("[{}] ec.2/4/5 ok. {:.1f} -> {:.1f} kWh ({:.1%} retenido), piso {:.1f}, "
               "reemplazos: {} -> {}".format(

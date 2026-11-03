@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 
 BAR_WIDTH = 0.45
 
@@ -41,7 +42,7 @@ CASES = {
 
 
 def load_scenario(filename: str) -> dict:
-    path = HERE / filename
+    path = HIST / filename
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -227,7 +228,7 @@ def main():
 
     plt.tight_layout()
 
-    out_png = HERE / case["out_png"]
+    out_png = HIST / case["out_png"]
     fig.savefig(out_png, dpi=300, bbox_inches="tight")
     print("ok ->", out_png)
     for label, total in zip(group_labels, costo_total_k):

@@ -38,6 +38,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
@@ -191,7 +192,7 @@ def main():
                  "el modelo fija la suma de las fuentes, no el reparto.",
                  ha="center", fontsize=10.5, color="#444444")
         fig.tight_layout(rect=[0, 0.02, 1, 0.95])
-        out = HERE / "despacho_swap_vs_ob_v4_{}_y{}_d{}.png".format(clave, a.anio, a.dia)
+        out = HIST / "despacho_swap_vs_ob_v4_{}_y{}_d{}.png".format(clave, a.anio, a.dia)
         fig.savefig(out, dpi=170, bbox_inches="tight")
         plt.close(fig)
         print("ok ->", out)

@@ -35,6 +35,7 @@ sys.path.insert(0, str(REPO_ROOT))
 import consumer as c
 
 HERE = Path(__file__).resolve().parent
+HIST = HERE / "historico"   # salidas de las comparaciones anteriores
 BASE = REPO_ROOT / "output" / "Resultados_finales_tesis" / "DET"
 
 ESCENARIOS = {
@@ -192,7 +193,7 @@ def main():
             "instalado": instalado(root),
         })
 
-        out = HERE / ("det_tesis_" + clave + "_costs.json")
+        out = HIST / ("det_tesis_" + clave + "_costs.json")
         out.write_text(json.dumps(resultado, indent=2, ensure_ascii=False), encoding="utf-8")
         print("[{}] reconcilia: suma {:,.2f} contra Best objective {:,.2f} "
               "(desvio {:+.4f} USD) -> {}".format(clave, suma, obj, suma - obj, out.name))
