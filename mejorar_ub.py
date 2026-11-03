@@ -38,6 +38,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", default="data/Tesis_final/Mina_modelo/RED")
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
+    ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det",
+                    help="mismo esquema de detenciones que la corrida de Benders (DCH: dch)")
     ap.add_argument("--respaldo", default=None, help="incumbente_respaldo.pkl de Nested Benders")
     ap.add_argument("--solucion", default=None,
                     help="carpeta con los JSON de una solucion (alternativa a --respaldo)")
@@ -57,13 +60,14 @@ def main():
     t0 = time.time()
 
     ns = Namespace(data_folder=a.data_folder, model="elmo_data.xlsx",
-                   series="time_series.xlsx", consumption_model="wp1",
+                   series="time_series.xlsx", consumption_model=a.consumption_model,
                    wp2_consumption_json=None, n_years=a.n_years, days_per_year=4)
     _s, ms, ts = build_mine(ns)
     # Con --solucion, OptModel carga los JSON como warm start (las enteras sin
     # valor quedan en 0, igual que en benders_dias.py).
     om = OptModel(ms, ts, os.path.join(a.out, "_monolitico"), init_solution_folder=a.solucion,
-                  mccormick_degradation=True, free_charging=True, free_maintenance=True)
+                  mccormick_degradation=True, free_charging=True, free_maintenance=True,
+                  pause_scheme=a.pause_scheme)
     if a.respaldo:
         esperado = cargar_respaldo(om, ms, ts, a.respaldo)["best_cost"]
     else:

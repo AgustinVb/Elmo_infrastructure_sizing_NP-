@@ -14,7 +14,8 @@ class OptimizationModel(object):
                  mip_focus=3,
                  free_charging=False,
                  free_maintenance=False,
-                 t_origen=None):
+                 t_origen=None,
+                 pause_scheme='det'):
 
         t0 = time.time()
 
@@ -30,6 +31,7 @@ class OptimizationModel(object):
             mip_focus=mip_focus,
             free_charging=free_charging,
             free_maintenance=free_maintenance,
+            pause_scheme=pause_scheme,
         )
         print('formulation time:', time.time() - t0)
         if t_origen is not None:

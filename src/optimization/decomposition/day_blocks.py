@@ -153,6 +153,7 @@ def build_day_block(year_block, day, heritage=None, fixed_shared=None):
         mccormick_degradation=year_block.mccormick_degradation,
         free_charging=year_block.free_charging,
         free_maintenance=year_block.free_maintenance,
+        pause_scheme=year_block.pause_scheme,
         days_override=[day],
     )
     if heritage is not None:

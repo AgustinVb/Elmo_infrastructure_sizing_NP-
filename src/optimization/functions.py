@@ -261,9 +261,22 @@ class OptRules(object):
     def __init__(self, mine_system,  time_series, autonomous_mode=False,
                  mccormick_degradation=False, years_override=None,
                  exogenous_stations=None, free_charging=False,
-                 free_maintenance=False, days_override=None):
+                 free_maintenance=False, days_override=None, pause_scheme='det'):
         self.mine_system = mine_system
         self.time_series = time_series
+        # Esquema de detenciones (--pause_scheme, portado de carga_ob_multiaño).
+        # 'det' (default) = esquema DET (det_stop_all + ventanas DET). 'dch' =
+        # esquema DCH legacy, el mismo de la rama OB con --pause_scheme dch:
+        # mantenciones forzadas sin operar (maint_stop_all: Z = 1, asi que
+        # tampoco hay swap; los cargadores de la estacion siguen cargando
+        # baterias), colacion por grupos de LHD (meal_g1/meal_g2_no_travel) y
+        # entre turnos del calendario de Shifts. Con 'dch', --free_charging
+        # deja el swap libre fuera de mantencion (sin
+        # swap_only_meal_or_between_shifts) y --free_maintenance no aplica
+        # (solo toca las ventanas DET).
+        if pause_scheme not in ('det', 'dch'):
+            raise ValueError(f"pause_scheme debe ser 'det' o 'dch', no {pause_scheme!r}")
+        self.pause_scheme = pause_scheme
         # Swap liberado (--free_charging): reemplaza la restriccion de ventana
         # de swap (swap_only_meal_or_between_shifts_det, que solo deja hacer
         # swap en meal/road_clearing/between_shifts DET) por
@@ -2621,16 +2634,26 @@ class ConstraintRules(OptRules):
         # escenarios DET la hoja no deja ningun hueco y
         # time_intervals_between_shifts_set queda VACIO, asi que esta
         # restriccion no generaba ni una sola fila.
+        # Bajo DCH el entre turnos sale del calendario de Shifts (con dos turnos
+        # de 12 h la hoja si deja huecos), como en carga_ob_multiaño.
         model.between_shifts_elhd_swap = pyo.Constraint(
             model.slhd_set,
             model.years,
             model.days,
-            model.time_intervals_between_shifts_det_set,
+            (model.time_intervals_between_shifts_set if self.pause_scheme == 'dch'
+             else model.time_intervals_between_shifts_det_set),
             rule=self.between_shifts_elhd_swap,
         )
         # Regimen de swap (DET). Las tres variantes son excluyentes: se
         # registra UNA sola regla, nunca dos (ver no_swap_maintenance_det).
-        if self.free_charging and self.free_maintenance:
+        if self.pause_scheme == 'dch':
+            # DCH: swap libre salvo en mantencion (lo impide maint_stop_all);
+            # sin --free_charging, solo en colacion o entre turnos.
+            if not self.free_charging:
+                model.swap_only_meal_or_between_shifts = pyo.Constraint(
+                    model.ZSWAP_DAYS_TIME, rule=self.swap_only_meal_or_between_shifts
+                )
+        elif self.free_charging and self.free_maintenance:
             # Swap liberado + mantenimiento liberado: no queda ninguna ventana
             # con el swap prohibido, asi que no se registra ninguna regla.
             pass
@@ -2755,7 +2778,14 @@ class ConstraintRules(OptRules):
         # swap. Que durante maintenance el equipo quede ademas SIN swap lo
         # impone swap_only_meal_or_between_shifts_det, que deja Z_swap = 0
         # fuera de colacion/road_clearing/entre-turnos.
-        model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
+        if self.pause_scheme == 'dch':
+            # Pausas DCH (--pause_scheme dch): colacion por grupos sin viajar y
+            # mantencion con todos los LHD detenidos (Z = 1, sin swap).
+            model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)
+            model.meal_g2_no_travel_group2 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g2_no_travel_group2)
+            model.maintenance_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.maint_stop_all)
+        else:
+            model.det_stop_all = pyo.Constraint(model.slhd_set, model.years, model.days, model.time_intervals_set, rule=self.det_stop_all)
 
         # Pausas DCH (inactivas con el esquema DET)
         #model.meal_g1_no_travel_group1 = pyo.Constraint(model.lhd_set, model.years, model.days, model.time_intervals_set, rule=self.meal_g1_no_travel_group1)

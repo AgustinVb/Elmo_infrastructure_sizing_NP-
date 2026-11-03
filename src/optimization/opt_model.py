@@ -175,7 +175,7 @@ def make_gurobi_stop_callback(stop_path, poll_seconds=5.0):
 
 class OptModel(object):
 
-    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False):
+    def __init__(self, mine_system, time_series, output_folder, warm_start_folder=None, y_init_path=None, init_solution_folder=None, relax_integrality=False, autonomous_mode=False, mccormick_degradation=False, mip_focus=3, free_charging=False, free_maintenance=False, pause_scheme='det'):
         self.output_folder   = output_folder
         os.makedirs(self.output_folder, exist_ok=True)
         self.gurobi_log_path = os.path.join(self.output_folder, "gurobi.log")
@@ -200,6 +200,8 @@ class OptModel(object):
         # llegar tambien a OptSets: define si maintenance DET entra en det_stop.
         self.free_charging = free_charging
         self.free_maintenance = free_maintenance
+        # Esquema de detenciones (--pause_scheme): ver OptRules.__init__.
+        self.pause_scheme = pause_scheme
         # Gurobi BestObjStop: corta en cuanto el incumbente baja de este valor.
         # Lo usa el modo hibrido para no seguir buscando despues de alcanzar el
         # gap objetivo contra una cota EXTERNA (la de relajacion operacional),
@@ -212,7 +214,8 @@ class OptModel(object):
         self.best_bound = None
         # Gurobi ImproveStartTime (segundos). None = no se fija.
         self.improve_start_time = None
-        regimen = dict(free_charging=free_charging, free_maintenance=free_maintenance)
+        regimen = dict(free_charging=free_charging, free_maintenance=free_maintenance,
+                       pause_scheme=pause_scheme)
         self.set_builder      = OptSets(mine_system, time_series, autonomous_mode=autonomous_mode, **regimen)
         self.param_rules      = OptParameters(mine_system, time_series)
         self.bound_rules      = BoundRules(mine_system, time_series)

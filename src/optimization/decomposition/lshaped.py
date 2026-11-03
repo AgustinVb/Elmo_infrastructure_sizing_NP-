@@ -1160,7 +1160,7 @@ class LShaped:
         n_duras = 0
         while True:
             self.obj_bst = INF
-            m.optimize(self._callback)
+            m.optimize(lambda mod, where: self._callback(mod, where))  # gurobipy 10 no acepta metodos
             if not m.SolCount:
                 break
             self._vigilar_incumbente(m.ObjVal)

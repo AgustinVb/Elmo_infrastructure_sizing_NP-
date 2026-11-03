@@ -183,6 +183,7 @@ def run_decomposed(args, mine_system, time_series, hybrid=False):
         warm_start_cuts=args.warm_start_cuts,
         free_charging=args.free_charging,
         free_maintenance=args.free_maintenance,
+        pause_scheme=args.pause_scheme,
         operational_bound=args.operational_bound,
         op_bound_timelimit=args.op_bound_timelimit,
         corte_cargas_lhd=args.corte_cargas_lhd,
@@ -426,6 +427,16 @@ def main():
              'fuera de toda regla de swap, lo que lo deja detenido puro. '
              'Combinable con --free_charging: juntos no dejan ninguna ventana '
              'con el swap prohibido. Ver OptSets.build_sets en functions.py.'
+    )
+    parser.add_argument(
+        '--pause_scheme', choices=['det', 'dch'], default='det',
+        help='[monolithic|decomposed|hybrid] esquema de detenciones (portado de '
+             'carga_ob_multiaño). det (default): esquema DET (det_stop_all, ventanas '
+             'DET). dch: esquema DCH legacy: mantenciones con los LHD detenidos '
+             '(sin operar ni swap; los cargadores de la estacion siguen cargando), '
+             'colacion por grupos de LHD y entre turnos de la hoja Shifts. Con dch, '
+             '--free_charging deja el swap libre fuera de mantencion y '
+             '--free_maintenance no aplica.'
     )
     parser.add_argument(
         '--operational_bound',
@@ -874,6 +885,7 @@ def main():
         mip_focus=args.mip_focus,
         free_charging=args.free_charging,
         free_maintenance=args.free_maintenance,
+        pause_scheme=args.pause_scheme,
         **({'timelimit': args.mono_timelimit} if args.mono_timelimit else {}),
         t_origen=(_T_INICIO if args.mono_reloj else None),
     )
