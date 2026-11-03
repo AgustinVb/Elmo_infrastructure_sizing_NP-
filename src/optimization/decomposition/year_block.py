@@ -63,7 +63,7 @@ class YearBlockBuilder(object):
     def __init__(self, mine_system, time_series, year, is_last_year,
                  exogenous_stations, autonomous_mode=False,
                  mccormick_degradation=True, free_charging=False,
-                 free_maintenance=False, days_override=None):
+                 free_maintenance=False, days_override=None, pause_scheme='det'):
         """
         :param year: año de este bloque (debe pertenecer a time_series.years).
         :param is_last_year: True si `year` es el ultimo año del horizonte
@@ -109,11 +109,13 @@ class YearBlockBuilder(object):
         self.mccormick_degradation = mccormick_degradation
         self.free_charging = free_charging
         self.free_maintenance = free_maintenance
+        self.pause_scheme = pause_scheme
         # Regimenes de swap/mantenimiento: tienen que valer IGUAL en todos los
         # bloques y en el monolitico de reporte, si no la descomposicion estaria
         # resolviendo un problema distinto del que reporta.
         regimen = dict(free_charging=free_charging,
-                       free_maintenance=free_maintenance)
+                       free_maintenance=free_maintenance,
+                       pause_scheme=pause_scheme)
 
         self.set_builder = OptSets(
             mine_system, time_series, autonomous_mode=autonomous_mode,

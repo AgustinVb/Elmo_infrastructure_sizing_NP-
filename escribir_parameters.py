@@ -12,8 +12,11 @@ RED_GEN_BESS sale identico al que escribio la corrida v6.
     python consumer.py output/Resultados_finales_tesis/Mina_modelo/mejorar_ub_red_gen/solucion
 
 Acepta varios pares <data_folder> <carpeta>. Si la carpeta ya tiene
-parameters.json no lo toca.
+parameters.json no lo toca. Opciones (antes de los pares) para escenarios que no
+son la mina modelo, p. ej. DCH: --n_years 11 --consumption_model wp2
+--pause_scheme dch.
 """
+import argparse
 import os
 import sys
 import tempfile
@@ -28,7 +31,12 @@ from src.io.printer import Printer                               # noqa: E402
 from src.optimization.opt_model import OptModel                  # noqa: E402
 
 
-def main(args):
+def main(argv):
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
+    ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det")
+    a, args = ap.parse_known_args(argv)
     if not args or len(args) % 2:
         print(__doc__)
         return 1
@@ -39,11 +47,12 @@ def main(args):
             continue
         # Mismo armado que mejorar_ub.py y certificar_inversiones.py.
         ns = Namespace(data_folder=data, model="elmo_data.xlsx", series="time_series.xlsx",
-                       consumption_model="wp1", wp2_consumption_json=None, n_years=10,
+                       consumption_model=a.consumption_model, wp2_consumption_json=None, n_years=a.n_years,
                        days_per_year=4)
         _s, ms, ts = build_mine(ns)
         om = OptModel(ms, ts, os.path.join(tempfile.gettempdir(), "escribir_parameters"),
-                      mccormick_degradation=True, free_charging=True, free_maintenance=True)
+                      mccormick_degradation=True, free_charging=True, free_maintenance=True,
+                      pause_scheme=a.pause_scheme)
         Printer(om, carpeta, ts, ms).write_parameters_json()
         print(f"escrito {destino} ({os.path.getsize(destino) / 1e6:.1f} MB) desde {data}",
               flush=True)

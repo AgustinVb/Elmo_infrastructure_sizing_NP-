@@ -78,6 +78,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", default="data/Tesis_final/Mina_modelo/RED")
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
+    ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det",
+                    help="mismo esquema de detenciones que la corrida de Benders (DCH: dch)")
     ap.add_argument("--solucion", required=True, help="carpeta con los JSON del incumbente")
     ap.add_argument("--ub_esperado", type=float, required=True)
     ap.add_argument("--out", required=True)
@@ -95,11 +98,12 @@ def main():
     t0 = time.time()
 
     ns = Namespace(data_folder=a.data_folder, model="elmo_data.xlsx",
-                   series="time_series.xlsx", consumption_model="wp1",
+                   series="time_series.xlsx", consumption_model=a.consumption_model,
                    wp2_consumption_json=None, n_years=a.n_years, days_per_year=4)
     _s, ms, ts = build_mine(ns)
     om = OptModel(ms, ts, os.path.join(a.out, "_monolitico"), init_solution_folder=a.solucion,
-                  mccormick_degradation=True, free_charging=True, free_maintenance=True)
+                  mccormick_degradation=True, free_charging=True, free_maintenance=True,
+                  pause_scheme=a.pause_scheme)
     info, por_var = gb.export(om.model, os.path.join(a.out, "_mps"), mode="year_day", split=False)
     capacidad = {k: int(n) for k, n in (p.split("=") for p in a.capacidad.split(",") if p)}
     bd = BendersDias(info, om.model, por_var, jobs=a.jobs, alpha=a.alpha,

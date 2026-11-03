@@ -30,7 +30,8 @@ _worker_state = {}
 
 
 def _init_year_block_worker(mine_system, time_series, autonomous_mode,
-                            free_charging=False, free_maintenance=False):
+                            free_charging=False, free_maintenance=False,
+                            pause_scheme='det'):
     sys.setrecursionlimit(_RECURSION_LIMIT_FOR_DILL)
     _worker_state["mine_system"] = mine_system
     _worker_state["time_series"] = time_series
@@ -40,6 +41,7 @@ def _init_year_block_worker(mine_system, time_series, autonomous_mode,
     # y los secuenciales con el liberado.
     _worker_state["free_charging"] = free_charging
     _worker_state["free_maintenance"] = free_maintenance
+    _worker_state["pause_scheme"] = pause_scheme
 
 
 def _build_year_block_task(payload):
@@ -50,6 +52,7 @@ def _build_year_block_task(payload):
         autonomous_mode=_worker_state["autonomous_mode"],
         free_charging=_worker_state.get("free_charging", False),
         free_maintenance=_worker_state.get("free_maintenance", False),
+        pause_scheme=_worker_state.get("pause_scheme", "det"),
     )
 
 
@@ -81,7 +84,7 @@ class NestedBendersSolver(object):
                  capacity_presolve="peak", cut_type="benders",
                  strengthened_timelimit=300, warm_start_cuts=False,
                  dw_cuts=False, dw_timelimit=300.0, cg_lb=False, cg_block_timelimit=600.0,
-                 free_charging=False, free_maintenance=False,
+                 free_charging=False, free_maintenance=False, pause_scheme='det',
                  operational_bound=False, op_bound_timelimit=None,
                  output_folder=None, day_warm_start="off",
                  day_solver_overrides=None, lb_inicial=None,
@@ -166,6 +169,7 @@ class NestedBendersSolver(object):
         # self al construirse, tanto por la via secuencial como por el Pool.
         self.free_charging = free_charging
         self.free_maintenance = free_maintenance
+        self.pause_scheme = pause_scheme
 
         self.blocks = self._build_blocks(block_build_jobs)
 
@@ -316,6 +320,7 @@ class NestedBendersSolver(object):
                     autonomous_mode=self.autonomous_mode,
                     free_charging=self.free_charging,
                     free_maintenance=self.free_maintenance,
+                    pause_scheme=self.pause_scheme,
                 )
                 for year, is_last_year, exogenous_stations in tasks
             ]
@@ -333,7 +338,8 @@ class NestedBendersSolver(object):
         with multiprocess.Pool(
             processes=n_jobs, initializer=_init_year_block_worker,
             initargs=(self.mine_system, self.time_series, self.autonomous_mode,
-                      self.free_charging, self.free_maintenance),
+                      self.free_charging, self.free_maintenance,
+                      self.pause_scheme),
         ) as pool:
             return pool.map(_build_year_block_task, tasks)
 
@@ -535,7 +541,8 @@ class NestedBendersSolver(object):
         # calculada sobre un problema distinto del que la descomposicion
         # optimiza y podria no ser valida.
         regimen = dict(free_charging=self.free_charging,
-                       free_maintenance=self.free_maintenance)
+                       free_maintenance=self.free_maintenance,
+                       pause_scheme=self.pause_scheme)
 
         model = pyo.ConcreteModel(name=name)
         OptSets(self.mine_system, self.time_series,
@@ -848,7 +855,8 @@ class NestedBendersSolver(object):
         om = OptModel(self.mine_system, self.time_series, destino,
                       init_solution_folder=carpeta, autonomous_mode=self.autonomous_mode,
                       mccormick_degradation=True, free_charging=self.free_charging,
-                      free_maintenance=self.free_maintenance)
+                      free_maintenance=self.free_maintenance,
+                      pause_scheme=self.pause_scheme)
         m = om.model
         usadas = set()
         for c in m.component_data_objects(pyo.Constraint, active=True):
@@ -1013,6 +1021,7 @@ class NestedBendersSolver(object):
             # start encima. Con otro regimen el arranque podria ser infactible.
             free_charging=self.free_charging,
             free_maintenance=self.free_maintenance,
+            pause_scheme=self.pause_scheme,
         )
         model = report.model
 
@@ -1522,14 +1531,44 @@ class NestedBendersSolver(object):
         import pickle
         with open(ruta, "rb") as f:
             r = pickle.load(f)
-        self.tray_op = {int(y): v for y, v in r["tray_op"].items()}
-        self.R_op = r.get("R_op")
+        if "vars" in r:
+            # El de lshaped.py --solo_fase1: {variable: {indice: valor}} del
+            # maestro de la Fase 1, al formato de extract_state.
+            self.tray_op, self.R_op = self._tray_desde_valores(r["vars"])
+        else:
+            self.tray_op = {int(y): v for y, v in r["tray_op"].items()}
+            self.R_op = r.get("R_op")
         if (self.stabilization and self.stab_center_mode == "operational"
                 and self.stab_center is None):
             self.stab_center = self.tray_op
         if verbose:
             print(f"[NestedBenders] trayectoria de la cota operacional de {ruta} "
                   f"(cota {r.get('lb_operational') or float('nan'):,.2f}, no entra a la LB)")
+
+    def _tray_desde_valores(self, valores):
+        """(trayectoria, R) desde {variable: valor | {indice (tupla): valor}}
+        (lshaped.py --solo_fase1), leidos como si fueran un monolitico resuelto
+        con _trayectoria_desde_monolitico."""
+        from types import SimpleNamespace
+
+        class _Var:
+            def __init__(self, nombre, d):
+                self.nombre, self.d = nombre, d
+
+            def __getitem__(self, k):
+                plano = []
+                for p in (k if isinstance(k, tuple) else (k,)):
+                    plano.extend(p if isinstance(p, tuple) else (p,))
+                try:
+                    return self.d[tuple(plano)]
+                except KeyError:
+                    raise KeyError(f"{self.nombre}{list(plano)} no esta en tray_op.pkl") from None
+
+        mono = SimpleNamespace(**{n: (_Var(n, v) if isinstance(v, dict) else v)
+                                  for n, v in valores.items()})
+        tray = self._trayectoria_desde_monolitico(mono)
+        R = valores.get("R") or {}
+        return tray, {int(k[-1]): int(round(v)) for k, v in R.items()}
 
     def _energia_por_año(self):
         """({año: kWh}, fuente) de energia consumida para la DP: la del

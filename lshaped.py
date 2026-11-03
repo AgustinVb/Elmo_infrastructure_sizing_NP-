@@ -34,10 +34,45 @@ from src.optimization.decomposition.lshaped import LShaped               # noqa:
 from src.optimization.opt_model import OptModel                          # noqa: E402
 
 
+def guardar_tray_op(bd, por_var, lb, out):
+    """<out>/tray_op.pkl con la inversion del maestro entero al cerrar la Fase 1
+    (el optimo de la relajacion operacional, salvo la tolerancia de la etapa 2),
+    como {variable: {indice: valor}}; NestedBenders._cargar_tray_op la pasa al
+    formato de extract_state con los state_links de sus bloques."""
+    import pickle
+    P = bd.P
+    cota = bd.maestro.resolver(entero=True)
+    xm, _e, _th = bd.maestro.punto()
+    valores = {}
+    for j in P.maestro_vars:
+        vd = por_var.get(P.nombre[j])
+        if vd is None:
+            continue
+        v = float(round(xm[j])) if not vd.is_continuous() else float(xm[j])
+        nombre, idx = vd.parent_component().name, vd.index()
+        if idx is None:
+            valores[nombre] = v
+        else:
+            valores.setdefault(nombre, {})[idx if isinstance(idx, tuple) else (idx,)] = v
+    ruta = os.path.join(out, "tray_op.pkl")
+    with open(ruta, "wb") as f:
+        pickle.dump({"vars": valores, "lb_operational": lb}, f, protocol=pickle.HIGHEST_PROTOCOL)
+    resumen = {}
+    for fam in ("N_batteries", "N_bays", "N_chargers", "R", "n_ssee_k"):
+        v = valores.get(fam)
+        if isinstance(v, dict):
+            resumen[fam] = {"_".join(str(i) for i in k): x for k, x in sorted(v.items(), key=str) if x}
+    print(f"[LS] inversion del maestro entero (cota {cota:,.2f}) en {ruta}: "
+          + "; ".join(f"{fam} {d}" for fam, d in resumen.items()), flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", required=True)
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
+    ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det",
+                    help="esquema de detenciones (DCH: dch, con el swap libre fuera de mantencion)")
     ap.add_argument("--solucion", default=None,
                     help="carpeta con los JSON de un incumbente (opcional: sin el, parte de cero)")
     ap.add_argument("--ub_esperado", type=float, default=None)
@@ -71,16 +106,21 @@ def main():
     ap.add_argument("--p_ssee_max", type=float, default=1500.0, help="tope de la subestacion (kW)")
     ap.add_argument("--capacidad", default="station_1=1",
                     help="cotas del presolve de capacidad (n_ssee_k >= n), k=n por coma")
+    ap.add_argument("--solo_fase1", action="store_true",
+                    help="solo la Fase 1, sin evaluar UB: es la cota por relajacion operacional "
+                         "(inversion entera, dias LP). Escribe <out>/tray_op.pkl con la inversion "
+                         "entera final de la etapa 2, para setup.py --tray_op_archivo")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t0 = time.time()
 
     ns = Namespace(data_folder=a.data_folder, model="elmo_data.xlsx",
-                   series="time_series.xlsx", consumption_model="wp1",
+                   series="time_series.xlsx", consumption_model=a.consumption_model,
                    wp2_consumption_json=None, n_years=a.n_years, days_per_year=4)
     _s, ms, ts = build_mine(ns)
     om = OptModel(ms, ts, os.path.join(a.out, "_monolitico"), init_solution_folder=a.solucion,
-                  mccormick_degradation=True, free_charging=True, free_maintenance=True)
+                  mccormick_degradation=True, free_charging=True, free_maintenance=True,
+                  pause_scheme=a.pause_scheme)
     info, por_var = gb.export(om.model, os.path.join(a.out, "_mps"), mode="year_day", split=False)
     capacidad = {k: int(n) for k, n in (p.split("=") for p in a.capacidad.split(",") if p)}
     bd = BendersDias(info, om.model, por_var, M=a.M, jobs=a.jobs, alpha=a.alpha,
@@ -141,14 +181,27 @@ def main():
         bd.maestro.resolver(entero=False)
         completo0, e0, _ = bd.maestro.punto()
         print("[LS] sin incumbente: la Fase 1 arranca en el maestro relajado", flush=True)
+    # La DP de la UB inicial (ub_inicial_dp) es de UNA estacion: con varias (DCH,
+    # 3 estaciones) sus mapas {año: columna} de N_batteries/N_bays/N_chargers se
+    # quedarian con una sola. Sin incumbente, la UB sale entonces de evaluar las
+    # inversiones del maestro entero en la etapa 2 (dias MILP + pulido).
+    estaciones = {n.rsplit("_", 1)[0] for n in P.nombre if n.startswith("N_batteries(")}
+    usar_dp = not a.solucion and len(estaciones) == 1 and not a.solo_fase1
+    ub_etapa2 = not a.solucion and not usar_dp and not a.solo_fase1
+    if ub_etapa2:
+        print(f"[LS] {len(estaciones)} estaciones: sin la DP de UB inicial (es de una estacion); "
+              "la UB sale de las inversiones de la etapa 2", flush=True)
     it1, it2 = (int(x) for x in a.max_it.split(","))
     L = bd.correr(completo0, e0, max_it=(it1, it2, 0), tol=(1e-3, 1e-4), etapas=(1, 2),
-                  ub_en_etapa2=False)
+                  ub_en_etapa2=ub_etapa2, ub_timelimit=a.ub_timelimit_inicial, ub_gap=a.ub_gap)
     lb1 = L.get(2)
     print(f"[LS] Fase 1 ({time.time() - t0:.0f}s): LB {lb1:,.2f}, {bd.maestro.n_cortes} cortes",
           flush=True)
+    if a.solo_fase1:
+        guardar_tray_op(bd, por_var, lb1, a.out)
+        return 0
     # UB inicial con la DP (seccion 5.1), salvo que ya haya incumbente.
-    if not a.solucion:
+    if usar_dp:
         ls.ub_inicial_dp(ms, ts)
     if bd.UB < 1e20:
         print(f"[LS] UB inicial {bd.UB:,.2f} ({time.time() - t0:.0f}s); gap con la LB de la Fase 1 "

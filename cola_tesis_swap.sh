@@ -47,7 +47,13 @@ CORTE=${CORTE:-1}
 # trayectoria de la cota operacional reparada con la DP) y sigue con mejorar_ub y
 # el certificado, el esquema del caso 2 de la v4 (cola_swap_v4_algoritmo.md, §8).
 GAP=0.01; ITER=${ITER:-50}; SIN_MEJORA=${SIN_MEJORA:-4}
-FLAGS="--free_charging --free_maintenance"
+FLAGS=${FLAGS:---free_charging --free_maintenance}
+# REG: opciones de escenario que reciben TODOS los pasos (setup, corte de cargas,
+# mejorar_ub, escribir_parameters, certificado). Por defecto la mina modelo (10 años,
+# wp1, pausas DET); DCH: REG="--n_years 11 --consumption_model wp2 --pause_scheme dch"
+# (ver cola_dch_swap_v4.sh). ANIOS_1/ANIOS_2: años de las pasadas 1 y 2 de mejorar_ub.
+REG=${REG:---n_years 10}
+ANIOS_1=${ANIOS_1:-1,2,3,4,5,6,7,8,9,10}; ANIOS_2=${ANIOS_2:-3,4,5,6,7,8,9}
 # Estabilizacion del forward y flags extra del Benders (2026-10-26, ver
 # cola_swap_v4_algoritmo.md). Por defecto, lo de siempre (caja +-1 centrada en la
 # cota operacional). ESTAB="" corre SIN estabilizacion; por ejemplo
@@ -58,6 +64,13 @@ BENDERS_EXTRA=${BENDERS_EXTRA:-}
 # SUB=<carpeta>: los resultados de cada caso van en $V/<caso>/<carpeta> (p. ej.
 # SUB=dp_it0, como el caso 2) sin pisar los de corridas anteriores.
 SUB=${SUB:-}
+# RELOP=1: la cota por relajacion operacional sale de la Fase 1 del L-shaped
+# (lshaped.py --solo_fase1: maestro entero + dias LP, en $R/relop) y no del
+# monolitico de --operational_bound, que en DCH swap (3 estaciones) se quedo 6,9 h
+# en los cortes de la raiz sin solucion entera. Su inversion entra con
+# --tray_op_archivo (centro, --evaluar_trayectoria_op, --reparar_dp) y su LB con
+# --lb_inicial.
+RELOP=${RELOP:-0}
 # PASADA2=umbral: la pasada 2 de mejorar_ub (años 3-9, 900 s) solo corre si tras la
 # pasada 1 el gap contra la cota operacional queda a <= MARGEN_P2 puntos SOBRE alguno
 # de UMBRALES_P2 (%), o sea si puede cruzarlo. En los casos v4 (2026-10-27) la pasada
@@ -213,17 +226,31 @@ for n in $SEL; do
     fi
     EXTRA=""
     if [ $CORTE = 1 ]; then
-      [ -f $R/corte_cargas_lhd.json ] || $PY -u corte_cargas_op.py --data_folder $D --out $R/corte_cargas_lhd.json \
+      [ -f $R/corte_cargas_lhd.json ] || $PY -u corte_cargas_op.py --data_folder $D $REG --out $R/corte_cargas_lhd.json \
           --tmp $R/_corte_cargas_op > $R/corte_cargas_op.log 2>&1
       if [ -f $R/corte_cargas_lhd.json ]; then EXTRA="--corte_cargas_lhd $R/corte_cargas_lhd.json"; rm -rf $R/_corte_cargas_op
       else msg "$TAG" "corte_cargas_op fallo (ver corte_cargas_op.log): Benders sin el corte"; fi
     fi
-    msg "$TAG" "Nested Benders (max $H h, gap $GAP, $([ $ITER = 0 ] && echo 'solo la iteracion 0' || echo "corte tras $SIN_MEJORA iteraciones sin mejora")${EXTRA:+, corte de cargas}; estabilizacion: ${ESTAB:-ninguna}${BENDERS_EXTRA:+; $BENDERS_EXTRA})"
+    OPB="--operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400"
+    if [ $RELOP = 1 ]; then
+      if [ ! -f $R/relop/tray_op.pkl ]; then
+        msg "$TAG" "relajacion operacional con el L-shaped (Fase 1, sin UB)"
+        $PY -u lshaped.py --data_folder $D $REG --jobs 4 --max_it 8,60 --solo_fase1 \
+            --out $R/relop > $R/relop.log 2>&1
+      fi
+      if [ ! -f $R/relop/tray_op.pkl ]; then
+        msg "$TAG" "la Fase 1 del L-shaped no dejo tray_op.pkl (ver relop.log): se salta"; continue 2
+      fi
+      LBOP0=$($PY -c "import pickle; print(pickle.load(open('$R/relop/tray_op.pkl', 'rb'))['lb_operational'])" | tr -d '\r')
+      OPB="--tray_op_archivo $R/relop/tray_op.pkl --lb_inicial $LBOP0"
+      msg "$TAG" "relajacion operacional: LB $LBOP0 ($(grep -a 'inversion del maestro' $R/relop.log | tail -1 | cut -c1-200))"
+    fi
+    msg "$TAG" "Nested Benders (max $H h, gap $GAP,$([ $ITER = 0 ] && echo 'solo la iteracion 0' || echo "corte tras $SIN_MEJORA iteraciones sin mejora")${EXTRA:+, corte de cargas}; estabilizacion: ${ESTAB:-ninguna}${BENDERS_EXTRA:+; $BENDERS_EXTRA})"
     mkdir -p $B; rm -f $B/STOP
     vigia $R/benders.log $B/STOP "$TAG" & VP=$!
     $PY -u setup.py --data_folder $D --solver gurobi --days_per_year 4 $FLAGS \
-        --block_build_jobs 1 --output_folder $B --mode decomposed --n_years 10 --gap_tol $GAP --max_iter $ITER \
-        --max_hours $H --operational_bound --op_bound_gap 1e-4 --op_bound_timelimit 5400 \
+        --block_build_jobs 1 --output_folder $B --mode decomposed $REG --gap_tol $GAP --max_iter $ITER \
+        --max_hours $H $OPB \
         --no_monolithic_lp_bound $ESTAB \
         --cut_type strengthened --strengthened_timelimit 300 --block_mip_focus 1 --solve_timelimit 120 \
         --day_warm_start always --day_timelimit 120 --day_gap 0.05 --day_jobs 4 \
@@ -241,9 +268,9 @@ for n in $SEL; do
 
   # --- 2. mejorar_ub ----------------------------------------------------------
   if [ ! -f $R/mejorar_ub_1/resumen.json ]; then
-    msg "$TAG" "mejorar_ub pasada 1 (años 1-10, 600 s)"
-    $PY -u mejorar_ub.py --data_folder $D --respaldo $B/incumbente_respaldo.pkl --ub_esperado $UB0 \
-        --anios 1,2,3,4,5,6,7,8,9,10 --timelimit 600 --jobs 4 --out $R/mejorar_ub_1 2>&1 | tee $R/mejorar_ub_1.log
+    msg "$TAG" "mejorar_ub pasada 1 (años $ANIOS_1, 600 s)"
+    $PY -u mejorar_ub.py --data_folder $D $REG --respaldo $B/incumbente_respaldo.pkl --ub_esperado $UB0 \
+        --anios $ANIOS_1 --timelimit 600 --jobs 4 --out $R/mejorar_ub_1 2>&1 | tee $R/mejorar_ub_1.log
   fi
   read -r SOL UB < <(ub_resumen $R/mejorar_ub_1/resumen.json)
   [ "$SOL" = "-" ] && { SOL=$B; UB=$UB0; }     # sin mejora: los JSON de Benders
@@ -258,14 +285,14 @@ for n in $SEL; do
     fi
   fi
   if [ $P2 = 1 ] && [ ! -f $R/mejorar_ub_2/resumen.json ]; then
-    msg "$TAG" "mejorar_ub pasada 2 (años 3-9, 900 s)"
-    $PY -u mejorar_ub.py --data_folder $D --solucion $SOL --ub_esperado $UB --anios 3,4,5,6,7,8,9 \
+    msg "$TAG" "mejorar_ub pasada 2 (años $ANIOS_2, 900 s)"
+    $PY -u mejorar_ub.py --data_folder $D $REG --solucion $SOL --ub_esperado $UB --anios $ANIOS_2 \
         --timelimit 900 --jobs 4 --out $R/mejorar_ub_2 2>&1 | tee $R/mejorar_ub_2.log
   fi
   read -r SOL2 UB2 < <(ub_resumen $R/mejorar_ub_2/resumen.json)
   if [ "$SOL2" != "-" ]; then SOL=$SOL2; UB=$UB2; fi
   msg "$TAG" "tras pasada 2: UB $UB ($SOL)"
-  $PY -u escribir_parameters.py $D $SOL 2>&1 | tee $R/consumer.log
+  $PY -u escribir_parameters.py $REG $D $SOL 2>&1 | tee $R/consumer.log
   $PY consumer.py $SOL 2>&1 | tee -a $R/consumer.log
 
   # --- 3. certificado ---------------------------------------------------------
@@ -274,7 +301,7 @@ for n in $SEL; do
   CAP=$(grep -ao 'cotas impuestas al anio 1: station_1: >= [0-9]*' $R/benders.log 2>/dev/null | tail -1 | grep -o '[0-9]*$')
   CAP=${CAP:-1}
   msg "$TAG" "certificar (UB $UB, gap_objetivo $GO, capacidad station_1>=$CAP)"
-  $PY -u certificar_inversiones.py --data_folder $D --solucion $SOL --ub_esperado $UB --gap_objetivo $GO \
+  $PY -u certificar_inversiones.py --data_folder $D $REG --solucion $SOL --ub_esperado $UB --gap_objetivo $GO \
       --capacidad station_1=$CAP --max_pool ${MAX_POOL:-5000} --jobs 4 --out $R/certificado 2>&1 | tee $R/certificado.log
   msg "$TAG" "FIN: $(certificado $R/certificado.log)"
   resumen_final > /dev/null
