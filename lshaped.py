@@ -70,6 +70,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", required=True)
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--days_per_year", type=int, choices=[1, 2, 4], default=4,
+                    help="dias representativos por año (setup.py): 4 = 15, 105, 196, 288; 2 = 15 y 196 (sin y con cobro de punta)")
     ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
     ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det",
                     help="esquema de detenciones (DCH: dch, con el swap libre fuera de mantencion)")
@@ -104,8 +106,19 @@ def main():
     ap.add_argument("--hilos_maestro", type=int, default=8)
     ap.add_argument("--cpu", type=int, default=None, help="nucleos para los dias (por defecto todos)")
     ap.add_argument("--p_ssee_max", type=float, default=1500.0, help="tope de la subestacion (kW)")
+    ap.add_argument("--por_estacion", action="store_true",
+                    help="macrobloques: cada (año, dia) partido en un bloque por estacion y uno de "
+                         "red, acoplados en el maestro por la potencia de cada intervalo y la "
+                         "produccion del dia (BendersDias, Particion)")
     ap.add_argument("--capacidad", default="station_1=1",
                     help="cotas del presolve de capacidad (n_ssee_k >= n), k=n por coma")
+    ap.add_argument("--cortes_capacidad", default=None,
+                    help="JSON de cortes_capacidad.py: N[k,y] >= n minimo probado por estacion "
+                         "y año (cota inferior de la columna del maestro, valida en todo diseño)")
+    ap.add_argument("--corte_produccion", default=None,
+                    help="JSON de cortes_capacidad.py --produccion: meta del dia <= produccion "
+                         "maxima de las estaciones segun sus baterias y b_bar "
+                         "(LShaped.agregar_corte_produccion)")
     ap.add_argument("--solo_fase1", action="store_true",
                     help="solo la Fase 1, sin evaluar UB: es la cota por relajacion operacional "
                          "(inversion entera, dias LP). Escribe <out>/tray_op.pkl con la inversion "
@@ -116,7 +129,7 @@ def main():
 
     ns = Namespace(data_folder=a.data_folder, model="elmo_data.xlsx",
                    series="time_series.xlsx", consumption_model=a.consumption_model,
-                   wp2_consumption_json=None, n_years=a.n_years, days_per_year=4)
+                   wp2_consumption_json=None, n_years=a.n_years, days_per_year=a.days_per_year)
     _s, ms, ts = build_mine(ns)
     om = OptModel(ms, ts, os.path.join(a.out, "_monolitico"), init_solution_folder=a.solucion,
                   mccormick_degradation=True, free_charging=True, free_maintenance=True,
@@ -124,9 +137,24 @@ def main():
     info, por_var = gb.export(om.model, os.path.join(a.out, "_mps"), mode="year_day", split=False)
     capacidad = {k: int(n) for k, n in (p.split("=") for p in a.capacidad.split(",") if p)}
     bd = BendersDias(info, om.model, por_var, M=a.M, jobs=a.jobs, alpha=a.alpha,
-                     cotas_capacidad=capacidad, out=a.out, cpu=a.cpu)
+                     cotas_capacidad=capacidad, out=a.out, cpu=a.cpu, por_estacion=a.por_estacion)
     P = bd.P
     costo0 = float("inf")
+    cortes_cap = {}
+    if a.cortes_capacidad:
+        with open(a.cortes_capacidad, encoding="utf-8") as f:
+            cortes_cap = json.load(f)["cortes"]
+        n_sube = 0
+        for j in P.maestro_vars:
+            n_min = cortes_cap.get(P.nombre[j])
+            if n_min is not None and n_min > P.lb[j]:
+                # Tambien en P.lb: las copias de los dias toman sus rangos de ahi.
+                P.lb[j] = n_min
+                bd.maestro.x[bd.maestro.pos[int(j)]].LB = n_min
+                n_sube += 1
+        bd.maestro.m.update()
+        print(f"[LS] cortes de capacidad de {a.cortes_capacidad}: {n_sube} cotas inferiores "
+              "del maestro suben", flush=True)
 
     def escribir(vec):
         """Solucion en JSON (usable como --solucion)."""
@@ -144,7 +172,18 @@ def main():
             vd = por_var.get(n)
             v = value(vd, exception=False) if vd is not None else None
             vec0[j] = 0.0 if v is None else v
+        viola = [f"{n}={vec0[j]:g}<{cortes_cap[n]}" for j, n in enumerate(P.nombre)
+                 if n in cortes_cap and vec0[j] < cortes_cap[n] - 1e-6]
+        if viola:
+            # Una solucion factible que viola un corte prueba que el corte es invalido.
+            print(f"[LS] ABORTA: la incumbente viola cortes de capacidad: {viola}")
+            return 1
         costo0, completo0, e0 = bd.cargar_incumbente(vec0)
+        if P.por_estacion:
+            # La produccion se reparte entre estaciones (daily_extraction es de toda la
+            # mina): en la UB cada estacion produce al menos lo de la incumbente, que es
+            # alcanzable; el reparto natural (meta de sus nodos) puede no serlo.
+            P.piso = {k: float(P.energia(completo0, k)) for k in P.piso_natural}
         desvio = abs(costo0 - a.ub_esperado) / abs(a.ub_esperado)
         print(f"[LS] incumbente pulido {costo0:,.2f} (esperado {a.ub_esperado:,.2f}, desvio {desvio:.2e})",
               flush=True)
@@ -176,6 +215,11 @@ def main():
               f"{time.time() - t0:.0f}s)", flush=True)
         return 0
     ls.agregar_corte_cargas()
+    if a.corte_produccion:
+        viola = ls.agregar_corte_produccion(a.corte_produccion, completo0 if a.solucion else None)
+        if viola:
+            print(f"[LS] ABORTA: la incumbente viola el corte de produccion: {viola}")
+            return 1
 
     # Fase 1. Sin incumbente arranca en el optimo del maestro relajado (con la
     # cota de theta de cada dia): es un punto factible del maestro.

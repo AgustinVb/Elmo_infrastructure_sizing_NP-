@@ -34,6 +34,8 @@ from src.optimization.opt_model import OptModel                  # noqa: E402
 def main(argv):
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--days_per_year", type=int, choices=[1, 2, 4], default=4,
+                    help="dias representativos por año (setup.py): 4 = 15, 105, 196, 288; 2 = 15 y 196 (sin y con cobro de punta)")
     ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
     ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det")
     a, args = ap.parse_known_args(argv)
@@ -48,7 +50,7 @@ def main(argv):
         # Mismo armado que mejorar_ub.py y certificar_inversiones.py.
         ns = Namespace(data_folder=data, model="elmo_data.xlsx", series="time_series.xlsx",
                        consumption_model=a.consumption_model, wp2_consumption_json=None, n_years=a.n_years,
-                       days_per_year=4)
+                       days_per_year=a.days_per_year)
         _s, ms, ts = build_mine(ns)
         om = OptModel(ms, ts, os.path.join(tempfile.gettempdir(), "escribir_parameters"),
                       mccormick_degradation=True, free_charging=True, free_maintenance=True,

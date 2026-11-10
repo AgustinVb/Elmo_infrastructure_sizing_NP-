@@ -38,6 +38,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_folder", default="data/Tesis_final/Mina_modelo/RED")
     ap.add_argument("--n_years", type=int, default=10)
+    ap.add_argument("--days_per_year", type=int, choices=[1, 2, 4], default=4,
+                    help="dias representativos por año (setup.py): 4 = 15, 105, 196, 288; 2 = 15 y 196 (sin y con cobro de punta)")
     ap.add_argument("--consumption_model", choices=["wp1", "wp2"], default="wp1")
     ap.add_argument("--pause_scheme", choices=["det", "dch"], default="det",
                     help="mismo esquema de detenciones que la corrida de Benders (DCH: dch)")
@@ -61,7 +63,7 @@ def main():
 
     ns = Namespace(data_folder=a.data_folder, model="elmo_data.xlsx",
                    series="time_series.xlsx", consumption_model=a.consumption_model,
-                   wp2_consumption_json=None, n_years=a.n_years, days_per_year=4)
+                   wp2_consumption_json=None, n_years=a.n_years, days_per_year=a.days_per_year)
     _s, ms, ts = build_mine(ns)
     # Con --solucion, OptModel carga los JSON como warm start (las enteras sin
     # valor quedan en 0, igual que en benders_dias.py).

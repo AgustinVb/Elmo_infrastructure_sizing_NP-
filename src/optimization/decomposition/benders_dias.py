@@ -67,6 +67,20 @@ from src.optimization.decomposition import gcg_block as gb
 INF = GRB.INFINITY
 
 
+def _gap(m):
+    """MIPGap, o 0 si el modelo es un LP (el bloque red de los macrobloques no tiene
+    enteras y Gurobi no da MIPGap ni ObjBound de un LP)."""
+    return m.MIPGap if m.IsMIP else 0.0
+
+
+def _cota(m):
+    """Mejor cota dual: ObjBound del MIP, o el optimo si es un LP; None si no hay."""
+    try:
+        return m.ObjBound if m.IsMIP else (m.ObjVal if m.Status == GRB.OPTIMAL else None)
+    except gp.GurobiError:
+        return None
+
+
 def _env(threads=0):
     env = gp.Env(empty=True)
     env.setParam("OutputFlag", 0)
@@ -82,9 +96,28 @@ def _env(threads=0):
 
 class Particion:
     """Lee el MPS del monolitico y reparte filas y columnas en maestro y
-    bloques (año, dia). El modelo leido (F) queda para el pulido de la UB."""
+    bloques (año, dia). El modelo leido (F) queda para el pulido de la UB.
 
-    def __init__(self, info, model, por_var, env):
+    por_estacion (MACROBLOQUES, como run_macrobloques_decomposicion.py de la rama
+    battery_swapping): cada (año, dia) se parte en un bloque por estacion -- su
+    inventario, bahias, cargadores, sus LHD (StationAssignment) y sus nodos, que
+    no se comparten -- y un bloque "red" con lo que no es de ninguna estacion (red,
+    generacion, BESS). Las filas del dia que cruzan bloques:
+      ACOPLE_MAESTRO  al maestro, con un presupuesto por bloque: power_balance
+                      (potencia de cada estacion en cada intervalo) y
+                      daily_extraction (produccion de cada estacion).
+      RELAJAR         fuera de la descomposicion (relajacion: la LB sigue valida;
+                      el pulido, sobre el monolitico, las exige en la UB):
+                      peak_power_swap (sum_k Sv <= n_peak_max, holgada con <= 10
+                      cargadores) y min_charges_cut (corte valido del dia entero;
+                      LShaped pone uno por estacion).
+    Cualquier otra fila que cruce estaciones aborta."""
+
+    ACOPLE_MAESTRO = ("power_balance", "daily_extraction")
+    RELAJAR = ("peak_power_swap", "min_charges_cut")
+    RED = "red"
+
+    def __init__(self, info, model, por_var, env, por_estacion=False):
         t0 = time.time()
         F = gp.read(info["mps"], env=env)
         F.update()
@@ -132,10 +165,16 @@ class Particion:
             y = gb._key(vd, pos_y) if pos_y else None
             self.var_blk[j] = clave_a_b[str((y, d))]
 
+        self.por_estacion = por_estacion
+        self.n_relajadas, self.punta = {}, {}
+        if por_estacion:
+            self._partir_estaciones(model, por_var)
+
         self.maestro_vars = np.where(self.var_blk < 0)[0]
         self.locales = {b: np.where(self.var_blk == b)[0] for b in range(self.nb)}
         self.filas_bloque = {b: np.where(self.row_blk == b)[0] for b in range(self.nb)}
-        self.filas_maestro = np.where(self.row_blk < 0)[0]
+        # row_blk -2: filas RELAJAR, fuera del maestro y de los bloques.
+        self.filas_maestro = np.where(self.row_blk == -1)[0]
 
         # Filas de maestro con variables de dia -> presupuestos (fila, bloque).
         self.presupuestos = []
@@ -148,6 +187,18 @@ class Particion:
                 self.presupuestos.append((int(i), int(b)))
         self.pres_de_bloque = {b: [k for k, (_, bb) in enumerate(self.presupuestos) if bb == b]
                                for b in range(self.nb)}
+        # Tipo de cada presupuesto (familia de su fila): energy_consumed_def es la
+        # energia de la degradacion; con por_estacion tambien power_balance y
+        # daily_extraction.
+        self.pres_tipo = [self.familia_fila(i) for i, _b in self.presupuestos]
+        self.pres_energia = [k for k, t in enumerate(self.pres_tipo) if t == "energy_consumed_def"]
+        # Piso de produccion en la UB ({presupuesto: valor}): con por_estacion cada
+        # estacion produce al menos su parte de la meta del dia (piso_natural); quien
+        # evalua puede fijar otro reparto (p. ej. el de la incumbente) en piso.
+        self.piso_natural = {}
+        if por_estacion:
+            self._pisos_produccion(model)
+        self.piso = dict(self.piso_natural)
 
         # Copias: variables del maestro que aparecen en filas de un bloque.
         copias = {b: set() for b in range(self.nb)}
@@ -167,13 +218,103 @@ class Particion:
                     raise RuntimeError(f"fila {self.cname[i]} del bloque {b} toca {otros}")
         self.t_lectura = time.time() - t0
 
+    def familia_fila(self, i):
+        """'c_e_power_balance(7_15_3)_' -> 'power_balance'."""
+        mm = gb.DECORACION.match(self.cname[i])
+        return (mm.group("label") if mm else self.cname[i]).split("(")[0]
+
+    def _partir_estaciones(self, model, por_var):
+        """Bloques (año, dia) -> (año, dia, estacion) y (año, dia, "red"); ver la clase."""
+        estaciones = sorted(model.stations_set)
+        est_de_lhd = {i: k for (k, i) in model.ZSWAP_INDEX}
+        pos_k = gb._positions(model, set(estaciones))
+        pos_i = gb._positions(model, set(model.lhd_set))
+        viejas = self.claves
+        sub = np.full(self.nv, -1)
+        nuevas = {}
+        for j, n in enumerate(self.nombre):
+            b = self.var_blk[j]
+            if b < 0:
+                continue
+            vd = por_var[n]
+            k = gb._key(vd, pos_k)
+            if k is None:
+                i = gb._key(vd, pos_i)
+                if i is not None:
+                    k = est_de_lhd.get(i)
+                    if k is None:
+                        raise RuntimeError(f"{n}: el LHD {i} no tiene estacion (ZSWAP_INDEX)")
+            y, d = eval(viejas[b])
+            clave = str((y, d, k if k is not None else self.RED))
+            sub[j] = nuevas.setdefault(clave, len(nuevas))
+        filas = self.row_blk.copy()
+        for i in np.where(self.row_blk >= 0)[0]:
+            idx, _ = self.filas[i]
+            bls = set(sub[idx][sub[idx] >= 0].tolist())
+            if len(bls) == 1:
+                filas[i] = bls.pop()
+                continue
+            fam = self.familia_fila(i)
+            if not bls or (fam not in self.ACOPLE_MAESTRO and fam not in self.RELAJAR):
+                raise RuntimeError(f"fila {self.cname[i]} ({fam}) cruza los bloques {sorted(bls)} "
+                                   "y no esta en ACOPLE_MAESTRO ni en RELAJAR")
+            filas[i] = -1 if fam in self.ACOPLE_MAESTRO else -2
+            if fam in self.RELAJAR:
+                self.n_relajadas[fam] = self.n_relajadas.get(fam, 0) + 1
+        self.var_blk, self.row_blk = sub, filas
+        self.claves = [c for c, _b in sorted(nuevas.items(), key=lambda kv: kv[1])]
+        self.nb = len(self.claves)
+        # Punta del dia: P_red(y,d,t) <= P_pot(y) (power_peak_limit, en el bloque red).
+        self.punta = {}
+        for i in np.where(self.row_blk >= 0)[0]:
+            if self.familia_fila(i) != "power_peak_limit":
+                continue
+            idx, _ = self.filas[i]
+            red = [int(j) for j in idx if self.nombre[j].startswith("P_red(")]
+            pot = [int(j) for j in idx if self.nombre[j].startswith("P_pot(")]
+            if len(red) == 1 and len(pot) == 1:
+                self.punta[red[0]] = pot[0]
+
+    def _pisos_produccion(self, model):
+        """piso_natural: cada estacion produce al menos la meta de SUS nodos (m_j de los
+        nodos que visitan sus LHD) como fraccion de la meta del dia; los pisos suman la
+        meta, asi que la operacion de las estaciones cumple daily_extraction."""
+        from pyomo.environ import value
+        est_de_lhd = {i: k for (k, i) in model.ZSWAP_INDEX}
+        est_de_nodo = {}
+        for idx in model.Y:
+            est_de_nodo.setdefault(idx[1], est_de_lhd.get(idx[0]))
+        meta, tot = {}, {}
+        for y in model.years:
+            for j in model.nodes_set:
+                mj = float(value(model.m_j[j, y]))
+                tot[y] = tot.get(y, 0.0) + mj
+                k = est_de_nodo.get(j)
+                if k is not None:
+                    meta[(y, k)] = meta.get((y, k), 0.0) + mj
+        for kk, (i, b) in enumerate(self.presupuestos):
+            if self.pres_tipo[kk] != "daily_extraction":
+                continue
+            if self.sense[i] != GRB.GREATER_EQUAL:
+                raise RuntimeError(f"{self.cname[i]}: se esperaba una fila >=")
+            y, _d, k = eval(self.claves[b])
+            parte = meta.get((y, k), 0.0) / tot[y] if tot.get(y) else 0.0
+            self.piso_natural[kk] = float(self.rhs[i]) * parte
+
     def resumen(self):
         n_ent = sum(1 for j in self.maestro_vars if self.vtype[j] != "C")
+        extra = ""
+        if self.por_estacion:
+            tipos = {}
+            for t in self.pres_tipo:
+                tipos[t] = tipos.get(t, 0) + 1
+            extra = (f"; macrobloques por estacion: presupuestos {tipos}, filas relajadas "
+                     f"{self.n_relajadas}, {len(self.punta)} intervalos de punta")
         return (f"{self.nv:,} columnas, {self.nr:,} filas; maestro {len(self.maestro_vars)} "
                 f"variables ({n_ent} enteras) y {len(self.filas_maestro)} filas; {self.nb} "
                 f"bloques; {len(self.presupuestos)} presupuestos; copias por bloque "
                 f"{min(len(c) for c in self.copias.values())}-"
-                f"{max(len(c) for c in self.copias.values())}")
+                f"{max(len(c) for c in self.copias.values())}" + extra)
 
     def energia(self, vec, k):
         """Valor del presupuesto k (la parte del bloque en su fila) en `vec`."""
@@ -246,6 +387,67 @@ class Subproblema:
         self.m = m
         self._entero = True
         self.start = None           # enteras locales de la ultima operacion factible
+        self._costo_propio()
+
+    def _costo_propio(self):
+        """Macrobloque de estacion (P.por_estacion): en la UB y en la Fase 1 de un año
+        la estacion no ve la red (su potencia es un presupuesto libre), asi que paga
+        aparte lo que le toca: la energia de su potencia al precio de P_red y una punta
+        propia pk >= su potencia en los intervalos de punta, con el costo de P_pot (la
+        suma de las puntas de las estaciones acota la del dia; el pulido la recalcula
+        exacta). En lp, lagr y local pk queda libre y sin costo: no cambia nada."""
+        P, b = self.P, self.b
+        self.obj_base = np.array([float(P.obj[j]) for j in self.loc])
+        self.obj_ub = self.obj_base.copy()
+        self.pk, self.c_pk = None, 0.0
+        if not P.por_estacion:
+            return
+        pos = {int(j): kk for kk, j in enumerate(self.loc)}
+        punta = []
+        for k in self.pres:
+            if P.pres_tipo[k] != "power_balance":
+                continue
+            i, _ = P.presupuestos[k]
+            idx, coef = P.filas[i]
+            red = [(int(j), a) for j, a in zip(idx, coef) if P.nombre[j].startswith("P_red(")]
+            if len(red) != 1:
+                continue
+            j_red, a = red[0]
+            sel = P.var_blk[idx] == b
+            # Fila: a P_red + ... + (parte de la estacion) = 0 -> potencia = -parte / a.
+            dem = [(pos[int(j)], -al / a) for j, al in zip(idx[sel], coef[sel])]
+            for p, w in dem:
+                self.obj_ub[p] += float(P.obj[j_red]) * w
+            if j_red in P.punta:
+                punta.append((dem, P.punta[j_red]))
+        if punta:
+            self.pk = self.m.addVar(lb=0.0)
+            self.c_pk = float(P.obj[punta[0][1]])
+            for dem, _jp in punta:
+                self.m.addLConstr(gp.LinExpr([w for _, w in dem], [self.vloc[p] for p, _ in dem])
+                                  - self.pk, GRB.LESS_EQUAL, 0.0)
+        self.m.update()
+
+    def _modo_ub(self, si):
+        if not self.P.por_estacion:
+            return
+        self.m.setAttr("Obj", self.vloc, (self.obj_ub if si else self.obj_base).tolist())
+        if self.pk is not None:
+            self.pk.Obj = self.c_pk if si else 0.0
+
+    def _pisos(self):
+        """Presupuestos con piso en la UB (P.piso: produccion de la estacion >= piso):
+        en el enlace e + s+ - s- = piso, s+ = 0."""
+        P = self.P
+        for kk, k in enumerate(self.pres):
+            v = P.piso.get(k)
+            if v is not None:
+                self.enl[self.n_cop + kk].RHS = float(v)
+                self.sp[self.n_cop + kk].UB = 0.0
+
+    def _valor(self, x):
+        """Costo de la operacion con los coeficientes del modelo (sin el costo propio)."""
+        return float(np.dot(self.obj_base, x))
 
     # ---------------------------------------------------------------- #
     def _entera(self, si):
@@ -308,20 +510,57 @@ class Subproblema:
             m.setAttr("Obj", sm, list(subir.values()))
         self._copias()
         self._rhs(xhat, np.zeros(max(self.pres, default=-1) + 1))
+        self._pisos()
+        self._modo_ub(True)
         if self.start is not None:
             m.setAttr("Start", [self.vloc[k] for k in self.ent_loc], self.start)
         m.Params.TimeLimit = timelimit
         m.Params.MIPGap = gap
         m.Params.MIPFocus = mip_focus
         t0 = time.time()
-        m.optimize()
-        m.Params.MIPFocus = 0
+        try:
+            m.optimize()
+        finally:
+            m.Params.MIPFocus = 0
+            self._modo_ub(False)
         if m.SolCount == 0:
             return {"ok": False, "status": m.Status, "t": time.time() - t0}
         x = m.getAttr("X", self.vloc)
         self.start = [round(x[k]) for k in self.ent_loc]
-        return {"ok": True, "valor": m.ObjVal, "x": x, "t": time.time() - t0,
-                "gap": m.MIPGap, "cop": m.getAttr("X", self.vcop)}
+        valor = self._valor(x) if self.P.por_estacion else m.ObjVal
+        return {"ok": True, "valor": valor, "x": x, "t": time.time() - t0,
+                "gap": _gap(m), "cop": m.getAttr("X", self.vcop)}
+
+    def fase1(self, costos, lbs, ubs, timelimit, gap):
+        """Fase 1 del algoritmo de un año (run_macrobloques_decomposicion.py de la rama
+        battery_swapping) en el macrobloque: la infraestructura de sus copias LIBRE en
+        [lbs, ubs] con costo `costos` por unidad, la operacion entera con el costo propio
+        de la UB y la produccion sobre su piso. Devuelve las copias de la mejor
+        operacion encontrada (la infraestructura que pide este dia)."""
+        m = self.m
+        self._entera(True)
+        self._enlaces(0.0, INF, 0.0, INF)
+        self._copias(list(costos), list(lbs), list(ubs))
+        self._rhs(np.zeros(self.P.nv), np.zeros(max(self.pres, default=-1) + 1))
+        self._pisos()
+        self._modo_ub(True)
+        if self.start is not None:
+            m.setAttr("Start", [self.vloc[k] for k in self.ent_loc], self.start)
+        m.Params.TimeLimit = timelimit
+        m.Params.MIPGap = gap
+        t0 = time.time()
+        try:
+            m.optimize()
+        finally:
+            self._modo_ub(False)
+        if m.SolCount == 0:
+            self._copias()
+            return {"ok": False, "status": m.Status, "t": time.time() - t0}
+        x = m.getAttr("X", self.vloc)
+        cop = m.getAttr("X", self.vcop)
+        self._copias()
+        return {"ok": True, "cop": cop, "x": x, "valor": self._valor(x), "t": time.time() - t0,
+                "gap": _gap(m), "status": m.Status}
 
     def rango_presupuestos(self, entero_tl=None):
         """[min, max] de cada presupuesto (energia del dia) con la inversion
@@ -338,7 +577,11 @@ class Subproblema:
         objs = m.getAttr("Obj", todas)
         salida = []
         try:
-            for e in self.vpres:
+            for kk, e in enumerate(self.vpres):
+                iv = self._rango_intervalo(kk)
+                if iv is not None:
+                    salida.append(iv)
+                    continue
                 r = []
                 for sentido in (GRB.MINIMIZE, GRB.MAXIMIZE):
                     m.setObjective(gp.LinExpr(e), sentido)
@@ -360,6 +603,27 @@ class Subproblema:
             m.ModelSense = GRB.MINIMIZE
             m.Params.TimeLimit = INF
         return salida
+
+    def _rango_intervalo(self, kk, tipos=("power_balance",)):
+        """[min, max] del presupuesto kk por aritmetica de intervalos sobre las cotas de
+        sus columnas (valido, aunque mas ancho que el LP): para los de potencia
+        (power_balance, uno por intervalo: con macrobloques son ~180 por bloque) en vez
+        de dos LP. None si alguna cota es infinita o el tipo no esta en `tipos` (None:
+        todos)."""
+        P, k = self.P, self.pres[kk]
+        if tipos is not None and P.pres_tipo[k] not in tipos:
+            return None
+        i, _ = P.presupuestos[k]
+        idx, coef = P.filas[i]
+        sel = P.var_blk[idx] == self.b
+        lo = hi = 0.0
+        for j, a in zip(idx[sel], coef[sel]):
+            u, l = a * P.ub[j], a * P.lb[j]
+            if not (math.isfinite(u) and math.isfinite(l)) or max(abs(u), abs(l)) >= 1e20:
+                return None
+            lo += min(u, l)
+            hi += max(u, l)
+        return lo, hi
 
     def local(self, xhat, pi, lam, rangos_cont, timelimit, gap, callback=None):
         """Lagrangiano LOCAL: copias ENTERAS fijas en xhat (la inversion de
@@ -397,10 +661,7 @@ class Subproblema:
         m.Params.MIPGap = gap
         t0 = time.time()
         m.optimize(callback)
-        try:
-            cota = m.ObjBound
-        except gp.GurobiError:
-            cota = None
+        cota = _cota(m)
         st = m.Status
         if m.SolCount:
             x = m.getAttr("X", self.vloc)
@@ -411,7 +672,7 @@ class Subproblema:
                 or not math.isfinite(cota) or abs(cota) >= 1e20:
             return {"ok": False, "status": st, "t": time.time() - t0}
         return {"ok": True, "R": cota, "t": time.time() - t0, "status": st,
-                "gap": m.MIPGap if m.SolCount else None}
+                "gap": _gap(m) if m.SolCount else None}
 
     def lagr(self, pi, lam, rangos, timelimit, gap):
         """R(pi) = min { opex - pi.copia - lam.presupuesto } con la operacion
@@ -430,10 +691,7 @@ class Subproblema:
         m.Params.MIPGap = gap
         t0 = time.time()
         m.optimize()
-        try:
-            cota = m.ObjBound
-        except gp.GurobiError:
-            cota = None
+        cota = _cota(m)
         st = m.Status
         m.setAttr("Obj", self.vpres, [0.0] * len(self.vpres))
         self._copias()
@@ -479,11 +737,15 @@ class Maestro:
         self.m = m
         self.ent = [k for k, j in enumerate(mv) if P.vtype[j] != GRB.CONTINUOUS]
         self.vt_orig = [P.vtype[mv[k]] for k in self.ent]
+        # Binarias propias del maestro (LShaped.agregar_corte_produccion): se relajan
+        # junto con las enteras del modelo.
+        self.extra_ent = []
         self.n_cortes = 0
 
     def _entero(self, si):
-        self.m.setAttr("VType", [self.x[k] for k in self.ent],
-                       self.vt_orig if si else [GRB.CONTINUOUS] * len(self.ent))
+        vs = [self.x[k] for k in self.ent] + self.extra_ent
+        self.m.setAttr("VType", vs, (self.vt_orig + [GRB.BINARY] * len(self.extra_ent)) if si
+                       else [GRB.CONTINUOUS] * len(vs))
 
     def punto(self):
         """(xhat sobre TODAS las columnas -- solo las del maestro con valor --,
@@ -607,14 +869,15 @@ class Maestro:
 class BendersDias:
 
     def __init__(self, info, model, por_var, M=1e6, jobs=8, alpha=0.5,
-                 cotas_capacidad=None, out=None, verbose=True, cpu=None):
+                 cotas_capacidad=None, out=None, verbose=True, cpu=None, por_estacion=False,
+                 acotar=True):
         self.verbose = verbose
         self.out = out
         cpu = cpu or os.cpu_count() or 8
         self.jobs = jobs
         self.env_F = _env(cpu)
         t0 = time.time()
-        self.P = Particion(info, model, por_var, self.env_F)
+        self.P = Particion(info, model, por_var, self.env_F, por_estacion=por_estacion)
         self._log(f"particion en {time.time() - t0:.0f}s: {self.P.resumen()}")
         t0 = time.time()
         hilos = max(1, cpu // jobs)
@@ -629,10 +892,46 @@ class BendersDias:
         self.ub_por_inversion = {}
         self.historia = []
         self.t0 = time.time()
+        if por_estacion and acotar:
+            self.acotar_presupuestos()
 
     def _log(self, s):
         if self.verbose:
             print(f"[BD] {s}", flush=True)
+
+    def acotar_presupuestos(self):
+        """Cotas de los presupuestos del maestro por aritmetica de intervalos (validas).
+        Con macrobloques hay ~16 mil (potencia de cada estacion en cada intervalo): libres,
+        el maestro de la etapa 1 les da valores enormes y los enlaces elasticos de los
+        cortes quedan con holguras de 1e18 (05C, 6-nov)."""
+        # Las columnas de carga (Sv) no tienen cota en el modelo: los intervalos solo
+        # acotan ~1 %. Rangos LP (Subproblema.rango_presupuestos, validos) en paralelo,
+        # guardados para LShaped.preparar_maestro.
+        t0 = time.time()
+        cache = os.path.join(self.out, "rangos_presupuestos.json") if self.out else None
+        por_bloque = None
+        if cache and os.path.exists(cache):
+            # De una corrida anterior con la misma particion (~40 min de LP en 05C).
+            with open(cache, encoding="utf-8") as f:
+                guardado = json.load(f)
+            if guardado.get("claves") == self.P.claves and guardado.get("n") == len(self.P.presupuestos):
+                por_bloque = [[tuple(r) for r in rs] for rs in guardado["por_bloque"]]
+                self._log(f"rangos de presupuestos leidos de {cache}")
+        if por_bloque is None:
+            por_bloque = self._paralelo(lambda b: self.subs[b].rango_presupuestos())
+            if cache:
+                with open(cache, "w", encoding="utf-8") as f:
+                    json.dump({"claves": self.P.claves, "n": len(self.P.presupuestos),
+                               "por_bloque": [[list(r) for r in rs] for rs in por_bloque]}, f)
+        self.rangos_pres = {}
+        for b, rs in enumerate(por_bloque):
+            for k, (lo, hi) in zip(self.subs[b].pres, rs):
+                self.rangos_pres[k] = (lo, hi)
+                self.maestro.e[k].LB, self.maestro.e[k].UB = lo, hi
+        self.maestro.m.update()
+        finitos = sum(1 for lo, hi in self.rangos_pres.values() if math.isfinite(lo) and math.isfinite(hi))
+        self._log(f"presupuestos acotados (rangos LP): {finitos} de {len(self.P.presupuestos)} "
+                  f"finitos en {time.time() - t0:.0f}s")
 
     def _paralelo(self, fn, bloques=None):
         return list(self.pool.map(fn, bloques if bloques is not None else range(self.P.nb)))

@@ -156,12 +156,21 @@ class LShaped:
                     for y, j in cols_bb.items()}
         self.cap_lo = {y: rg[j][0] for y, j in cols_bb.items()}
         t_corte = set(intervalos_corte_cargas(sorted(om.model.time_intervals_set)))
+        # Macrobloques (P.por_estacion): la cota de cargas de cada estacion con sus
+        # LHD; el bloque red no tiene cargas.
+        lhds_de = {}
+        for (k, i) in om.model.ZSWAP_INDEX:
+            lhds_de.setdefault(k, set()).add(i)
         self.n_corte = {}
         self.nfun, self.kbb, self.fila_cte, self.caidas, self.filas_env = {}, {}, {}, {}, {}
         n_mip = n_filas = 0
         for b, s in enumerate(bd.subs):
-            y, d = eval(P.claves[b])
-            n = evaluador_dia(om, y, d)
+            clave = eval(P.claves[b])
+            y, d = clave[:2]
+            k_est = clave[2] if len(clave) > 2 else None
+            if k_est == P.RED:
+                continue
+            n = evaluador_dia(om, y, d, lhds_de[k_est] if k_est is not None else None)
             hi = self.cap.get(y, cap_pool)
             lo = self.cap_lo.get(y, -INF)
             kb = [k for k, j in enumerate(s.cop) if P.nombre[j] == f"b_bar({y})"]
@@ -197,6 +206,134 @@ class LShaped:
             f"{eval(k)[0]}:{c[0][1]}->{c[-1][1]} ({len(c) - 1} aristas)"
             for k, c in self.n_corte.items() if eval(k)[1] == 15))
 
+    def agregar_corte_produccion(self, archivo, vec=None, tol=1e-6):
+        """Corte de produccion por estacion (cortes_capacidad.py --produccion): la meta del
+        dia (y, d) se cumple con lo que producen las estaciones, y cada una produce a lo
+        sumo U_k(n, c) con N_batteries[k,y] = n y b_bar[y] <= c (cota MILP de su
+        macrobloque con todo lo demas libre: valida en todo diseño). En el maestro:
+
+            sum_k q_k >= meta
+            q_k <= U_k(n, c_i) + Umax_k (2 - z_kn - w_i)     por n e intervalo i
+            z_k one-hot de N_batteries[k,y] (n = 0: U = 0, sin swaps no hay viajes; n sobre
+            la tabla: U = Umax_k, el LP libre)
+            w one-hot del intervalo de b_bar[y]: c_{i+1} <= b_bar <= c_i
+
+        Las binarias z y w son propias del maestro (Maestro.extra_ent). Es lo que la
+        relajacion no ve: con menos baterias la flota se degrada mas, b_bar baja y en
+        los años de meta alta (DCH 1C, año 7) la produccion entera ya no alcanza."""
+        P, M = self.P, self.M
+        with open(archivo, encoding="utf-8") as f:
+            pr = json.load(f)["produccion"]
+        n1, n2 = pr["n"]
+        niveles = sorted(pr["niveles"], reverse=True)
+        tabla, pmax = pr["tabla"], pr["pmax_lp"]
+        col_n = {}
+        for j in P.maestro_vars:
+            nm = P.nombre[j]
+            if nm.startswith("N_batteries(") and not nm.startswith("N_batteries_"):
+                k, y = nm[len("N_batteries("):-1].rsplit("_", 1)
+                col_n[(k, int(y))] = j
+        col_bb = self._cols("b_bar")
+        # Meta de cada dia: la fila daily_extraction de su bloque (año, dia).
+        meta = {}
+        for b in range(P.nb):
+            for i in P.filas_bloque[b]:
+                if P.familia_fila(i) == "daily_extraction" and P.sense[i] == GRB.GREATER_EQUAL:
+                    meta[eval(P.claves[b])] = float(P.rhs[i])
+        por_dia = {}
+        for clave, t in tabla.items():
+            y, d, k = eval(clave)
+            por_dia.setdefault((y, d), {})[k] = t
+        w_de, z_de = {}, {}
+        n_filas = 0
+        x = lambda j: M.x[M.pos[int(j)]]                                  # noqa: E731
+        for (y, d), ests in sorted(por_dia.items()):
+            if (y, d) not in meta:
+                continue
+            # Intervalos de b_bar[y] (año sin columna: b_bar fijo en b_max, solo el primero).
+            if y not in w_de:
+                jb = col_bb.get(y)
+                if jb is None:
+                    w_de[y] = None
+                else:
+                    w = [M.m.addVar(vtype=GRB.BINARY, name=f"wbb_{y}_{i}") for i in range(len(niveles))]
+                    M.extra_ent += w
+                    M.m.addLConstr(gp.quicksum(w), GRB.EQUAL, 1.0)
+                    M.m.addLConstr(x(jb) - gp.quicksum(c * wi for c, wi in zip(niveles, w)),
+                                   GRB.LESS_EQUAL, 0.0)
+                    inf = niveles[1:] + [0.0]
+                    M.m.addLConstr(x(jb) - gp.quicksum(c * wi for c, wi in zip(inf, w)),
+                                   GRB.GREATER_EQUAL, 0.0)
+                    w_de[y] = w
+            w = w_de[y]
+            q = []
+            for k, t in sorted(ests.items()):
+                jn = col_n.get((k, y))
+                umax = float(pmax[str((y, d, k))])
+                if jn is None or not math.isfinite(umax):
+                    continue
+                if (k, y) not in z_de:
+                    nmax = float(M.x[M.pos[int(jn)]].UB)
+                    nmax = nmax if math.isfinite(nmax) else 100.0
+                    z = {n: M.m.addVar(vtype=GRB.BINARY, name=f"zbat_{k}_{y}_{n}")
+                         for n in list(range(0, n2 + 1)) + ["+"]}
+                    M.extra_ent += list(z.values())
+                    M.m.addLConstr(gp.quicksum(z.values()), GRB.EQUAL, 1.0)
+                    for n, zn in z.items():
+                        if n == "+":
+                            M.m.addLConstr(x(jn) - (n2 + 1) * zn, GRB.GREATER_EQUAL, 0.0)
+                            M.m.addLConstr(x(jn) - (n2 + (nmax - n2) * zn), GRB.LESS_EQUAL, 0.0)
+                        else:
+                            M.m.addLConstr(x(jn) - n * zn, GRB.GREATER_EQUAL, 0.0)
+                            M.m.addLConstr(x(jn) + (nmax - n) * zn, GRB.LESS_EQUAL, nmax)
+                    z_de[(k, y)] = z
+                z = z_de[(k, y)]
+                qk = M.m.addVar(lb=0.0, ub=umax, name=f"qprod_{k}_{y}_{d}")
+                q.append(qk)
+                for n in range(0, n2 + 1):
+                    for i, c in enumerate(niveles if w is not None else niveles[:1]):
+                        e = t.get(f"{n}|{c:g}")
+                        if n < n1:
+                            # Sin baterias en la estacion no hay swaps: la bateria de cada
+                            # LHD es ciclica en el dia y no hay viajes (produccion 0).
+                            e = {"cota": 0.0} if n == 0 else None
+                        if e is None:
+                            continue
+                        u = max(0.0, float(e["cota"])) if math.isfinite(float(e["cota"])) else 0.0
+                        if u >= umax - tol:
+                            continue
+                        rhs = gp.LinExpr(u + 2 * umax) - umax * z[n]
+                        if w is not None:
+                            rhs -= umax * w[i]
+                        else:
+                            rhs -= umax
+                        M.m.addLConstr(qk - rhs, GRB.LESS_EQUAL, 0.0)
+                        n_filas += 1
+            if q:
+                M.m.addLConstr(gp.quicksum(q), GRB.GREATER_EQUAL, meta[(y, d)] - tol)
+                n_filas += 1
+        M.m.update()
+        self._log(f"corte de produccion ({archivo}): {len(por_dia)} dias, {n_filas} filas, "
+                  f"{len(M.extra_ent)} binarias; niveles de b_bar {niveles}")
+        if vec is None:
+            return []
+        # Chequeo con una solucion factible (la incumbente): si no cumple, el corte es invalido.
+        viola = []
+        for (y, d), ests in sorted(por_dia.items()):
+            if (y, d) not in meta:
+                continue
+            bb = float(vec[col_bb[y]]) if y in col_bb else niveles[0]
+            c = min((c for c in niveles if c >= bb - 1e-6), default=niveles[0])
+            tot = 0.0
+            for k, t in ests.items():
+                n = int(round(vec[col_n[(k, y)]]))
+                e = t.get(f"{n}|{c:g}")
+                tot += (float(pmax[str((y, d, k))]) if e is None and n > n2
+                        else 0.0 if e is None else max(0.0, float(e["cota"])))
+            if tot < meta[(y, d)] - 1e-6:
+                viola.append(f"{(y, d)}: {tot:.2f} < {meta[(y, d)]:.2f} (b_bar {bb:.1f})")
+        return viola
+
     # ------------------------------------------------ UB inicial (DP) -- #
     def _cols(self, prefijo):
         """{año: indice} de las columnas del maestro 'prefijo(...,año)'."""
@@ -215,7 +352,8 @@ class LShaped:
         from src.optimization.functions import ESCALA_UNIDADES
         P = self.P
         E = {}
-        for k, (_i, b) in enumerate(P.presupuestos):
+        for k in P.pres_energia:
+            _i, b = P.presupuestos[k]
             y = eval(P.claves[b])[0]
             v = P.energia(vec, k) if vec is not None else float(ehat[k])
             # La fila es EnergyConsumed_y - sum_d energia_d = 0: la parte del
@@ -289,7 +427,8 @@ class LShaped:
             if P.vtype[j] != "C" and not P.nombre[j].startswith(self.AUX_DEGRADACION):
                 guard.append((v, v.LB, v.UB))
                 v.LB = v.UB = float(round(x[j]))
-        for k, v in enumerate(self._mcap_e):
+        for k in P.pres_energia:
+            v = self._mcap_e[k]
             # Mismo signo que el presupuesto del maestro (la fila resta la
             # energia del dia; los presupuestos salen negativos).
             guard.append((v, v.LB, v.UB))
@@ -520,7 +659,8 @@ class LShaped:
             if j in fijo or P.nombre[j].startswith(("X(", "n_ssee_k(")):
                 guard.append((v, v.LB, v.UB))
                 v.LB = v.UB = fijo.get(j, float(round(x[j])))
-        for k, v in enumerate(self._mcap_e):
+        for k in P.pres_energia:
+            v = self._mcap_e[k]
             guard.append((v, v.LB, v.UB))
             v.LB = v.UB = -abs(float(P.energia(vec, k)))
         obj = mc.getObjective()
@@ -686,7 +826,11 @@ class LShaped:
         # En la version 5 la energia minima de cada dia sale del MILP (ver
         # Subproblema.rango_presupuestos y _dias_ub).
         tl = self.T_ENERGIA_MIN if carga_parcial() else None
-        por_bloque = bd._paralelo(lambda b: bd.subs[b].rango_presupuestos(entero_tl=tl))
+        if tl is None and getattr(bd, "rangos_pres", None):
+            # Ya calculados al armar (BendersDias.acotar_presupuestos, macrobloques).
+            por_bloque = [[bd.rangos_pres[k] for k in s.pres] for s in bd.subs]
+        else:
+            por_bloque = bd._paralelo(lambda b: bd.subs[b].rango_presupuestos(entero_tl=tl))
         for b, rs in enumerate(por_bloque):
             for kk, (lo, hi) in zip(bd.subs[b].pres, rs):
                 self.rpres[kk] = (lo, hi)

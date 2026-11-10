@@ -46,18 +46,22 @@ from setup import build_mine                                             # noqa:
 from src.optimization.opt_model import OptModel                          # noqa: E402
 
 
-def _mip_dia(om, y, d):
+def _mip_dia(om, y, d, lhds=None):
     """El MIP de la cota por LHD del dia, sin la capacidad: la fila de energia
     del LHD i lleva coeficiente 1 en s_i y _capacidad pone U = (1 - bmin) * cap.
-    Devuelve (modelo, v, s, filas de energia, datos del dia)."""
+    Devuelve (modelo, v, s, filas de energia, datos del dia).
+
+    lhds (macrobloque de una estacion): solo esos LHD y sus nodos, y sin la meta
+    del dia, que es de toda la mina (las cotas de visitas de cada nodo si quedan):
+    cota de las cargas de la estacion."""
     model, rules = om.model, om.constraint_rules
     ts = rules.time_series
-    slhd = set(model.slhd_set)
+    slhd = set(model.slhd_set) if lhds is None else set(model.slhd_set) & set(lhds)
     bmin = {i: value(model.bmin_b[i]) for i in slhd}
 
     disp, i_rep = {}, {}
     for (i, j, y2, d2, t) in model.Y:
-        if y2 == y and d2 == d:
+        if y2 == y and d2 == d and (lhds is None or i in lhds):
             disp[(i, j)] = disp.get((i, j), 0) + 1
             i_rep.setdefault(j, i)
     prod, ener = {}, {}
@@ -75,7 +79,8 @@ def _mip_dia(om, y, d):
         lb, ub = rules.production_visit_bounds(model, y, j, i_rep[j])
         m.addLConstr(gp.quicksum(v[o] for o in disp if o[1] == j), GRB.GREATER_EQUAL, max(0, lb))
         m.addLConstr(gp.quicksum(v[o] for o in disp if o[1] == j), GRB.LESS_EQUAL, ub)
-    m.addLConstr(gp.quicksum(prod[o] * v[o] for o in disp), GRB.GREATER_EQUAL, meta)
+    if lhds is None:
+        m.addLConstr(gp.quicksum(prod[o] * v[o] for o in disp), GRB.GREATER_EQUAL, meta)
     s = {i: m.addVar(vtype=GRB.INTEGER, lb=0) for i in slhd}
     fila = {i: m.addLConstr(s[i] - gp.quicksum(ener[o] * v[o] for o in disp if o[0] == i),
                             GRB.GREATER_EQUAL, 0.0) for i in slhd}
@@ -91,10 +96,11 @@ def _capacidad(m, s, fila, bmin, cap):
         m.chgCoeff(f, s[i], (1 - bmin[i]) * cap)
 
 
-def evaluador_dia(om, y, d):
+def evaluador_dia(om, y, d, lhds=None):
     """Funcion cap -> cota por LHD del dia (None si el MIP no cierra). Arma el
-    MIP una vez y solo cambia U: sirve para evaluar muchas capacidades."""
-    m, _v, s, fila, dd = _mip_dia(om, y, d)
+    MIP una vez y solo cambia U: sirve para evaluar muchas capacidades. lhds: ver
+    _mip_dia."""
+    m, _v, s, fila, dd = _mip_dia(om, y, d, lhds)
 
     def n(cap):
         _capacidad(m, s, fila, dd["bmin"], cap)
