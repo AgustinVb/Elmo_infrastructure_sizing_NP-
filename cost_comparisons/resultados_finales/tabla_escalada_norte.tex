@@ -1,0 +1,26 @@
+\begin{table}[htbp]
+\centering
+\caption{Dimensionamiento de infraestructura e indicadores de operación por escenario, caso escalada norte.}
+\label{tab:resultados-suministro-energia-escalada-norte}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.3}
+\newcommand{\cab}[1]{\hspace{0pt}\textbf{#1}}
+\begin{tabular}{|>{\raggedright\arraybackslash}m{1.8cm}|*{8}{>{\centering\arraybackslash}m{\dimexpr(\linewidth-1.8cm-18\tabcolsep-10\arrayrulewidth)/8\relax}|}}
+\hline
+\cab{Escenario operacional} &
+\cab{Cantidad de cargadores} &
+\cab{Cantidad de baterías extra} &
+\cab{Potencia subes\-tación [kW]} &
+\cab{Genera\-ción instalada [kW]} &
+\cab{BESS [kWh / kW]} &
+\cab{Energía desde red total [MWh]} &
+\cab{Penetra\-ción renovable [\%]} &
+\cab{Cantidad de reempla\-zos de flota de baterías} \\
+\hline
+\textit{Battery swapping} solo red & 2 & 4 & 500 & -- & -- & 19.730 & -- & 0 \\ \hline
+Carga \textit{on-board} solo red & 2 & -- & 1.000 & -- & -- & 19.507 & -- & 3 \\ \hline
+\textit{Battery swapping} red, generación y almacenamiento & 2 & 4 & 500 & FV: 958\newline Eól.: 0 & 1.606 / 402 & 3.136 & 84,1 & 0 \\ \hline
+Carga \textit{on-board} red, generación y almacenamiento & 2 & -- & 1.000 & FV: 1.046\newline Eól.: 0 & 2.301 / 575 & 2.065 & 89,4 & 3 \\ \hline
+\end{tabular}
+\end{table}

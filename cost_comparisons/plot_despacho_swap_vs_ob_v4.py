@@ -104,28 +104,47 @@ def panel(ax, datos, anio, dia, titulo, ajuste=None):
         if not np.allclose(v["red"], p_red, atol=1e-6):
             raise SystemExit("{}: el ajuste no corresponde a esta solucion".format(titulo))
         p_red, p_gen, p_bat = v["red_aj"], v["gen_aj"], v["bat_aj"]
+    return dibujar(ax, ts, p_red, p_gen, p_bat, p_pot, anio, dia, titulo, DELTA_T)
+
+
+def dibujar(ax, ts, p_red, p_gen, p_bat, p_pot, anio, dia, titulo, delta_t, fuentes_completas=False,
+            etiqueta_consumo="Consumo de estaciones"):
+    """El panel de despacho a partir de las series (kW por intervalo t de ts).
+    Lo usa tambien resultados_finales.py para el despacho de swap ajustado.
+
+    fuentes_completas=True (resultados_finales.py): cada fuente se apila entera,
+    sin orden de merito, y la linea es la demanda total (consumo de las
+    estaciones mas carga del BESS = red + generacion + descarga del BESS), sin
+    separar la carga del BESS; nada bajo el cero."""
     x = np.arange(len(ts))
     demanda = p_red + p_gen + p_bat
     bess_des, bess_car = np.maximum(p_bat, 0.0), np.maximum(-p_bat, 0.0)
-    a_bess = np.minimum(bess_des, demanda)
-    a_gen = np.minimum(p_gen, demanda - a_bess)
-    a_red = demanda - a_bess - a_gen
+    if fuentes_completas:
+        a_red, a_gen, a_bess = p_red, p_gen, bess_des
+        linea = demanda + bess_car
+    else:
+        a_bess = np.minimum(bess_des, demanda)
+        a_gen = np.minimum(p_gen, demanda - a_bess)
+        a_red = demanda - a_bess - a_gen
+        linea = demanda
     if np.min(a_red) < -1e-6:
         raise SystemExit("{}: aporte de red negativo ({:.3f} kW) con el orden de merito".format(
             titulo, np.min(a_red)))
 
     ax.stackplot(x, a_red, a_gen, a_bess, labels=["Red", "Generación renovable", "BESS descargando"],
                  colors=["#4C72B0", "#F2C14E", "#55A868"], edgecolor="none", alpha=0.95)
-    ax.plot(x, demanda, color="black", linewidth=1.2, label="Consumo de estaciones")
-    if np.any(bess_car > 1e-9):
+    ax.plot(x, linea, color="black", linewidth=1.2, label=etiqueta_consumo)
+    if not fuentes_completas and np.any(bess_car > 1e-9):
         ax.fill_between(x, 0.0, -bess_car, color="#C44E52", alpha=0.55,
                         label="BESS cargando (consumo extra)")
     ax.axhline(0, color="black", linewidth=0.8)
+    if fuentes_completas:
+        ax.set_ylim(bottom=0)
 
     pico_ventana = float("nan")
     marca = None
     if DIAS_CON_CARGO[0] <= dia <= DIAS_CON_CARGO[1]:
-        punta = intervalos_punta(ts.max(), DELTA_T)
+        punta = intervalos_punta(ts.max(), delta_t)
         dentro = np.array([int(t) in punta for t in ts])
         if dentro.any():
             ax.axvspan(x[dentro][0], x[dentro][-1], color="#B00020", alpha=0.10, zorder=0)
@@ -136,7 +155,7 @@ def panel(ax, datos, anio, dia, titulo, ajuste=None):
                                      titulo, pico_ventana, anio, p_pot))
             marca = (x[dentro][0] + x[dentro][-1]) / 2
 
-    horas = horas_de_reloj(ts, DELTA_T)
+    horas = horas_de_reloj(ts, delta_t)
     paso = max(1, len(ts) // 12)
     idx = list(range(0, len(ts), paso))
     ax.set_xticks([x[i] for i in idx])
@@ -148,8 +167,8 @@ def panel(ax, datos, anio, dia, titulo, ajuste=None):
     ax.set_axisbelow(True)
     return marca, {"panel": titulo.replace("\n", " "), "pico_red_dia_kw": float(np.max(a_red)),
                    "pico_red_ventana_kw": pico_ventana, "p_pot_kw": p_pot,
-                   "energia_dia_kwh": float(np.sum(demanda) * DELTA_T),
-                   "energia_red_dia_kwh": float(np.sum(a_red) * DELTA_T)}
+                   "energia_dia_kwh": float(np.sum(demanda) * delta_t),
+                   "energia_red_dia_kwh": float(np.sum(a_red) * delta_t)}
 
 
 def main():
