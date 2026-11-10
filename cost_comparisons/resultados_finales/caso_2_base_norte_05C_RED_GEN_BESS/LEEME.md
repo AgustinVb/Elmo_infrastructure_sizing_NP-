@@ -2,23 +2,21 @@
 
 | | Costo total [USD, VP 10 años] |
 |---|---:|
-| Battery swapping, modelo (UB del L-shaped) | 2,483,322.01 |
-| Battery swapping, ajuste de energía | 2,464,147.67 |
-| **Battery swapping, ajustado (comparable)** | **2,419,370.28** |
-| **On-board (comparable)** | **2,383,672.61** |
+| **BS ajustado** | **2,419,370.28** |
+| **On-board** | **2,383,672.61** |
 | BS ajustado vs OB | +1.50% |
 
-LB del swap: 2,441,084.20 (lshaped_A2), gap 1.70%.
+Gap de optimalidad del L-shaped de swap: 1.70% (LB de lshaped_A2).
 
 ## Carpetas
 
-- `comparacion/`: costos (modelo, ajustes y OB), infraestructura por año y degradación.
+- `comparacion/`: costos, infraestructura por año y degradación, BS ajustado contra OB.
 - `battery_swapping_modelo/`: `json_plotter.py` de esta rama sobre la solución del
   L-shaped. **Son gráficos del modelo, antes del ajuste**: cada recarga aparece como el
   bloque completo bmin → 100 % y la generación/BESS son las que eligió el modelo.
-- `battery_swapping_ajustado/`: despacho de cada año y día muestreado con BS modelo,
-  BS ajustado (energía real de cada swap y generación, BESS y red redimensionadas)
-  y on-board; `energia_anual.png` compara consumo y compra a la red por año.
+- `battery_swapping_ajustado/`: despacho de BS ajustado (energía real de cada swap y
+  generación, BESS y red redimensionadas) en cada año y día muestreado;
+  `energia_anual.png` con el consumo, la compra a la red y la generación usada por año.
 - `on_board/`: `json_plotter.py` de Elmo_ob sobre la solución on-board.
 
 ## Fuentes

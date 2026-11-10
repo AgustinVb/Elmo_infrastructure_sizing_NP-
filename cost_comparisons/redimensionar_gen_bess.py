@@ -70,12 +70,20 @@ def carga_de_solucion(leer, years, T):
             for y in years for d in DIAS}
 
 
-def redimensionar(p, carga, series=False):
+def redimensionar(p, carga, series=False, H_fijo=None):
     """LP de generacion + BESS + red para la carga {(y, d): array kW}.
 
     p: parameters.json (dict). Devuelve los seis TERMINOS en USD (VP), su "suma",
     la potencia instalada por tecnologia "G_kw" y las unidades de BESS "H"; con
-    series=True tambien el despacho de cada dia ("series") y "P_pot" por año."""
+    series=True tambien el despacho de cada dia ("series") y "P_pot" por año.
+
+    El despacho de series=True es, entre los de igual costo, el de menor energia
+    por el BESS: con una sola P_bat neta y A -= P_bat / eta * dt, cargar guarda
+    |P_bat| / eta y el ciclo completo rinde exactamente 1, asi que ciclar no
+    cuesta nada y el LP puede devolver carga y descarga alternadas intervalo a
+    intervalo (pasa en el modelo de las dos ramas). Una segunda pasada con G_g, H
+    y P_pot fijos y el costo acotado a su optimo minimiza sum |P_bat|; los
+    terminos de costo son los de la primera."""
     T = len(next(iter(carga.values())))
     dt, esc = float(p["delta_t"]), float(p["scaling_factor_op_cost"])
     years = sorted(int(y) for y in p["years"])
@@ -95,6 +103,8 @@ def redimensionar(p, carga, series=False):
     m.Params.OutputFlag = 0
     G = {g: m.addVar(ub=float(_u(p["g_max_g"])[g])) for g in gens}
     H = m.addVar(ub=float(p.get("h_max", 10))) if stor else None
+    if H is not None and H_fijo is not None:   # sensibilidad: BESS de tamaño dado (unidades)
+        H.LB = H.UB = float(H_fijo)
     P_pot = {y: m.addVar() for y in years}
     c_red = gp.LinExpr()
     despacho = {}   # (y, d) -> variables del dia, para devolver las series
@@ -153,6 +163,23 @@ def redimensionar(p, carga, series=False):
     out["H"] = H.X if H is not None else 0.0
     if not series:
         return out
+    if stor:
+        # Segunda pasada: mismo costo, capacidades fijas, minima energia por el BESS.
+        opt = m.ObjVal
+        for v, x in [(v, v.X) for v in list(G.values()) + [H] + list(P_pot.values())]:
+            v.LB = v.UB = x
+        m.addConstr(c_red + c_punta + c_ginv + c_gop + c_binv + c_bop <= opt * (1 + 1e-7))
+        abs_bat = []
+        for v in despacho.values():
+            u = m.addVars(T)
+            m.addConstrs(u[t] >= v["bat"][t] for t in range(T))
+            m.addConstrs(u[t] >= -v["bat"][t] for t in range(T))
+            abs_bat.append(u.sum())
+        m.setObjective(gp.quicksum(abs_bat))
+        m.optimize()
+        if m.Status != gp.GRB.OPTIMAL:
+            raise SystemExit("redimensionar: la pasada de minimo ciclado termino con status {}".format(
+                m.Status))
     # Despacho del LP por dia (kW; P_bat > 0 descargando, soc en kWh) y P_pot por año.
     X = lambda vs: np.array([vs[t].X for t in range(T)])
     out["series"] = {k: {"red": X(v["red"]), "gen": {g: X(pg) for g, pg in v["gen"].items()},
