@@ -20,7 +20,7 @@ particion.py. Medido a 4 años en swap:
                variables del maestro que usa (en carga on-board: N_chargers,
                n_ssee_k/P_max_k, P_pot, G_g, H, b_bar).
   presupuestos las filas del maestro que suman variables de dia (en carga
-               on-board, s_def: S_y = energia cargada de todos los dias; en swap,
+               on-board, s_def: S_y = energia de traccion de todos los dias; en swap,
                energy_consumed_def). Como las variables de presupuesto del paper
                (ec. 9-10), se parten en e_{y,d} del maestro y energia_d = e_{y,d}
                en cada subproblema.

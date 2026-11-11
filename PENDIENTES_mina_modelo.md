@@ -6,6 +6,35 @@ el equivalente en swap y de donde se portó la metodología.
 
 ---
 
+## 0H. SIGUIENTE VERSIÓN DE RESULTADOS: re-correr TODOS los casos OB (2026-11-11)
+
+**Cambio de modelo.** `s_def` (functions.py) cuenta ahora los ciclos con la **energía
+de tracción** (`Y * pe_i * d_i * n_trips`, sin `eta_discharge`), la misma base que
+`EnergyConsumed` de swap. Antes usaba la energía que entrega el cargador (`sum P *
+delta_t`), que con el SOC cíclico del día es tracción / (eta_c * eta_d): con 0,95 / 0,95
+OB contaba **10,8 % más ciclos** que swap con la misma operación, en mina modelo y en
+DCH (medido exacto en mina modelo caso 1 y DCH 1C). También cambiaron las cotas
+`N_L`/`N_U` de `compute_n_ciclos_bounds` (sin `/eta_discharge`; si no, `N_L` quedaba
+sobre el mínimo). Validado en el monolítico de 1 año de `zona_norte/05C/P_red`:
+S / tracción = 1,000000.
+
+**Todos los resultados OB anteriores (v4 de mina modelo y DCH) son con la versión
+anterior.** Pendiente para la siguiente versión de resultados: re-correr los 8 casos de
+mina modelo y DCH 1C y 2C (y volver a probar DCH 0,5C), y rehacer la comparación con
+swap (`cost_comparisons/resultados_finales.py` y `resultados_finales_dch.py`).
+
+Impacto estimado con la operación FIJA (calendario de reemplazos de menor costo con
+cada energía, scratchpad `impacto_traccion_ob.py` de la sesión):
+
+| Caso | Reemplazos | Costo OB | Swap vs OB |
+|---|---|---|---|
+| mina modelo 1–3, 6–8 | sin cambio | sin cambio | sin cambio |
+| mina modelo 4 y 5 (escalada, 1C) | 4, 6, 8 → 5, 7 | −767 mil c/u | −29,6 % → ~−18 %; −33,9 % → ~−21 % |
+| DCH 1C | 7 → 8 | −317 mil | −26,0 % → ~−23 % |
+| DCH 2C | cambia | hay que re-correr (la factibilidad del año 7 con 1 cargador por estación depende de la capacidad) | — |
+
+---
+
 ## 0G. CASOS DE ESTUDIO FINALES OB (2026-10-16) — cola `cola_tesis_ob.sh`
 
 Datos en `data/Resultados_finales_tesis/Mina_modelo/<Produccion>/<zona>/<carga>/<ESC>/`

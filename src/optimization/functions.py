@@ -738,8 +738,10 @@ def compute_n_ciclos_bounds(model, year, time_series):
             target = value(model.m_j[j, y])
             ub_j = math.ceil(target / prod_per_assign) + 1
 
+            # Energia de traccion, la misma base de s_def (sin eta_discharge:
+            # con ella N_L quedaria sobre el minimo y cortaria soluciones).
             e_j = (value(model.pe_i[i_j, j]) * value(model.d_i[i_j, j])
-                   * time_series.get_n_trips(j, i_j) / value(model.eta_discharge_i[i_j]))
+                   * time_series.get_n_trips(j, i_j))
 
             nodes_info.append((e_j / prod_per_assign, prod_per_assign, ub_j, e_j))
             total_target_day += target
@@ -1374,10 +1376,21 @@ class ConstraintRules(OptRules):
     #   5) B[y1] = b_max             -> fijado en BoundRules (model.b_bar[y1].fix)
     # ------------------------------------------------------------------ #
     def s_def(self, model, y):
-        """S[y] = energía cargada por la flota en el año y (kWh), escalada a año completo."""
+        """S[y] = energía de TRACCIÓN de la flota en el año y (kWh), escalada a
+        año completo: la misma base que EnergyConsumed de battery_swapping_multiaño
+        (consumo de los viajes, sin dividir por eta_discharge), para que las dos
+        ramas cuenten los mismos ciclos con la misma operación.
+
+        Antes era la energía que entrega el cargador (sum P * delta_t). Con el
+        SOC cíclico del día (battery_boundary) esa energía es exactamente
+        tracción / (eta_charge * eta_discharge): con 0,95 / 0,95, OB contaba
+        10,8 % más ciclos que swap (medido en mina modelo y DCH, 2026-11-11)."""
         energy_repr_day = sum(
-            model.P[k, i, y2, d, t] * model.delta_t
-            for (k, i, y2, d, t) in model.ZCHARGE_DAYS_TIME_INDEX if y2 == y
+            model.Y[i, j, y, d, t] * model.pe_i[i, j] * model.d_i[i, j] * self.time_series.get_n_trips(j, i)
+            for i in model.elhd_set
+            for d in model.days
+            for t in model.time_intervals_set
+            for j in self.time_series.mapper['Nodes_assigned_at_interval'].get((y, d, t, i), [])
         )
         return model.S[y] == energy_repr_day * model.scaling_factor_op_cost
 

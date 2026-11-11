@@ -662,7 +662,7 @@ class YearBlockBuilder(object):
 
         Estado de acople: D_y (capacidad al FINAL del año), no AN_ciclos.
         d_y_fade (D_y = b_bar_y - gamma*N_ciclos_y) y s_def (S_y = energia
-        cargada) ya quedaron registradas por ConstraintRules.
+        de traccion) ya quedaron registradas por ConstraintRules.
         build_all_constraints (funciones intra-año, sin cruce de años,
         validas tal cual para un bloque de un solo año). Lo que este
         metodo agrega:
@@ -783,7 +783,7 @@ class YearBlockBuilder(object):
         (macroblocks.aggregate_degradation), que con b_bar ya fijo es una
         cuenta lineal y exacta, sin envolvente de McCormick.
 
-        `s_def` (S_y = energia cargada) se conserva intacta: es justamente lo
+        `s_def` (S_y = energia de traccion) se conserva intacta: es justamente lo
         que se agrega despues. Tampoco se registra "D" en state_links, porque
         este bloque no produce ese estado."""
         y = self.year

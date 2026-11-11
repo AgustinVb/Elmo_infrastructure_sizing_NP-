@@ -15,7 +15,7 @@ LA ESTRUCTURA QUE LO HACE POSIBLE, en carga on-board:
     (N_chargers, n_ssee_k/P_max_k, G_g, H), la potencia contratada P_pot y la
     degradacion de la flota (R, b_bar, S, N_ciclos, w_deg, D).
   - Las restricciones que cruzan dias son las de la degradacion: s_def suma la
-    energia cargada de TODOS los dias, y de ahi salen la envolvente de
+    energia de traccion de TODOS los dias, y de ahi salen la envolvente de
     McCormick (mccormick_*), n_ciclos_link y d_y_fade.
   - Cada dia es un ciclo cerrado (battery_boundary: B[.,d,0] = B[.,d,tf];
     bess_soc_init/bess_soc_cyclic): no hay estado que fluya de un dia al
@@ -91,7 +91,7 @@ SHARED_VARS = (
 )
 
 # Parte de la degradacion que depende de la energia de todos los dias: s_def
-# suma la energia cargada del año, y de ahi la envolvente de McCormick del
+# suma la energia de traccion del año, y de ahi la envolvente de McCormick del
 # bloque (YearBlockBuilder._add_degradation_state), el bilineal exacto si
 # estuviera y d_y_fade.
 ENERGY_DEGRADATION_CONSTRAINTS = (
