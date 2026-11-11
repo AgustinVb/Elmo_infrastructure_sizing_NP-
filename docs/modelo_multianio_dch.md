@@ -344,7 +344,7 @@ objetivo y cada restricción numerada) está en el **anexo A** para carga on-boa
 Se modela a nivel de flota, con recursión año a año:
 
 ```
-S_y            = 91,25 · Σ_d Σ_t Σ_i P·Δt          (energía anual cargada)
+S_y            = 91,25 · Σ_d Σ_t Σ_{i,j} e_ij·Y_ijydt  (energía anual de tracción)
 N^ciclos_y · b̄_y = S_y / n_LHD,y                   (bilineal)
 D_y            = b̄_y − γ · N^ciclos_y
 b̄_y ≤ D_{y−1} + 0,3·b_max·R_y
@@ -406,7 +406,7 @@ que funciona.
 | Energía | Una batería por LHD, con carga y descarga | La batería del LHD solo se descarga y el intercambio la repone. La estación lleva inventarios de baterías cargadas y descargadas, cargas iniciadas e intercambios. Se permite intercambiar a cualquier SOC sobre el mínimo |
 | Mantención | El LHD no opera ni carga | El LHD no opera ni intercambia, pero la estación sigue cargando baterías |
 | Flota que se degrada | Una batería por LHD activo | Pool + una batería por LHD activo |
-| Ciclos | `N^ciclos·b̄ = S/n_LHD`, con S la energía **cargada** | `N^ciclos·b̄ = E/(n° de baterías de la flota)`, con E la energía **consumida** repartida entre toda la flota. Cada batería del pool baja los ciclos por batería, así que comprar baterías retrasa o evita el reemplazo |
+| Ciclos | `N^ciclos·b̄ = S/n_LHD`, con S la energía **de tracción** (hasta el 2026-11-11, la cargada; ver la nota de A.5) | `N^ciclos·b̄ = E/(n° de baterías de la flota)`, con E la energía **consumida** repartida entre toda la flota. Cada batería del pool baja los ciclos por batería, así que comprar baterías retrasa o evita el reemplazo |
 | Reemplazo | n_LHD·R·299.000 | (n° de baterías de la flota)·R·299.000. El producto R × flota se linealiza con McCormick (4 desigualdades) |
 | Escala numérica | No hace falta | Ciclos en miles, energía en MWh y producción en kt, para evitar problemas numéricos en las descomposiciones |
 
@@ -1125,6 +1125,7 @@ Para un transporte multiaño, una opción natural es combinar dos niveles:
 
 ## 8. Limitaciones y pendientes
 
+- **Volver a correr todos los casos on-board** (8 de la mina modelo y DCH 0,5C, 1C y 2C) con los ciclos contados con la energía de tracción, y rehacer la comparación con swap. Ver la nota de A.5.
 - **DCH 2C queda en 5,39 %.**
   - La cota inferior (L-shaped) es casi la cota operacional.
   - Falta cota superior: la búsqueda local exploró solo reemplazos y cargadores del año
@@ -1209,7 +1210,7 @@ el caso red sus topes son cero. Las unidades son físicas: kW, kWh, t, USD y h.
 | $R_y$ | $\{0,1\}$, $R_{y_1} = 0$ | reemplazo de la flota de baterías al inicio del año |
 | $\bar b_y$ | $[B_L, B_U]$, $\bar b_{y_1} = b^{max}$ | capacidad por batería al inicio del año |
 | $D_y$ | $[B_L, B_U]$ | capacidad por batería al final del año |
-| $S_y$ | $\ge 0$ | energía cargada por la flota en el año (kWh) |
+| $S_y$ | $\ge 0$ | energía de tracción de la flota en el año (kWh) |
 | $N_y$ | $[N^L_y, N^U_y]$ | ciclos equivalentes por batería en el año |
 | $w_y$ | $\ge 0$ | variable auxiliar de McCormick ($\approx N_y \bar b_y$) |
 | $Y_{ijydt}$ | $\{0,1\}$, $j \in \mathcal{J}_{iydt}$ | LHD $i$ asignado a extraer en $j$ |
@@ -1327,7 +1328,7 @@ $$
 
 $$
 \begin{aligned}
-&S_y = \omega \sum_{d,t} \sum_{k,i} P_{kiydt}\, \Delta t && \text{(A30)}\\
+&S_y = \omega \sum_{d,t} \sum_{i,j} e_{ij}\, Y_{ijydt} && \text{(A30)}\\
 &N_y\, \bar b_y = S_y / n_y && \text{(A31)}\\
 &D_y = \bar b_y - \gamma\, N_y && \text{(A32)}\\
 &\bar b_y \le D_{y^-} + \rho\, R_y, \qquad \bar b_y \ge D_{y^-} - b^{max} R_y, \qquad \bar b_y \ge b^{max} R_y \qquad y \in \mathcal{Y}^+ && \text{(A33)}
@@ -1336,6 +1337,10 @@ $$
 
 (A33) deja $\bar b_y = D_{y^-}$ sin reemplazo y $\bar b_y = b^{max}$ con reemplazo. Junto
 con las cotas de $D_y$, garantiza que la capacidad nunca baje del piso.
+
+(A30) usa la energía de tracción, la misma base que la energía consumida de battery swapping (B22).
+
+**Corrección del 2026-11-11.** Hasta esa fecha, on-board contaba los ciclos con la energía que entrega el cargador ($\sum P\,\Delta t$). Con el SOC cíclico del día, esa energía es la de tracción dividida por $\eta_c \eta_d$, así que on-board contaba 10,8 % más ciclos que swap con la misma operación. Ahora las dos tecnologías usan la energía de tracción. **Los resultados on-board de este documento (secciones 2.7, 5 y 6) son de la versión anterior** y se van a volver a correr en la siguiente versión de resultados. Estimación con la operación fija: en la mina modelo cambian solo los casos de producción escalada (−767 mil USD de reemplazos cada uno) y en DCH, 1C (−317 mil) y 2C.
 
 **Linealización de (A31).** En la versión exacta, (A31) es bilineal y se resuelve con el
 solver en modo no convexo. En la descomposición, y opcionalmente en el monolítico, se
