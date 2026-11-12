@@ -1755,11 +1755,17 @@ def calculate_battery_degradation_metrics(root: Path) -> Dict[str, Any]:
     b_max          = _as_float(params_data.get("b_max_fleet"), 0.0)
     min_frac       = _as_float(params_data.get("min_capacity_fraction"), 0.0)
     # c_bat_replace es el costo TOTAL de UNA sola batería; se escala por
-    # la cantidad de LHD eléctricos (una batería por LHD) para obtener el
-    # costo de reemplazar la flota completa, igual que en ObjectiveRules
-    # (functions.py: battery_replace_cost).
+    # la cantidad de LHD eléctricos ACTIVOS ese año (n_elhd_bd[y], una batería
+    # por LHD), igual que en ObjectiveRules (functions.py: battery_replace_cost).
+    # Con la flota completa (len(elhd_set)) el reemplazo quedaba sobrecobrado en
+    # los años con menos LHD activos (DCH: FleetByYear 1-5-9-12-...-4-2). Sin
+    # n_elhd_bd en parameters.json (salidas antiguas) se usa la flota completa.
     c_bat_replace  = _as_float(params_data.get("c_bat_replace"), 0.0)
     n_elhd         = len(params_data.get("elhd_set", []) or [])
+    n_elhd_bd      = params_data.get("n_elhd_bd") or {}
+    if isinstance(n_elhd_bd, dict) and "_1" in n_elhd_bd:
+        n_elhd_bd = n_elhd_bd["_1"]
+    n_elhd_y       = {str(y): _as_float(v, n_elhd) for y, v in n_elhd_bd.items()} if isinstance(n_elhd_bd, dict) else {}
 
     years = sorted(b_bar_map.keys(), key=lambda y: float(y))
     years_sorted_int = _get_years_sorted(params_data)
@@ -1774,7 +1780,7 @@ def calculate_battery_degradation_metrics(root: Path) -> Dict[str, Any]:
         # R=0 no se exporta (binarias solo guardan valores en 1) -> default 0.0
         replaced = r_map.get(y, 0.0) >= 0.5
         disc = _year_discount_factor(discount_r, y, years_sorted_int)
-        cost_y = n_elhd * c_bat_replace * disc if replaced else 0.0
+        cost_y = n_elhd_y.get(y, n_elhd) * c_bat_replace * disc if replaced else 0.0
         total_replace_cost += cost_y
         if replaced:
             n_replacements += 1

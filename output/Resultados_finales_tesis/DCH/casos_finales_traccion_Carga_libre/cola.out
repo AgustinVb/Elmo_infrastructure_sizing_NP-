@@ -1,0 +1,863 @@
+[dch v4 r1 inicio] 2026-11-11 11:17:11 (llevo 0.0 h, quedan 36.0 h) casos 2 3 | 11 años | Benders 6 h por caso, tope global 36 h (hasta 2026-11-12 23:17:11)
+[dch v4 r1 2/3 1C/P_red] 2026-11-11 11:17:11 (llevo 0.0 h, quedan 36.0 h) Nested Benders intento 1 (max 6.00 h, gap 0.01, corte tras 4 iteraciones sin mejora) desde cero
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders\STOP
+[NestedBenders] tope de tiempo: 6.00 h (hasta 2026-11-11 17:17)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:1,074  2:14,728  3:33,712  4:44,805  5:48,543  6:50,583  7:54,441  8:44,051  9:31,097  10:10,592  11:431
+[NestedBenders] presolve de capacidad: anios [7], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 7  suma: sum n_ssee_k >= 6  (dual 6.0000, primal 6.000, 28s)
+[NestedBenders] presolve capacidad  anio 7  station_1: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 19s)
+[NestedBenders] presolve capacidad  anio 7  station_2: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 20s)
+[NestedBenders] presolve capacidad  anio 7  station_3: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 28s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 2 (1,000 kW, anio 7)  station_2: >= 2 (1,000 kW, anio 7)  station_3: >= 2 (1,000 kW, anio 7)
+[NestedBenders] presolve de capacidad: la cota agregada (6) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 95s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders\op_bound_gurobi.log"
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 7,908,252.61  (2,489,760 binarias relajadas, 3197s)
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y1 d15 fase1: 537,564.54  (optimal, 13s)
+[DayDecomp]   y1 d105 fase1: 537,536.23  (optimal, 14s)
+[DayDecomp]   y1 d196 fase1: 537,536.23  (optimal, 14s)
+[DayDecomp]   y1 d288 fase1: 537,564.54  (optimal, 14s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 15s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, -0, -0  Delta_N_chargers=1, -0, -0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 537,564.54  (optimal, 14s)
+[DayDecomp]   y1 d105 fase2: 537,536.23  (optimal, 14s)
+[DayDecomp]   y1 d196 fase2: 537,536.23  (optimal, 15s)
+[DayDecomp]   y1 d288 fase2: 537,564.54  (optimal, 15s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 15s
+[DayDecomp]   pulido sobre el bloque anual: infeasible -- se sigue SIN MIP start
+[DayDecomp] año 1: fallo en 215s
+[NestedBenders] k=1 FORWARD  anio 2 (2/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y2 d15 fase1: 181,660.66  (optimal, 25s)
+[DayDecomp]   y2 d105 fase1: 181,650.42  (optimal, 26s)
+[DayDecomp]   y2 d196 fase1: 181,639.92  (optimal, 33s)
+[DayDecomp]   y2 d288 fase1: 181,660.66  (optimal, 27s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 34s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, -0  Delta_N_chargers=0, 1, -0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=479
+[DayDecomp]   y2 d15 fase2: 181,660.66  (optimal, 26s)
+[DayDecomp]   y2 d105 fase2: 181,650.42  (optimal, 27s)
+[DayDecomp]   y2 d196 fase2: 181,639.92  (optimal, 28s)
+[DayDecomp]   y2 d288 fase2: 181,660.66  (optimal, 29s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 29s
+[DayDecomp]   pulido sobre el bloque anual: 227,177 valores, 118,393 enteras fijas, LP optimo en 29s -> incumbente 726,611.65
+[DayDecomp] año 2: listo en 285s
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -104.080514 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y3 d15 fase1: 192,959.14  (optimal, 42s)
+[DayDecomp]   y3 d105 fase1: 192,947.25  (optimal, 43s)
+[DayDecomp]   y3 d196 fase1: 192,947.25  (optimal, 45s)
+[DayDecomp]   y3 d288 fase1: 192,959.14  (optimal, 46s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 46s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 1  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=469.2
+[DayDecomp]   y3 d15 fase2: 192,959.14  (optimal, 39s)
+[DayDecomp]   y3 d105 fase2: 192,947.25  (optimal, 40s)
+[DayDecomp]   y3 d196 fase2: 192,947.25  (optimal, 41s)
+[DayDecomp]   y3 d288 fase2: 192,959.14  (optimal, 43s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 43s
+[DayDecomp]   pulido sobre el bloque anual: 369,769 valores, 190,425 enteras fijas, LP optimo en 42s -> incumbente 771,812.77
+[DayDecomp] año 3: listo en 341s
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -420.124924 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 4 (4/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y4 d15 fase1: 53,755.42  (optimal, 51s)
+[DayDecomp]   y4 d105 fase1: 53,759.37  (optimal, 53s)
+[DayDecomp]   y4 d196 fase1: 53,759.37  (optimal, 54s)
+[DayDecomp]   y4 d288 fase1: 53,755.42  (optimal, 56s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 56s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=456.3
+[DayDecomp]   y4 d15 fase2: 53,755.42  (optimal, 48s)
+[DayDecomp]   y4 d105 fase2: 53,759.37  (optimal, 50s)
+[DayDecomp]   y4 d196 fase2: 53,759.37  (optimal, 51s)
+[DayDecomp]   y4 d288 fase2: 53,755.42  (optimal, 53s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 53s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 51s -> incumbente 215,029.58
+[DayDecomp] año 4: listo en 386s
+[NestedBenders] k=1 FORWARD  anio 4  AVISO: residuo McCormick = -999.578710 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 5 (5/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y5 d15 fase1: 53,868.13  (optimal, 51s)
+[DayDecomp]   y5 d105 fase1: 53,784.97  (optimal, 53s)
+[DayDecomp]   y5 d196 fase1: 53,784.97  (optimal, 55s)
+[DayDecomp]   y5 d288 fase1: 53,868.13  (optimal, 56s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 56s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=443.2
+[DayDecomp]   y5 d15 fase2: 53,868.13  (optimal, 53s)
+[DayDecomp]   y5 d105 fase2: 53,784.97  (optimal, 55s)
+[DayDecomp]   y5 d196 fase2: 53,784.97  (optimal, 56s)
+[DayDecomp]   y5 d288 fase2: 53,868.13  (optimal, 58s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 58s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 51s -> incumbente 215,306.21
+[DayDecomp] año 5: listo en 387s
+[NestedBenders] k=1 FORWARD  anio 5  AVISO: residuo McCormick = -1882.010544 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 6 (6/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y6 d15 fase1: 52,256.44  (optimal, 52s)
+[DayDecomp]   y6 d105 fase1: 52,690.89  (optimal, 54s)
+[DayDecomp]   y6 d196 fase1: 52,690.89  (optimal, 56s)
+[DayDecomp]   y6 d288 fase1: 52,256.44  (optimal, 57s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 58s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=21.12  R=0  b_bar=428.7
+[DayDecomp]   y6 d15 fase2: 52,655.80  (optimal, 54s)
+[DayDecomp]   y6 d105 fase2: 52,690.89  (optimal, 55s)
+[DayDecomp]   y6 d196 fase2: 52,690.89  (optimal, 57s)
+[DayDecomp]   y6 d288 fase2: 52,655.80  (optimal, 58s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 58s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 44s -> incumbente 210,693.38
+[DayDecomp] año 6: listo en 383s
+[NestedBenders] k=1 FORWARD  anio 6  AVISO: residuo McCormick = -3608.319968 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 7 (7/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y7 d15 fase1: 383,142.49  (optimal, 46s)
+[DayDecomp]   y7 d105 fase1: 390,446.09  (optimal, 48s)
+[DayDecomp]   y7 d196 fase1: 390,446.09  (optimal, 50s)
+[DayDecomp]   y7 d288 fase1: 383,142.49  (optimal, 53s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 53s
+[DayDecomp]   agregado (max entre dias): N_chargers=2, 2, 2  Delta_N_chargers=1, 1, 1  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=416.3  R=0  b_bar=413
+[DayDecomp]   y7 d15 fase2: 390,430.36  (optimal, 48s)
+[DayDecomp]   y7 d105 fase2: 390,446.09  (optimal, 50s)
+[DayDecomp]   y7 d196 fase2: 390,446.09  (optimal, 51s)
+[DayDecomp]   y7 d288 fase2: 390,430.36  (optimal, 53s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 53s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 50s -> incumbente 1,561,752.91
+[DayDecomp] año 7: listo en 386s
+[NestedBenders] k=1 FORWARD  anio 7  AVISO: residuo McCormick = -3841.318571 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 8 (8/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y8 d15 fase1: 38,761.96  (optimal, 49s)
+[DayDecomp]   y8 d105 fase1: 38,751.31  (optimal, 50s)
+[DayDecomp]   y8 d196 fase1: 38,751.31  (optimal, 52s)
+[DayDecomp]   y8 d288 fase1: 38,761.96  (optimal, 53s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 53s
+[DayDecomp]   agregado (max entre dias): N_chargers=2, 2, 2  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=394.9
+[DayDecomp]   y8 d15 fase2: 38,761.96  (optimal, 51s)
+[DayDecomp]   y8 d105 fase2: 38,751.31  (optimal, 52s)
+[DayDecomp]   y8 d196 fase2: 38,751.31  (optimal, 54s)
+[DayDecomp]   y8 d288 fase2: 38,761.96  (optimal, 55s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 56s
+[DayDecomp]   pulido sobre el bloque anual: 438,185 valores, 225,001 enteras fijas, LP optimo en 41s -> incumbente 1,931,970.91
+[DayDecomp] año 8: listo en 367s
+[NestedBenders] k=1 FORWARD  anio 9 (9/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y9 d15 fase1: 25,612.96  (optimal, 43s)
+[DayDecomp]   y9 d105 fase1: 25,612.96  (optimal, 44s)
+[DayDecomp]   y9 d196 fase1: 25,612.96  (optimal, 45s)
+[DayDecomp]   y9 d288 fase1: 25,612.96  (optimal, 46s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 47s
+[DayDecomp]   agregado (max entre dias): N_chargers=2, 2, 2  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=468.7
+[DayDecomp]   y9 d15 fase2: 25,612.96  (optimal, 45s)
+[DayDecomp]   y9 d105 fase2: 25,612.96  (optimal, 46s)
+[DayDecomp]   y9 d196 fase2: 25,612.96  (optimal, 47s)
+[DayDecomp]   y9 d288 fase2: 25,612.96  (optimal, 48s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 49s
+[DayDecomp]   pulido sobre el bloque anual: 368,329 valores, 189,705 enteras fijas, LP optimo en 36s -> incumbente 102,451.82
+[DayDecomp] año 9: listo en 340s
+[NestedBenders] k=1 FORWARD  anio 9  AVISO: residuo McCormick = -430.481109 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 10 (10/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y10 d15 fase1: 7,568.73  (optimal, 22s)
+[DayDecomp]   y10 d105 fase1: 7,568.73  (optimal, 23s)
+[DayDecomp]   y10 d196 fase1: 7,568.73  (optimal, 23s)
+[DayDecomp]   y10 d288 fase1: 7,568.73  (optimal, 24s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 24s
+[DayDecomp]   agregado (max entre dias): N_chargers=2, 2, 2  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=456.7
+[DayDecomp]   y10 d15 fase2: 7,568.73  (optimal, 23s)
+[DayDecomp]   y10 d105 fase2: 7,568.73  (optimal, 24s)
+[DayDecomp]   y10 d196 fase2: 7,568.73  (optimal, 24s)
+[DayDecomp]   y10 d288 fase2: 7,568.73  (optimal, 25s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 25s
+[DayDecomp]   pulido sobre el bloque anual: 192,249 valores, 100,745 enteras fijas, LP optimo en 22s -> incumbente 30,274.94
+[DayDecomp] año 10: listo en 265s
+[NestedBenders] k=1 FORWARD  anio 10  AVISO: residuo McCormick = -572.019100 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 11 (11/11)  [UB=(sin cota aun)  LB=7,908,252.61]  resolviendo MILP...
+[DayDecomp] año 11: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y11 d15 fase1: 191.49  (optimal, 16s)
+[DayDecomp]   y11 d105 fase1: 191.49  (optimal, 17s)
+[DayDecomp]   y11 d196 fase1: 191.49  (optimal, 17s)
+[DayDecomp]   y11 d288 fase1: 191.49  (optimal, 18s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 18s
+[DayDecomp]   agregado (max entre dias): N_chargers=2, 2, 2  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=447.9
+[DayDecomp]   y11 d15 fase2: 191.49  (optimal, 17s)
+[DayDecomp]   y11 d105 fase2: 191.49  (optimal, 17s)
+[DayDecomp]   y11 d196 fase2: 191.49  (optimal, 18s)
+[DayDecomp]   y11 d288 fase2: 191.49  (optimal, 18s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 18s
+[DayDecomp]   pulido sobre el bloque anual: 120,953 valores, 64,729 enteras fijas, LP optimo en 16s -> incumbente 765.97
+[DayDecomp] año 11: listo en 232s
+[NestedBenders] k=1 FORWARD  anio 11  AVISO: residuo McCormick = -31.374288 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 pulido de la solucion: 7,915,048.09 -> 7,915,048.09 (0.00% menos, 2368s)
+[Estabilizacion] k=1: paso SERIO (costo 7,915,048.09 vs mejor nan) -- re-centra en esta trayectoria
+[NestedBenders] k=1: incumbente 7,915,048.09 y 0 cortes respaldados en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders\incumbente_respaldo.pkl
+[NestedBenders] k=1 BACKWARD anio 11  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 10)...
+[NestedBenders] k=1 BACKWARD anio 11  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 11  Phi^LP=745.88 -> Phi^LR=760.92 (+15.04)
+[NestedBenders] k=1 BACKWARD anio 10  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 9)...
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored
+[NestedBenders] k=1 BACKWARD anio 10  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored
+[NestedBenders] k=1 BACKWARD anio 10  Phi^LP=30,849.53 -> Phi^LR=30,870.10 (+20.57)
+[NestedBenders] k=1 BACKWARD anio 9  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=1 BACKWARD anio 9  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 9  Phi^LP=133,306.98 -> Phi^LR=133,321.92 (+14.95)
+[NestedBenders] k=1 BACKWARD anio 8  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=1 BACKWARD anio 8  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 8  Phi^LP=369,084.35 -> Phi^LR=369,176.69 (+92.34)
+[NestedBenders] k=1 BACKWARD anio 7  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=1 BACKWARD anio 7  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 7  Phi^LP=974,682.43 -> Phi^LR=1,922,578.18 (+947,895.75)
+[NestedBenders] k=1 BACKWARD anio 6  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=1 BACKWARD anio 6  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 6  Phi^LP=2,131,416.94 -> Phi^LR=2,131,490.17 (+73.24)
+[NestedBenders] k=1 BACKWARD anio 5  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=1 BACKWARD anio 5  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 5  Phi^LP=2,346,392.58 -> Phi^LR=2,346,452.08 (+59.50)
+[NestedBenders] k=1 BACKWARD anio 4  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=1 BACKWARD anio 4  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 4  Phi^LP=2,561,108.27 -> Phi^LR=2,561,246.89 (+138.62)
+[NestedBenders] k=1 BACKWARD anio 3  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=1 BACKWARD anio 3  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 3  Phi^LP=3,214,067.14 -> Phi^LR=3,332,946.81 (+118,879.67)
+[NestedBenders] k=1 BACKWARD anio 2  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=7,915,048.09  LB=7,908,252.61]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 2  Phi^LP=3,838,777.87 -> Phi^LR=3,866,393.64 (+27,615.77)
+[NestedBenders] k=1 BACKWARD anio 1  [UB=7,915,048.09  LB=7,908,252.61]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=7,915,048.09  LB=7,908,252.61]  MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=1 cota del backward = 6,016,276.02  (no supera LB=7,908,252.61)
+[NestedBenders] k=1  UB=7915048.0937  LB=7908252.6145  gap=0.0859%  tiempo_iteracion=8081.0s
+[NestedBenders] k=1: incumbente 7,915,048.09 y 10 cortes respaldados en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders\incumbente_respaldo.pkl
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 2, elegido 2 (ajustada); station_2: cota 2, elegido 2 (ajustada); station_3: cota 2, elegido 2 (ajustada)
+[NestedBenders] tiempo total: 11374.6s (1 iteracion, 0 cortes de factibilidad)
+[NestedBenders] cortes fortalecidos: 10 de 10 superaron Phi^LP (promedio +109,480.54, maximo +947,895.75)
+[Estabilizacion] 1 pasos serios, 0 nulos; caja final +-1 / 25%
+NestedBenders: UB=7915048.0937  LB=7908252.6145  gap=0.0859%  iteraciones=1  tiempo_total=11374.6s
+[NestedBenders] reporte: costo recomputado = 7,915,048.09 contra UB 7,915,048.09 (desvio 0.000000); incluye 609,708.33 de apertura de estaciones
+[NestedBenders] MIP start pulido (LP con enteras fijas, 1,903,841 fijadas, 432s): costo 7,915,048.09 -> 7,915,048.09
+[NestedBenders] residuo del MIP start por familia (max |violacion|, 127s):
+    s_def                            1.956e-08  en 8  (0 filas > 1e-6)
+    mccormick_lb1                    6.956e-09  en 10  (0 filas > 1e-6)
+    mccormick_ub2                    9.604e-10  en 4  (0 filas > 1e-6)
+    mccormick_energy                 4.657e-10  en 5  (0 filas > 1e-6)
+    max_power                        5.252e-11  en ('station_2', 'LH518B_6', 8, 105, 142.0)  (0 filas > 1e-6)
+    battery_upper                    9.663e-12  en ('LH518B_6', 8, 196, 28.0)  (0 filas > 1e-6)
+    battery_soc_break_symmetry       2.615e-12  en ('LH518B_11', 'LH518B_12', 8, 15)  (0 filas > 1e-6)
+    battery_lower                    1.450e-12  en ('LH518B_5', 8, 105, 165.0)  (0 filas > 1e-6)
+    power_cost_peak_limit            5.684e-13  en (7, 196, 83.0)  (0 filas > 1e-6)
+    power_balance                    4.547e-13  en (7, 105, 174.0)  (0 filas > 1e-6)
+[NestedBenders] AVISO: 0 filas no evaluadas por variables sin valor; variables sin valor por familia: {'Z': 15824, 'StartCharge': 190080, 'EndCharge': 190080, 'StartAssign': 95040, 'EndAssign': 95040}
+JSONs, log y summary guardados en 'output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders'.
+[dch v4 r1 2/3 1C/P_red] 2026-11-11 15:14:51 (llevo 4.0 h, quedan 32.0 h) Benders: UB 7915048.0937  LB 7908252.6145
+ya existe output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders\parameters.json
+INPUTS
++-----------------+---------------------------------------------------------------------------------------------------------+
+| Campo           | Valor                                                                                                   |
++=================+=========================================================================================================+
+| Folder          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\1C\P_red\benders                 |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| Delta t (min)   | 8.000                                                                                                   |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| E.json          | NO ENCONTRADO                                                                                           |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| B.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\1C\P_red\benders\B.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| M.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\1C\P_red\benders\M.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| Y.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\1C\P_red\benders\Y.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| P.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\1C\P_red\benders\P.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| parameters.json | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\1C\P_red\benders\parameters.json |
++-----------------+---------------------------------------------------------------------------------------------------------+
+
+B (ELÃ‰CTRICO)
++---------+----------------------------------------------------------------------------------+
+| Estado  | Detalle                                                                          |
++=========+==================================================================================+
+| OMITIDO | No se pudo calcular: No se encontraron descensos (pasos con consumo) en el JSON. |
++---------+----------------------------------------------------------------------------------+
+
+M (EXTRACCION)
++----------------------------------------+------------------------------+
+| Metrica                                | Valor                        |
++========================================+==============================+
+| ExtracciÃ³n total (toda la operaciÃ³n) | 1337167.440000 (unidad de M) |
++----------------------------------------+------------------------------+
+| Valores numÃ©ricos sumados             | 1539360                      |
++----------------------------------------+------------------------------+
+| Máxima extracción (nodo)               | 0.000000                     |
++----------------------------------------+------------------------------+
+| Nodo con máxima extracción             | N/A                          |
++----------------------------------------+------------------------------+
+| Intervalos asignados a ese nodo        | 0                            |
++----------------------------------------+------------------------------+
+
+OPERACIÃ“N DIARIA
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| DÃ­a  | Viajes diarios totales | Ciclos (Y*n_trips) | EnergÃ­a diaria bruta [kWh] | EnergÃ­a neta en baterÃ­a [kWh] | PÃ©rdidas de carga (eta_charge) [kWh] |
++=======+========================+====================+=============================+=================================+=======================================+
+| 15    | 0                      | 0.000              | 60045.692                   | 57043.407                       | 3002.285                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| 105   | 0                      | 0.000              | 60040.001                   | 57038.001                       | 3002.000                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| 196   | 0                      | 0.000              | 60026.479                   | 57025.155                       | 3001.324                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| 288   | 0                      | 0.000              | 60044.785                   | 57042.546                       | 3002.239                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| TOTAL | 0                      | 0.000              | 240156.958                  | 228149.110                      | 12007.848                             |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+
+CICLOS TOTALES
++-------------------------------------------+-------+
+| MÃ©trica                                  | Valor |
++===========================================+=======+
+| cycles_total = sum(Y[i,j] * n_trips[j,i]) | 0.000 |
++-------------------------------------------+-------+
+
+GENERACION RENOVABLE
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+| Generador | Unidades | P_max/unidad [kW] | Potencia inst. [kW] | Inv. bruta | Valor residual | Inv. neta | Costo op. anual |
++===========+==========+===================+=====================+============+================+===========+=================+
+| Solar_PV  | 0        | 500               | 0                   | 0.00       | 0.00           | 0.00      | 0.00            |
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+| Wind      | 0        | 500               | 0                   | 0.00       | 0.00           | 0.00      | 0.00            |
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+| TOTAL     |          |                   | 0                   | 0.00       | 0.00           | 0.00      | 0.00            |
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+
+ALMACENAMIENTO BESS
++--------+---------------------+------------+-------------+-------------+------------+----------------+-----------+-----------------+
+| Unidad | Unidades instaladas | P_max [kW] | A_min [kWh] | A_max [kWh] | Inv. bruta | Valor residual | Inv. neta | Costo op. anual |
++========+=====================+============+=============+=============+============+================+===========+=================+
+| Bess   | 0                   | 250        | 0           | 1000        | 0.00       | 0.00           | 0.00      | 0.00            |
++--------+---------------------+------------+-------------+-------------+------------+----------------+-----------+-----------------+
+| TOTAL  |                     |            |             |             | 0.00       | 0.00           | 0.00      | 0.00            |
++--------+---------------------+------------+-------------+-------------+------------+----------------+-----------+-----------------+
+
+DEGRADACION BATERIA ON-BOARD
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| Año | B [kWh] (inicio) | % b_max | EFC año | D [kWh] (fin) | Reemplazo | Costo reemplazo |
++=====+==================+=========+=========+===============+===========+=================+
+| 1   | 482.0            | 100.0%  | 111.0   | 479.0         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 2   | 479.0            | 99.4%   | 359.4   | 469.2         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 3   | 469.2            | 97.3%   | 469.7   | 456.3         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 4   | 456.3            | 94.7%   | 480.0   | 443.2         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 5   | 443.2            | 92.0%   | 532.5   | 428.7         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 6   | 428.7            | 88.9%   | 573.7   | 413.0         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 7   | 413.0            | 85.7%   | 684.1   | 394.4         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 8   | 482.0            | 100.0%  | 488.4   | 468.7         | SI        | 1938484.76      |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 9   | 468.7            | 97.2%   | 442.9   | 456.6         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 10  | 456.6            | 94.7%   | 327.4   | 447.6         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 11  | 447.6            | 92.9%   | 18.2    | 447.1         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+
+DEGRADACION BATERIA - RESUMEN
++-------------------------------+--------------+
+| Métrica                       | Valor        |
++===============================+==============+
+| Capacidad nominal b_max [kWh] | 482.0        |
++-------------------------------+--------------+
+| Piso de degradación           | 80% de b_max |
++-------------------------------+--------------+
+| N° de reemplazos              | 1            |
++-------------------------------+--------------+
+| Costo total reemplazos        | 1938484.76   |
++-------------------------------+--------------+
+
+COSTOS
++-------------------------------------+-------------+
+| Concepto                            | Valor       |
++=====================================+=============+
+| Costo energía carga                 | 1406099.83  |
++-------------------------------------+-------------+
+| Costo energía red P_red             | 1406099.83  |
++-------------------------------------+-------------+
+| Energía total red (horizonte) [kWh] | 21914322.38 |
++-------------------------------------+-------------+
+| Energía total red (horizonte) [MWh] | 21914.32    |
++-------------------------------------+-------------+
+| Costo inversión estaciones          | 3864381.48  |
++-------------------------------------+-------------+
+| Costo inversión subestación         | 838888.89   |
++-------------------------------------+-------------+
+| Costo inversión generación          | 0.00        |
++-------------------------------------+-------------+
+| Costo operación generación          | 0.00        |
++-------------------------------------+-------------+
+| Costo inversión BESS                | 0.00        |
++-------------------------------------+-------------+
+| Costo operación BESS                | 0.00        |
++-------------------------------------+-------------+
+| Costo reemplazo batería             | 1938484.76  |
++-------------------------------------+-------------+
+| Costo potencia punta                | 28733.54    |
++-------------------------------------+-------------+
+| Costo penalidad                     | 0.00        |
++-------------------------------------+-------------+
+| COSTO TOTAL                         | 8076588.49  |
++-------------------------------------+-------------+
+
+[dch v4 r1 2/3 1C/P_red] 2026-11-11 15:15:20 (llevo 4.0 h, quedan 32.0 h) FIN sin mejorar_ub ni certificado (Benders bajo 1 %): UB 7915048.0937  LB 7908252.6145  gap 0.086 %
+[dch v4 r1 3/3 2C/P_red] 2026-11-11 15:15:21 (llevo 4.0 h, quedan 32.0 h) Nested Benders intento 1 (max 6.00 h, gap 0.01, corte tras 4 iteraciones sin mejora) desde cero
+[STOP] para cortar a mano conservando la solucion, cree: output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders\STOP
+[NestedBenders] tope de tiempo: 6.00 h (hasta 2026-11-11 21:15)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:1,074  2:14,728  3:33,712  4:44,805  5:48,543  6:50,583  7:54,441  8:44,051  9:31,097  10:10,592  11:431
+[NestedBenders] presolve de capacidad: anios [7], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 7  suma: sum n_ssee_k >= 6  (dual 6.0000, primal 6.000, 97s)
+[NestedBenders] presolve capacidad  anio 7  station_1: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 73s)
+[NestedBenders] presolve capacidad  anio 7  station_2: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 66s)
+[NestedBenders] presolve capacidad  anio 7  station_3: n_ssee_k >= 2  (dual 2.0000, primal 2.000, 76s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 2 (1,000 kW, anio 7)  station_2: >= 2 (1,000 kW, anio 7)  station_3: >= 2 (1,000 kW, anio 7)
+[NestedBenders] presolve de capacidad: la cota agregada (6) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 313s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders\op_bound_gurobi.log"
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 9,646,547.18  (2,489,760 binarias relajadas, 3318s)
+[Estabilizacion] k=1: caja +-1 en enteras, +-max(25%, 1) en continuas
+[NestedBenders] k=1 FORWARD  anio 1 (1/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y1 d15 fase1: 649,138.61  (optimal, 14s)
+[DayDecomp]   y1 d105 fase1: 649,138.61  (optimal, 14s)
+[DayDecomp]   y1 d196 fase1: 649,138.61  (optimal, 14s)
+[DayDecomp]   y1 d288 fase1: 649,138.61  (optimal, 15s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 15s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, -0, -0  Delta_N_chargers=1, -0, -0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 649,138.61  (optimal, 15s)
+[DayDecomp]   y1 d105 fase2: 649,138.61  (optimal, 15s)
+[DayDecomp]   y1 d196 fase2: 649,138.61  (optimal, 15s)
+[DayDecomp]   y1 d288 fase2: 649,138.61  (optimal, 16s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 16s
+[DayDecomp]   pulido sobre el bloque anual: infeasible -- se sigue SIN MIP start
+[DayDecomp] año 1: fallo en 224s
+[NestedBenders] k=1 FORWARD  anio 2 (2/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y2 d15 fase1: 285,006.65  (optimal, 27s)
+[DayDecomp]   y2 d105 fase1: 284,947.46  (optimal, 27s)
+[DayDecomp]   y2 d196 fase1: 284,947.46  (optimal, 28s)
+[DayDecomp]   y2 d288 fase1: 285,006.65  (optimal, 31s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 31s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 0  Delta_N_chargers=0, 1, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=477.1
+[DayDecomp]   y2 d15 fase2: 285,006.65  (optimal, 28s)
+[DayDecomp]   y2 d105 fase2: 284,947.46  (optimal, 29s)
+[DayDecomp]   y2 d196 fase2: 284,947.46  (optimal, 30s)
+[DayDecomp]   y2 d288 fase2: 285,006.65  (optimal, 30s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 31s
+[DayDecomp]   pulido sobre el bloque anual: 227,177 valores, 118,393 enteras fijas, LP optimo en 30s -> incumbente 1,139,908.22
+[DayDecomp] año 2: listo en 291s
+[NestedBenders] k=1 FORWARD  anio 2  AVISO: residuo McCormick = -176.014143 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 3 (3/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y3 d15 fase1: 289,882.43  (optimal, 43s)
+[DayDecomp]   y3 d105 fase1: 288,615.92  (optimal, 44s)
+[DayDecomp]   y3 d196 fase1: 288,615.92  (optimal, 49s)
+[DayDecomp]   y3 d288 fase1: 289,882.43  (optimal, 47s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 49s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 1  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=460.8
+[DayDecomp]   y3 d15 fase2: 289,882.43  (optimal, 40s)
+[DayDecomp]   y3 d105 fase2: 288,615.92  (optimal, 41s)
+[DayDecomp]   y3 d196 fase2: 288,615.92  (optimal, 42s)
+[DayDecomp]   y3 d288 fase2: 289,882.43  (optimal, 44s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 44s
+[DayDecomp]   pulido sobre el bloque anual: 369,769 valores, 190,425 enteras fijas, LP optimo en 37s -> incumbente 1,156,996.71
+[DayDecomp] año 3: listo en 349s
+[NestedBenders] k=1 FORWARD  anio 3  AVISO: residuo McCormick = -899.173345 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 4 (4/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y4 d15 fase1: 53,756.81  (optimal, 51s)
+[DayDecomp]   y4 d105 fase1: 53,756.06  (optimal, 53s)
+[DayDecomp]   y4 d196 fase1: 53,756.06  (optimal, 55s)
+[DayDecomp]   y4 d288 fase1: 53,756.81  (optimal, 56s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 56s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=439.2
+[DayDecomp]   y4 d15 fase2: 53,756.81  (optimal, 50s)
+[DayDecomp]   y4 d105 fase2: 53,756.06  (optimal, 52s)
+[DayDecomp]   y4 d196 fase2: 53,756.06  (optimal, 53s)
+[DayDecomp]   y4 d288 fase2: 53,756.81  (optimal, 55s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 55s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 53s -> incumbente 215,025.73
+[DayDecomp] año 4: listo en 401s
+[NestedBenders] k=1 FORWARD  anio 4  AVISO: residuo McCormick = -2338.830431 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 5 (5/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 5: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y5 d15 fase1: 53,817.08  (optimal, 53s)
+[DayDecomp]   y5 d105 fase1: 53,799.46  (optimal, 55s)
+[DayDecomp]   y5 d196 fase1: 53,799.46  (optimal, 56s)
+[DayDecomp]   y5 d288 fase1: 53,817.08  (optimal, 58s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 58s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=416.8
+[DayDecomp]   y5 d15 fase2: 53,817.08  (optimal, 55s)
+[DayDecomp]   y5 d105 fase2: 53,799.46  (optimal, 56s)
+[DayDecomp]   y5 d196 fase2: 53,799.46  (optimal, 58s)
+[DayDecomp]   y5 d288 fase2: 53,817.08  (optimal, 59s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 59s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 52s -> incumbente 215,233.09
+[DayDecomp] año 5: listo en 400s
+[NestedBenders] k=1 FORWARD  anio 5  AVISO: residuo McCormick = -4880.053209 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 6 (6/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 6: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y6 d15 fase1: 52,276.64  (optimal, 53s)
+[DayDecomp]   y6 d105 fase1: 53,217.45  (optimal, 54s)
+[DayDecomp]   y6 d196 fase1: 53,217.45  (optimal, 56s)
+[DayDecomp]   y6 d288 fase1: 52,276.64  (optimal, 57s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 57s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=50.8  R=0  b_bar=391.6
+[DayDecomp]   y6 d15 fase2: 53,236.94  (optimal, 54s)
+[DayDecomp]   y6 d105 fase2: 53,217.45  (optimal, 56s)
+[DayDecomp]   y6 d196 fase2: 53,217.45  (optimal, 57s)
+[DayDecomp]   y6 d288 fase2: 53,236.94  (optimal, 59s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 59s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 45s -> incumbente 2,470,116.22
+[DayDecomp] año 6: listo en 387s
+[NestedBenders] k=1 FORWARD  anio 7 (7/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 7: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y7 d15 fase1: 54,027.82  (optimal, 48s)
+[DayDecomp]   y7 d105 fase1: 61,196.66  (maxTimeLimit, 145s)
+[DayDecomp]   y7 d196 fase1: 61,196.66  (maxTimeLimit, 156s)
+[DayDecomp]   y7 d288 fase1: 54,027.82  (optimal, 54s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 156s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=410.1  R=0  b_bar=458.7
+[DayDecomp]   y7 d15 fase2: 61,205.96  (optimal, 55s)
+[DayDecomp]   y7 d105 fase2: 61,196.66  (optimal, 57s)
+[DayDecomp]   y7 d196 fase2: 61,196.66  (optimal, 58s)
+[DayDecomp]   y7 d288 fase2: 61,205.96  (optimal, 60s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 60s
+[DayDecomp]   pulido sobre el bloque anual: 471,673 valores, 241,929 enteras fijas, LP optimo en 45s -> incumbente 244,805.25
+[DayDecomp] año 7: listo en 490s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=244,799.05  LB=224,494.50  gap=8.2944%
+[NestedBenders] k=1 FORWARD  anio 7  AVISO: residuo McCormick = -1583.119017 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 8 (8/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 8: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y8 d15 fase1: 38,773.89  (optimal, 49s)
+[DayDecomp]   y8 d105 fase1: 38,892.08  (optimal, 51s)
+[DayDecomp]   y8 d196 fase1: 38,892.08  (optimal, 52s)
+[DayDecomp]   y8 d288 fase1: 38,773.89  (optimal, 54s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 54s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=431.4
+[DayDecomp]   y8 d15 fase2: 38,773.89  (optimal, 52s)
+[DayDecomp]   y8 d105 fase2: 38,892.08  (optimal, 53s)
+[DayDecomp]   y8 d196 fase2: 38,892.08  (optimal, 55s)
+[DayDecomp]   y8 d288 fase2: 38,773.89  (optimal, 56s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 57s
+[DayDecomp]   pulido sobre el bloque anual: 438,185 valores, 225,001 enteras fijas, LP optimo en 43s -> incumbente 155,331.94
+[DayDecomp] año 8: listo en 371s
+[NestedBenders] k=1 FORWARD  anio 8  AVISO: residuo McCormick = -3203.763187 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 9 (9/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 9: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y9 d15 fase1: 25,612.96  (optimal, 43s)
+[DayDecomp]   y9 d105 fase1: 25,612.96  (optimal, 44s)
+[DayDecomp]   y9 d196 fase1: 25,612.96  (optimal, 46s)
+[DayDecomp]   y9 d288 fase1: 25,612.96  (optimal, 47s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 47s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=407.1
+[DayDecomp]   y9 d15 fase2: 25,612.96  (optimal, 45s)
+[DayDecomp]   y9 d105 fase2: 25,612.96  (optimal, 46s)
+[DayDecomp]   y9 d196 fase2: 25,612.96  (optimal, 47s)
+[DayDecomp]   y9 d288 fase2: 25,612.96  (optimal, 49s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 49s
+[DayDecomp]   pulido sobre el bloque anual: 368,329 valores, 189,705 enteras fijas, LP optimo en 37s -> incumbente 1,448,621.79
+[DayDecomp] año 9: listo en 342s
+[NestedBenders] k=1 FORWARD  anio 10 (10/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 10: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y10 d15 fase1: 7,552.42  (optimal, 23s)
+[DayDecomp]   y10 d105 fase1: 7,552.42  (optimal, 24s)
+[DayDecomp]   y10 d196 fase1: 7,552.42  (optimal, 24s)
+[DayDecomp]   y10 d288 fase1: 7,552.42  (optimal, 25s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 25s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=462.8
+[DayDecomp]   y10 d15 fase2: 7,552.42  (optimal, 29s)
+[DayDecomp]   y10 d105 fase2: 7,552.42  (optimal, 30s)
+[DayDecomp]   y10 d196 fase2: 7,552.42  (optimal, 30s)
+[DayDecomp]   y10 d288 fase2: 7,552.42  (optimal, 31s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 31s
+[DayDecomp]   pulido sobre el bloque anual: 192,249 valores, 100,745 enteras fijas, LP optimo en 22s -> incumbente 30,209.66
+[DayDecomp] año 10: listo en 268s
+[NestedBenders] k=1 FORWARD  anio 10  AVISO: residuo McCormick = -350.084755 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 FORWARD  anio 11 (11/11)  [UB=(sin cota aun)  LB=9,646,547.18]  resolviendo MILP...
+[DayDecomp] año 11: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y11 d15 fase1: 191.49  (optimal, 21s)
+[DayDecomp]   y11 d105 fase1: 191.49  (optimal, 22s)
+[DayDecomp]   y11 d196 fase1: 191.49  (optimal, 22s)
+[DayDecomp]   y11 d288 fase1: 191.49  (optimal, 23s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 23s
+[DayDecomp]   agregado (max entre dias): N_chargers=1, 1, 1  Delta_N_chargers=0, 0, 0  n_ssee_k=2, 2, 2  P_max_k=1,000, 1,000, 1,000  G_g=0, 0  H=0  P_pot=0  R=0  b_bar=448.5
+[DayDecomp]   y11 d15 fase2: 191.49  (optimal, 17s)
+[DayDecomp]   y11 d105 fase2: 191.49  (optimal, 18s)
+[DayDecomp]   y11 d196 fase2: 191.49  (optimal, 18s)
+[DayDecomp]   y11 d288 fase2: 191.49  (optimal, 19s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 19s
+[DayDecomp]   pulido sobre el bloque anual: 120,953 valores, 64,729 enteras fijas, LP optimo en 16s -> incumbente 765.97
+[DayDecomp] año 11: listo en 232s
+[NestedBenders] k=1 FORWARD  anio 11  AVISO: residuo McCormick = -30.259537 (N_ciclos*b_bar - S/n_elhd) -- revisar sec. 3.4/3.5 del documento si es grande frente a S/n_elhd.
+[NestedBenders] k=1 pulido de la solucion: 9,671,882.97 -> 9,671,882.97 (0.00% menos, 2379s)
+[Estabilizacion] k=1: paso SERIO (costo 9,671,882.97 vs mejor nan) -- re-centra en esta trayectoria
+[NestedBenders] k=1: incumbente 9,671,882.97 y 0 cortes respaldados en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders\incumbente_respaldo.pkl
+[NestedBenders] k=1 BACKWARD anio 11  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 10)...
+[NestedBenders] k=1 BACKWARD anio 11  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 11  Phi^LP=745.88 -> Phi^LR=760.92 (+15.04)
+[NestedBenders] k=1 BACKWARD anio 10  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 9)...
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored
+[NestedBenders] k=1 BACKWARD anio 10  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored
+[NestedBenders] k=1 BACKWARD anio 10  Phi^LP=30,849.53 -> Phi^LR=30,870.10 (+20.57)
+[NestedBenders] k=1 BACKWARD anio 9  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 8)...
+[NestedBenders] k=1 BACKWARD anio 9  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 9  Phi^LP=141,896.16 -> Phi^LR=141,941.56 (+45.40)
+[NestedBenders] k=1 BACKWARD anio 8  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 7)...
+[NestedBenders] k=1 BACKWARD anio 8  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 8  Phi^LP=296,372.53 -> Phi^LR=296,442.13 (+69.60)
+[NestedBenders] k=1 BACKWARD anio 7  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 6)...
+[NestedBenders] k=1 BACKWARD anio 7  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 lagrangeano y=7  TimeLimit alcanzado sin cerrar MIPGap: UB=583,682.01  LB=520,917.29  gap=10.7532%
+[NestedBenders] k=1 BACKWARD anio 7  Phi^LP=518,053.17 -> Phi^LR=520,917.29 (+2,864.12)
+[NestedBenders] k=1 BACKWARD anio 6  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 5)...
+[NestedBenders] k=1 BACKWARD anio 6  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 6  Phi^LP=1,813,302.83 -> Phi^LR=1,813,422.09 (+119.25)
+[NestedBenders] k=1 BACKWARD anio 5  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 4)...
+[NestedBenders] k=1 BACKWARD anio 5  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 5  Phi^LP=2,028,265.09 -> Phi^LR=2,028,354.32 (+89.23)
+[NestedBenders] k=1 BACKWARD anio 4  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 3)...
+[NestedBenders] k=1 BACKWARD anio 4  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 4  Phi^LP=2,242,856.57 -> Phi^LR=2,242,982.94 (+126.37)
+[NestedBenders] k=1 BACKWARD anio 3  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 2)...
+[NestedBenders] k=1 BACKWARD anio 3  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 3  Phi^LP=2,479,203.63 -> Phi^LR=3,333,290.92 (+854,087.29)
+[NestedBenders] k=1 BACKWARD anio 2  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP y leyendo duales (corte -> anio 1)...
+[NestedBenders] k=1 BACKWARD anio 2  [UB=9,671,882.97  LB=9,646,547.18]  fortaleciendo corte (Strengthened Benders, Lara ec. (63))...
+[NestedBenders] k=1 BACKWARD anio 2  Phi^LP=3,413,268.01 -> Phi^LR=3,491,121.66 (+77,853.66)
+[NestedBenders] k=1 BACKWARD anio 1  [UB=9,671,882.97  LB=9,646,547.18]  relajando LP (cota inferior LB)...
+[NestedBenders] k=1 BACKWARD anio 1  [UB=9,671,882.97  LB=9,646,547.18]  MILP con los cortes actualizados (cota inferior)...
+[NestedBenders] k=1 cota del backward = 6,087,769.86  (no supera LB=9,646,547.18)
+[NestedBenders] k=1  UB=9671882.9651  LB=9646547.1795  gap=0.2620%  tiempo_iteracion=8485.7s
+[NestedBenders] k=1: incumbente 9,671,882.97 y 10 cortes respaldados en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders\incumbente_respaldo.pkl
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 2, elegido 2 (ajustada); station_2: cota 2, elegido 2 (ajustada); station_3: cota 2, elegido 2 (ajustada)
+[NestedBenders] tiempo total: 12117.7s (1 iteracion, 0 cortes de factibilidad)
+[NestedBenders] cortes fortalecidos: 10 de 10 superaron Phi^LP (promedio +93,529.05, maximo +854,087.29)
+[Estabilizacion] 1 pasos serios, 0 nulos; caja final +-1 / 25%
+NestedBenders: UB=9671882.9651  LB=9646547.1795  gap=0.2620%  iteraciones=1  tiempo_total=12117.7s
+[NestedBenders] reporte: costo recomputado = 9,671,882.97 contra UB 9,671,882.97 (desvio 0.000000); incluye 609,708.33 de apertura de estaciones
+[NestedBenders] MIP start pulido (LP con enteras fijas, 1,903,841 fijadas, 438s): costo 9,671,882.97 -> 9,671,882.97
+[NestedBenders] residuo del MIP start por familia (max |violacion|, 127s):
+    s_def                            1.723e-08  en 8  (0 filas > 1e-6)
+    mccormick_ub2                    4.657e-10  en 3  (0 filas > 1e-6)
+    mccormick_energy                 2.328e-10  en 3  (0 filas > 1e-6)
+    mccormick_lb2                    8.731e-11  en 6  (0 filas > 1e-6)
+    mccormick_lb1                    5.821e-11  en 8  (0 filas > 1e-6)
+    battery_upper                    1.182e-11  en ('LH518B_12', 9, 105, 47.0)  (0 filas > 1e-6)
+    max_power                        6.821e-12  en ('station_1', 'LH518B_2', 6, 15, 160.0)  (0 filas > 1e-6)
+    battery_soc_break_symmetry       2.046e-12  en ('LH518B_9', 'LH518B_10', 6, 15)  (0 filas > 1e-6)
+    battery_lower                    1.918e-12  en ('LH518B_4', 8, 105, 34.0)  (0 filas > 1e-6)
+    power_balance                    4.547e-13  en (7, 196, 169.0)  (0 filas > 1e-6)
+[NestedBenders] AVISO: 0 filas no evaluadas por variables sin valor; variables sin valor por familia: {'Z': 15824, 'StartCharge': 190080, 'EndCharge': 190080, 'StartAssign': 95040, 'EndAssign': 95040}
+JSONs, log y summary guardados en 'output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders'.
+[dch v4 r1 3/3 2C/P_red] 2026-11-11 19:31:16 (llevo 8.2 h, quedan 27.8 h) Benders: UB 9671882.9651  LB 9646547.1795
+ya existe output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders\parameters.json
+INPUTS
++-----------------+---------------------------------------------------------------------------------------------------------+
+| Campo           | Valor                                                                                                   |
++=================+=========================================================================================================+
+| Folder          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\2C\P_red\benders                 |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| Delta t (min)   | 8.000                                                                                                   |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| E.json          | NO ENCONTRADO                                                                                           |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| B.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\2C\P_red\benders\B.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| M.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\2C\P_red\benders\M.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| Y.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\2C\P_red\benders\Y.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| P.json          | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\2C\P_red\benders\P.json          |
++-----------------+---------------------------------------------------------------------------------------------------------+
+| parameters.json | output\Resultados_finales_tesis\DCH\casos_finales_traccion_Carga_libre\2C\P_red\benders\parameters.json |
++-----------------+---------------------------------------------------------------------------------------------------------+
+
+B (ELÃ‰CTRICO)
++---------+----------------------------------------------------------------------------------+
+| Estado  | Detalle                                                                          |
++=========+==================================================================================+
+| OMITIDO | No se pudo calcular: No se encontraron descensos (pasos con consumo) en el JSON. |
++---------+----------------------------------------------------------------------------------+
+
+M (EXTRACCION)
++----------------------------------------+------------------------------+
+| Metrica                                | Valor                        |
++========================================+==============================+
+| ExtracciÃ³n total (toda la operaciÃ³n) | 1337273.280000 (unidad de M) |
++----------------------------------------+------------------------------+
+| Valores numÃ©ricos sumados             | 1539360                      |
++----------------------------------------+------------------------------+
+| Máxima extracción (nodo)               | 0.000000                     |
++----------------------------------------+------------------------------+
+| Nodo con máxima extracción             | N/A                          |
++----------------------------------------+------------------------------+
+| Intervalos asignados a ese nodo        | 0                            |
++----------------------------------------+------------------------------+
+
+OPERACIÃ“N DIARIA
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| DÃ­a  | Viajes diarios totales | Ciclos (Y*n_trips) | EnergÃ­a diaria bruta [kWh] | EnergÃ­a neta en baterÃ­a [kWh] | PÃ©rdidas de carga (eta_charge) [kWh] |
++=======+========================+====================+=============================+=================================+=======================================+
+| 15    | 0                      | 0.000              | 60087.551                   | 57083.174                       | 3004.378                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| 105   | 0                      | 0.000              | 60052.315                   | 57049.699                       | 3002.616                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| 196   | 0                      | 0.000              | 60054.739                   | 57052.002                       | 3002.737                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| 288   | 0                      | 0.000              | 60101.429                   | 57096.358                       | 3005.071                              |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+| TOTAL | 0                      | 0.000              | 240296.034                  | 228281.232                      | 12014.802                             |
++-------+------------------------+--------------------+-----------------------------+---------------------------------+---------------------------------------+
+
+CICLOS TOTALES
++-------------------------------------------+-------+
+| MÃ©trica                                  | Valor |
++===========================================+=======+
+| cycles_total = sum(Y[i,j] * n_trips[j,i]) | 0.000 |
++-------------------------------------------+-------+
+
+GENERACION RENOVABLE
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+| Generador | Unidades | P_max/unidad [kW] | Potencia inst. [kW] | Inv. bruta | Valor residual | Inv. neta | Costo op. anual |
++===========+==========+===================+=====================+============+================+===========+=================+
+| Solar_PV  | 0        | 500               | 0                   | 0.00       | 0.00           | 0.00      | 0.00            |
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+| Wind      | 0        | 500               | 0                   | 0.00       | 0.00           | 0.00      | 0.00            |
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+| TOTAL     |          |                   | 0                   | 0.00       | 0.00           | 0.00      | 0.00            |
++-----------+----------+-------------------+---------------------+------------+----------------+-----------+-----------------+
+
+ALMACENAMIENTO BESS
++--------+---------------------+------------+-------------+-------------+------------+----------------+-----------+-----------------+
+| Unidad | Unidades instaladas | P_max [kW] | A_min [kWh] | A_max [kWh] | Inv. bruta | Valor residual | Inv. neta | Costo op. anual |
++========+=====================+============+=============+=============+============+================+===========+=================+
+| Bess   | 0                   | 250        | 0           | 1000        | 0.00       | 0.00           | 0.00      | 0.00            |
++--------+---------------------+------------+-------------+-------------+------------+----------------+-----------+-----------------+
+| TOTAL  |                     |            |             |             | 0.00       | 0.00           | 0.00      | 0.00            |
++--------+---------------------+------------+-------------+-------------+------------+----------------+-----------+-----------------+
+
+DEGRADACION BATERIA ON-BOARD
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| Año | B [kWh] (inicio) | % b_max | EFC año | D [kWh] (fin) | Reemplazo | Costo reemplazo |
++=====+==================+=========+=========+===============+===========+=================+
+| 1   | 482.0            | 100.0%  | 109.0   | 477.1         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 2   | 477.1            | 99.0%   | 360.8   | 460.8         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 3   | 460.8            | 95.6%   | 479.4   | 439.2         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 4   | 439.2            | 91.1%   | 509.3   | 416.2         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 5   | 416.2            | 86.4%   | 578.4   | 390.1         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 6   | 482.0            | 100.0%  | 517.7   | 458.7         | SI        | 2261048.62      |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 7   | 458.7            | 95.2%   | 616.8   | 430.8         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 8   | 430.8            | 89.4%   | 555.9   | 405.8         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 9   | 482.0            | 100.0%  | 426.1   | 462.8         | SI        | 1794893.29      |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 10  | 462.8            | 96.0%   | 321.8   | 448.3         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+| 11  | 448.3            | 93.0%   | 18.1    | 447.5         | NO        | 0.00            |
++-----+------------------+---------+---------+---------------+-----------+-----------------+
+
+DEGRADACION BATERIA - RESUMEN
++-------------------------------+--------------+
+| Métrica                       | Valor        |
++===============================+==============+
+| Capacidad nominal b_max [kWh] | 482.0        |
++-------------------------------+--------------+
+| Piso de degradación           | 80% de b_max |
++-------------------------------+--------------+
+| N° de reemplazos              | 2            |
++-------------------------------+--------------+
+| Costo total reemplazos        | 4055941.92   |
++-------------------------------+--------------+
+
+COSTOS
++-------------------------------------+-------------+
+| Concepto                            | Valor       |
++=====================================+=============+
+| Costo energía carga                 | 1407013.32  |
++-------------------------------------+-------------+
+| Costo energía red P_red             | 1407013.32  |
++-------------------------------------+-------------+
+| Energía total red (horizonte) [kWh] | 21927013.12 |
++-------------------------------------+-------------+
+| Energía total red (horizonte) [MWh] | 21927.01    |
++-------------------------------------+-------------+
+| Costo inversión estaciones          | 3790049.61  |
++-------------------------------------+-------------+
+| Costo inversión subestación         | 838888.89   |
++-------------------------------------+-------------+
+| Costo inversión generación          | 0.00        |
++-------------------------------------+-------------+
+| Costo operación generación          | 0.00        |
++-------------------------------------+-------------+
+| Costo inversión BESS                | 0.00        |
++-------------------------------------+-------------+
+| Costo operación BESS                | 0.00        |
++-------------------------------------+-------------+
+| Costo reemplazo batería             | 4055941.92  |
++-------------------------------------+-------------+
+| Costo potencia punta                | 28712.55    |
++-------------------------------------+-------------+
+| Costo penalidad                     | 0.00        |
++-------------------------------------+-------------+
+| COSTO TOTAL                         | 10120606.29 |
++-------------------------------------+-------------+
+
+[dch v4 r1 3/3 2C/P_red] 2026-11-11 19:31:44 (llevo 8.2 h, quedan 27.8 h) FIN sin mejorar_ub ni certificado (Benders bajo 1 %): UB 9671882.9651  LB 9646547.1795  gap 0.262 %
+== Resumen DCH v4 (2026-11-11 19:31:44)
+1. 05C/P_red     sin certificado
+2. 1C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 7915048.0937  LB 7908252.6145  gap 0.086 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders
+3. 2C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 9671882.9651  LB 9646547.1795  gap 0.262 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders
+[dch v4 r1 fin] 2026-11-11 19:31:44 (llevo 8.2 h, quedan 27.8 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/resumen.txt
+[dch v4 r1 inicio] 2026-11-11 19:31:44 (llevo 8.2 h, quedan 27.8 h) casos 2 3 | 11 años | Benders 6 h por caso, tope global 36 h (hasta 2026-11-12 23:17:11)
+[dch v4 r1 2/3 1C/P_red] 2026-11-11 19:31:44 (llevo 8.2 h, quedan 27.8 h) ya cerrado con el Benders bajo 1 % (sin certificado), se salta
+[dch v4 r1 3/3 2C/P_red] 2026-11-11 19:31:45 (llevo 8.2 h, quedan 27.8 h) ya cerrado con el Benders bajo 1 % (sin certificado), se salta
+== Resumen DCH v4 (2026-11-11 19:31:45)
+1. 05C/P_red     sin certificado
+2. 1C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 7915048.0937  LB 7908252.6145  gap 0.086 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders
+3. 2C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 9671882.9651  LB 9646547.1795  gap 0.262 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders
+[dch v4 r1 fin] 2026-11-11 19:31:45 (llevo 8.2 h, quedan 27.8 h) ronda 1 terminada; resumen en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/resumen.txt
+[dch v4 r2 inicio] 2026-11-11 19:31:45 (llevo 0.0 h, quedan 30.0 h) casos 2 3 | 11 años | Benders 8 h por caso, tope global 30 h (hasta 2026-11-13 01:31:45)
+[dch v4 r2 2/3 1C/P_red] 2026-11-11 19:31:45 (llevo 0.0 h, quedan 30.0 h) ronda 1 cerro con el Benders bajo 1 % (sin certificado): se salta
+[dch v4 r2 3/3 2C/P_red] 2026-11-11 19:31:45 (llevo 0.0 h, quedan 30.0 h) ronda 1 cerro con el Benders bajo 1 % (sin certificado): se salta
+== Resumen DCH v4 (2026-11-11 19:31:45)
+1. 05C/P_red     sin certificado
+2. 1C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 7915048.0937  LB 7908252.6145  gap 0.086 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders
+3. 2C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 9671882.9651  LB 9646547.1795  gap 0.262 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders
+[dch v4 r2 fin] 2026-11-11 19:31:45 (llevo 0.0 h, quedan 30.0 h) ronda 2 terminada; resumen en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/resumen.txt
+[dch v4 r2 inicio] 2026-11-11 19:31:46 (llevo 0.0 h, quedan 30.0 h) casos 2 3 | 11 años | Benders 8 h por caso, tope global 30 h (hasta 2026-11-13 01:31:45)
+[dch v4 r2 2/3 1C/P_red] 2026-11-11 19:31:46 (llevo 0.0 h, quedan 30.0 h) ronda 1 cerro con el Benders bajo 1 % (sin certificado): se salta
+[dch v4 r2 3/3 2C/P_red] 2026-11-11 19:31:46 (llevo 0.0 h, quedan 30.0 h) ronda 1 cerro con el Benders bajo 1 % (sin certificado): se salta
+== Resumen DCH v4 (2026-11-11 19:31:46)
+1. 05C/P_red     sin certificado
+2. 1C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 7915048.0937  LB 7908252.6145  gap 0.086 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/1C/P_red/benders
+3. 2C/P_red      r1 OK <1%       sin certificado, brecha del Benders: UB 9671882.9651  LB 9646547.1795  gap 0.262 %  solucion output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/2C/P_red/benders
+[dch v4 r2 fin] 2026-11-11 19:31:46 (llevo 0.0 h, quedan 30.0 h) ronda 2 terminada; resumen en output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre/resumen.txt

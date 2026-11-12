@@ -33,6 +33,26 @@ cada energía, scratchpad `impacto_traccion_ob.py` de la sesión):
 | DCH 1C | 7 → 8 | −317 mil | −26,0 % → ~−23 % |
 | DCH 2C | cambia | hay que re-correr (la factibilidad del año 7 con 1 cargador por estación depende de la capacidad) | — |
 
+**Avance (2026-11-12): DCH 1C y 2C re-corridos** (`output/Resultados_finales_tesis/DCH/
+casos_finales_traccion_Carga_libre`, misma cola y flags que la v4; 0,5C no se corrió: el
+año 7 es infactible por carga, la LP de la raíz ya lo es, y el cambio no toca la operación).
+Los dos cerraron con el Benders bajo 1 %, sin mejorar_ub ni certificado:
+
+| Caso | UB | LB | gap | Reemplazos (antes) | Costo vs v4 |
+|---|---|---|---|---|---|
+| DCH 1C | 7.915.048 | 7.908.253 | 0,086 % | 8 (7) | −302 mil (−3,7 %) |
+| DCH 2C | 9.671.883 | 9.646.547 | 0,262 % | 6, 9 (5, 7, 11) | −1,18 millones (−10,9 %) |
+
+Casi todo el cambio es reemplazo de baterías (resto: +14,6 mil en 1C, +3,5 mil en 2C). En
+2C el año 7 opera con b̄ = 458,7 kWh y 1 cargador por nave. Quedan los 8 casos de mina
+modelo y la comparación con swap.
+
+**consumer.py corregido (2026-11-12):** cobraba el reemplazo con la flota completa
+(`len(elhd_set)`) y el modelo con la flota ACTIVA (`n_elhd_bd[y]`), así que en DCH el
+`consumer.log` no cuadraba con la UB cuando el reemplazo cae en un año con menos LHD
+activos (1C +161.540, 2C +448.723). Ahora lee `n_elhd_bd` de `parameters.json`. Mina
+modelo no cambia (flota fija de 4). Los `consumer.log` de la re-corrida DCH ya cuadran.
+
 ---
 
 ## 0G. CASOS DE ESTUDIO FINALES OB (2026-10-16) — cola `cola_tesis_ob.sh`
