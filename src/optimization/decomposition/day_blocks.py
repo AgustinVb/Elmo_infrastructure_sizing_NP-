@@ -478,7 +478,9 @@ def _solve_days(trabajos, solver_kwargs, verbose=True):
                 break          # en serie no tiene sentido seguir con los demas
         return salida
 
-    hilos = max(1, (os.cpu_count() or jobs) // jobs)
+    # Nucleos que el proceso puede usar (taskset), no los de la maquina: con dos
+    # corridas fijadas a un socket cada una, cada dia toma su parte del socket.
+    hilos = max(1, len(os.sched_getaffinity(0)) // jobs)
     kw = dict(solver_kwargs)
     kw["extra_options"] = {**(solver_kwargs.get("extra_options") or {}), "Threads": hilos}
     t0 = time.time()

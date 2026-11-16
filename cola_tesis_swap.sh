@@ -265,6 +265,14 @@ for n in $SEL; do
     msg "$TAG" "Benders sin resultado: se salta"; break
   fi
   msg "$TAG" "Benders: UB $UB0  LB $LBOP"
+  # SOLO_BENDERS=1: sin mejorar_ub ni certificado; parameters + consumer sobre los JSON
+  # del Benders (el L-shaped sigue desde ahi, ver cola_tesis_traccion.sh).
+  if [ "${SOLO_BENDERS:-0}" = 1 ]; then
+    $PY -u escribir_parameters.py $REG $D $B 2>&1 | tee $R/consumer.log
+    $PY consumer.py $B 2>&1 | tee -a $R/consumer.log
+    msg "$TAG" "FIN solo Benders (SOLO_BENDERS=1): UB $UB0  LB $LBOP"
+    break
+  fi
 
   # --- 2. mejorar_ub ----------------------------------------------------------
   if [ ! -f $R/mejorar_ub_1/resumen.json ]; then

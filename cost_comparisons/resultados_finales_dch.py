@@ -31,8 +31,9 @@ script aborta si algo no cuadra):
      en DCH no hay generacion ni BESS). Es el costo comparable de swap.
   Los dos scripts traen los 4 dias de la mina modelo: aca se fijan los 2 del DCH.
 
-ON-BOARD (disco de ../Elmo_ob, carga libre): 1C Nested Benders, 2C busqueda local
-(candidatas.py) con la LB del L-shaped; 0,5C infactible. El costo comparable de
+ON-BOARD (disco de ../Elmo_ob, carga libre, version con ciclos por energia de
+traccion del 2026-11-11, casos_finales_traccion_Carga_libre): 1C y 2C Nested
+Benders (gap del Benders); 0,5C infactible. El costo comparable de
 OB pasa por el mismo LP con su propia carga.
 
     python cost_comparisons/resultados_finales_dch.py [--jobs 6] [--anio 7]
@@ -87,7 +88,9 @@ TERMINOS, carga_de_solucion, redimensionar = rgb.TERMINOS, rgb.carga_de_solucion
 OUT = HERE / "resultados_finales_dch"
 OB_REPO = REPO_ROOT.parent / "Elmo_ob"
 SW = "output/Resultados_finales_tesis/DCH/casos_finales_v4_swap_2d"
-OBD = "output/Resultados_finales_tesis/DCH/casos_finales_v4_Carga_libre"
+# Ciclos de degradacion de OB con la energia de traccion (Elmo_ob 9bdbcf5f7); la version
+# anterior (casos_finales_v4_Carga_libre) contaba 10,8 % mas ciclos que swap.
+OBD = "output/Resultados_finales_tesis/DCH/casos_finales_traccion_Carga_libre"
 P_SSEE_STEP = 500.0     # kW por modulo de subestacion (functions.P_SSEE_STEP)
 ESTACIONES = ("station_1", "station_2", "station_3")
 OB_INFACTIBLE = ("infactible: 2 cargadores de 241 kW por estación no recargan 4 LHD en el año 7 "
@@ -102,13 +105,13 @@ FINALES = {
     "1C": {"titulo": "DCH 1C, solo red",
            "swap": {"dir": SW + "/1C/RED/lshaped_v2", "lbs": ["lshaped", "lshaped_v2"]},
            "ob": {"sol": OBD + "/1C/P_red/benders", "consumer": OBD + "/1C/P_red/consumer.log",
-                  "ub": 8217027.4505, "lb": 8208718.9189,
+                  "ub": 7915048.0937, "lb": 7908252.6145,
                   "fuente": "Nested Benders (gap del Benders, sin certificado)"}},
     "2C": {"titulo": "DCH 2C, solo red",
            "swap": {"dir": SW + "/2C/RED/lshaped", "lbs": ["lshaped"]},
-           "ob": {"sol": OBD + "/2C/P_red/candidatas/solucion",
-                  "consumer": OBD + "/2C/P_red/candidatas/consumer.log",
-                  "ub": 10853114.70, "lb": 10267819.962182255, "fuente": "UB candidatas.py, LB L-shaped"}},
+           "ob": {"sol": OBD + "/2C/P_red/benders", "consumer": OBD + "/2C/P_red/consumer.log",
+                  "ub": 9671882.9651, "lb": 9646547.1795,
+                  "fuente": "Nested Benders (gap del Benders, sin certificado)"}},
 }
 
 ETIQUETAS = {
@@ -185,9 +188,9 @@ def inversion_ob(sol, params):
 
 def reemplazo_ob(sol, params):
     """Reemplazo de baterias de OB como lo cobra el modelo (functions.battery_replace_cost):
-    n_elhd_bd[y] * R[y] * c_bat_replace * df(y), con los LHD ACTIVOS del año. El
-    consumer.py de Elmo_ob usa la flota completa (len(elhd_set)) y cobra de mas los
-    reemplazos de años con menos LHD activos (OB 2C: año 11, 2 LHD)."""
+    n_elhd_bd[y] * R[y] * c_bat_replace * df(y), con los LHD ACTIVOS del año. Hasta
+    Elmo_ob 1c18b3520 el consumer.py usaba la flota completa (len(elhd_set)); se
+    mantiene como control (con el consumer corregido no cambia nada)."""
     r = float(params["discount_rate"])
     n = {int(y): float(v) for y, v in params["n_elhd_bd"]["_1"].items()}
     rep = por_anio(leer_json(sol, "R.json"), "y")
@@ -457,14 +460,15 @@ NOTAS = [
                       "del modelo vuelve a elegir red y potencia de punta (en DCH no hay generación ni BESS). "
                       "Es el costo comparable de BS (POST AJUSTE)."),
     ("OB comparable", "Mismo LP con la carga de la solución OB (Control LP OB = modelo − LP)."),
-    ("On-board", "1C: Nested Benders (gap del Benders); 2C: búsqueda local candidatas.py, LB del L-shaped; "
+    ("On-board", "1C y 2C: Nested Benders (gap del Benders), versión con los ciclos de degradación por "
+                 "energía de tracción (como swap; la anterior contaba 10,8 % más ciclos); "
                  "0,5C: " + OB_INFACTIBLE + "."),
     ("Gaps de swap 0,5C y 1C", "La LB no demuestra que el año 7 (12 LHD) necesita la segunda batería por "
                                "estación: con una batería no se encontró operación, pero la cota de producción "
                                "por estación queda en 54,50 contra una meta de 54,44."),
-    ("Reemplazo OB", "El consumer.py de Elmo_ob cobra cada reemplazo por la flota completa (12 LHD); el modelo "
-                     "por los LHD activos del año (n_elhd_bd). Se usa el del modelo: en OB 2C (reemplazo en el "
-                     "año 11, 2 LHD activos) el consumer cobra 1,28 M de más; en OB 1C no cambia."),
+    ("Reemplazo OB", "Se cobra como el modelo, con los LHD activos del año (n_elhd_bd). El consumer.py de "
+                     "Elmo_ob ya lo hace así (corregido en 1c18b3520; antes usaba la flota completa de 12 LHD); "
+                     "el script lo recalcula como control."),
     ("Controles", "El script aborta si: los términos no suman el COSTO TOTAL del consumer, el COSTO TOTAL no es "
                   "la UB, la inversión abierta no reproduce la del consumer, o el LP con la carga de la propia "
                   "solución paga más que el modelo."),
@@ -861,6 +865,11 @@ metodología que `resultados_finales/` de la mina modelo.
 {filas}
 
 On-board 0,5C: {infactible}.
+
+On-board 1C y 2C: versión con los ciclos de degradación por energía de tracción (Elmo_ob
+9bdbcf5f7, como swap), `casos_finales_traccion_Carga_libre`. La versión anterior contaba
+10,8 % más ciclos y adelantaba los reemplazos; sus resultados quedaron en
+`cost_comparisons/historico/resultados_finales_dch_ob_v4/`.
 
 Gaps de swap 0,5C y 1C: la LB no demuestra que el año 7 (12 LHD) necesita la segunda
 batería por estación (con una batería no se encontró operación, pero la cota de producción
