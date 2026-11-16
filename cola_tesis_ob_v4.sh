@@ -37,6 +37,7 @@
 #   bash cola_v4_todo.sh                          # ronda 1 y despues ronda 2 (lo normal)
 #   PY=... bash cola_tesis_ob_v4.sh 2 7           # solo algunos casos, ronda 1
 #   RONDA=2 PY=... bash cola_tesis_ob_v4.sh       # solo la ronda 2
+#   SIN_SOL=1: la ronda 1 parte de cero en todos los casos (sin la solucion v3).
 #   Para cortar un Benders a mano: crear el archivo STOP en su carpeta benders/.
 cd "$(dirname "$0")"
 export PYTHONIOENCODING=utf-8
@@ -188,6 +189,7 @@ msg "inicio" "casos $(echo $SEL | tr '\n' ' ')| Benders $([ $RONDA = 2 ] && echo
 for n in $SEL; do
   c=${CASOS[$((n-1))]}; [ -z "$c" ] && { msg "?" "no existe el caso $n"; continue; }
   caso=${c%%|*}; SOLV3=""; [[ "$c" == *"|sol="* ]] && SOLV3=$V3/${c#*|sol=}
+  [ "${SIN_SOL:-0}" = 1 ] && SOLV3=""   # SIN_SOL=1: Benders desde cero (sin la solucion v3)
   D=$DATA/$caso; R1=$V/$caso; TAG="$n/${#CASOS[@]} $caso"
   if [ $RONDA = 2 ]; then
     if [ -f $R1/sin_certificado.txt ]; then msg "$TAG" "ronda 1 cerro con el Benders bajo 1 % (sin certificado): se salta"; continue; fi
@@ -225,14 +227,15 @@ for n in $SEL; do
   msg "$TAG" "Benders: UB $UB0  LB $LBOP"
 
   # --- Benders ya bajo GAP: sin mejorar_ub ni certificado (regla de la usuaria) ---
-  if awk -v u=$UB0 -v l=$LBOP -v g=$GAP 'BEGIN{exit !((u-l)/u < g)}'; then
+  # SOLO_BENDERS=1: igual que bajo GAP aunque no cierre (sin mejorar_ub ni certificado).
+  if [ "${SOLO_BENDERS:-0}" = 1 ] || awk -v u=$UB0 -v l=$LBOP -v g=$GAP 'BEGIN{exit !((u-l)/u < g)}'; then
     DIRS=$R; [ $RONDA = 2 ] && DIRS="$R $R1"
     read -r SOL UB < <(mejor_solucion $B $UB0 $DIRS)
     $PY -u escribir_parameters.py --data_folder $D $FLAGS $SOL 2>&1 | tee $R/consumer.log
     $PY consumer.py $SOL 2>&1 | tee -a $R/consumer.log
     G=$(awk -v u=$UB -v l=$LBOP 'BEGIN{printf "%.3f", 100*(u-l)/u}')
     echo "UB $UB  LB $LBOP  gap $G %  solucion $SOL" > $R/sin_certificado.txt
-    msg "$TAG" "FIN sin mejorar_ub ni certificado (Benders bajo 1 %): UB $UB  LB $LBOP  gap $G %"
+    msg "$TAG" "FIN sin mejorar_ub ni certificado ($([ "${SOLO_BENDERS:-0}" = 1 ] && echo SOLO_BENDERS=1 || echo "Benders bajo 1 %")): UB $UB  LB $LBOP  gap $G %"
     resumen_final > /dev/null
     continue
   fi
