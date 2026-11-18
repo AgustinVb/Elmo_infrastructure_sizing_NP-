@@ -99,6 +99,9 @@ def main():
     ap.add_argument("--ub_timelimit_inicial", type=float, default=300.0,
                     help="tiempo por dia MILP al evaluar la UB inicial de la DP")
     ap.add_argument("--pasadas_dp", type=int, default=4)
+    ap.add_argument("--sin_dp", action="store_true",
+                    help="sin la DP de la UB inicial (experimento sin aceleracion): la UB sale "
+                         "de las inversiones de la etapa 2, como con varias estaciones")
     ap.add_argument("--mejora", default="600,900",
                     help="tiempo por dia MILP de cada pasada final de mejorar UB (vacio: no se hace); "
                          "la segunda y siguientes solo si la anterior mejoro y queda tiempo de --horas")
@@ -233,9 +236,17 @@ def main():
     # quedarian con una sola. Sin incumbente, la UB sale entonces de evaluar las
     # inversiones del maestro entero en la etapa 2 (dias MILP + pulido).
     estaciones = {n.rsplit("_", 1)[0] for n in P.nombre if n.startswith("N_batteries(")}
-    usar_dp = not a.solucion and len(estaciones) == 1 and not a.solo_fase1
+    # Desde el 2026-11-18 la DP corre tambien cuando se parte de una solucion
+    # (--solucion, el hibrido NB -> L-shaped): repara la inversion del MAESTRO de la
+    # Fase 1 con la energia real de los dias (hasta --pasadas_dp pasadas) y solo
+    # reemplaza la UB si mejora. Sin esto, una solucion de partida con baterias de
+    # mas (DP del NB con energia nominal) no se corregia: la DP nunca quita lo ya
+    # decidido, asi que tiene que partir del maestro y no de esa solucion.
+    usar_dp = len(estaciones) == 1 and not a.solo_fase1 and not a.sin_dp
     ub_etapa2 = not a.solucion and not usar_dp and not a.solo_fase1
-    if ub_etapa2:
+    if ub_etapa2 and a.sin_dp:
+        print("[LS] --sin_dp: sin la DP de UB inicial; la UB sale de las inversiones de la etapa 2", flush=True)
+    elif ub_etapa2:
         print(f"[LS] {len(estaciones)} estaciones: sin la DP de UB inicial (es de una estacion); "
               "la UB sale de las inversiones de la etapa 2", flush=True)
     it1, it2 = (int(x) for x in a.max_it.split(","))
