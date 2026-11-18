@@ -236,3 +236,153 @@ Root relaxation: objective 2.131932e+06, 1328 iterations, 0.03 seconds (0.04 wor
 [LS]    b_bar del maestro sobre la capacidad real (vuelta 1): 2:477.12>476.93, 3:467.57>467.11, 4:448.37>447.74, 5:421.75>420.86, 7:457.22>457.08, 8:431.11>430.66, 9:409.26>408.53, 10:398.10>396.80
 [LS]    dias MILP (gap max 100.00%) + pulido en 735s -> 2,762,444.05
 [LS] cb   20 entero  LB 2,641,770.11  UB 2,757,694.09 (4.204%)  cortes LP 60 + nivel 110 (+0, viol 0) enteros 73 (+12)  LP 68s MILP 3982s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+[LS] cb   21 entero  LB 2,642,799.95  UB 2,757,694.09 (4.166%)  cortes LP 60 + nivel 110 (+0, viol 0) enteros 80 (+7)  LP 72s MILP 6862s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+[LS] cb   22 lp      LB 2,645,822.40  UB 2,757,694.09 (4.057%)  cortes LP 61 + nivel 110 (+1, viol 79) enteros 80 (+0)  LP 74s MILP 6862s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+*  124     0              12    2645884.8715 2645822.40  0.00%  18.3 7672s
+[LS] ALERTA aceptacion silenciosa (1): Gurobi tomo como incumbente 2,645,884.87, una solucion a la que el callback le agrego cortes que no la violaban mas que la tolerancia
+
+Cutting planes:
+  Learned: 2
+  Gomory: 5
+  Cover: 29
+  Implied bound: 34
+  Clique: 11
+  MIR: 17
+  Flow cover: 18
+  Zero half: 2
+  Network: 2
+  RLT: 9
+  Relax-and-lift: 34
+  BQP: 2
+  PSD: 16
+
+Explored 134 nodes (5714 simplex iterations) in 7672.43 seconds (0.78 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 1: 2.64588e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 2.645884871536e+06, best bound 2.645884871536e+06, gap 0.0000%
+
+User-callback calls 1620, time in user-callback 7671.23 sec
+[LS] incumbente final 2,645,884.87 no aceptado por el callback (visto en el cb 22): violacion maxima de los 251 cortes lazy 79.5, entera mas fraccionaria 0.0e+00
+Set parameter TimeLimit to value 2.5362886554718018e+04
+[LS] reinicio del arbol con 251 cortes como restricciones del maestro
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+Cutoff  2.7576940934226234e+06
+TimeLimit  2.5362886554718018e+04
+MIPGap  0
+Threads  8
+LazyConstraints  1
+
+Optimize a model with 2518 rows, 927 columns and 11437 nonzeros (Min)
+Model fingerprint: 0x1be74c99
+Model has 104 linear objective coefficients
+Variable types: 492 continuous, 435 integer (354 binary)
+Coefficient statistics:
+  Matrix range     [1e-09, 1e+06]
+  Objective range  [1e+00, 5e+05]
+  Bounds range     [1e-06, 3e+03]
+  RHS range        [4e-12, 5e+08]
+Warning: Model contains large matrix coefficient range
+         Consider reformulating model or setting NumericFocus parameter
+         to avoid numerical issues.
+
+[LS] cb   23 entero  LB -  UB 2,757,694.09 (nan%)  cortes LP 61 + nivel 110 (+0, viol 0) enteros 83 (+3)  LP 76s MILP 8782s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+Processing MIP start from previous solve: 0 nodes explored in subMIP, total elapsed time 1922s
+[LS] cb   24 entero  LB -  UB 2,757,694.09 (nan%)  cortes LP 61 + nivel 110 (+0, viol 0) enteros 86 (+3)  LP 76s MILP 8782s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+[LS] cb   25 entero  LB -  UB 2,757,694.09 (nan%)  cortes LP 61 + nivel 110 (+0, viol 0) enteros 89 (+3)  LP 76s MILP 8782s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+MIP start from previous solve did not produce a new incumbent solution
+Processed MIP start in 1921.76 seconds (0.01 work units)
+
+Presolve removed 973 rows and 176 columns
+Presolve time: 0.08s
+Presolved: 1545 rows, 751 columns, 11125 nonzeros
+Variable types: 407 continuous, 344 integer (286 binary)
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0   -6.3013920e+05   1.092983e+06   0.000000e+00   1922s
+    1284    2.1324440e+06   0.000000e+00   0.000000e+00   1922s
+
+Root relaxation: objective 2.132444e+06, 1284 iterations, 0.04 seconds (0.05 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 2132444.04    0   94          - 2132444.04      -     - 1921s
+     0     0 2294585.29    0   93          - 2294585.29      -     - 1921s
+     0     0 2303536.97    0   98          - 2303536.97      -     - 1921s
+     0     0 2303536.97    0   97          - 2303536.97      -     - 1921s
+     0     0 2304106.91    0   97          - 2304106.91      -     - 1921s
+     0     0 2304106.91    0   98          - 2304106.91      -     - 1921s
+     0     0 2401516.33    0   88          - 2401516.33      -     - 1922s
+     0     0 2403976.02    0   86          - 2403976.02      -     - 1922s
+     0     0 2444629.87    0   96          - 2444629.87      -     - 1922s
+     0     0 2446741.81    0   98          - 2446741.81      -     - 1922s
+     0     0 2446741.81    0   99          - 2446741.81      -     - 1922s
+     0     0 2446741.81    0   98          - 2446741.81      -     - 1922s
+     0     0 2446741.81    0   98          - 2446741.81      -     - 1922s
+     0     0 2446741.81    0   98          - 2446741.81      -     - 1922s
+     0     0 2447475.86    0   96          - 2447475.86      -     - 1922s
+     0     0 2447475.86    0   96          - 2447475.86      -     - 1922s
+     0     0 2447475.86    0   95          - 2447475.86      -     - 1922s
+     0     0 2448401.06    0   72          - 2448401.06      -     - 1922s
+     0     0 2448401.06    0   72          - 2448401.06      -     - 1922s
+     0     0 2448401.06    0   72          - 2448401.06      -     - 1922s
+     0     0 2457933.10    0   88          - 2457933.10      -     - 1922s
+[LS] cb   26 entero  LB 2,460,202.68  UB 2,757,694.09 (10.788%)  cortes LP 61 + nivel 110 (+0, viol 0) enteros 92 (+3)  LP 78s MILP 8782s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+[LS] cb   27 acepta  LB 2,460,202.68  UB 2,757,694.09 (10.788%)  cortes LP 61 + nivel 110 (+0, viol 0) enteros 92 (+0)  LP 80s MILP 8782s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 1 | batteries 1,1,1,1,1,1,1,1,1,1]  B<= 482 482 466 448 482 466 449 450 482
+H    0     0                    2647283.6552 2460202.68  7.07%     - 1926s
+     0     0 2461363.65    0   85 2647283.66 2461363.65  7.02%     - 1926s
+     0     0 2461363.83    0   84 2647283.66 2461363.83  7.02%     - 1926s
+     0     0 2461441.02    0   81 2647283.66 2461441.02  7.02%     - 1926s
+     0     0 2461443.32    0   80 2647283.66 2461443.32  7.02%     - 1926s
+     0     0 2463479.24    0   80 2647283.66 2463479.24  6.94%     - 1926s
+     0     0 2463912.82    0   81 2647283.66 2463912.82  6.93%     - 1926s
+     0     0 2463912.82    0   80 2647283.66 2463912.82  6.93%     - 1926s
+     0     0 2465097.35    0   78 2647283.66 2465097.35  6.88%     - 1926s
+     0     0 2465584.60    0   76 2647283.66 2465584.60  6.86%     - 1926s
+     0     0 2465626.97    0   76 2647283.66 2465626.97  6.86%     - 1926s
+     0     0 2465653.59    0   78 2647283.66 2465653.59  6.86%     - 1926s
+     0     0 2465719.23    0   78 2647283.66 2465719.23  6.86%     - 1926s
+     0     0 2466575.82    0   87 2647283.66 2466575.82  6.83%     - 1926s
+     0     0 2467535.01    0   84 2647283.66 2467535.01  6.79%     - 1926s
+     0     0 2467856.38    0   85 2647283.66 2467856.38  6.78%     - 1926s
+     0     0 2468127.87    0   86 2647283.66 2468127.87  6.77%     - 1926s
+     0     0 2468525.27    0   85 2647283.66 2468525.27  6.75%     - 1926s
+     0     0 2468525.27    0   86 2647283.66 2468525.27  6.75%     - 1926s
+     0     0 2468525.27    0   87 2647283.66 2468525.27  6.75%     - 1926s
+     0     0 2468525.27    0   86 2647283.66 2468525.27  6.75%     - 1926s
+     0     0 2468525.27    0   87 2647283.66 2468525.27  6.75%     - 1926s
+     0     0 2468525.27    0   87 2647283.66 2468525.27  6.75%     - 1926s
+     0     0 2469071.28    0   86 2647283.66 2469071.28  6.73%     - 1926s
+     0     0 2469071.28    0   86 2647283.66 2469071.28  6.73%     - 1926s
+     0     0 2469071.28    0   84 2647283.66 2469071.28  6.73%     - 1926s
+     0     0 2512035.76    0   25 2647283.66 2512035.76  5.11%     - 1926s
+     0     0 2646866.80    0   12 2647283.66 2646866.80  0.02%     - 1926s
+     0     0     cutoff    0      2647283.66 2647283.66  0.00%     - 1926s
+
+Explored 1 nodes (4259 simplex iterations) in 1926.98 seconds (0.85 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 1: 2.64728e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 2.647283655156e+06, best bound 2.647283655156e+06, gap 0.0000%
+
+User-callback calls 1322, time in user-callback 1925.77 sec
+[LS] Fase 2 terminada (status 2, 12564s)
+[LS] mejorar UB, pasada 1 (600s por dia, 1838s): 6 años con dias que mejoran, aceptados [6, 3, 8, 5, 7] -> UB 2,757,694.09 -> 2,745,111.13 (0.456%)
+[LS]    *** nueva UB 2,745,111.13
+[LS] mejorar UB, pasada 2 (900s por dia, 2727s): 4 años con dias que mejoran, aceptados [7, 6, 5] -> UB 2,745,111.13 -> 2,742,438.98 (0.097%)
+[LS]    *** nueva UB 2,742,438.98
+[LS] mejorar UB (17129s): 2,757,694.09 -> 2,742,438.98
+[LS] UB mejorada 2,768,745.23 -> 2,742,438.98; JSON en /home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/casos_finales_traccion/Produccion_base/zona_norte/1C/RED_GEN_BESS/lshaped/solucion
+[LS] FINAL: UB 2,742,438.98  LB 2,647,283.66  gap 3.470%  (Fase 1 2,626,742.91; cortes LP 61, por nivel 110, enteros 92)
