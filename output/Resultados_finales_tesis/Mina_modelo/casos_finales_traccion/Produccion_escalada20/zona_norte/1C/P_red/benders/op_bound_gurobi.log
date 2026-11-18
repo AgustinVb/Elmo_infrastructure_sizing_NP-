@@ -1,0 +1,83 @@
+
+Gurobi 13.0.2 (linux64) logging started Mon Nov 16 15:02:12 2026
+
+Set parameter LogFile to value "output/Resultados_finales_tesis/Mina_modelo/casos_finales_traccion/Produccion_escalada20/zona_norte/1C/P_red/benders/op_bound_gurobi.log"
+Set parameter LogToConsole to value 0
+Set parameter TimeLimit to value 5400
+Set parameter MIPGap to value 0.0001
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 16 threads
+
+Non-default parameters:
+TimeLimit  5400
+LogToConsole  0
+Threads  16
+
+Optimize a model with 608961 rows, 858695 columns and 2826381 nonzeros (Min)
+Model fingerprint: 0x4b330700
+Model has 7233 linear objective coefficients and an objective constant of 2.0323611111111109e+05
+Variable types: 858664 continuous, 31 integer (10 binary)
+Coefficient statistics:
+  Matrix range     [7e-03, 2e+03]
+  Objective range  [6e-01, 1e+06]
+  Bounds range     [1e+00, 1e+04]
+  RHS range        [1e+00, 1e+06]
+
+Presolve removed 510327 rows and 738998 columns
+Presolve time: 2.86s
+Presolved: 98634 rows, 119697 columns, 473833 nonzeros
+Variable types: 119677 continuous, 20 integer (9 binary)
+Performing another presolve...
+Presolve removed 1 rows and 1 columns
+Presolve time: 0.53s
+Deterministic concurrent LP optimizer: primal and dual simplex
+Showing primal log only...
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    2.0909597e+05   1.025765e+05   6.179929e+10      6s
+  102302    2.2597923e+05   1.769740e+01   4.837936e+08     10s
+  106982    8.2859329e+06   0.000000e+00   1.436517e+06     12s
+  114493    6.1975267e+06   0.000000e+00   4.639632e+06     15s
+  125115    5.4624000e+06   0.000000e+00   1.658321e+06     20s
+  135739    4.9720753e+06   0.000000e+00   1.939340e+06     25s
+  144591    4.6611622e+06   0.000000e+00   1.298887e+06     30s
+Concurrent spin time: 0.00s
+
+Solved with dual simplex
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+  100188    4.2884372e+06   0.000000e+00   0.000000e+00     30s
+
+Root relaxation: objective 4.288437e+06, 100188 iterations, 25.31 seconds (17.89 work units)
+Total elapsed time = 30.30s (DegenMoves)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 4288437.21    0   15          - 4288437.21      -     -   31s
+H    0     0                    6073530.4139 4288437.21  29.4%     -   35s
+H    0     0                    5377160.9695 4288437.21  20.2%     -   35s
+H    0     0                    4578847.0982 4288437.21  6.34%     -   38s
+     0     0 4578847.10    0   12 4578847.10 4578847.10  0.00%     -   40s
+
+Cutting planes:
+  Gomory: 3
+  Implied bound: 904
+  MIR: 89
+  RLT: 1
+  Relax-and-lift: 1
+
+Explored 1 nodes (103739 simplex iterations) in 40.21 seconds (28.42 work units)
+Thread count was 16 (of 64 available processors)
+
+Solution count 3: 4.57885e+06 5.37716e+06 6.07353e+06 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 4.578847098160e+06, best bound 4.578847098160e+06, gap 0.0000%
