@@ -156,12 +156,15 @@ def main():
     )
     parser.add_argument(
         '--mccormick_degradation',
-        action='store_true',
+        action=argparse.BooleanOptionalAction, default=True,
         help='[monolithic, solo si hay hoja BatteryDegradation] linealiza el bilineal '
              'N_ciclos*b_bar con la envolvente de McCormick (Camino A, ver '
              'degradacion_descomposicion_mccormick.md) en vez de resolverlo como '
              'restriccion cuadratica no convexa (Gurobi NonConvex=2). El modelo queda '
-             'MILP puro -- suele ser mucho mas rapido, a costa de una aproximacion.'
+             'MILP puro. ACTIVO POR DEFECTO desde el 2026-11-19: es el mismo modelo que '
+             'resuelven la descomposicion (driver, cota operacional) y el L-shaped, asi '
+             'que el monolitico se compara contra el mismo problema. '
+             '--no-mccormick_degradation resuelve el bilineal exacto.'
     )
     parser.add_argument(
         '--relax_operational',
