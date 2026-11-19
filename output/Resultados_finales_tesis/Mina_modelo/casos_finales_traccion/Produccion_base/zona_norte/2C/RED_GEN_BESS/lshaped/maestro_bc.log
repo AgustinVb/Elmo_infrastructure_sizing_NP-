@@ -1,0 +1,96 @@
+
+Gurobi 13.0.2 (linux64) logging started Thu Nov 19 00:29:53 2026
+
+Set parameter LogFile to value "/home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/casos_finales_traccion/Produccion_base/zona_norte/2C/RED_GEN_BESS/lshaped/maestro_bc.log"
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+Cutoff  4.9600282529193657e+06
+TimeLimit  3.0960577882051468e+04
+MIPGap  0
+Threads  8
+LazyConstraints  1
+
+Optimize a model with 2187 rows, 910 columns and 7711 nonzeros (Min)
+Model fingerprint: 0x0339db02
+Model has 104 linear objective coefficients
+Variable types: 492 continuous, 418 integer (337 binary)
+Coefficient statistics:
+  Matrix range     [1e-09, 1e+06]
+  Objective range  [1e+00, 9e+05]
+  Bounds range     [1e-06, 3e+03]
+  RHS range        [1e-11, 7e+06]
+Warning: Model contains large matrix coefficient range
+         Consider reformulating model or setting NumericFocus parameter
+         to avoid numerical issues.
+
+Processing MIP start from previous solve: 0 nodes explored in subMIP, total elapsed time 15s
+MIP start from previous solve did not produce a new incumbent solution
+Processed MIP start in 15.00 seconds (0.01 work units)
+
+Presolve removed 1036 rows and 201 columns
+Presolve time: 0.05s
+Presolved: 1151 rows, 709 columns, 5411 nonzeros
+Variable types: 386 continuous, 323 integer (266 binary)
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    4.9805045e+05   1.088378e+05   0.000000e+00     15s
+    1293    3.9015176e+06   0.000000e+00   0.000000e+00     15s
+
+Root relaxation: objective 3.901518e+06, 1293 iterations, 0.03 seconds (0.03 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 3901517.60    0   59          - 3901517.60      -     -   15s
+     0     0 3940862.18    0   92          - 3940862.18      -     -   15s
+     0     0 3946289.99    0   91          - 3946289.99      -     -   15s
+     0     0 3946484.26    0   91          - 3946484.26      -     -   15s
+     0     0 3948780.09    0   79          - 3948780.09      -     -   15s
+     0     0 3949258.14    0   80          - 3949258.14      -     -   20s
+     0     0 3949266.15    0   80          - 3949266.15      -     -   20s
+     0     0 3949434.45    0   82          - 3949434.45      -     -   20s
+     0     0 3949934.81    0   82          - 3949934.81      -     -   20s
+     0     0 3951184.92    0   82          - 3951184.92      -     -   20s
+     0     0 3951184.92    0   82          - 3951184.92      -     -   20s
+     0     0 3951184.92    0   76          - 3951184.92      -     -   20s
+     0     2 3951263.81    0   76          - 3951263.81      -     -   20s
+   156     0 4703053.57   16    -          - 4703053.57      -  37.8   25s
+   188     0 4714015.96   19    2          - 4705710.35      -  32.3 1117s
+   244     0 4714327.66   24    2          - 4714327.66      -  26.4 1974s
+   276     0 4729763.77   25    -          - 4729748.60      -  24.8 6909s
+   292     0 4736785.85   26    -          - 4736785.85      -  25.8 8484s
+*  332     0              26    4739387.8500 4739387.85  0.00%  24.0 13197s
+
+Cutting planes:
+  Learned: 1
+  Gomory: 8
+  Cover: 51
+  Implied bound: 95
+  Clique: 18
+  MIR: 31
+  StrongCG: 1
+  Flow cover: 25
+  GUB cover: 11
+  Zero half: 6
+  Mod-K: 1
+  Network: 7
+  RLT: 12
+  Relax-and-lift: 66
+  BQP: 3
+  PSD: 4
+
+Explored 340 nodes (9757 simplex iterations) in 13197.03 seconds (0.45 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 1: 4.73939e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 4.739387849990e+06, best bound 4.739387849990e+06, gap 0.0000%
+
+User-callback calls 1666, time in user-callback 13196.34 sec

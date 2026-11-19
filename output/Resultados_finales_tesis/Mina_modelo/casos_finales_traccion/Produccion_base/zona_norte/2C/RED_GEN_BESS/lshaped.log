@@ -83,3 +83,192 @@ Academic license - for non-commercial use only - expires 2027-05-14
 [BD] E2 it  7  L 4,697,025.20  U_e 4,697,193.65 (0.004%)  UB 5,025,921.17 (gap 6.54%)  holgura 1.76e-06  1s (total 1.2 min)
 [LS] Fase 1 (220s): LB 4,697,025.20, 1000 cortes
 [LS] UB inicial: inversion del maestro [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2], reemplazo en [5, 7]; energia por año (kWh) 1:4,335, 2:9,166, 3:18,021, 4:23,960, 5:23,958, 6:23,995, 7:23,958, 8:18,925, 9:12,403, 10:5,934
+[LS]    b_bar del maestro sobre la capacidad real (vuelta 1): 2:474.60>473.93, 3:458.79>457.64, 4:426.50>425.06, 6:447.91>447.81, 8:447.91>447.76, 9:418.90>418.70
+[LS]    dias MILP (gap max 32.57%) + pulido en 2406s -> 4,960,028.25
+[LS]    *** nueva UB 4,960,028.25
+[LS] UB inicial, pasada 1 (DP, D final 388.4): [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2] R [5, 7] -> 4,960,028.25
+[LS]    b_bar del maestro sobre la capacidad real (vuelta 1): 2:474.60>473.93, 3:458.79>457.65, 4:431.88>430.51, 6:447.91>447.80, 8:447.91>447.76
+[LS]    dias MILP (gap max 31.48%) + pulido en 2406s -> 4,969,167.22
+[LS] UB inicial, pasada 2 (DP, D final 395.1): [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,2,2,2,2,2,2,2,2] R [5, 7] -> 4,969,167.22
+[LS] UB inicial: la DP con la energia de los dias repite un plan ya evaluado
+[LS] UB inicial 4,960,028.25 (5033s); gap con la LB de la Fase 1 5.302%
+[LS] rangos de 63 copias en 0s
+[LS] n_ssee_k(station_1) <= 3 (1.5 MW); el maestro daba 1e+100
+[LS] P_pot(1) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(2) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(3) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(4) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(5) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(6) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(7) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(8) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(9) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] P_pot(10) <= 3000 (p_peak, 3000 kW); el maestro daba 1e+100
+[LS] rangos de 40 presupuestos en 6s
+[LS] codificacion binaria: 41 copias enteras, 110 bits; rangos X(station_1_1):[0,1], X(station_1_2):[1,1], X(station_1_3):[1,1], X(station_1_4):[1,1], X(station_1_5):[1,1], X(station_1_6):[1,1], X(station_1_7):[1,1], X(station_1_8):[1,1], X(station_1_9):[1,1], X(station_1_10):[1,1], N_bays(station_1_1):[0,4], N_bays(station_1_2):[0,4], N_bays(station_1_3):[1,4], N_bays(station_1_4):[0,4], N_bays(station_1_5):[0,4], N_bays(station_1_6):[0,4], N_bays(station_1_7):[0,4], N_bays(station_1_8):[0,4], N_bays(station_1_9):[0,4], N_bays(station_1_10):[0,4], N_chargers(station_1_1):[0,8], N_chargers(station_1_2):[0,8], N_chargers(station_1_3):[0,8], N_chargers(station_1_4):[0,8], N_chargers(station_1_5):[0,8], N_chargers(station_1_6):[0,8], N_chargers(station_1_7):[0,8], N_chargers(station_1_8):[0,8], N_chargers(station_1_9):[1,8], N_chargers(station_1_10):[0,8], n_ssee_k(station_1):[2,3], N_batteries(station_1_1):[0,8], N_batteries(station_1_2):[0,8], N_batteries(station_1_3):[0,8], N_batteries(station_1_4):[0,8], N_batteries(station_1_5):[0,8], N_batteries(station_1_6):[0,8], N_batteries(station_1_7):[0,8], N_batteries(station_1_8):[0,8], N_batteries(station_1_9):[0,8], N_batteries(station_1_10):[0,8]
+[LS] niveles de capacidad: 28 binarias; por año 2:2, 3:4, 4:4, 5:4, 6:4, 7:4, 8:3, 9:2, 10:1
+[LS]    año 10, dia 15: <=482.0:4
+[LS]    año 2, dia 15: <=449.5:8 <=482.0:7
+[LS]    año 3, dia 15: <=401.1:16 <=426.6:15 <=459.4:14 <=482.0:13
+[LS]    año 4, dia 15: <=420.3:20 <=448.4:19 <=465.7:18 <=482.0:17
+[LS]    año 5, dia 15: <=420.3:20 <=448.4:19 <=465.7:18 <=482.0:17
+[LS]    año 6, dia 15: <=420.3:20 <=448.4:19 <=465.7:18 <=482.0:17
+[LS]    año 7, dia 15: <=420.3:20 <=448.4:19 <=465.7:18 <=482.0:17
+[LS]    año 8, dia 15: <=420.7:16 <=448.8:15 <=482.0:14
+[LS]    año 9, dia 15: <=449.5:8 <=482.0:7
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "/home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/casos_finales_traccion/Produccion_base/zona_norte/2C/RED_GEN_BESS/lshaped/maestro_bc.log"
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+Cutoff  4.9600282529193657e+06
+TimeLimit  3.0960577882051468e+04
+MIPGap  0
+Threads  8
+LazyConstraints  1
+
+Optimize a model with 2187 rows, 910 columns and 7711 nonzeros (Min)
+Model fingerprint: 0x0339db02
+Model has 104 linear objective coefficients
+Variable types: 492 continuous, 418 integer (337 binary)
+Coefficient statistics:
+  Matrix range     [1e-09, 1e+06]
+  Objective range  [1e+00, 9e+05]
+  Bounds range     [1e-06, 3e+03]
+  RHS range        [1e-11, 7e+06]
+Warning: Model contains large matrix coefficient range
+         Consider reformulating model or setting NumericFocus parameter
+         to avoid numerical issues.
+
+[LS] cb    1 lp      LB -  UB 4,960,028.25 (nan%)  cortes LP 9 + nivel 10 (+19, viol 2.7e+03) enteros 0 (+0)  LP 15s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,2,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+Processing MIP start from previous solve: 0 nodes explored in subMIP, total elapsed time 15s
+[LS] cb    2 lp      LB -  UB 4,960,028.25 (nan%)  cortes LP 18 + nivel 20 (+19, viol 2.7e+03) enteros 0 (+0)  LP 15s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,2,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb    3 lp      LB -  UB 4,960,028.25 (nan%)  cortes LP 27 + nivel 30 (+19, viol 2.7e+03) enteros 0 (+0)  LP 15s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,2,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+MIP start from previous solve did not produce a new incumbent solution
+Processed MIP start in 15.00 seconds (0.01 work units)
+
+Presolve removed 1036 rows and 201 columns
+Presolve time: 0.05s
+Presolved: 1151 rows, 709 columns, 5411 nonzeros
+Variable types: 386 continuous, 323 integer (266 binary)
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    4.9805045e+05   1.088378e+05   0.000000e+00     15s
+    1293    3.9015176e+06   0.000000e+00   0.000000e+00     15s
+
+Root relaxation: objective 3.901518e+06, 1293 iterations, 0.03 seconds (0.03 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 3901517.60    0   59          - 3901517.60      -     -   15s
+     0     0 3940862.18    0   92          - 3940862.18      -     -   15s
+     0     0 3946289.99    0   91          - 3946289.99      -     -   15s
+     0     0 3946484.26    0   91          - 3946484.26      -     -   15s
+     0     0 3948780.09    0   79          - 3948780.09      -     -   15s
+[LS] cb    4 lp      LB 3,948,999.08  UB 4,960,028.25 (20.384%)  cortes LP 43 + nivel 38 (+24, viol 2.5e+03) enteros 0 (+0)  LP 17s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb    5 lp      LB 3,948,999.08  UB 4,960,028.25 (20.384%)  cortes LP 59 + nivel 46 (+24, viol 2.5e+03) enteros 0 (+0)  LP 18s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb    6 lp      LB 3,948,999.08  UB 4,960,028.25 (20.384%)  cortes LP 72 + nivel 53 (+20, viol 2.5e+03) enteros 0 (+0)  LP 18s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb    7 lp      LB 3,948,999.08  UB 4,960,028.25 (20.384%)  cortes LP 86 + nivel 60 (+21, viol 7.1e+02) enteros 0 (+0)  LP 19s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb    8 lp      LB 3,948,999.08  UB 4,960,028.25 (20.384%)  cortes LP 94 + nivel 65 (+13, viol 1.9e+02) enteros 0 (+0)  LP 20s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+     0     0 3949258.14    0   80          - 3949258.14      -     -   20s
+     0     0 3949266.15    0   80          - 3949266.15      -     -   20s
+     0     0 3949434.45    0   82          - 3949434.45      -     -   20s
+     0     0 3949934.81    0   82          - 3949934.81      -     -   20s
+     0     0 3951184.92    0   82          - 3951184.92      -     -   20s
+     0     0 3951184.92    0   82          - 3951184.92      -     -   20s
+     0     0 3951184.92    0   76          - 3951184.92      -     -   20s
+     0     2 3951263.81    0   76          - 3951263.81      -     -   20s
+[LS] cb    9 lp      LB 4,099,185.89  UB 4,960,028.25 (17.356%)  cortes LP 100 + nivel 72 (+13, viol 6.4e+02) enteros 0 (+0)  LP 21s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   10 lp      LB 4,126,653.66  UB 4,960,028.25 (16.802%)  cortes LP 106 + nivel 79 (+13, viol 1.8e+03) enteros 0 (+0)  LP 23s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   11 lp      LB 4,392,713.44  UB 4,960,028.25 (11.438%)  cortes LP 112 + nivel 87 (+14, viol 3.8e+02) enteros 0 (+0)  LP 24s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   12 lp      LB 4,520,312.57  UB 4,960,028.25 (8.865%)  cortes LP 118 + nivel 94 (+13, viol 1.9e+02) enteros 0 (+0)  LP 24s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   13 lp      LB 4,702,968.10  UB 4,960,028.25 (5.183%)  cortes LP 122 + nivel 101 (+11, viol 1.9e+02) enteros 0 (+0)  LP 25s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   14 lp      LB 4,703,053.18  UB 4,960,028.25 (5.181%)  cortes LP 127 + nivel 106 (+10, viol 1.7e+02) enteros 0 (+0)  LP 25s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   15 lp      LB 4,703,053.48  UB 4,960,028.25 (5.181%)  cortes LP 131 + nivel 111 (+9, viol 1.7e+02) enteros 0 (+0)  LP 25s MILP 0s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+   156     0 4703053.57   16    -          - 4703053.57      -  37.8   25s
+[LS]    b_bar del maestro sobre la capacidad real (vuelta 1): 2:474.60>473.93, 3:461.43>460.32, 4:434.74>433.43, 6:447.90>447.80, 8:447.87>447.79, 9:418.96>418.69, 10:404.00>403.26
+[LS]    dias MILP (gap max 34.07%) + pulido en 966s -> 4,991,140.85
+[LS] cb   16 entero  LB 4,703,053.57  UB 4,960,028.25 (5.181%)  cortes LP 134 + nivel 115 (+7, viol 1) enteros 11 (+11)  LP 26s MILP 121s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   17 lp      LB 4,705,632.33  UB 4,960,028.25 (5.129%)  cortes LP 140 + nivel 120 (+11, viol 1.6e+02) enteros 11 (+0)  LP 29s MILP 121s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+   188     0 4714015.96   19    2          - 4705710.35      -  32.3 1117s
+[LS] cb   18 lp      LB 4,714,015.96  UB 4,960,028.25 (4.960%)  cortes LP 151 + nivel 123 (+14, viol 1.5e+02) enteros 11 (+0)  LP 31s MILP 121s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   19 lp      LB 4,714,015.96  UB 4,960,028.25 (4.960%)  cortes LP 157 + nivel 129 (+12, viol 1.6e+02) enteros 11 (+0)  LP 33s MILP 121s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   20 lp      LB 4,714,016.69  UB 4,960,028.25 (4.960%)  cortes LP 163 + nivel 132 (+9, viol 1.3e+02) enteros 11 (+0)  LP 33s MILP 121s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   21 entero  LB 4,714,041.79  UB 4,960,028.25 (4.959%)  cortes LP 166 + nivel 132 (+3, viol 1) enteros 18 (+7)  LP 34s MILP 362s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   22 lp      LB 4,714,041.79  UB 4,960,028.25 (4.959%)  cortes LP 171 + nivel 133 (+6, viol 1.6e+02) enteros 18 (+0)  LP 37s MILP 362s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   23 entero  LB 4,714,317.87  UB 4,960,028.25 (4.954%)  cortes LP 175 + nivel 133 (+4, viol 1.1) enteros 41 (+23)  LP 37s MILP 970s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+   244     0 4714327.66   24    2          - 4714327.66      -  26.4 1974s
+[LS] cb   24 lp      LB 4,714,327.66  UB 4,960,028.25 (4.954%)  cortes LP 180 + nivel 134 (+6, viol 1.4e+02) enteros 41 (+0)  LP 41s MILP 970s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   25 entero  LB 4,714,327.66  UB 4,960,028.25 (4.954%)  cortes LP 185 + nivel 134 (+5, viol 1) enteros 52 (+11)  LP 41s MILP 1932s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   26 lp      LB 4,714,327.66  UB 4,960,028.25 (4.954%)  cortes LP 190 + nivel 136 (+7, viol 88) enteros 52 (+0)  LP 44s MILP 1932s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   27 entero  LB 4,726,446.86  UB 4,960,028.25 (4.709%)  cortes LP 193 + nivel 137 (+4, viol 5) enteros 66 (+14)  LP 44s MILP 3972s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   28 lp      LB 4,726,451.24  UB 4,960,028.25 (4.709%)  cortes LP 193 + nivel 139 (+2, viol 2.6e+02) enteros 66 (+0)  LP 47s MILP 3972s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   29 lp      LB 4,729,665.16  UB 4,960,028.25 (4.644%)  cortes LP 195 + nivel 140 (+3, viol 2.2e+02) enteros 66 (+0)  LP 47s MILP 3972s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   30 lp      LB 4,729,665.16  UB 4,960,028.25 (4.644%)  cortes LP 195 + nivel 142 (+2, viol 2.6e+02) enteros 66 (+0)  LP 49s MILP 3972s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   31 lp      LB 4,729,669.94  UB 4,960,028.25 (4.644%)  cortes LP 196 + nivel 143 (+2, viol 2.2e+02) enteros 66 (+0)  LP 49s MILP 3972s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   32 entero  LB 4,729,669.94  UB 4,960,028.25 (4.644%)  cortes LP 198 + nivel 145 (+4, viol 30) enteros 75 (+9)  LP 50s MILP 5892s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+   276     0 4729763.77   25    -          - 4729748.60      -  24.8 6909s
+[LS] cb   33 lp      LB 4,729,838.20  UB 4,960,028.25 (4.641%)  cortes LP 199 + nivel 148 (+4, viol 1.3e+03) enteros 75 (+0)  LP 53s MILP 5892s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS]    b_bar del maestro sobre la capacidad real (vuelta 1): 2:474.60>474.09, 3:458.79>457.84, 4:426.50>425.19, 6:447.90>447.78, 8:447.87>447.75, 9:418.86>418.57, 10:403.89>403.14
+[LS]    b_bar del maestro sobre la capacidad real (vuelta 2): 10:403.04>403.02
+[LS]    dias MILP (gap max 34.31%) + pulido en 1446s -> 5,099,697.39
+[LS] cb   34 entero  LB 4,729,838.20  UB 4,960,028.25 (4.641%)  cortes LP 204 + nivel 155 (+12, viol 33) enteros 82 (+7)  LP 55s MILP 6013s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   35 lp      LB 4,736,785.39  UB 4,960,028.25 (4.501%)  cortes LP 204 + nivel 158 (+3, viol 1.3e+03) enteros 82 (+0)  LP 58s MILP 6013s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+   292     0 4736785.85   26    -          - 4736785.85      -  25.8 8484s
+[LS] cb   36 entero  LB 4,736,785.85  UB 4,960,028.25 (4.501%)  cortes LP 208 + nivel 160 (+6, viol 5.8) enteros 89 (+7)  LP 60s MILP 6255s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   37 entero  LB 4,736,785.85  UB 4,960,028.25 (4.501%)  cortes LP 209 + nivel 162 (+3, viol 22) enteros 95 (+6)  LP 63s MILP 8176s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   38 lp      LB 4,737,447.87  UB 4,960,028.25 (4.487%)  cortes LP 212 + nivel 163 (+4, viol 2e+02) enteros 95 (+0)  LP 65s MILP 8176s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS]    b_bar del maestro sobre la capacidad real (vuelta 1): 2:474.60>474.09, 3:461.43>460.43, 4:434.74>433.50, 6:447.90>447.82, 8:447.87>447.78, 9:418.96>418.57, 10:404.00>403.12
+[LS]    dias MILP (gap max 33.17%) + pulido en 966s -> 5,131,848.22
+[LS] cb   39 entero  LB 4,737,447.87  UB 4,960,028.25 (4.487%)  cortes LP 215 + nivel 163 (+3, viol 0.51) enteros 116 (+21)  LP 66s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   40 acepta  LB 4,737,447.87  UB 4,960,028.25 (4.487%)  cortes LP 215 + nivel 164 (+1, viol 6.6) enteros 116 (+0)  LP 70s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   41 lp      LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 216 + nivel 165 (+2, viol 50) enteros 116 (+0)  LP 71s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   42 lp      LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 222 + nivel 167 (+8, viol 2e+02) enteros 116 (+0)  LP 72s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   43 acepta  LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 222 + nivel 168 (+1, viol 0.085) enteros 116 (+0)  LP 73s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   44 lp      LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 223 + nivel 169 (+2, viol 50) enteros 116 (+0)  LP 75s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   45 lp      LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 228 + nivel 170 (+6, viol 2e+02) enteros 116 (+0)  LP 77s MILP 8776s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+[LS] cb   46 entero  LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 230 + nivel 171 (+3, viol 1.6) enteros 125 (+9)  LP 77s MILP 9737s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 3 | batteries 1,2,2,2,2,2,2,2,2,2]  B<= 482 482 448 482 448 482 449 450 482
+[LS] cb   47 acepta  LB 4,739,387.85  UB 4,960,028.25 (4.448%)  cortes LP 230 + nivel 171 (+0, viol 0) enteros 125 (+0)  LP 80s MILP 9737s  [bays 1,1,1,1,1,1,1,1,1,1 | chargers 1,1,1,1,1,1,1,1,1,1 | n_ssee_k 2 | batteries 1,1,1,2,2,2,2,2,2,2]  B<= 482 459 448 482 448 482 449 450 482
+*  332     0              26    4739387.8500 4739387.85  0.00%  24.0 13197s
+
+Cutting planes:
+  Learned: 1
+  Gomory: 8
+  Cover: 51
+  Implied bound: 95
+  Clique: 18
+  MIR: 31
+  StrongCG: 1
+  Flow cover: 25
+  GUB cover: 11
+  Zero half: 6
+  Mod-K: 1
+  Network: 7
+  RLT: 12
+  Relax-and-lift: 66
+  BQP: 3
+  PSD: 4
+
+Explored 340 nodes (9757 simplex iterations) in 13197.03 seconds (0.45 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 1: 4.73939e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 4.739387849990e+06, best bound 4.739387849990e+06, gap 0.0000%
+
+User-callback calls 1666, time in user-callback 13196.34 sec
+[LS] Fase 2 terminada (status 2, 18236s)
+[LS] mejorar UB, pasada 1 (600s por dia, 1833s): 6 años con dias que mejoran, aceptados [3, 8, 5, 7, 4] -> UB 4,960,028.25 -> 4,936,032.71 (0.484%)
+[LS]    *** nueva UB 4,936,032.71
+[LS] mejorar UB, pasada 2 (900s por dia, 2708s): 6 años con dias que mejoran, aceptados [3, 4, 5, 6, 7, 8] -> UB 4,936,032.71 -> 4,932,538.52 (0.071%)
+[LS]    *** nueva UB 4,932,538.52
+[LS] mejorar UB (22777s): 4,960,028.25 -> 4,932,538.52
+[LS] UB mejorada 5,025,921.17 -> 4,932,538.52; JSON en /home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/casos_finales_traccion/Produccion_base/zona_norte/2C/RED_GEN_BESS/lshaped/solucion
+[LS] FINAL: UB 4,932,538.52  LB 4,739,387.85  gap 3.916%  (Fase 1 4,697,025.20; cortes LP 230, por nivel 171, enteros 125)
