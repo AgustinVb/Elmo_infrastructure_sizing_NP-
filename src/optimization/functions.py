@@ -1,5 +1,6 @@
 ﻿import pyomo.environ as pyo
 import math
+import os
 import pandas as pd
 import numpy as np
 import time
@@ -1186,6 +1187,13 @@ class ConstraintRules(OptRules):
     def max_power(self, model, k, i, y, d, t):
         return model.P[k,i,y,d,t] <= model.Z_charge[k,i,y,d,t] * model.p_charger
 
+    def min_power(self, model, k, i, y, d, t):
+        """Carga forzada cerca de la tasa nominal (2026-11-19): conectado => P >= f * p_charger,
+        con f = ELMO_CARGA_MIN (p. ej. 0.9). Sin esto, OB 2C con 1 modulo de subestacion
+        cargaba a ~0,9C con la degradacion de 2C; BS carga siempre al nominal (bloque fijo).
+        Apagada por defecto (sin la variable de entorno no se registra)."""
+        return model.P[k,i,y,d,t] >= float(os.environ["ELMO_CARGA_MIN"]) * model.p_charger * model.Z_charge[k,i,y,d,t]
+
     def ssee_discreta(self, model, k):
         """La potencia de subestacion se compra en modulos de P_SSEE_STEP kW."""
         return model.P_max_k[k] == P_SSEE_STEP * model.n_ssee_k[k]
@@ -1536,6 +1544,8 @@ class ConstraintRules(OptRules):
         #model.assign_state              = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.assign_state)
         #model.min_assign_duration       = pyo.Constraint(model.elhd_set, model.years, model.days, model.time_intervals_set, rule=self.min_assign_duration)
         model.max_power                 = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.max_power)
+        if os.environ.get("ELMO_CARGA_MIN"):
+            model.min_power             = pyo.Constraint(model.ZCHARGE_DAYS_TIME_INDEX, rule=self.min_power)
         model.ssee_discreta             = pyo.Constraint(model.stations_set, rule=self.ssee_discreta)
         model.max_installed_capacity    = pyo.Constraint(model.stations_set, model.years, model.days, model.time_intervals_set, rule=self.max_installed_capacity)
         model.power_balance             = pyo.Constraint(model.years, model.days, model.time_intervals_set, rule=self.power_balance)
