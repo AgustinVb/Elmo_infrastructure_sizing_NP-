@@ -20,6 +20,8 @@
 # tras 4 iteraciones sin mejora del UB (como la campaña).
 #
 #   nohup bash cola_tesis_experimento.sh > $E/experimento.out 2>&1 &
+#   RANURAS=A ESPERAR=0 bash cola_tesis_experimento.sh            # socket A ya
+#   RANURAS=B REINICIAR_COLA=0 bash cola_tesis_experimento.sh     # socket B se suma despues
 #   TRABAJOS="OB:4:mono BS:4:nb_sin" bash cola_tesis_experimento.sh   # solo algunos
 cd "$(dirname "$0")"
 SW=$(pwd); OB=$SW/../Elmo_ob
@@ -42,11 +44,18 @@ mkdir -p $E
 LOG=$E/experimento.log
 msg() { echo "[experimento $1] $(date '+%F %T') $2" | tee -a $LOG; }
 
-if pgrep -f cola_tesis_traccion.sh > /dev/null; then
-  msg "espera" "cola_tesis_traccion.sh sigue corriendo: se espera a que termine"
-  while pgrep -f cola_tesis_traccion.sh > /dev/null; do sleep 300; done
+# RANURAS="A" / "B" / "A B" (default): que sockets usa esta instancia. Dos instancias
+# (p. ej. A ya y B al terminar la campaña) comparten la cola de trabajos: solo la
+# primera la reinicia (REINICIAR_COLA=1); la otra se suma con REINICIAR_COLA=0.
+# ESPERAR=1 (default) espera a que no quede ningun cola_tesis_traccion.sh.
+RANURAS=${RANURAS:-A B}; ESPERAR=${ESPERAR:-1}; REINICIAR_COLA=${REINICIAR_COLA:-1}
+if [ $ESPERAR = 1 ] && pgrep -f cola_tesis_traccion.sh > /dev/null; then
+  msg "espera" "ranuras $RANURAS: cola_tesis_traccion.sh sigue corriendo, se espera a que termine"
+  while pgrep -f cola_tesis_traccion.sh > /dev/null; do sleep 120; done
 fi
-for r in $SW $OB; do echo "Threads 16" > $r/gurobi.env; done
+# gurobi.env: se repone mientras corra alguna instancia (otras colas lo borran al terminar).
+touch $E/.activa_$$
+( while [ -f $E/.activa_$$ ]; do for r in $SW $OB; do [ -f $r/gurobi.env ] || echo "Threads 16" > $r/gurobi.env; done; sleep 30; done ) &
 
 # STOP del NB tras $SIN_MEJORA iteraciones cerradas sin mejora del UB (o 2 sin solucion).
 vigia() {
@@ -136,7 +145,7 @@ correr() {  # correr <OB|BS> <años> <config> <cpus>
 
 # Cola compartida: cada ranura toma el siguiente trabajo libre (flock sobre un contador).
 read -r -a LISTA <<< "$(echo $TRABAJOS)"
-echo 0 > $E/.siguiente
+[ $REINICIAR_COLA = 1 ] && echo 0 > $E/.siguiente
 ranura() {  # ranura <nombre> <cpus>
   local nom=$1 cpus=$2 i
   while true; do
@@ -148,9 +157,17 @@ ranura() {  # ranura <nombre> <cpus>
   msg "$nom" "ranura terminada"
 }
 
-msg "inicio" "${#LISTA[@]} trabajos: ${LISTA[*]} | $HORAS h por corrida, gap $GAP"
-ranura A $CPU_A &
-ranura B $CPU_B &
-wait
-rm -f $SW/gurobi.env $OB/gurobi.env
-msg "fin" "experimento terminado (gurobi.env borrados)"
+msg "inicio" "ranuras $RANURAS | ${#LISTA[@]} trabajos: ${LISTA[*]} | $HORAS h por corrida, gap $GAP"
+PIDS=""
+for r in $RANURAS; do
+  [ $r = A ] && { ranura A $CPU_A & PIDS="$PIDS $!"; }
+  [ $r = B ] && { ranura B $CPU_B & PIDS="$PIDS $!"; }
+done
+wait $PIDS
+rm -f $E/.activa_$$
+if ls $E/.activa_* > /dev/null 2>&1; then
+  msg "fin" "instancia de las ranuras $RANURAS terminada (queda otra instancia corriendo)"
+else
+  rm -f $SW/gurobi.env $OB/gurobi.env
+  msg "fin" "experimento terminado (gurobi.env borrados)"
+fi
