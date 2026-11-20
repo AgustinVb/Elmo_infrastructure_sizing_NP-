@@ -1,0 +1,73 @@
+
+Gurobi 13.0.2 (linux64) logging started Fri Nov 20 12:54:33 2026
+
+Set parameter LogFile to value "/home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/OB/4anios/hibrido/lshaped/maestro_bc.log"
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+Cutoff  1.3952394875582107e+06
+TimeLimit  4.2235091976404190e+04
+MIPGap  0
+Threads  8
+LazyConstraints  1
+
+Optimize a model with 512 rows, 95 columns and 1921 nonzeros (Min)
+Model fingerprint: 0x19baabcf
+Model has 35 linear objective coefficients
+Variable types: 59 continuous, 36 integer (27 binary)
+Coefficient statistics:
+  Matrix range     [1e-09, 1e+06]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e-06, 7e+05]
+  RHS range        [4e-12, 7e+11]
+Warning: Model contains large matrix coefficient range
+Warning: Model contains large rhs
+         Consider reformulating model or setting NumericFocus parameter
+         to avoid numerical issues.
+
+Processing MIP start from previous solve: 0 nodes explored in subMIP, total elapsed time 20s
+MIP start from previous solve did not produce a new incumbent solution
+Processed MIP start in 20.20 seconds (0.00 work units)
+
+Presolve removed 268 rows and 22 columns
+Presolve time: 0.01s
+Presolved: 244 rows, 73 columns, 1634 nonzeros
+Variable types: 49 continuous, 24 integer (16 binary)
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    3.8432743e+05   8.480643e+04   0.000000e+00     20s
+     117    1.2602854e+06   0.000000e+00   0.000000e+00     20s
+
+Root relaxation: objective 1.260285e+06, 117 iterations, 0.00 seconds (0.00 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 1260285.36    0   11          - 1260285.36      -     -   20s
+     0     0 1337627.61    0    9          - 1337627.61      -     -   20s
+     0     0 1338518.72    0    9          - 1338518.72      -     - 2791s
+     0     0 1369009.85    0    4          - 1369009.85      -     - 2791s
+     0     0 1370770.16    0    4          - 1370770.16      -     - 2791s
+     0     0 1373691.18    0    5          - 1373691.18      -     - 2791s
+
+Cutting planes:
+  Gomory: 1
+  Cover: 3
+  Implied bound: 1
+  MIR: 9
+  Relax-and-lift: 3
+
+Explored 1 nodes (175 simplex iterations) in 2791.85 seconds (0.02 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 0
+
+Solve interrupted
+Best objective -, best bound 1.373691182250e+06, gap -
+
+User-callback calls 570, time in user-callback 2791.79 sec
