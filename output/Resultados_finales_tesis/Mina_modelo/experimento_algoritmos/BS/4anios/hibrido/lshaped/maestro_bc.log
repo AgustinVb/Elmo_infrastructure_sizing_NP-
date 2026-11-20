@@ -1,0 +1,75 @@
+
+Gurobi 13.0.2 (linux64) logging started Fri Nov 20 12:19:38 2026
+
+Set parameter LogFile to value "/home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/lshaped/maestro_bc.log"
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Ubuntu 24.04.5 LTS")
+
+CPU model: Intel(R) Xeon(R) Gold 6130 CPU @ 2.10GHz, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 32 physical cores, 64 logical processors, using up to 8 threads
+
+Non-default parameters:
+Cutoff  1.7896941983382411e+06
+TimeLimit  4.1051542442083359e+04
+MIPGap  0
+Threads  8
+LazyConstraints  1
+
+Optimize a model with 969 rows, 368 columns and 3708 nonzeros (Min)
+Model fingerprint: 0x7c04f9d2
+Model has 44 linear objective coefficients
+Variable types: 198 continuous, 170 integer (137 binary)
+Coefficient statistics:
+  Matrix range     [1e-09, 1e+06]
+  Objective range  [1e+00, 3e+05]
+  Bounds range     [1e-06, 3e+03]
+  RHS range        [2e-12, 1e+07]
+Warning: Model contains large matrix coefficient range
+         Consider reformulating model or setting NumericFocus parameter
+         to avoid numerical issues.
+
+Processing MIP start from previous solve: 0 nodes explored in subMIP, total elapsed time 9s
+MIP start from previous solve did not produce a new incumbent solution
+Processed MIP start in 8.87 seconds (0.00 work units)
+
+Presolve removed 568 rows and 149 columns
+Presolve time: 0.03s
+Presolved: 401 rows, 219 columns, 2696 nonzeros
+Variable types: 107 continuous, 112 integer (90 binary)
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    4.1920462e+05   3.667636e+04   0.000000e+00      9s
+     247    1.6403958e+06   0.000000e+00   0.000000e+00      9s
+
+Root relaxation: objective 1.640396e+06, 247 iterations, 0.00 seconds (0.00 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 1640395.82    0   21          - 1640395.82      -     -    8s
+     0     0 1746696.63    0   14          - 1746696.63      -     -    8s
+     0     0 1746791.70    0   16          - 1746791.70      -     -  267s
+     0     0 1755503.10    0   16          - 1755503.10      -     -  267s
+     0     0 1755503.10    0   17          - 1755503.10      -     -  267s
+     0     0 1755503.10    0   17          - 1755503.10      -     -  267s
+     0     0 1755669.82    0    4          - 1755669.82      -     -  267s
+     0     0 1755773.03    0    4          - 1755773.03      -     - 1121s
+     0     0 1755842.58    0    4          - 1755842.58      -     - 1121s
+     0     0 1756049.34    0    4          - 1756049.34      -     - 1121s
+     0     2 1756049.34    0    4          - 1756049.34      -     - 2084s
+*    5     1               1    1777904.0797 1760406.86  0.98%  18.0 6064s
+*    8     0               2    1760706.5447 1760706.54  0.00%  11.9 9428s
+
+Cutting planes:
+  RLT: 1
+
+Explored 9 nodes (546 simplex iterations) in 9428.96 seconds (0.06 work units)
+Thread count was 8 (of 64 available processors)
+
+Solution count 2: 1.76071e+06 1.7779e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 1.760706544724e+06, best bound 1.760706544724e+06, gap 0.0000%
+
+User-callback calls 1020, time in user-callback 9428.78 sec

@@ -1,0 +1,116 @@
+[STOP] para cortar a mano conservando la solucion, cree: /home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/benders/STOP
+[NestedBenders] tope de tiempo: 12.00 h (hasta 2026-11-20 23:45)
+[NestedBenders] presolve de capacidad (peak): meta por anio 1:4,700  2:9,400  3:17,860  4:23,500
+[NestedBenders] presolve de capacidad: anios [4], modulos de 500 kW
+[NestedBenders] presolve capacidad  anio 4  suma: sum n_ssee_k >= 1  (dual 1.0000, primal 1.000, 81s)
+[NestedBenders] presolve capacidad  anio 4  station_1: n_ssee_k >= 1  (dual 1.0000, primal 1.000, 87s)
+[NestedBenders] presolve de capacidad: cotas impuestas al anio 1: station_1: >= 1 (500 kW, anio 4)
+[NestedBenders] presolve de capacidad: la cota agregada (1) no agrega nada sobre las cotas por nave
+[NestedBenders] presolve de capacidad: 168s
+[NestedBenders] cota por relajacion operacional (inversion entera)...
+[NestedBenders] corte de cargas por LHD en la cota operacional: 16 dias de /home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/corte_cargas_lhd.json (suma n_nom 164, n_sinR 164)
+Set parameter OutputFlag to value 1
+Set parameter LogFile to value "/home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/benders/op_bound_gurobi.log"
+Set parameter LogToConsole to value 0
+[NestedBenders] trayectoria de la cota operacional guardada en /home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/benders/tray_op.pkl
+[Estabilizacion] centro inicial = inversion de la cota operacional
+[NestedBenders] cota operacional = 1,749,279.68  (208,992 binarias relajadas, 347s)
+[NestedBenders] inversion de la cota operacional (y1): N_bays={'station_1': 1.0}, N_chargers={'station_1': 1.0}, N_batteries={'station_1': 1.0}, n_ssee_k={'station_1': 1.0}, G={'Solar_PV': 1.703164083707789, 'Wind': 0.0}, H=0.4264393220942938, D=478.9143938847491
+[NestedBenders] --fijar_R op: R fijo en 4 bloques (reemplazo en ningun año); la cota del backward no entra a la LB
+[NestedBenders] --reparar_dp (energia nominal, margen 0.5 kWh): el plan ya llega; capacidad final 445.01 kWh (piso 385.6); costo DP del plan 1,253,091
+[NestedBenders] k=0 evaluando trayectoria de la cota operacional reparada con la DP (inversion fija, R fijo en ningun año = 1, resto 0)...
+[NestedBenders] k=0 FORWARD  anio 1 (1/4)  [UB=(sin cota aun)  LB=1,749,279.68]  resolviendo MILP...
+[DayDecomp] año 1: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y1 d15 fase1: 302,672.10  (optimal, 6s)
+[DayDecomp]   y1 d105 fase1: 305,876.98  (optimal, 6s)
+[DayDecomp]   y1 d196 fase1: 302,672.10  (optimal, 6s)
+[DayDecomp]   y1 d288 fase1: 302,672.10  (optimal, 6s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 6s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=1  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=1  G_g=1.703, 0  H=0.4264  P_pot=103  R=0  b_bar=482
+[DayDecomp]   y1 d15 fase2: 305,532.77  (optimal, 6s)
+[DayDecomp]   y1 d105 fase2: 305,876.98  (optimal, 7s)
+[DayDecomp]   y1 d196 fase2: 305,532.77  (optimal, 7s)
+[DayDecomp]   y1 d288 fase2: 305,532.77  (optimal, 7s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 7s
+[DayDecomp]   pulido sobre el bloque anual: 60,205 valores, 46,497 enteras fijas, LP optimo en 5s -> incumbente 1,222,475.28
+[DayDecomp] año 1: listo en 34s
+[NestedBenders] k=0 FORWARD  anio 2 (2/4)  [UB=(sin cota aun)  LB=1,749,279.68]  resolviendo MILP...
+[DayDecomp] año 2: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y2 d15 fase1: 1,495.07  (optimal, 6s)
+[DayDecomp]   y2 d105 fase1: 3,541.33  (optimal, 7s)
+[DayDecomp]   y2 d196 fase1: 4,649.91  (optimal, 10s)
+[DayDecomp]   y2 d288 fase1: 1,468.85  (optimal, 10s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 10s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=1  N_batteries=1  Delta_N_bays=-0  Delta_N_chargers=-0  Delta_N_batteries=-0  n_ssee_k=1  G_g=1.703, 0  H=0.4264  P_pot=40.17  R=0  b_bar=478.7
+[DayDecomp]   y2 d15 fase2: 2,528.29  (optimal, 6s)
+[DayDecomp]   y2 d105 fase2: 3,541.33  (optimal, 6s)
+[DayDecomp]   y2 d196 fase2: 5,683.13  (optimal, 7s)
+[DayDecomp]   y2 d288 fase2: 2,502.07  (optimal, 6s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 7s
+[DayDecomp]   pulido sobre el bloque anual: 60,207 valores, 46,497 enteras fijas, LP optimo en 5s -> incumbente 14,254.81
+[DayDecomp] año 2: listo en 36s
+[NestedBenders] k=0 FORWARD  anio 3 (3/4)  [UB=(sin cota aun)  LB=1,749,279.68]  resolviendo MILP...
+[DayDecomp] año 3: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+[DayDecomp]   y3 d15 fase1: 127,193.87  (optimal, 7s)
+[DayDecomp]   y3 d105 fase1: 130,052.07  (optimal, 12s)
+[DayDecomp]   y3 d196 fase1: 133,300.97  (optimal, 11s)
+[DayDecomp]   y3 d288 fase1: 124,547.28  (optimal, 11s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 12s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=2  N_batteries=2  Delta_N_bays=-0  Delta_N_chargers=1  Delta_N_batteries=1  n_ssee_k=1  G_g=1.703, 0  H=0.4264  P_pot=40.17  R=0  b_bar=471.8
+[DayDecomp]   y3 d15 fase2: 128,150.55  (optimal, 6s)
+[DayDecomp]   y3 d105 fase2: 130,052.07  (optimal, 6s)
+[DayDecomp]   y3 d196 fase2: 134,257.65  (optimal, 7s)
+[DayDecomp]   y3 d288 fase2: 125,503.97  (optimal, 6s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 7s
+[DayDecomp]   pulido sobre el bloque anual: 60,207 valores, 46,497 enteras fijas, LP optimo en 6s -> incumbente 517,964.24
+[DayDecomp] año 3: listo en 41s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=3  TimeLimit alcanzado sin cerrar MIPGap: UB=509,202.92  LB=494,984.31  gap=2.7923%
+[NestedBenders] k=0 FORWARD  anio 4 (4/4)  [UB=(sin cota aun)  LB=1,749,279.68]  resolviendo MILP...
+[DayDecomp] año 4: MIP start por dias (fase 1 libre, max, fase 2 fija, pulido)...
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase1: 15,493.75  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase1: 20,736.84  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase1: 23,975.46  (maxTimeLimit, 124s)
+[DayDecomp]   y4 d288 fase1: 16,390.53  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 125s
+[DayDecomp]   agregado (max entre dias): N_bays=1  N_chargers=2  N_batteries=2  Delta_N_bays=-0  Delta_N_chargers=-0  Delta_N_batteries=-0  n_ssee_k=1  G_g=1.703, 0  H=0.4264  P_pot=40.17  R=0  b_bar=460.9
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[DayDecomp]   y4 d15 fase2: 15,272.67  (maxTimeLimit, 121s)
+[DayDecomp]   y4 d105 fase2: 20,736.84  (maxTimeLimit, 122s)
+[DayDecomp]   y4 d196 fase2: 24,861.28  (maxTimeLimit, 123s)
+[DayDecomp]   y4 d288 fase2: 15,820.16  (maxTimeLimit, 125s)
+[DayDecomp]   4 dias en paralelo (4 x 8 hilos): 125s
+[DayDecomp]   pulido sobre el bloque anual: 60,207 valores, 46,497 enteras fijas, LP optimo en 3s -> incumbente 76,690.95
+[DayDecomp] año 4: listo en 267s
+WARNING: Loading a SolverResults object with an 'aborted' status, but
+containing a solution
+[NestedBenders] forward y=4  TimeLimit alcanzado sin cerrar MIPGap: UB=76,690.95  LB=52,620.43  gap=31.3864%
+[NestedBenders] k=0 pulido de la solucion: 1,812,469.04 -> 1,793,018.46 (1.07% menos, 34s)
+[NestedBenders] k=0 trayectoria de la cota operacional reparada con la DP: UB 1,793,018.46 (709s); reemplazo en ningun año
+[NestedBenders] k=0: incumbente 1,793,018.46 y 0 cortes respaldados en /home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/benders/incumbente_respaldo.pkl
+[NestedBenders] presolve de capacidad, fuerza de la cota: station_1: cota 1, elegido 1 (ajustada)
+[NestedBenders] tiempo total: 1224.0s (0 iteraciones, 0 cortes de factibilidad)
+[NestedBenders] cortes fortalecidos: NINGUNO supero Phi^LP. O los lagrangeanos se cortan por tiempo antes de levantar la cota (subir --strengthened_timelimit), o la brecha de dualidad de este modelo no deja ganar nada por esta via.
+[Estabilizacion] 0 pasos serios, 0 nulos; caja final +-2 / 25%
+[NestedBenders] termino en 0 iteraciones (1224s): UB=1,793,018.46  LB=1,749,279.68  gap=2.4394%
+[NestedBenders] reporte: 241,036 valores cargados; costo recomputado = 1,812,469.04 contra UB 1,812,469.04 (desvio 0.000000); incluye 203,236.11 de apertura de naves
+[NestedBenders] variables de bloque sin equivalente en el monolitico (descartadas): ['D_prev', 'N_batteries_prev', 'N_bays_prev', 'N_chargers_prev', 'alpha']
+[NestedBenders] MIP start pulido (LP con enteras fijas, 186,064 fijadas, 19s): costo 1,812,469.04 -> 1,793,018.46
+[NestedBenders] MIP start sin violaciones: max residuo 5.5e-12 < FeasibilityTol 1e-6 (5s)
+JSONs, log y summary guardados en '/home/avilches/Elmo_infrastructure_sizing_NP-/output/Resultados_finales_tesis/Mina_modelo/experimento_algoritmos/BS/4anios/hibrido/benders'.
